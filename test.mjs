@@ -1,0 +1,69 @@
+import { fileURLToPath } from "node:url";
+// set PLAYWRIGHT_MODULE to a full path if playwright is not resolvable from here
+const { chromium } = await import(
+  process.env.PLAYWRIGHT_MODULE || "playwright"
+);
+const ROOT = fileURLToPath(new URL(".", import.meta.url));
+const mode = process.argv[2] || "smoke";
+const b = await chromium.launch({
+  args: [
+    "--use-angle=swiftshader",
+    "--enable-unsafe-swiftshader",
+    "--ignore-gpu-blocklist",
+    "--enable-webgl",
+  ],
+});
+const p = await b.newPage({ viewport: { width: 1280, height: 720 } });
+const errs = [];
+p.on("console", (m) => {
+  if (m.type() === "error" && !/ERR_|Failed to load resource/.test(m.text()))
+    errs.push(m.text());
+});
+p.on("pageerror", (e) =>
+  errs.push(
+    "PAGEERROR " +
+      e.message +
+      "\n" +
+      (e.stack || "").split("\n").slice(0, 4).join("\n"),
+  ),
+);
+await p.route("**/*", (r) =>
+  r.request().url().startsWith("file:") ? r.continue() : r.abort(),
+);
+await p.goto("file://" + ROOT + "dist/index.html");
+await p.waitForTimeout(1500);
+const shot = (n) => p.screenshot({ path: `${ROOT}shots/${n}.png` });
+await shot("title");
+if (mode !== "title") {
+  await p.click("#btnPlay");
+  await p.waitForTimeout(600);
+  const info = await p.evaluate(() => {
+    const { G } = DF;
+    return {
+      state: G.state,
+      noLock: G.noLock,
+      tris: G.world.pos.length / 9,
+      enemies: G.enemies.length,
+      lights: G.world.lights.length,
+      shrines: G.world.shrines.length,
+      edges: G.world.edges.length,
+      path: G.world.path,
+      draws: DF.R.stats.draws,
+    };
+  });
+  console.log(JSON.stringify(info));
+  await shot("play0");
+}
+if (process.env.SCRIPT) {
+  const steps = (await import(process.env.SCRIPT)).default;
+  for (const s of steps) {
+    if (s.eval) {
+      const r = await p.evaluate(s.eval);
+      if (r !== undefined) console.log(s.name || "eval", JSON.stringify(r));
+    }
+    if (s.wait) await p.waitForTimeout(s.wait);
+    if (s.shot) await shot(s.shot);
+  }
+}
+console.log(errs.length ? "ERRORS:\n" + errs.join("\n") : "no errors");
+await b.close();

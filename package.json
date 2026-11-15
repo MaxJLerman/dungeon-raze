@@ -1,0 +1,16 @@
+{
+  "name": "dungeon-raze",
+  "version": "1.0.0",
+  "description": "A third-person melee and ranged combat prototype that runs in a desktop browser. You pick one of five classes, fight through a procedurally generated cave of looping tunnels, kill the boss in the deepest chamber and leave through the gate it opens.",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}
