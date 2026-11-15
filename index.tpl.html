@@ -217,6 +217,25 @@
         box-shadow: 0 0 8px rgba(0, 0, 0, 0.8);
         display: none;
       }
+      #plabels .pl {
+        position: absolute;
+        left: 0;
+        top: 0;
+        display: none;
+        white-space: nowrap;
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--vein);
+        text-shadow:
+          0 0 10px rgba(0, 0, 0, 0.95),
+          0 1px 2px rgba(0, 0, 0, 0.9);
+      }
+      #plabels .pl.sealed {
+        font-weight: 400;
+        color: rgba(232, 226, 212, 0.5);
+      }
       #ebars .eb {
         position: absolute;
         left: 0;
@@ -291,6 +310,11 @@
       }
       #vigW {
         background: #fff;
+      }
+      #fade {
+        background: #000;
+        /* above the health fill, which has z-index 1, so it covers the HUD */
+        z-index: 2;
       }
       .scr {
         position: absolute;
@@ -590,6 +614,7 @@
       <canvas id="map" width="170" height="170"></canvas>
       <div id="msgs"></div>
       <div id="ebars"></div>
+      <div id="plabels"></div>
       <div id="ret"></div>
       <div id="prompt"></div>
       <div id="boss">
@@ -600,18 +625,18 @@
       <div id="cross"></div>
       <div id="hint"></div>
     </div>
+    <div id="fade" class="vig"></div>
 
     <div id="scr-title" class="scr wide">
       <h1>DungeonRaze</h1>
       <p class="sub">
-        A cave that loops back on itself, and something old in the deepest
-        chamber. Pick a class, kill it, and walk out through the gate it leaves
-        behind.
+        Six gates stand in the hall, graded E to S. Only the first is open.
+        Pick a class, step through it, and come back alive.
       </p>
       <p class="touch">This needs a keyboard and a mouse.</p>
       <div class="picker"></div>
       <div class="row">
-        <button id="btnPlay" type="button">Enter the cave</button
+        <button id="btnPlay" type="button">Enter the hall</button
         ><button type="button" data-open="controls">Controls</button>
       </div>
       <ul class="tips">
@@ -635,7 +660,7 @@
         <button id="btnResume" type="button">Resume</button
         ><button type="button" data-open="class">Change class</button
         ><button type="button" data-open="controls">Controls</button
-        ><button id="btnNew" type="button">New cave</button>
+        ><button id="btnBase" type="button">Return to base</button>
       </div>
     </div>
     <div id="scr-class" class="scr wide">
@@ -682,14 +707,15 @@
         on its feet.
       </p>
       <div class="row">
-        <button id="btnRise" type="button">Rise again</button>
+        <button id="btnRise" type="button">Rise again</button
+        ><button id="btnDeadBase" type="button">Return to base</button>
       </div>
     </div>
     <div id="scr-win" class="scr">
       <h1>Out alive</h1>
       <p class="sub" id="winStats"></p>
       <div class="row">
-        <button id="btnAgain" type="button">Descend into a new cave</button>
+        <button id="btnAgain" type="button">Return to base</button>
       </div>
     </div>
     <script>

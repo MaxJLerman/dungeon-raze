@@ -3,6 +3,7 @@ const $ = (id) => document.getElementById(id);
 const HUD = (() => {
   let el = null,
     ebars = [],
+    plabels = [],
     hpLag = 100,
     mapT = 0,
     lastMsg = "";
@@ -27,6 +28,7 @@ const HUD = (() => {
       stBar: $("stBar"),
       cross: $("cross"),
       hint: $("hint"),
+      fade: $("fade"),
     };
     const host = $("ebars");
     for (let i = 0; i < 8; i++) {
@@ -35,6 +37,13 @@ const HUD = (() => {
       d.innerHTML = "<i></i><b></b>";
       host.appendChild(d);
       ebars.push({ d, hp: d.firstChild, po: d.lastChild });
+    }
+    const ph = $("plabels");
+    for (let i = 0; i < GRADE_IDS.length; i++) {
+      const d = document.createElement("div");
+      d.className = "pl";
+      ph.appendChild(d);
+      plabels.push({ d, text: "" });
     }
   }
   function pips(n, max, ch) {
@@ -142,10 +151,51 @@ const HUD = (() => {
       p.hp < 30 && p.state !== "dead" ? 0.25 + 0.1 * Math.sin(G.t * 6) : 0;
     el.vigR.style.opacity = Math.max(G.flashRed, low).toFixed(2);
     el.vigW.style.opacity = (G.flashWhite * 0.35).toFixed(2);
+    // only while playing: a menu opened mid-transition must not be blacked out
+    el.fade.style.opacity = (G.state === "play" ? G.fade : 0).toFixed(2);
+    // the hall has nothing to explore, so it has no minimap
+    const hub = G.zone === "hub";
+    el.map.style.display = hub ? "none" : "";
     mapT -= dt;
-    if (mapT <= 0) {
+    if (mapT <= 0 && !hub) {
       mapT = 0.1;
       drawMap();
+    }
+    // a name above each portal frame that is near and in view
+    const ps = hub ? G.world.portals : [];
+    for (let i = 0; i < plabels.length; i++) {
+      const q = ps[i],
+        b = plabels[i];
+      let s = null;
+      if (q && Math.hypot(q.x - p.x, q.z - p.z) < 16) {
+        s = R.toScreen(q.x, 4.3, q.z);
+        // toScreen only rejects points behind the camera
+        if (
+          s &&
+          (s[0] < 0 ||
+            s[1] < 0 ||
+            s[0] > canvas.clientWidth ||
+            s[1] > canvas.clientHeight)
+        )
+          s = null;
+      }
+      if (!s) {
+        b.d.style.display = "none";
+        continue;
+      }
+      const text = GRADES[q.grade].name + (q.open ? "" : " · Sealed");
+      if (b.text !== text) {
+        b.text = text;
+        b.d.textContent = text;
+        b.d.classList.toggle("sealed", !q.open);
+      }
+      b.d.style.display = "block";
+      b.d.style.transform =
+        "translate(" +
+        s[0].toFixed(1) +
+        "px," +
+        s[1].toFixed(1) +
+        "px) translate(-50%,-100%)";
     }
   }
   function drawMap() {

@@ -1,10 +1,14 @@
+import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 // set PLAYWRIGHT_MODULE to a full path if playwright is not resolvable from here
 const { chromium } = await import(
   process.env.PLAYWRIGHT_MODULE || "playwright"
 );
 const ROOT = fileURLToPath(new URL(".", import.meta.url));
+// modes: "title" stays on the title screen, "hub" clicks play and stays in the
+// hall, "smoke" clicks play and then enters a cave.
 const mode = process.argv[2] || "smoke";
+fs.mkdirSync(ROOT + "shots", { recursive: true });
 const b = await chromium.launch({
   args: [
     "--use-angle=swiftshader",
@@ -37,6 +41,10 @@ await shot("title");
 if (mode !== "title") {
   await p.click("#btnPlay");
   await p.waitForTimeout(600);
+  if (mode === "smoke")
+    await p.evaluate(() => {
+      if (DF.enterCave) DF.enterCave("E");
+    });
   const info = await p.evaluate(() => {
     const { G } = DF;
     return {
@@ -54,16 +62,29 @@ if (mode !== "title") {
   console.log(JSON.stringify(info));
   await shot("play0");
 }
+let failed = 0;
 if (process.env.SCRIPT) {
   const steps = (await import(process.env.SCRIPT)).default;
   for (const s of steps) {
     if (s.eval) {
-      const r = await p.evaluate(s.eval);
+      let r;
+      try {
+        r = await p.evaluate(s.eval);
+      } catch (e) {
+        r = { pass: false, threw: e.message.split("\n")[0] };
+      }
       if (r !== undefined) console.log(s.name || "eval", JSON.stringify(r));
+      // a step that reports a pass at all must report true
+      if (r && typeof r === "object" && "pass" in r && r.pass !== true) {
+        console.log("FAIL " + (s.name || "eval"));
+        failed++;
+      }
     }
     if (s.wait) await p.waitForTimeout(s.wait);
     if (s.shot) await shot(s.shot);
   }
 }
 console.log(errs.length ? "ERRORS:\n" + errs.join("\n") : "no errors");
+console.log(failed || errs.length ? failed + " failed" : "all passed");
+if (failed || errs.length) process.exitCode = 1;
 await b.close();

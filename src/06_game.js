@@ -26,6 +26,15 @@ const G = {
   msgs: [],
   noLock: false,
   seed: 1,
+  // "hub" is the hall, "cave" is a dungeon. grade is the portal last entered.
+  zone: "cave",
+  grade: null,
+  // a running portal transition { t, grade, swapped }, and the black overlay
+  // amount it drives, 0 to 1
+  trans: null,
+  fade: 0,
+  // clock for the title screen's camera sway
+  t0: 0,
 };
 const keys = {},
   taps = {},
@@ -873,6 +882,19 @@ const EDEF = {
       },
     },
   },
+  // The training dummy in the hall. The dummy flag makes it inert and
+  // unkillable: see makeEnemy, enemyUpdate, hitEnemy, kill and the execute
+  // case. It has no speed, senses or attacks because it never uses them.
+  dummy: {
+    name: "Training dummy",
+    dummy: true,
+    hp: 100,
+    posture: 60,
+    r: 0.5,
+    poise: 2,
+    top: 1.9,
+    atks: {},
+  },
 };
 
 function makePlayer(id) {
@@ -915,6 +937,7 @@ function makePlayer(id) {
     flash: 0,
     toolCD: 0,
     restCD: 0,
+    refillT: 0,
     buff: null,
     buffT: 0,
     throwT: 0,
@@ -965,7 +988,8 @@ function makeEnemy(s) {
     postT: 9,
     state: "idle",
     t: 0,
-    aware: false,
+    // a dummy counts as aware so it cannot be ambushed and its bar shows
+    aware: !!d.dummy,
     alertIn: -1,
     cd: 0.4 + Math.random() * 0.8,
     atk: null,
@@ -995,10 +1019,22 @@ function spawnEnemies() {
     G.enemies.push(makeEnemy(s));
   }
 }
-function newRun(seed) {
-  G.seed = seed;
-  G.world = genWorld(seed);
-  R.setWorld(G.world.pos, G.world.col);
+// Air for each zone. The cave keeps the renderer's defaults; the hall is a
+// built room, so it is clearer and a little brighter.
+const ENV_CAVE = {
+    amb: R.env.amb.slice(),
+    fog: R.env.fog.slice(),
+    fogD: R.env.fogD,
+  },
+  ENV_HUB = { amb: [0.15, 0.17, 0.22], fog: [0.03, 0.035, 0.05], fogD: 0.014 };
+// Copies, so nothing that later adjusts R.env can change the presets.
+function setEnv(e) {
+  R.env.amb = e.amb.slice();
+  R.env.fog = e.fog.slice();
+  R.env.fogD = e.fogD;
+}
+// Clears everything that must not carry from one world into the next.
+function resetRun() {
   G.bossDead = false;
   G.bossSeen = false;
   G.gate = null;
@@ -1012,15 +1048,91 @@ function newRun(seed) {
   G.ghosts = [];
   G.msgs = [];
   G.pending = [];
-  G.player = makePlayer(OPT.cls);
-  G.checkpoint = G.world.shrines[0];
-  spawnEnemies();
+  G.hitstop = 0;
+  G.slowT = 0;
+  G.shake = 0;
+  G.flashRed = 0;
+  G.flashWhite = 0;
+  G.trans = null;
+  G.fade = 0;
+}
+function snapCam() {
   cam.yaw = G.player.yaw;
   cam.pitch = 0.3;
   cam.px = G.player.x;
   cam.pz = G.player.z;
 }
+// Starts a cave from a seed. Tests call this directly.
+function newRun(seed) {
+  G.zone = "cave";
+  setEnv(ENV_CAVE);
+  G.seed = seed;
+  G.world = genWorld(seed);
+  R.setWorld(G.world.pos, G.world.col);
+  resetRun();
+  G.player = makePlayer(OPT.cls);
+  G.checkpoint = G.world.shrines[0];
+  spawnEnemies();
+  snapCam();
+}
+// Puts the player in the hall. With fromGrade they step out of that grade's
+// portal, facing into the hall; otherwise they stand at the start point.
+function enterHub(fromGrade = null) {
+  G.zone = "hub";
+  setEnv(ENV_HUB);
+  G.world = genHub();
+  R.setWorld(G.world.pos, G.world.col);
+  resetRun();
+  const p = (G.player = makePlayer(OPT.cls));
+  const q = fromGrade && G.world.portals.find((o) => o.grade === fromGrade);
+  if (q) {
+    const f = portalFront(q, 3.5);
+    p.x = f.x;
+    p.z = f.z;
+    // look toward the middle of the hall, not straight ahead: the end frames
+    // line up with the pillar rows
+    p.yaw = Math.atan2(-f.x, -f.z);
+  }
+  G.checkpoint = null;
+  spawnEnemies();
+  snapCam();
+}
+// Enters a freshly generated cave through the portal of the given grade.
+function enterCave(gradeId, seed = (Math.random() * 1e9) | 0 || 7) {
+  G.grade = gradeId;
+  newRun(seed);
+  say(GRADES[gradeId].name.toUpperCase(), "big", 3);
+}
+// Begins the fade into a cave. A cut swaps at once, for reduced motion.
+function startTrans(gradeId, cut = RM) {
+  SFX.blink();
+  if (cut) enterCave(gradeId);
+  else G.trans = { t: 0, grade: gradeId, swapped: false };
+}
+const TRANS_HALF = 0.4;
+function transUpdate(dt) {
+  const tr = G.trans;
+  tr.t += dt;
+  if (!tr.swapped && tr.t >= TRANS_HALF) {
+    tr.swapped = true;
+    enterCave(tr.grade);
+    // entering the cave reset the transition; put it back to fade in
+    G.trans = tr;
+  }
+  G.fade =
+    tr.t < TRANS_HALF ? tr.t / TRANS_HALF : sat(2 - tr.t / TRANS_HALF);
+  if (tr.t >= TRANS_HALF * 2) {
+    G.trans = null;
+    G.fade = 0;
+  }
+}
 function respawn() {
+  // the hall has no shrine to wake at; start it over
+  if (!G.checkpoint) {
+    enterHub();
+    G.state = "play";
+    return;
+  }
   const p = G.player,
     c = G.checkpoint;
   Object.assign(p, {
@@ -1125,6 +1237,7 @@ function stagger(e) {
   sparks(e.x, e.def.top * 0.6, e.z, 14, AMBER, 5);
 }
 function kill(e) {
+  if (e.def.dummy) return;
   e.dead = true;
   e.state = "dead";
   e.t = 0;
@@ -1185,6 +1298,7 @@ function hitEnemy(e, dmg, post, o = {}) {
     p.hp = Math.min(p.maxHp, p.hp + dmg * 0.15);
   }
   e.hp -= dmg * mult;
+  if (e.def.dummy) e.hp = e.def.hp;
   e.flash = 1;
   alertE(e, true);
   if (e.state !== "stagger") {
@@ -1265,7 +1379,7 @@ function hitEnemy(e, dmg, post, o = {}) {
 function hurtPlayer(dmg, e, atk) {
   const p = G.player,
     c = p.cls;
-  if (p.state === "dead" || G.state !== "play") return "none";
+  if (p.state === "dead" || G.state !== "play" || G.trans) return "none";
   if (p.state === "execute" || p.state === "blink") return "none";
   if (p.iframe > 0) {
     if (p.state === "dodge" && !p.pdUsed) {
@@ -1733,6 +1847,15 @@ function playerUpdate(dt) {
   p.toolCD -= dt;
   p.parryCD -= dt;
   p.restCD -= dt;
+  if (G.zone === "hub") {
+    // the hall is for practice: focus and tool charges come back on their own
+    p.focus = Math.min(100, p.focus + 25 * dt);
+    p.refillT += dt;
+    if (p.refillT >= 1.5) {
+      p.refillT = 0;
+      p.tool = Math.min(c.tool.max, p.tool + 1);
+    }
+  }
   if (p.throwT > 0) p.throwT -= dt;
   if (p.state === "dead") {
     p.t += dt;
@@ -2121,6 +2244,12 @@ function playerUpdate(dt) {
             e.t = 0;
             e.dur = 1.0;
           }
+        } else if (e.def.dummy) {
+          // the dummy takes the execution and stands back up
+          e.state = "idle";
+          e.t = 0;
+          e.posture = 0;
+          G.hitstop = 0.13;
         } else {
           e.hp = 0;
           G.hitstop = 0.13;
@@ -2264,6 +2393,22 @@ function enemyUpdate(e, dt) {
     d = e.def;
   e.flash = Math.max(0, e.flash - dt * 6);
   e.speed = 0;
+  if (d.dummy) {
+    // pinned to its spot: no senses, no movement, no attacks
+    e.x = e.hx;
+    e.z = e.hz;
+    e.yaw = e.hyaw;
+    e.kx = e.kz = 0;
+    e.postT += dt;
+    if (e.state === "stagger") {
+      e.t += dt;
+      if (e.t > e.dur) {
+        e.state = "idle";
+        e.posture = 0;
+      }
+    } else if (e.postT > 2.5) e.posture = Math.max(0, e.posture - 14 * dt);
+    return;
+  }
   if (e.state === "dead") {
     e.t += dt;
     if (e.t > 2.4) e.gone = true;
@@ -2667,7 +2812,12 @@ function separate() {
 }
 function update(dt) {
   G.t += dt;
-  G.runT += dt;
+  // a portal transition freezes the world until it has finished
+  if (G.trans) {
+    transUpdate(dt);
+    return;
+  }
+  if (G.zone === "cave") G.runT += dt;
   playerUpdate(dt);
   for (const e of G.enemies) enemyUpdate(e, dt);
   projUpdate(dt);
@@ -2718,4 +2868,15 @@ function update(dt) {
       }
     }
   if (p.state === "dead" && p.t > 1.6 && G.state === "play") G.state = "dead";
+  // open portals in the hall: stepping into the arch starts the trip. This
+  // must stay the last thing update does, because a cut swaps the world here.
+  if (G.zone === "hub" && p.state !== "dead")
+    for (const q of w.portals) {
+      if (!q.open) continue;
+      const c = portalFront(q, -PORTAL_IN);
+      if (Math.hypot(c.x - p.x, c.z - p.z) < PORTAL_R) {
+        startTrans(q.grade);
+        break;
+      }
+    }
 }

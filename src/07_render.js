@@ -221,7 +221,30 @@ function posePlayer(p) {
     }
   }
 }
+// The dummy is a post: arms out as a crossbar, rocks back when struck and
+// slumps while staggered. It has no walk, attack or death pose.
+function poseDummy(e) {
+  const f = e.fig;
+  poseBase(f, 0, 0, 0);
+  f.root.p[0] = e.x;
+  f.root.p[1] = e.y;
+  f.root.p[2] = e.z;
+  f.root.r[1] = e.yaw;
+  f.armR.r[2] = -1.45;
+  f.armL.r[2] = 1.45;
+  const stag = e.state === "stagger",
+    pu = stag ? 0.5 + 0.5 * Math.sin(G.t * 10) : 0;
+  f.chest.r[0] = stag ? 0.5 + Math.sin(G.t * 6) * 0.04 : -0.35 * e.flash;
+  f.headN.r[0] = stag ? 0.5 : 0;
+  setEm(
+    f,
+    (stag ? 0.5 + 0.3 * pu : 0) + e.flash * 0.9,
+    (stag ? 0.3 + 0.15 * pu : 0) + e.flash * 0.85,
+    e.flash * 0.7,
+  );
+}
 function poseEnemy(e) {
+  if (e.def.dummy) return poseDummy(e);
   const f = e.fig,
     d = e.def,
     o = f.o,
@@ -327,6 +350,63 @@ function poseEnemy(e) {
     f.weapon.em[0] += 0.5;
   }
 }
+// The glowing surface inside an open portal frame: a soft fill, three swirling
+// bands and a few rising motes, all in the grade's colour.
+function drawPortal(q) {
+  const c = GRADES[q.grade].col,
+    ax = Math.cos(q.yaw),
+    az = -Math.sin(q.yaw),
+    cx = q.x - Math.sin(q.yaw) * 0.85,
+    cz = q.z - Math.cos(q.yaw) * 0.85,
+    cy = 1.72,
+    t = G.t;
+  for (let row = 0; row < 5; row++)
+    for (let col = -1; col <= 1; col++)
+      R.sprite(
+        cx + ax * col * 0.72,
+        0.42 + row * 0.66,
+        cz + az * col * 0.72,
+        0.8,
+        c[0],
+        c[1],
+        c[2],
+        0.2 + 0.06 * Math.sin(t * 2.1 + row * 1.3 + col),
+      );
+  for (let k = 0; k < 3; k++) {
+    const sc = 1 - k * 0.3,
+      spin = t * (1.3 + k * 0.8) * (k % 2 ? -1 : 1);
+    R.ribbon(
+      36,
+      (u, side) => {
+        const an = u * TAU,
+          m = sc * (side ? 1 : 0.78);
+        return [
+          cx + ax * Math.cos(an) * 1.08 * m,
+          cy + Math.sin(an) * 1.6 * m,
+          cz + az * Math.cos(an) * 1.08 * m,
+        ];
+      },
+      c[0],
+      c[1],
+      c[2],
+      (u) => 0.12 + 0.75 * Math.pow(0.5 + 0.5 * Math.sin(u * TAU * 2 + spin), 2),
+    );
+  }
+  R.sprite(cx, cy, cz, 1.1, 0.8, 0.95, 1, 0.45 + 0.1 * Math.sin(t * 3));
+  for (let i = 0; i < 7; i++) {
+    const u = (t * 0.22 + i / 7) % 1;
+    R.sprite(
+      cx + ax * Math.sin(i * 2.4 + t * 0.7) * 0.85,
+      0.25 + u * 3,
+      cz + az * Math.sin(i * 2.4 + t * 0.7) * 0.85,
+      0.09,
+      c[0],
+      c[1],
+      c[2],
+      1.3 * Math.sin(u * PI),
+    );
+  }
+}
 function buildLights() {
   const p = G.player,
     w = G.world,
@@ -417,7 +497,7 @@ function render() {
     if (e.dead && e.t > 0.6) continue;
     const ey = f.eye,
       pu = e.aware ? 1 : 0.45;
-    for (const s of [-1, 1]) {
+    for (const s of e.def.dummy ? [] : [-1, 1]) {
       const q = R.nodePos(f.headN, s * 0.075, 0.03, 0.15);
       R.sprite(q[0], q[1], q[2], 0.11 * sc, ey[0], ey[1], ey[2], 1.2 * pu);
     }
@@ -544,6 +624,24 @@ function render() {
         0.25 + 0.15 * Math.sin(G.t * 3),
       );
     }
+  }
+  if (w.hub) {
+    // brazier flames, then the open portals
+    for (const h of w.halos)
+      for (let i = 0; i < 4; i++) {
+        const fl = Math.sin(G.t * (9 + i * 2.3) + h.x + i * 1.7);
+        R.sprite(
+          h.x + fl * 0.04,
+          1.2 + i * 0.17 + fl * 0.03,
+          h.z + Math.cos(G.t * 7 + i) * 0.04,
+          0.36 - i * 0.065,
+          1,
+          0.5 + i * 0.12,
+          0.1 + i * 0.06,
+          1.1,
+        );
+      }
+    for (const q of w.portals) if (q.open) drawPortal(q);
   }
   if (G.gate) {
     const g = G.gate,

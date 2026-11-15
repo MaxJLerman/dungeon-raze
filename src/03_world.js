@@ -9,6 +9,63 @@ const CRY = {
   amber: hexc(0xffb347),
 };
 
+// Collision and line of sight over a walkable field sampled on a one-unit grid.
+// Shared by the cave and the hall so both collide the same way.
+function fieldFns(F, minX, minZ, W, H) {
+  const W1 = W + 1;
+  function fieldAt(x, z) {
+    const fx = x - minX,
+      fz = z - minZ;
+    if (fx < 0 || fz < 0 || fx >= W || fz >= H) return -3;
+    const i = fx | 0,
+      j = fz | 0,
+      u = fx - i,
+      v = fz - j,
+      k = j * W1 + i;
+    return lerp(lerp(F[k], F[k + 1], u), lerp(F[k + W1], F[k + W1 + 1], u), v);
+  }
+  function resolve(o, rad) {
+    for (let it = 0; it < 4; it++) {
+      const f = fieldAt(o.x, o.z);
+      if (f >= rad) return;
+      const e = 0.3;
+      let gx = fieldAt(o.x + e, o.z) - fieldAt(o.x - e, o.z),
+        gz = fieldAt(o.x, o.z + e) - fieldAt(o.x, o.z - e);
+      const l = Math.hypot(gx, gz);
+      if (l < 1e-5) return;
+      const push = Math.min(rad - f + 0.01, 0.6) * 0.9;
+      o.x += (gx / l) * push;
+      o.z += (gz / l) * push;
+    }
+  }
+  function los(ax, az, bx, bz) {
+    const d = Math.hypot(bx - ax, bz - az),
+      n = Math.max(1, Math.ceil(d / 0.8));
+    for (let i = 1; i < n; i++) {
+      const t = i / n;
+      if (fieldAt(lerp(ax, bx, t), lerp(az, bz, t)) < 0.05) return false;
+    }
+    return true;
+  }
+  return { fieldAt, resolve, los };
+}
+// Collects world triangles: positions as floats, colours square-root encoded
+// in bytes with the glow amount in the alpha byte.
+function meshSink() {
+  const P = [],
+    C = [];
+  const b8 = (v) => clamp(Math.sqrt(Math.max(v, 0)) * 255, 0, 255) | 0;
+  function tri(a, b, c, col, glow = 0) {
+    P.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+    const r = b8(col[0]),
+      g = b8(col[1]),
+      bl = b8(col[2]),
+      gl2 = (glow * 255) | 0;
+    C.push(r, g, bl, gl2, r, g, bl, gl2, r, g, bl, gl2);
+  }
+  return { P, C, tri };
+}
+
 function genWorld(seed) {
   const Rn = rng(seed);
   const GX = 4,
@@ -200,55 +257,11 @@ function genWorld(seed) {
           (vnoise(x * 0.63, z * 0.63) - 0.5) * 0.55,
       );
     }
-  function fieldAt(x, z) {
-    const fx = x - minX,
-      fz = z - minZ;
-    if (fx < 0 || fz < 0 || fx >= W || fz >= H) return -3;
-    const i = fx | 0,
-      j = fz | 0,
-      u = fx - i,
-      v = fz - j,
-      k = j * W1 + i;
-    return lerp(lerp(F[k], F[k + 1], u), lerp(F[k + W1], F[k + W1 + 1], u), v);
-  }
+  const { fieldAt, resolve, los } = fieldFns(F, minX, minZ, W, H);
   const ceilRaw = (f) => 3.1 + 1.45 * Math.sqrt(Math.max(f + 0.5, 0));
   const ceilAt = (x, z) => ceilRaw(fieldAt(x, z));
-  function resolve(o, rad) {
-    for (let it = 0; it < 4; it++) {
-      const f = fieldAt(o.x, o.z);
-      if (f >= rad) return;
-      const e = 0.3;
-      let gx = fieldAt(o.x + e, o.z) - fieldAt(o.x - e, o.z),
-        gz = fieldAt(o.x, o.z + e) - fieldAt(o.x, o.z - e);
-      const l = Math.hypot(gx, gz);
-      if (l < 1e-5) return;
-      const push = Math.min(rad - f + 0.01, 0.6) * 0.9;
-      o.x += (gx / l) * push;
-      o.z += (gz / l) * push;
-    }
-  }
-  function los(ax, az, bx, bz) {
-    const d = Math.hypot(bx - ax, bz - az),
-      n = Math.max(1, Math.ceil(d / 0.8));
-    for (let i = 1; i < n; i++) {
-      const t = i / n;
-      if (fieldAt(lerp(ax, bx, t), lerp(az, bz, t)) < 0.05) return false;
-    }
-    return true;
-  }
-
   // ---- mesh ----
-  const P = [],
-    C = [];
-  const b8 = (v) => clamp(Math.sqrt(Math.max(v, 0)) * 255, 0, 255) | 0;
-  function tri(a, b, c, col, glow = 0) {
-    P.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
-    const r = b8(col[0]),
-      g = b8(col[1]),
-      bl = b8(col[2]),
-      gl2 = (glow * 255) | 0;
-    C.push(r, g, bl, gl2, r, g, bl, gl2, r, g, bl, gl2);
-  }
+  const { P, C, tri } = meshSink();
   const mulc = (c, m) => [c[0] * m, c[1] * m, c[2] * m];
   function rock(x, z) {
     const t = smooth(vnoise(x * 0.018 + 3, z * 0.018 + 9) * 1.6 - 0.3);
