@@ -27,6 +27,7 @@ const HUD = (() => {
       stBar: $("stBar"),
       cross: $("cross"),
       hint: $("hint"),
+      fade: $("fade"),
     };
     const host = $("ebars");
     for (let i = 0; i < 8; i++) {
@@ -142,6 +143,7 @@ const HUD = (() => {
       p.hp < 30 && p.state !== "dead" ? 0.25 + 0.1 * Math.sin(G.t * 6) : 0;
     el.vigR.style.opacity = Math.max(G.flashRed, low).toFixed(2);
     el.vigW.style.opacity = (G.flashWhite * 0.35).toFixed(2);
+    el.fade.style.opacity = G.fade.toFixed(2);
     mapT -= dt;
     if (mapT <= 0) {
       mapT = 0.1;

@@ -128,20 +128,22 @@ const R = (() => {
   function mesh(pos, col) {
     const vao = gl.createVertexArray();
     gl.bindVertexArray(vao);
-    const b = gl.createBuffer();
+    const b = gl.createBuffer(),
+      bufs = [b];
     gl.bindBuffer(gl.ARRAY_BUFFER, b);
     gl.bufferData(gl.ARRAY_BUFFER, pos, gl.STATIC_DRAW);
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
     if (col) {
       const c = gl.createBuffer();
+      bufs.push(c);
       gl.bindBuffer(gl.ARRAY_BUFFER, c);
       gl.bufferData(gl.ARRAY_BUFFER, col, gl.STATIC_DRAW);
       gl.enableVertexAttribArray(1);
       gl.vertexAttribPointer(1, 4, gl.UNSIGNED_BYTE, true, 0, 0);
     }
     gl.bindVertexArray(null);
-    return { vao, n: pos.length / 3 };
+    return { vao, n: pos.length / 3, bufs };
   }
   function buildPrims() {
     const tri = [];
@@ -265,6 +267,11 @@ const R = (() => {
     return true;
   }
   function setWorld(pos, col) {
+    // worlds are swapped on every portal trip, so free the one being replaced
+    if (world) {
+      gl.deleteVertexArray(world.vao);
+      for (const b of world.bufs) gl.deleteBuffer(b);
+    }
     world = mesh(pos, col);
   }
   function resize() {

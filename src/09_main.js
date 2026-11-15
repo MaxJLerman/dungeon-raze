@@ -246,7 +246,7 @@ function boot() {
   }
   loadOpt();
   HUD.init();
-  newRun((Math.random() * 1e9) | 0 || 7);
+  enterHub();
   renderPicker();
   renderControls();
   // rebinding captures the next key or mouse button before anything else sees it
@@ -415,6 +415,9 @@ window.DF = {
   mouse,
   update,
   newRun,
+  enterHub,
+  enterCave,
+  startTrans,
   genHub,
   portalFront,
   GRADES,

@@ -26,6 +26,13 @@ const G = {
   msgs: [],
   noLock: false,
   seed: 1,
+  // "hub" is the hall, "cave" is a dungeon. grade is the portal last entered.
+  zone: "cave",
+  grade: null,
+  // a running portal transition { t, grade, swapped }, and the black overlay
+  // amount it drives, 0 to 1
+  trans: null,
+  fade: 0,
 };
 const keys = {},
   taps = {},
@@ -995,10 +1002,8 @@ function spawnEnemies() {
     G.enemies.push(makeEnemy(s));
   }
 }
-function newRun(seed) {
-  G.seed = seed;
-  G.world = genWorld(seed);
-  R.setWorld(G.world.pos, G.world.col);
+// Clears everything that must not carry from one world into the next.
+function resetRun() {
   G.bossDead = false;
   G.bossSeen = false;
   G.gate = null;
@@ -1012,13 +1017,78 @@ function newRun(seed) {
   G.ghosts = [];
   G.msgs = [];
   G.pending = [];
-  G.player = makePlayer(OPT.cls);
-  G.checkpoint = G.world.shrines[0];
-  spawnEnemies();
+  G.hitstop = 0;
+  G.slowT = 0;
+  G.shake = 0;
+  G.flashRed = 0;
+  G.flashWhite = 0;
+  G.trans = null;
+  G.fade = 0;
+}
+function snapCam() {
   cam.yaw = G.player.yaw;
   cam.pitch = 0.3;
   cam.px = G.player.x;
   cam.pz = G.player.z;
+}
+// Starts a cave from a seed. Tests call this directly.
+function newRun(seed) {
+  G.zone = "cave";
+  G.seed = seed;
+  G.world = genWorld(seed);
+  R.setWorld(G.world.pos, G.world.col);
+  resetRun();
+  G.player = makePlayer(OPT.cls);
+  G.checkpoint = G.world.shrines[0];
+  spawnEnemies();
+  snapCam();
+}
+// Puts the player in the hall. With fromGrade they step out of that grade's
+// portal, facing into the hall; otherwise they stand at the start point.
+function enterHub(fromGrade = null) {
+  G.zone = "hub";
+  G.world = genHub();
+  R.setWorld(G.world.pos, G.world.col);
+  resetRun();
+  const p = (G.player = makePlayer(OPT.cls));
+  const q = fromGrade && G.world.portals.find((o) => o.grade === fromGrade);
+  if (q) {
+    const f = portalFront(q, 3.5);
+    p.x = f.x;
+    p.z = f.z;
+    p.yaw = q.yaw;
+  }
+  G.checkpoint = null;
+  spawnEnemies();
+  snapCam();
+}
+// Enters a freshly generated cave through the portal of the given grade.
+function enterCave(gradeId, seed = (Math.random() * 1e9) | 0 || 7) {
+  G.grade = gradeId;
+  newRun(seed);
+  say(GRADES[gradeId].name.toUpperCase(), "big", 3);
+}
+// Begins the fade into a cave. A cut swaps at once, for reduced motion.
+function startTrans(gradeId, cut = RM) {
+  SFX.blink();
+  if (cut) enterCave(gradeId);
+  else G.trans = { t: 0, grade: gradeId, swapped: false };
+}
+const TRANS_HALF = 0.4;
+function transUpdate(dt) {
+  const tr = G.trans;
+  tr.t += dt;
+  if (!tr.swapped && tr.t >= TRANS_HALF) {
+    tr.swapped = true;
+    enterCave(tr.grade);
+    G.trans = tr;
+  }
+  G.fade =
+    tr.t < TRANS_HALF ? tr.t / TRANS_HALF : sat(2 - tr.t / TRANS_HALF);
+  if (tr.t >= TRANS_HALF * 2) {
+    G.trans = null;
+    G.fade = 0;
+  }
 }
 function respawn() {
   const p = G.player,
@@ -1265,7 +1335,7 @@ function hitEnemy(e, dmg, post, o = {}) {
 function hurtPlayer(dmg, e, atk) {
   const p = G.player,
     c = p.cls;
-  if (p.state === "dead" || G.state !== "play") return "none";
+  if (p.state === "dead" || G.state !== "play" || G.trans) return "none";
   if (p.state === "execute" || p.state === "blink") return "none";
   if (p.iframe > 0) {
     if (p.state === "dodge" && !p.pdUsed) {
@@ -2667,7 +2737,12 @@ function separate() {
 }
 function update(dt) {
   G.t += dt;
-  G.runT += dt;
+  // a portal transition freezes the world until it has finished
+  if (G.trans) {
+    transUpdate(dt);
+    return;
+  }
+  if (G.zone === "cave") G.runT += dt;
   playerUpdate(dt);
   for (const e of G.enemies) enemyUpdate(e, dt);
   projUpdate(dt);
@@ -2718,4 +2793,11 @@ function update(dt) {
       }
     }
   if (p.state === "dead" && p.t > 1.6 && G.state === "play") G.state = "dead";
+  // open portals in the hall: walking into one starts the trip
+  if (G.zone === "hub" && p.state !== "dead")
+    for (const q of w.portals)
+      if (q.open && Math.hypot(q.x - p.x, q.z - p.z) < 1.2) {
+        startTrans(q.grade);
+        break;
+      }
 }
