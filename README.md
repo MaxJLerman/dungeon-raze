@@ -90,7 +90,7 @@ earlier ones.
 
 The runner needs Playwright and a Chromium build:
 
-    npm install playwright && npx playwright install chromium
+    npm install && npx playwright install chromium
     node build.mjs
     SCRIPT=$PWD/tests/t6.mjs node test.mjs smoke
 
@@ -98,7 +98,8 @@ The runner needs Playwright and a Chromium build:
 the steps exported by the script named in `SCRIPT`. The mode decides where the
 steps start: `smoke` clicks play and enters a cave, `hub` clicks play and stays
 in the hall, and `title` stays on the title screen. A step that returns an
-object with `pass: false` fails the run, and the process exits with code 1.
+object with a `pass` value other than `true` fails the run, and the process
+exits with code 1.
 Screenshots go to `shots/`.
 
 | Script         | What it checks                                                                          |
