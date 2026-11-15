@@ -32,6 +32,8 @@ function show(state) {
       "   Deaths " +
       G.deaths;
   }
+  // there is nowhere to return to from the hall itself
+  $("btnBase").style.display = G.zone === "hub" ? "none" : "";
   if (state !== "play" && document.pointerLockElement === canvas)
     document.exitPointerLock();
   if (state !== "play") {
@@ -57,6 +59,11 @@ function play() {
   for (const k in taps) taps[k] = false;
   mouse.dx = mouse.dy = 0;
   HUD.hint();
+}
+// Leaves the cave for the hall, stepping out of the portal that was used.
+function toBase() {
+  enterHub(G.grade);
+  play();
 }
 function openMenu(which) {
   if (G.state !== "class" && G.state !== "controls") menuBack = G.state;
@@ -159,7 +166,11 @@ function camUpdate(dt) {
       );
       cam.pitch = damp(cam.pitch, p.lock.def.boss ? 0.2 : 0.28, 2.5, dt);
     }
-  } else if (G.state === "title") cam.yaw += dt * 0.07;
+  } else if (G.state === "title") {
+    // sway instead of orbiting, so the row of gates stays in view
+    G.t0 += dt;
+    cam.yaw = 0.45 * Math.sin(G.t0 * 0.1);
+  }
   mouse.dx = mouse.dy = 0;
   cam.px = damp(cam.px, p.x, 18, dt);
   cam.pz = damp(cam.pz, p.z, 18, dt);
@@ -357,12 +368,8 @@ function boot() {
     respawn();
     play();
   });
-  const fresh = () => {
-    newRun((Math.random() * 1e9) | 0 || 7);
-    play();
-  };
-  $("btnAgain").addEventListener("click", fresh);
-  $("btnNew").addEventListener("click", fresh);
+  for (const id of ["btnAgain", "btnBase", "btnDeadBase"])
+    $(id).addEventListener("click", toBase);
   for (const b of document.querySelectorAll("[data-open]"))
     b.addEventListener("click", () => openMenu(b.dataset.open));
   for (const b of document.querySelectorAll("[data-back]"))
@@ -431,6 +438,7 @@ window.DF = {
   OPT,
   setClass,
   setBind,
+  toBase,
   hitEnemy,
   hurtPlayer,
   makeEnemy,

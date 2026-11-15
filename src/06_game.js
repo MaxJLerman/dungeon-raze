@@ -33,6 +33,8 @@ const G = {
   // amount it drives, 0 to 1
   trans: null,
   fade: 0,
+  // clock for the title screen's camera sway
+  t0: 0,
 };
 const keys = {},
   taps = {},

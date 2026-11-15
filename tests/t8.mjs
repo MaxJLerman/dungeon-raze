@@ -10,6 +10,7 @@ const step = (name, body) => ({
 const place = (dist) => `p.x = d.x; p.z = d.z - ${dist}; p.yaw = 0; cam.yaw = 0; cam.px = p.x; cam.pz = p.z;`;
 const near = (dist) => `const d = G.enemies.find((e) => e.def.dummy), p = G.player; ${place(dist)}`;
 const reach = (id) => (id === "mage" || id === "ranger" ? 9 : 2.4);
+const shown = `const shown = (id) => { const e = document.getElementById(id); return !!e && getComputedStyle(e).display !== "none"; };`;
 export default [
   step("hub world", `
   const w = DF.genHub(), P = w.portals, f = (o) => w.fieldAt(o.x, o.z);
@@ -112,4 +113,27 @@ export default [
   step("class change in the hall", `
   DF.setClass("fighter"); DF.enterHub(); ${near(4)} const x = p.x, z = p.z; DF.setClass("mage"); DF.sim(0.5);
   return { pass: G.player.clsId === "mage" && Math.hypot(G.player.x - x, G.player.z - z) < 0.5 && G.enemies.length === 1 && !d.dead && G.zone === "hub" };`),
+  step("hall screens", `${shown}
+  const txt = (id) => document.getElementById(id).textContent.trim(), click = (id) => document.getElementById(id).click();
+  const c = { play: txt("btnPlay") === "Enter the hall" };
+  DF.enterHub(); DF.show("pause"); c.hubPause = !shown("btnBase");
+  DF.enterCave("E", 99); DF.show("pause"); c.cavePause = shown("btnBase") && txt("btnBase") === "Return to base";
+  click("btnBase"); c.fromPause = G.zone === "hub" && G.state === "play";
+  DF.enterCave("E", 99); G.player.state = "dead"; G.player.hp = 0; G.player.t = 2; DF.show("play"); DF.sim(0.1); DF.show("dead");
+  c.deadBtns = shown("btnRise") && txt("btnDeadBase") === "Return to base"; click("btnDeadBase");
+  c.fromDead = G.zone === "hub" && G.state === "play" && G.player.state === "free" && G.player.hp === G.player.maxHp;
+  DF.enterCave("E", 99); DF.show("win"); c.win = txt("btnAgain") === "Return to base"; click("btnAgain"); c.fromWin = G.zone === "hub" && G.state === "play";
+  const q = G.world.portals[0]; G.player.x = q.x; G.player.z = q.z - 8; G.player.yaw = 0; cam.yaw = 0; cam.pitch = 0.1; cam.px = q.x; cam.pz = q.z - 8;
+  return { pass: Object.values(c).every(Boolean), c };`),
+  { wait: 500 },
+  step("hall HUD", `${shown}
+  const L = [...document.querySelectorAll("#plabels > *")].filter((e) => getComputedStyle(e).display !== "none");
+  const open = L.find((e) => e.textContent.trim() === "E-rank gate"), sealed = L.find((e) => e.textContent.trim() === "D-rank gate · Sealed");
+  const c = { open: !!open && !open.classList.contains("sealed"), sealed: !!sealed && sealed.classList.contains("sealed"),
+    far: !L.some((e) => /^S-rank/.test(e.textContent.trim())), map: !shown("map"), fade: getComputedStyle(document.getElementById("fade")).opacity === "0" };
+  DF.enterCave("E", 99); return { pass: Object.values(c).every(Boolean), c };`),
+  { wait: 500 },
+  step("cave HUD", `${shown}
+  const L = [...document.querySelectorAll("#plabels > *")].filter((e) => getComputedStyle(e).display !== "none");
+  DF.enterHub(); return { pass: L.length === 0 && shown("map") };`),
 ];
