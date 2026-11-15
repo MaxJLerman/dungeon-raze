@@ -13,6 +13,12 @@ const STONE = hexc(0x8791a6),
   STONE_DARK = hexc(0x1b1e26),
   STONE_TRIM = hexc(0x596275);
 
+// How far the portal frames stand out from the wall behind them, how far
+// behind a portal's position its opening sits, and the radius of the circle
+// in that opening that takes the player through.
+const FRAME_DEPTH = 0.5,
+  PORTAL_IN = 0.75,
+  PORTAL_R = 1;
 // The point d metres in front of a portal, along the way it faces.
 function portalFront(q, d) {
   return { x: q.x + Math.sin(q.yaw) * d, z: q.z + Math.cos(q.yaw) * d };
@@ -51,7 +57,9 @@ function genHub() {
     for (let i = 0; i <= W; i++) {
       const x = i + minX,
         z = j + minZ;
-      let f = Math.min(HX - Math.abs(x), HZ - Math.abs(z));
+      // the north wall collides at the front face of the portal frames, so
+      // nothing can walk into the posts or the sealed brickwork
+      let f = Math.min(HX - Math.abs(x), HZ - FRAME_DEPTH - z, z + HZ);
       for (const o of pillars)
         f = Math.min(f, Math.hypot(x - o.x, z - o.z) - o.r);
       for (const o of braziers)
@@ -180,7 +188,7 @@ function genHub() {
   // one is left empty for the glowing surface; the rest are bricked up.
   for (const q of portals) {
     const g = GRADES[q.grade].col,
-      zf = HZ - 0.5;
+      zf = HZ - FRAME_DEPTH;
     box(q.x - 1.7, 0, zf, q.x - 1.2, 3.4, HZ, STONE_TRIM);
     box(q.x + 1.2, 0, zf, q.x + 1.7, 3.4, HZ, STONE_TRIM);
     box(q.x - 1.95, 3.4, zf - 0.1, q.x + 1.95, 4.0, HZ, sh(STONE_TRIM, 1.15));

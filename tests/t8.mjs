@@ -67,7 +67,7 @@ export default [
   DF.enterHub(); const p = G.player, q = G.world.portals[0];
   G.projs.push({ x: 0, y: 1, z: 0, vx: 0, vz: 1, life: 9, own: "p", dmg: 1, post: 0, kind: "arrow", c: [1, 1, 1] });
   G.pending.push({ x: q.x, z: q.z, r: 3, dmg: 1, post: 0, c: [1, 1, 1], t: 0.6 });
-  p.x = q.x; p.z = q.z - 0.5; DF.sim(2, () => G.zone === "hub" || !!G.trans);
+  p.x = q.x; p.z = q.z; DF.sim(2, () => G.zone === "hub" || !!G.trans);
   return { pass: G.zone === "cave" && G.projs.length === 0 && G.pending.length === 0 && G.rings.length === 0 };`),
   step("entering mid-dodge arrives free", `
   DF.enterHub(); const p = G.player, q = G.world.portals[0]; p.x = q.x; p.z = q.z - 2.5; p.yaw = 0; cam.yaw = 0;
@@ -140,4 +140,17 @@ export default [
   step("cave HUD", `${shown}
   const L = [...document.querySelectorAll("#plabels > *")].filter((e) => getComputedStyle(e).display !== "none");
   DF.enterHub(); return { pass: L.length === 0 && shown("map") };`),
+  step("portal fires inside the arch", `
+  DF.enterHub(); const p = G.player, q = G.world.portals[0];
+  p.x = q.x; p.z = q.z - 3; p.yaw = 0; cam.yaw = 0; DF.keys[DF.BIND.fwd] = true;
+  let at = null; DF.sim(4, () => { if (G.trans && at === null) at = G.player.z; return G.zone === "hub" || !!G.trans; });
+  DF.keys[DF.BIND.fwd] = false;
+  // the frame's front face is at z = 16.5; the fade must not start out on the floor ring
+  return { pass: G.zone === "cave" && at !== null && at >= 15.7, at };`),
+  step("frames are solid", `
+  DF.enterHub(); const p = G.player; cam.yaw = 0; DF.keys[DF.BIND.fwd] = true; const zs = [];
+  for (const q of G.world.portals.slice(1)) { p.x = q.x; p.z = q.z - 3; DF.sim(3); zs.push(+p.z.toFixed(2)); }
+  DF.keys[DF.BIND.fwd] = false;
+  // player radius is 0.45, so the body must stop at the frame's front face
+  return { pass: G.zone === "hub" && zs.every((z) => z <= 16.07), zs };`),
 ];

@@ -99,8 +99,9 @@ is what you need to change the code without breaking it.
   both collide and pack triangles the same way.
 - The hall is centred on the origin with north at +Z. The player starts facing
   +Z, so E, at +X, is on their left.
-- A portal is `{ x, z, yaw, grade, open }`. Walking within 1.2 of an open one
-  calls `startTrans`, which fades out, swaps the world at full black and fades
+- A portal is `{ x, z, yaw, grade, open }`. Its opening sits `PORTAL_IN`
+  behind that position, and stepping within `PORTAL_R` of the opening of an
+  open one calls `startTrans`, which fades out, swaps the world at full black and fades
   in. The transition is advanced by `update`, which does nothing else while
   `G.trans` is set, so `DF.sim` drives it in tests.
 - `resetRun()` clears everything that must not cross a world swap. Add new
@@ -234,8 +235,8 @@ The class picker and HUD read `CLASSES` and need no changes.
   not be the enemy the player meant.
 - In the controls menu, Escape cannot be bound, and the pause key in the
   no-pointer-lock fallback is fixed to P.
-- The portal frames' posts are not in the collision field, so the player can
-  clip a little way into them.
+- The hall's north wall collides at the front face of the portal frames, so
+  between two frames the player stops half a metre short of the wall.
 - "Return to base" abandons the cave without asking, because nothing is lost
   yet. It will need a confirmation once runs carry rewards.
 

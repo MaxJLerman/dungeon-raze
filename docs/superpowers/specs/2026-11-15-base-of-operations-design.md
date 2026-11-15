@@ -195,7 +195,9 @@ and "right" fall on follows the conventions in `CLAUDE.md`: with forward as
   a grade id and an `open` flag. There are six entries and only E is open.
 - Arch geometry, trigger, label and return point are all derived from the
   portal's entry, so no portal is special-cased.
-- The trigger is a circle about 1.2 m in radius centred in an open arch. It is
+- The trigger is a circle about 1 m in radius centred in an open arch's
+  opening, so the fade starts as the player steps into the frame. The frames
+  themselves are solid. It is
   checked only in the hall and only while the player is alive and no
   transition is running. Sealed portals have no trigger.
 - A label floats above each arch as a HUD element, positioned with

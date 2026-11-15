@@ -1111,6 +1111,7 @@ function transUpdate(dt) {
   if (!tr.swapped && tr.t >= TRANS_HALF) {
     tr.swapped = true;
     enterCave(tr.grade);
+    // entering the cave reset the transition; put it back to fade in
     G.trans = tr;
   }
   G.fade =
@@ -2856,11 +2857,15 @@ function update(dt) {
       }
     }
   if (p.state === "dead" && p.t > 1.6 && G.state === "play") G.state = "dead";
-  // open portals in the hall: walking into one starts the trip
+  // open portals in the hall: stepping into the arch starts the trip. This
+  // must stay the last thing update does, because a cut swaps the world here.
   if (G.zone === "hub" && p.state !== "dead")
-    for (const q of w.portals)
-      if (q.open && Math.hypot(q.x - p.x, q.z - p.z) < 1.2) {
+    for (const q of w.portals) {
+      if (!q.open) continue;
+      const c = portalFront(q, -PORTAL_IN);
+      if (Math.hypot(c.x - p.x, c.z - p.z) < PORTAL_R) {
         startTrans(q.grade);
         break;
       }
+    }
 }
