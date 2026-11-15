@@ -33,7 +33,7 @@ export default [
     reach: P.every((q) => f(q) >= 0.5) && front.every((q) => f(q) >= 2),
     sight: front.every((q) => w.los(w.spawn.x, w.spawn.z, q.x, q.z)),
     ceil: w.ceilAt(0, 0) === 7,
-    lights: w.lights.length === 5,
+    lights: w.lights.length === 6,
     names: DF.GRADES.E.name === "E-rank gate" && DF.GRADES.S.name === "S-rank gate",
   };
   return { pass: Object.values(c).every(Boolean), c };`),
@@ -131,6 +131,10 @@ export default [
   const open = L.find((e) => e.textContent.trim() === "E-rank gate"), sealed = L.find((e) => e.textContent.trim() === "D-rank gate · Sealed");
   const c = { open: !!open && !open.classList.contains("sealed"), sealed: !!sealed && sealed.classList.contains("sealed"),
     far: !L.some((e) => /^S-rank/.test(e.textContent.trim())), map: !shown("map"), fade: getComputedStyle(document.getElementById("fade")).opacity === "0" };
+  // the fade must cover the HUD too: probe which element is on top of the health bar
+  const fd = document.getElementById("fade"), r = document.getElementById("hpF").getBoundingClientRect();
+  const hud = document.getElementById("hud"); hud.style.pointerEvents = fd.style.pointerEvents = "auto";
+  c.fadeOnTop = document.elementFromPoint(r.left + 2, r.top + 2) === fd; hud.style.pointerEvents = fd.style.pointerEvents = "";
   DF.enterCave("E", 99); return { pass: Object.values(c).every(Boolean), c };`),
   { wait: 500 },
   step("cave HUD", `${shown}

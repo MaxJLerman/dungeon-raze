@@ -260,10 +260,12 @@ function genHub() {
         y: 2,
         z: q.z - 0.4,
         c: GRADES[q.grade].col,
-        i: 2.6,
+        i: 2.1,
         r: 15,
         ph: 0,
       });
+  // one cool wash so the row of sealed frames can be read from the start
+  lights.push({ x: -2, y: 4.6, z: 12.5, c: [0.62, 0.72, 0.95], i: 1.7, r: 22, ph: 2 });
 
   return {
     seed: 0,

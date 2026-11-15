@@ -173,7 +173,7 @@ git commit -m "test: hall mode and failing exit code in the runner"
 | Portals | index 0 to 5 are grades E, D, C, B, A, S at x = 11.5, 6.9, 2.3, -2.3, -6.9, -11.5; all at z = 16, `yaw = PI`. Each is `{ x, z, yaw, grade, open }`, with only E open |
 | Start | `spawn = { x: 0, z: -10 }`, `spawnYaw = 0` |
 | Dummy | `dummySpot = { x: -5, z: -1, yaw: PI }` |
-| Lights | four braziers in `CRY.amber` and the E portal in cyan, five in total, in the shape `{ x, y, z, c, i, r, ph }` |
+| Lights | four braziers in `CRY.amber`, the E portal in cyan and one cool wash over the sealed frames, six in total, in the shape `{ x, y, z, c, i, r, ph }` |
 | Halos | one per brazier flame, in the shape `{ x, y, z, c, s }` |
 | Empty in the hall | `nodes`, `edges`, `path`, `shrines`, `spawns` are `[]`; `start` and `boss` are `null` |
 
@@ -205,7 +205,7 @@ step("hub world", `
     reach: P.every((q) => f(q) >= 0.5) && front.every((q) => f(q) >= 2),
     sight: front.every((q) => w.los(w.spawn.x, w.spawn.z, q.x, q.z)),
     ceil: w.ceilAt(0, 0) === 7,
-    lights: w.lights.length === 5,
+    lights: w.lights.length === 6,
     names: DF.GRADES.E.name === "E-rank gate" && DF.GRADES.S.name === "S-rank gate",
   };
   return { pass: Object.values(c).every(Boolean), c };`),

@@ -153,7 +153,8 @@ constants.
 - **Sealed portals:** the other five arches are filled with dark stone, have
   no glow, cast no light and have no trigger.
 - **Lighting:** the renderer takes eight lights a frame. The hall uses the
-  player's lamp, four braziers and the open portal, which leaves two spare.
+  player's lamp, four braziers, the open portal and one cool wash over the
+  sealed frames, which leaves one spare for the brief flash effects.
 - **Player start:** on first arrival, on the centre line about 7 m in from the
   south wall, facing the row of arches. Any closer and the camera, which sits
   behind the player, would be pressed against the wall. On return from a cave, about 3.5 m in front of

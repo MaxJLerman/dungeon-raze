@@ -1022,6 +1022,14 @@ function spawnEnemies() {
     G.enemies.push(makeEnemy(s));
   }
 }
+// Air for each zone. The cave keeps the renderer's defaults; the hall is a
+// built room, so it is clearer and a little brighter.
+const ENV_CAVE = {
+    amb: R.env.amb.slice(),
+    fog: R.env.fog.slice(),
+    fogD: R.env.fogD,
+  },
+  ENV_HUB = { amb: [0.15, 0.17, 0.22], fog: [0.03, 0.035, 0.05], fogD: 0.014 };
 // Clears everything that must not carry from one world into the next.
 function resetRun() {
   G.bossDead = false;
@@ -1054,6 +1062,7 @@ function snapCam() {
 // Starts a cave from a seed. Tests call this directly.
 function newRun(seed) {
   G.zone = "cave";
+  Object.assign(R.env, ENV_CAVE);
   G.seed = seed;
   G.world = genWorld(seed);
   R.setWorld(G.world.pos, G.world.col);
@@ -1067,6 +1076,7 @@ function newRun(seed) {
 // portal, facing into the hall; otherwise they stand at the start point.
 function enterHub(fromGrade = null) {
   G.zone = "hub";
+  Object.assign(R.env, ENV_HUB);
   G.world = genHub();
   R.setWorld(G.world.pos, G.world.col);
   resetRun();

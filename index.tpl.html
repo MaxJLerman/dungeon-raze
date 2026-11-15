@@ -52,6 +52,8 @@
         inset: 0;
         pointer-events: none;
         display: none;
+        /* keeps the bars' own stacking inside the HUD, so #fade covers it all */
+        isolation: isolate;
       }
       #hud.show {
         display: block;
