@@ -268,6 +268,4 @@ The class picker and HUD read `CLASSES` and need no changes.
 
 ## Commit conventions
 
-Commits are authored and committed as `MaxJLerman
-<93211492+MaxJLerman@users.noreply.github.com>` (set in the repo's local git
-config). Do not add `Co-Authored-By: Claude` or `Claude-Session` trailers.
+Do not add `Co-Authored-By: Claude` or `Claude-Session` trailers.
