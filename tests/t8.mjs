@@ -5,6 +5,11 @@ const step = (name, body) => ({
   name,
   eval: `(() => { const { G, cam } = DF; G.manual = true; const K = (a) => { DF.taps[DF.BIND[a]] = true; }; ${body} })()`,
 });
+// place moves the player to stand `dist` metres in front of the dummy, facing
+// it. near also declares d and p, so use it once per step.
+const place = (dist) => `p.x = d.x; p.z = d.z - ${dist}; p.yaw = 0; cam.yaw = 0; cam.px = p.x; cam.pz = p.z;`;
+const near = (dist) => `const d = G.enemies.find((e) => e.def.dummy), p = G.player; ${place(dist)}`;
+const reach = (id) => (id === "mage" || id === "ranger" ? 9 : 2.4);
 export default [
   step("hub world", `
   const w = DF.genHub(), P = w.portals, f = (o) => w.fieldAt(o.x, o.z);
@@ -72,4 +77,39 @@ export default [
   step("run timer", `
   DF.enterHub(); DF.sim(1); const hub = G.runT; DF.enterCave("E", 99); DF.sim(1);
   return { pass: hub === 0 && G.runT > 0.9 };`),
+  step("the hall holds only the dummy", `
+  DF.enterHub(); const d = G.enemies[0], s = G.world.dummySpot;
+  return { pass: G.enemies.length === 1 && d.def.dummy === true && d.x === s.x && d.z === s.z && d.aware === true };`),
+  ...["assassin", "fighter", "tanker", "mage", "ranger"].map((id) =>
+    step("dummy survives " + id, `
+    DF.setClass("${id}"); DF.enterHub(); ${near(reach(id))}
+    K("lock"); DF.sim(0.1); const locked = p.lock === d; let hits = 0, f0 = d.flash;
+    for (let r = 0; r < 4; r++) {
+      DF.sim(1.5, (i) => { if (i % 12 === 0) K("light"); if (d.flash > f0) hits++; f0 = d.flash; });
+      p.stam = p.maxStam; p.state = "free"; K("heavy"); DF.sim(1.3);
+      p.state = "free"; K("tool"); DF.sim(1.0);
+      p.state = "free"; p.focus = 100; K("special"); DF.sim(2.0);
+      p.hp = p.maxHp; p.stam = p.maxStam; p.state = "free"; ${place(reach(id))}
+    }
+    const c = { locked, hits: hits >= 4, alive: !d.dead && d.state !== "dead" && G.enemies.includes(d), hp: d.hp === d.def.hp,
+      home: d.x === d.hx && d.z === d.hz && d.yaw === d.hyaw, nan: p.x === p.x, kills: G.kills === 0 };
+    return { pass: Object.values(c).every(Boolean), c, hits };`),
+  ),
+  step("dummy can be staggered and executed", `
+  DF.setClass("fighter"); DF.enterHub(); ${near(2.4)}
+  d.posture = d.def.posture - 1; K("light"); DF.sim(0.8, () => d.state !== "stagger"); const stag = d.state === "stagger";
+  p.state = "free"; p.hp = 50; K("light"); DF.sim(0.2); const exec = p.state === "execute"; DF.sim(4);
+  const c = { stag, exec, alive: !d.dead && G.enemies.includes(d), idle: d.state === "idle", post: d.posture === 0, hp: d.hp === d.def.hp, healed: p.hp > 50 };
+  return { pass: Object.values(c).every(Boolean), c };`),
+  step("stagger ends on its own", `
+  DF.setClass("fighter"); DF.enterHub(); ${near(6)} d.posture = d.def.posture; DF.hitEnemy(d, 1, 1, { src: "melee" });
+  const stag = d.state === "stagger"; DF.sim(4); return { pass: stag && d.state === "idle" && d.posture === 0 };`),
+  step("hall refills", `
+  DF.setClass("fighter"); DF.enterHub(); let p = G.player; p.focus = 0; p.tool = 0; DF.sim(4);
+  const hub = p.focus >= 99 && p.tool >= Math.min(2, p.cls.tool.max);
+  DF.enterCave("E", 99); p = G.player; p.focus = 0; p.tool = 0; p.restCD = 99; DF.sim(4);
+  return { pass: hub && p.focus < 50 && p.tool === 0 };`),
+  step("class change in the hall", `
+  DF.setClass("fighter"); DF.enterHub(); ${near(4)} const x = p.x, z = p.z; DF.setClass("mage"); DF.sim(0.5);
+  return { pass: G.player.clsId === "mage" && Math.hypot(G.player.x - x, G.player.z - z) < 0.5 && G.enemies.length === 1 && !d.dead && G.zone === "hub" };`),
 ];

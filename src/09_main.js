@@ -433,6 +433,7 @@ window.DF = {
   setBind,
   hitEnemy,
   hurtPlayer,
+  makeEnemy,
   openMenu,
   sim(sec, each) {
     const n = Math.round(sec * 60);

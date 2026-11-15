@@ -953,6 +953,23 @@ function setClass(id) {
     parryWin: c.parry,
   });
 }
+// The training dummy in the hall. The dummy flag makes it inert and unkillable:
+// see makeEnemy, enemyUpdate, hitEnemy, kill and the execute case.
+EDEF.dummy = {
+  name: "Training dummy",
+  dummy: true,
+  hp: 100,
+  posture: 60,
+  speed: 1,
+  turn: 0,
+  r: 0.5,
+  sight: 0,
+  cd: 9,
+  poise: 2,
+  hunch: 0,
+  top: 1.9,
+  atks: {},
+};
 function makeEnemy(s) {
   const d = EDEF[s.type];
   return {
@@ -972,7 +989,8 @@ function makeEnemy(s) {
     postT: 9,
     state: "idle",
     t: 0,
-    aware: false,
+    // a dummy counts as aware so it cannot be ambushed and its bar shows
+    aware: !!d.dummy,
     alertIn: -1,
     cd: 0.4 + Math.random() * 0.8,
     atk: null,
@@ -1195,6 +1213,7 @@ function stagger(e) {
   sparks(e.x, e.def.top * 0.6, e.z, 14, AMBER, 5);
 }
 function kill(e) {
+  if (e.def.dummy) return;
   e.dead = true;
   e.state = "dead";
   e.t = 0;
@@ -1255,6 +1274,7 @@ function hitEnemy(e, dmg, post, o = {}) {
     p.hp = Math.min(p.maxHp, p.hp + dmg * 0.15);
   }
   e.hp -= dmg * mult;
+  if (e.def.dummy) e.hp = e.def.hp;
   e.flash = 1;
   alertE(e, true);
   if (e.state !== "stagger") {
@@ -1803,6 +1823,15 @@ function playerUpdate(dt) {
   p.toolCD -= dt;
   p.parryCD -= dt;
   p.restCD -= dt;
+  if (G.zone === "hub") {
+    // the hall is for practice: focus and tool charges come back on their own
+    p.focus = Math.min(100, p.focus + 25 * dt);
+    p.refillT = (p.refillT || 0) + dt;
+    if (p.refillT >= 1.5) {
+      p.refillT = 0;
+      p.tool = Math.min(c.tool.max, p.tool + 1);
+    }
+  }
   if (p.throwT > 0) p.throwT -= dt;
   if (p.state === "dead") {
     p.t += dt;
@@ -2191,6 +2220,12 @@ function playerUpdate(dt) {
             e.t = 0;
             e.dur = 1.0;
           }
+        } else if (e.def.dummy) {
+          // the dummy takes the execution and stands back up
+          e.state = "idle";
+          e.t = 0;
+          e.posture = 0;
+          G.hitstop = 0.13;
         } else {
           e.hp = 0;
           G.hitstop = 0.13;
@@ -2334,6 +2369,22 @@ function enemyUpdate(e, dt) {
     d = e.def;
   e.flash = Math.max(0, e.flash - dt * 6);
   e.speed = 0;
+  if (d.dummy) {
+    // pinned to its spot: no senses, no movement, no attacks
+    e.x = e.hx;
+    e.z = e.hz;
+    e.yaw = e.hyaw;
+    e.kx = e.kz = 0;
+    e.postT += dt;
+    if (e.state === "stagger") {
+      e.t += dt;
+      if (e.t > e.dur) {
+        e.state = "idle";
+        e.posture = 0;
+      }
+    } else if (e.postT > 2.5) e.posture = Math.max(0, e.posture - 14 * dt);
+    return;
+  }
   if (e.state === "dead") {
     e.t += dt;
     if (e.t > 2.4) e.gone = true;

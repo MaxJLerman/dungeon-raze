@@ -231,6 +231,22 @@ function poseEnemy(e) {
   f.root.p[1] = e.y;
   f.root.p[2] = e.z;
   f.root.r[1] = e.yaw;
+  if (d.dummy) {
+    // arms out as a crossbar; rocks back when struck, slumps when staggered
+    f.armR.r[2] = -1.45;
+    f.armL.r[2] = 1.45;
+    const stag = e.state === "stagger",
+      pu = stag ? 0.5 + 0.5 * Math.sin(G.t * 10) : 0;
+    f.chest.r[0] = stag ? 0.5 + Math.sin(G.t * 6) * 0.04 : -0.35 * e.flash;
+    f.headN.r[0] = stag ? 0.5 : 0;
+    setEm(
+      f,
+      (stag ? 0.5 + 0.3 * pu : 0) + e.flash * 0.9,
+      (stag ? 0.3 + 0.15 * pu : 0) + e.flash * 0.85,
+      e.flash * 0.7,
+    );
+    return;
+  }
   let tr = 0,
     tg = 0,
     tb = 0;
@@ -417,7 +433,7 @@ function render() {
     if (e.dead && e.t > 0.6) continue;
     const ey = f.eye,
       pu = e.aware ? 1 : 0.45;
-    for (const s of [-1, 1]) {
+    for (const s of e.def.dummy ? [] : [-1, 1]) {
       const q = R.nodePos(f.headN, s * 0.075, 0.03, 0.15);
       R.sprite(q[0], q[1], q[2], 0.11 * sc, ey[0], ey[1], ey[2], 1.2 * pu);
     }

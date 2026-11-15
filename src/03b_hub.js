@@ -286,7 +286,15 @@ function genHub() {
     lights,
     halos,
     shrines: [],
-    spawns: [],
+    spawns: [
+      {
+        type: "dummy",
+        x: dummySpot.x,
+        z: dummySpot.z,
+        yaw: dummySpot.yaw,
+        node: -1,
+      },
+    ],
     spawn,
     spawnYaw: 0,
     portals,

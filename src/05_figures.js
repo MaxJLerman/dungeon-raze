@@ -236,6 +236,29 @@ function makeEnemyFig(type) {
     f.chest.add(part("box", C_(0x767b86), 0.95, 0.2, 0.52, 0, 0.66, 0));
     f.rim = [0.35, 0.2, 0.1];
     f.eye = [1, 0.4, 0.15];
+  } else if (type === "dummy") {
+    // a practice post: stake, padded torso, crossbar arms and a sack head
+    const wood = C_(0x6b4a2e);
+    f = makeFigure({
+      leg: 0.95,
+      w: 0.46,
+      th: 0.66,
+      d: 0.32,
+      hs: 0.3,
+      aw: 0.1,
+      al: 0.56,
+      body: C_(0xb59a6a),
+      trim: C_(0x4d3b27),
+      skin: C_(0xc9b58a),
+      limb: wood,
+    });
+    f.legR.vis = f.legL.vis = false;
+    f.root.add(part("box", wood, 0.15, 1.05, 0.15, 0, 0.525, 0));
+    f.root.add(part("box", wood, 0.9, 0.1, 0.16, 0, 0.05, 0));
+    f.root.add(part("box", wood, 0.16, 0.1, 0.9, 0, 0.05, 0));
+    f.chest.add(part("oct", C_(0xa8402e), 0.24, 0.24, 0.06, 0, 0.36, 0.17));
+    f.rim = [0.3, 0.24, 0.14];
+    f.eye = [0, 0, 0];
   } else if (type === "spit") {
     f = makeFigure({
       sc: 0.95,
