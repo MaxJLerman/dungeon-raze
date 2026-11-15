@@ -16,11 +16,15 @@ is what you need to change the code without breaking it.
   dropped by the owner. Do not reintroduce it unless asked.
 - The intended next stage is to widen the game with several agents working in
   parallel, once the owner says the combat feels right.
+- The game starts in a base of operations: a built hall with six portal frames
+  graded E, D, C, B, A and S, and a training dummy. Only E is open and it leads
+  to the cave. Grades carry no difficulty or rewards yet; the owner wants
+  enemy difficulty and kill rewards to scale by grade, with S the hardest.
 
 ## Rules of the build
 
 - `node build.mjs` after every source change. The page that runs is
-  `dist/index.html`, and it is committed so the repo is playable as cloned.
+  `dist/index.html`, and it is not committed.
 - All `src/*.js` files are concatenated into one function scope. There are no
   imports or exports. Declare a name once across the whole of `src/`.
 - No dependencies, no network requests at run time except Google Fonts. The
@@ -80,6 +84,31 @@ is what you need to change the code without breaking it.
 - The ceiling height at a point is `world.ceilAt(x, z)`.
 - Spawn packs are chosen by a chamber's distance from the start, in `PACKS`.
 
+### Zones (`06_game.js`, `03b_hub.js`)
+
+- `G.zone` is `"hub"` for the hall or `"cave"`. `G.world` holds whichever
+  world is active, and nothing else is kept loaded.
+- `enterHub(fromGrade)` builds the hall and puts the player at the start, or
+  in front of that grade's portal. `enterCave(gradeId, seed)` records
+  `G.grade` and calls `newRun(seed)`. `newRun` still means "start a cave from
+  this seed" and is what the cave tests call.
+- `genHub()` returns every field `genWorld` returns, with empty arrays where a
+  field has no meaning, plus `hub: true`, `portals` and `dummySpot`. Keep it
+  that way: code that reads `G.world` has no checks for the hall.
+- The hall and the cave share `fieldFns` and `meshSink` in `03_world.js`, so
+  both collide and pack triangles the same way.
+- The hall is centred on the origin with north at +Z. The player starts facing
+  +Z, so E, at +X, is on their left.
+- A portal is `{ x, z, yaw, grade, open }`. Walking within 1.2 of an open one
+  calls `startTrans`, which fades out, swaps the world at full black and fades
+  in. The transition is advanced by `update`, which does nothing else while
+  `G.trans` is set, so `DF.sim` drives it in tests.
+- `resetRun()` clears everything that must not cross a world swap. Add new
+  per-run state there.
+- `R.env` (ambient and fog) is set per zone from `ENV_HUB` and `ENV_CAVE`.
+- In the hall, focus and tool charges refill on their own, the minimap is
+  hidden and the run timer does not advance.
+
 ### Game state and time (`06_game.js`, `09_main.js`)
 
 - `G` is the single state object. `G.state` is one of `title`, `play`,
@@ -124,6 +153,11 @@ is what you need to change the code without breaking it.
   the enemy to an execution.
 - Enemies steer straight at the player and slide along walls. There is no
   pathfinding.
+- `EDEF.dummy` is the training dummy. Its `dummy: true` flag is honoured in
+  five places: `makeEnemy` (always aware, so no ambush bonus and its bar
+  shows), `enemyUpdate` (pinned in place, no AI), `hitEnemy` (health restored
+  after every hit), `kill` (refuses) and the `execute` case of `playerUpdate`
+  (stands back up). Any new way of killing an enemy must respect it.
 
 ## Recipes
 
@@ -159,6 +193,15 @@ The class picker and HUD read `CLASSES` and need no changes.
 4. An attack with special movement needs a `kind` and handling in the `wind`
    and `act` cases of `enemyUpdate`. See `slam`, `charge`, `shot`, `volley`.
 
+### Open another portal
+
+1. Set `open: true` on its entry in `portals` in `genHub`. The frame, glow,
+   trigger, label and return point all follow from the entry.
+2. Give `enterCave` something to do with the grade, for example pass settings
+   to `genWorld` and scale `EDEF` values. Today the grade only names the cave.
+3. Extend `tests/t8.mjs`: the "sealed frames do nothing" step assumes only
+   the first portal is open.
+
 ## Testing
 
 - `window.DF` exposes the internals to tests. Set `DF.G.manual = true` to stop
@@ -173,6 +216,11 @@ The class picker and HUD read `CLASSES` and need no changes.
   drive the simulation directly instead of waiting in real time.
 - Run `tests/t5.mjs` after any change to cave generation and `tests/t6.mjs`
   after any change to classes or combat rules.
+- Run `tests/t8.mjs` after any change to zones, portals, the hall or the
+  dummy, and `tests/t9.mjs` to look at the hall. Both use the `hub` mode:
+  `SCRIPT=$PWD/tests/t8.mjs node test.mjs hub`. The cave scripts use `smoke`,
+  which enters a cave after clicking play.
+- A test step that returns `{ pass: false }` fails the run with exit code 1.
 - Screenshots are the only check on how things look. Take them; do not assume.
 
 ## Known problems
@@ -186,16 +234,23 @@ The class picker and HUD read `CLASSES` and need no changes.
   not be the enemy the player meant.
 - In the controls menu, Escape cannot be bound, and the pause key in the
   no-pointer-lock fallback is fixed to P.
+- The portal frames' posts are not in the collision field, so the player can
+  clip a little way into them.
+- "Return to base" abandons the cave without asking, because nothing is lost
+  yet. It will need a confirmation once runs carry rewards.
 
 ## Backlog, roughly in the order discussed
 
 1. Tune feel from the owner's playtest: timing windows, sensitivity, difficulty.
-2. Loot, inventory and an extraction loop. The owner asked for these early on
+2. Give the portal grades meaning: enemy difficulty and kill rewards per
+   grade, then open D to S. Revisit whether dying should send the player back
+   to the base once there are rewards to lose.
+3. Loot, inventory and an extraction loop. The owner asked for these early on
    and they were set aside to get combat playable first.
-3. More enemy variety and a second boss.
-4. Gamepad support.
-5. A harsher surface area or city zone, if the owner wants to leave the caves.
-6. Split the work into lanes for parallel agents: combat and camera, enemies,
+4. More enemy variety and a second boss.
+5. Gamepad support.
+6. A harsher surface area or city zone, if the owner wants to leave the caves.
+7. Split the work into lanes for parallel agents: combat and camera, enemies,
    world generation, loot and progression, rendering and effects, HUD, tests.
    Agree shared data shapes (`CLASSES`, `MOVES`, `EDEF`) before fanning out.
 

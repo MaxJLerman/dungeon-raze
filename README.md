@@ -1,17 +1,19 @@
 # DungeonRaze
 
 A third-person melee and ranged combat prototype that runs in a desktop browser.
-You pick one of five classes, fight through a procedurally generated cave of
-looping tunnels, kill the boss in the deepest chamber and leave through the gate
-it opens.
+You pick one of five classes and start in a base of operations: a hall with six
+portal frames graded E to S and a training dummy. The open portal leads to a
+procedurally generated cave of looping tunnels, where you kill the boss in the
+deepest chamber and return to the hall through the gate it opens.
 
 This is a spike: it exists to find out whether the combat feels good. It is not
 a finished game, and nothing in it is balanced by hand yet.
 
 ## Play
 
-Open `dist/index.html` in a recent desktop Chrome, Edge, Firefox or Safari. It
-runs straight from disk with no server. It needs a keyboard and a mouse.
+Run `node build.mjs`, then open `dist/index.html` in a recent desktop Chrome,
+Edge, Firefox or Safari. It runs straight from disk with no server. It needs a
+keyboard and a mouse.
 
 ## Technology
 
@@ -51,6 +53,7 @@ earlier ones.
 | `src/01_math.js`     | Math helpers, seeded random numbers, value noise, 4x4 matrices                              |
 | `src/02_gl.js`       | Renderer `R`: lit pass, additive effects pass, scene nodes `Nd`, primitive meshes           |
 | `src/03_world.js`    | `genWorld(seed)`: cave graph, walkable field, collision, world mesh, lights, spawns         |
+| `src/03b_hub.js`     | `genHub()`: the hall, its portal frames and the portal grades `GRADES`                      |
 | `src/04_audio.js`    | `SFX`: synthesized sound effects and ambient drone                                          |
 | `src/05_figures.js`  | Player and enemy figures, base pose, enemy attack poses                                     |
 | `src/06_game.js`     | Game state `G`, key bindings, classes, moves, combat rules, enemy AI, projectiles           |
@@ -70,6 +73,14 @@ earlier ones.
 - **Enemies:** Husk (fast melee), Brute (armoured, has an unblockable slam),
   Spitter (ranged, its shots can be parried back), and the Ossuary Warden boss
   with two phases.
+- **Base of operations:** a built hall where every session starts. Six portal
+  frames stand along the far wall in rank order, E to S. Only E is open; the
+  rest are sealed until grades are given difficulty and rewards. Walking into
+  the open portal starts a new cave. The pause, death and win screens return
+  you to the hall.
+- **Training dummy:** stands in the hall, takes every attack and ability, can
+  be staggered and executed, and never dies. Focus and tool charges refill on
+  their own in the hall.
 - **Cave:** sixteen chambers on a jittered grid joined by winding tunnels, with
   extra tunnels so routes loop. A new layout every run. Shrines are checkpoints.
 - **Menus:** class picker, controls menu with rebinding, mouse sensitivity and
@@ -84,8 +95,11 @@ The runner needs Playwright and a Chromium build:
     SCRIPT=$PWD/tests/t6.mjs node test.mjs smoke
 
 `test.mjs` opens the built page, reports any console or page errors, and runs
-the steps exported by the script named in `SCRIPT`. Pass `title` instead of
-`smoke` to skip clicking into the game. Screenshots go to `shots/`.
+the steps exported by the script named in `SCRIPT`. The mode decides where the
+steps start: `smoke` clicks play and enters a cave, `hub` clicks play and stays
+in the hall, and `title` stays on the title screen. A step that returns an
+object with `pass: false` fails the run, and the process exits with code 1.
+Screenshots go to `shots/`.
 
 | Script         | What it checks                                                                          |
 | -------------- | --------------------------------------------------------------------------------------- |
@@ -95,6 +109,8 @@ the steps exported by the script named in `SCRIPT`. Pass `title` instead of
 | `tests/t5.mjs` | Forty generated caves for blocked tunnels and bad spawn points                          |
 | `tests/t6.mjs` | Every class: chain, heavy, tool, ability, rebinding, bot run per class                  |
 | `tests/t7.mjs` | Screenshots of the menus and each class                                                 |
+| `tests/t8.mjs` | The hall, portals, transition, training dummy and return to base. Run in `hub` mode     |
+| `tests/t9.mjs` | Screenshots of the hall, portal, dummy and the arrival in the cave. Run in `hub` mode   |
 
 `tests/t1.mjs` is an early real-time script kept for reference; the others drive
 the simulation directly and are the ones to copy.
