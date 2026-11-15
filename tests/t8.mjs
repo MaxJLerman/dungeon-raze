@@ -54,7 +54,7 @@ export default [
   DF.keys[DF.BIND.fwd] = false; return { pass: ok };`),
   step("return to base", `
   DF.enterCave("E", 99); DF.enterHub(G.grade); const p = G.player, q = G.world.portals[0];
-  const at = Math.hypot(p.x - q.x, p.z - (q.z - 3.5)) < 0.01 && Math.cos(p.yaw) < -0.99;
+  const at = Math.hypot(p.x - q.x, p.z - (q.z - 3.5)) < 0.01 && Math.cos(p.yaw) < -0.5;
   DF.sim(2); return { pass: at && G.zone === "hub" && !G.trans && G.checkpoint === null };`),
   step("round trips stay fresh", `
   let ok = true; const seeds = new Set();
@@ -84,17 +84,22 @@ export default [
   ...["assassin", "fighter", "tanker", "mage", "ranger"].map((id) =>
     step("dummy survives " + id, `
     DF.setClass("${id}"); DF.enterHub(); ${near(reach(id))}
-    K("lock"); DF.sim(0.1); const locked = p.lock === d; let hits = 0, f0 = d.flash;
-    for (let r = 0; r < 4; r++) {
-      DF.sim(1.5, (i) => { if (i % 12 === 0) K("light"); if (d.flash > f0) hits++; f0 = d.flash; });
-      p.stam = p.maxStam; p.state = "free"; K("heavy"); DF.sim(1.3);
-      p.state = "free"; K("tool"); DF.sim(1.0);
-      p.state = "free"; p.focus = 100; K("special"); DF.sim(2.0);
-      p.hp = p.maxHp; p.stam = p.maxStam; p.state = "free"; ${place(reach(id))}
+    K("lock"); DF.sim(0.1); const locked = p.lock === d;
+    // hits are counted by the dummy's flash rising; settle lets stragglers land uncounted
+    const count = (sec, each) => { let n = 0, f0 = d.flash; DF.sim(sec, (i) => { if (each) each(i); if (d.flash > f0) n++; f0 = d.flash; }); return n; };
+    const ready = (dist) => { DF.sim(0.6); p.hp = p.maxHp; p.stam = p.maxStam; p.state = "free"; p.buf = null; p.x = d.x; p.z = d.z - dist; p.yaw = 0; cam.yaw = 0; cam.px = p.x; cam.pz = p.z; };
+    const n = { light: 0, heavy: 0, tool: 0, special: 0 }; let buffed = false;
+    for (let r = 0; r < 3; r++) {
+      ready(${reach(id)}); n.light += count(1.5, (i) => { if (i % 12 === 0) K("light"); });
+      ready(${reach(id)}); K("heavy"); n.heavy += count(1.5);
+      ready(${id === "mage" ? 4 : reach(id)}); p.tool = p.cls.tool.max; K("tool"); n.tool += count(1.5);
+      ready(${reach(id)}); p.focus = 100; K("special"); n.special += count(2.2, () => { buffed = buffed || !!p.buff; });
     }
-    const c = { locked, hits: hits >= 4, alive: !d.dead && d.state !== "dead" && G.enemies.includes(d), hp: d.hp === d.def.hp,
+    const selfBuff = ${id === "fighter" || id === "tanker"};
+    const c = { locked, light: n.light >= 3, heavy: n.heavy >= 1, tool: n.tool >= 1, special: selfBuff ? buffed : n.special >= 1,
+      alive: !d.dead && d.state !== "dead" && G.enemies.includes(d), hp: d.hp === d.def.hp,
       home: d.x === d.hx && d.z === d.hz && d.yaw === d.hyaw, nan: p.x === p.x, kills: G.kills === 0 };
-    return { pass: Object.values(c).every(Boolean), c, hits };`),
+    return { pass: Object.values(c).every(Boolean), c, n };`),
   ),
   step("dummy can be staggered and executed", `
   DF.setClass("fighter"); DF.enterHub(); ${near(2.4)}
@@ -153,4 +158,53 @@ export default [
   DF.keys[DF.BIND.fwd] = false;
   // player radius is 0.45, so the body must stop at the frame's front face
   return { pass: G.zone === "hub" && zs.every((z) => z <= 16.07), zs };`),
+  step("respawn in the hall is safe", `
+  DF.enterHub(); let threw = false; try { DF.respawn(); } catch (e) { threw = true; }
+  const p = G.player; return { pass: !threw && G.zone === "hub" && p.state === "free" && p.hp === p.maxHp && G.enemies.length === 1 };`),
+  step("return view is clear", `
+  const blocked = [];
+  for (const g of Object.keys(DF.GRADES)) { DF.enterHub(g); const p = G.player;
+    // nothing solid within 10 m straight ahead, and the view is into the hall
+    if (!G.world.los(p.x, p.z, p.x + Math.sin(p.yaw) * 10, p.z + Math.cos(p.yaw) * 10) || Math.cos(p.yaw) > -0.5 || Math.abs(cam.yaw - p.yaw) > 1e-9) blocked.push(g); }
+  return { pass: blocked.length === 0, blocked };`),
+  step("round trips through the portal and the menu", `
+  let ok = true; DF.enterHub();
+  for (let i = 0; i < 3; i++) { const p = G.player, q = G.world.portals[0]; p.x = q.x; p.z = q.z - 2; p.yaw = 0; cam.yaw = 0;
+    DF.keys[DF.BIND.fwd] = true; DF.sim(4, () => G.zone === "hub" || !!G.trans); DF.keys[DF.BIND.fwd] = false;
+    const b = G.enemies.find((e) => e.type === "warden"); ok = ok && G.zone === "cave" && !!b && !b.dead && !G.gate;
+    DF.hitEnemy(b, 1e6, 0, {}); ok = ok && G.bossDead; DF.toBase();
+    ok = ok && G.zone === "hub" && G.state === "play" && !G.gate && !G.bossDead && G.enemies.length === 1 && G.player.hp === G.player.maxHp; }
+  return { pass: ok };`),
+  step("entering mid-attack arrives free", `
+  DF.setClass("fighter"); DF.enterHub(); const p = G.player, q = G.world.portals[0]; p.x = q.x; p.z = q.z - 1.6; p.yaw = 0; cam.yaw = 0;
+  DF.keys[DF.BIND.fwd] = true; K("light"); let mid = false;
+  DF.sim(4, () => { if (G.zone === "hub" && G.trans && p.state === "attack") mid = true; return G.zone === "hub" || !!G.trans; }); DF.keys[DF.BIND.fwd] = false;
+  const P = G.player; return { pass: G.zone === "cave" && P.state === "free" && P.buf === null, mid };`),
+  step("a moved portal takes its frame with it", `
+  // one open gate on the east wall, facing west into the hall
+  const w = DF.genHub([{ x: 14, z: 0, yaw: -Math.PI / 2, grade: "E", open: true }]), v = w.pos;
+  let frame = false, north = false;
+  for (let i = 0; i < v.length; i += 3) {
+    if (Math.abs(v[i] - 14.5) < 0.01 && Math.abs(v[i + 2]) < 2 && v[i + 1] > 3) frame = true;
+    if (Math.abs(v[i + 2] - 16.5) < 0.01 && v[i + 1] > 3 && v[i + 1] < 4.1) north = true;
+  }
+  const f = DF.portalFront(w.portals[0], 3.5);
+  return { pass: frame && !north && w.fieldAt(14.45, 0) < 0.1 && w.fieldAt(0, 16.4) > 0.5 && Math.abs(f.x - 10.5) < 0.01 && w.lights.length === 6, frame, north };`),
+  step("zone air is not shared", `
+  DF.enterHub(); const a = DF.R.env.amb[0]; DF.R.env.amb[0] = 9; DF.enterHub(); const hub = DF.R.env.amb[0];
+  DF.enterCave("E", 99); const c = DF.R.env.fogD; DF.R.env.fog[0] = 9; DF.enterCave("E", 99); const cave = DF.R.env.fog[0]; DF.enterHub();
+  return { pass: hub === a && cave !== 9 && c === 0.03, hub, cave };`),
+  step("pause hides the fade", `
+  DF.enterHub(); G.trans = { t: 0.2, grade: "E", swapped: false }; G.fade = 0.5; DF.show("pause"); return { pass: true };`),
+  { wait: 400 },
+  step("pause hides the fade, checked", `
+  const fd = document.getElementById("fade"), hud = document.getElementById("hud"), hp = document.getElementById("hpF"), r = hp.getBoundingClientRect();
+  const hidden = getComputedStyle(fd).opacity === "0";
+  // as before this work, the health fill sits above the pause menu
+  hud.style.pointerEvents = "auto"; const top = document.elementFromPoint(r.left + 2, r.top + 2); hud.style.pointerEvents = "";
+  G.trans = null; G.fade = 0; DF.show("title"); window.__t0 = G.t;
+  return { pass: hidden && top === hp, hidden, top: top && top.id };`),
+  { wait: 500 },
+  step("the title backdrop animates", `
+  const moved = G.t - window.__t0; DF.enterHub(); DF.show("play"); return { pass: moved > 0.2, moved };`),
 ];

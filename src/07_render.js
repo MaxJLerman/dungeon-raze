@@ -221,7 +221,30 @@ function posePlayer(p) {
     }
   }
 }
+// The dummy is a post: arms out as a crossbar, rocks back when struck and
+// slumps while staggered. It has no walk, attack or death pose.
+function poseDummy(e) {
+  const f = e.fig;
+  poseBase(f, 0, 0, 0);
+  f.root.p[0] = e.x;
+  f.root.p[1] = e.y;
+  f.root.p[2] = e.z;
+  f.root.r[1] = e.yaw;
+  f.armR.r[2] = -1.45;
+  f.armL.r[2] = 1.45;
+  const stag = e.state === "stagger",
+    pu = stag ? 0.5 + 0.5 * Math.sin(G.t * 10) : 0;
+  f.chest.r[0] = stag ? 0.5 + Math.sin(G.t * 6) * 0.04 : -0.35 * e.flash;
+  f.headN.r[0] = stag ? 0.5 : 0;
+  setEm(
+    f,
+    (stag ? 0.5 + 0.3 * pu : 0) + e.flash * 0.9,
+    (stag ? 0.3 + 0.15 * pu : 0) + e.flash * 0.85,
+    e.flash * 0.7,
+  );
+}
 function poseEnemy(e) {
+  if (e.def.dummy) return poseDummy(e);
   const f = e.fig,
     d = e.def,
     o = f.o,
@@ -231,22 +254,6 @@ function poseEnemy(e) {
   f.root.p[1] = e.y;
   f.root.p[2] = e.z;
   f.root.r[1] = e.yaw;
-  if (d.dummy) {
-    // arms out as a crossbar; rocks back when struck, slumps when staggered
-    f.armR.r[2] = -1.45;
-    f.armL.r[2] = 1.45;
-    const stag = e.state === "stagger",
-      pu = stag ? 0.5 + 0.5 * Math.sin(G.t * 10) : 0;
-    f.chest.r[0] = stag ? 0.5 + Math.sin(G.t * 6) * 0.04 : -0.35 * e.flash;
-    f.headN.r[0] = stag ? 0.5 : 0;
-    setEm(
-      f,
-      (stag ? 0.5 + 0.3 * pu : 0) + e.flash * 0.9,
-      (stag ? 0.3 + 0.15 * pu : 0) + e.flash * 0.85,
-      e.flash * 0.7,
-    );
-    return;
-  }
   let tr = 0,
     tg = 0,
     tb = 0;

@@ -13,12 +13,26 @@ const STONE = hexc(0x8791a6),
   STONE_DARK = hexc(0x1b1e26),
   STONE_TRIM = hexc(0x596275);
 
-// How far the portal frames stand out from the wall behind them, how far
-// behind a portal's position its opening sits, and the radius of the circle
-// in that opening that takes the player through.
-const FRAME_DEPTH = 0.5,
+// A portal's position is a point on the floor in front of its frame. The wall
+// the frame stands against is PORTAL_WALL behind that point, the frame stands
+// FRAME_DEPTH out from the wall, the opening sits PORTAL_IN behind the point,
+// and a circle of PORTAL_R in the opening takes the player through.
+const PORTAL_WALL = 1,
+  FRAME_DEPTH = 0.5,
   PORTAL_IN = 0.75,
   PORTAL_R = 1;
+// Where the six frames stand: a row along the north wall in rank order, with
+// E at +X. An entry is all the hall needs to build, collide, light and label
+// a portal, so opening or moving one is a change to this list.
+function hubPortals() {
+  return GRADE_IDS.map((grade, i) => ({
+    x: 11.5 - i * 4.6,
+    z: 16,
+    yaw: PI,
+    grade,
+    open: i === 0,
+  }));
+}
 // The point d metres in front of a portal, along the way it faces.
 function portalFront(q, d) {
   return { x: q.x + Math.sin(q.yaw) * d, z: q.z + Math.cos(q.yaw) * d };
@@ -26,7 +40,7 @@ function portalFront(q, d) {
 
 // Builds the hall. Returns the same shape genWorld does, so everything that
 // reads G.world works here unchanged; cave-only fields are empty.
-function genHub() {
+function genHub(layout = hubPortals()) {
   const HX = 15,
     HZ = 17,
     TOP = 7;
@@ -41,13 +55,23 @@ function genHub() {
     for (const z of [-9, -1, 7]) pillars.push({ x, z, r: 1 });
     for (const z of [-5, 3]) braziers.push({ x, z, r: 0.8 });
   }
-  const portals = GRADE_IDS.map((grade, i) => ({
-    x: 11.5 - i * 4.6,
-    z: 16,
-    yaw: PI,
-    grade,
-    open: i === 0,
-  }));
+  const portals = layout.map((q) => ({ ...q }));
+  // a portal's own axes: (fx, fz) points out of it into the hall, (ax, az)
+  // runs along the wall. local() gives a world point from u along the wall,
+  // height y and w behind the portal's position.
+  const frameOf = (q) => {
+    const fx = Math.sin(q.yaw),
+      fz = Math.cos(q.yaw),
+      ax = fz,
+      az = -fx;
+    return {
+      fx,
+      fz,
+      ax,
+      az,
+      local: (u, y, w) => [q.x + ax * u - fx * w, y, q.z + az * u - fz * w],
+    };
+  };
   const spawn = { x: 0, z: -10 },
     dummySpot = { x: -5, z: -1, yaw: PI };
 
@@ -57,9 +81,21 @@ function genHub() {
     for (let i = 0; i <= W; i++) {
       const x = i + minX,
         z = j + minZ;
-      // the north wall collides at the front face of the portal frames, so
-      // nothing can walk into the posts or the sealed brickwork
-      let f = Math.min(HX - Math.abs(x), HZ - FRAME_DEPTH - z, z + HZ);
+      let f = Math.min(HX - Math.abs(x), HZ - Math.abs(z));
+      // each frame is a solid block from its front face back into the wall,
+      // so nothing can walk into the posts or the sealed brickwork
+      for (const q of portals) {
+        const o = frameOf(q),
+          u = (x - q.x) * o.ax + (z - q.z) * o.az,
+          w = -((x - q.x) * o.fx + (z - q.z) * o.fz),
+          du = Math.abs(u) - 1.95,
+          dw = Math.abs(w - (PORTAL_WALL - FRAME_DEPTH + 1)) - 1;
+        f = Math.min(
+          f,
+          Math.hypot(Math.max(du, 0), Math.max(dw, 0)) +
+            Math.min(Math.max(du, dw), 0),
+        );
+      }
       for (const o of pillars)
         f = Math.min(f, Math.hypot(x - o.x, z - o.z) - o.r);
       for (const o of braziers)
@@ -110,12 +146,12 @@ function genHub() {
         );
     }
   }
-  // flat ring on the floor between angles a0 and a1
-  function floorRing(x, z, r0, r1, a0, a1, n, col, glow = 0) {
+  // flat ring on the floor
+  function floorRing(x, z, r0, r1, n, col, glow = 0) {
     const y = 0.03;
     for (let i = 0; i < n; i++) {
-      const p = a0 + ((a1 - a0) * i) / n,
-        q = a0 + ((a1 - a0) * (i + 1)) / n;
+      const p = (TAU * i) / n,
+        q = (TAU * (i + 1)) / n;
       quad(
         [x + Math.cos(p) * r0, y, z + Math.sin(p) * r0],
         [x + Math.cos(q) * r0, y, z + Math.sin(q) * r0],
@@ -184,75 +220,77 @@ function genHub() {
     prism(o.x, o.z, 0.3, 0.68, 0.75, 1.1, 8, sh(STONE_TRIM, 0.8), CRY.amber, 1);
   }
 
-  // portal frames: two posts and a lintel against the north wall. The open
-  // one is left empty for the glowing surface; the rest are bricked up.
-  for (const q of portals) {
+  // portal frames: two posts and a lintel against the wall behind each
+  // portal. The open one is left empty for the glowing surface; the rest are
+  // bricked up. Everything is placed in the portal's own axes.
+  portals.forEach((q, qi) => {
     const g = GRADES[q.grade].col,
-      zf = HZ - FRAME_DEPTH;
-    box(q.x - 1.7, 0, zf, q.x - 1.2, 3.4, HZ, STONE_TRIM);
-    box(q.x + 1.2, 0, zf, q.x + 1.7, 3.4, HZ, STONE_TRIM);
-    box(q.x - 1.95, 3.4, zf - 0.1, q.x + 1.95, 4.0, HZ, sh(STONE_TRIM, 1.15));
+      L = frameOf(q).local,
+      wf = PORTAL_WALL - FRAME_DEPTH;
+    // a block in the portal's axes; the face against the wall is left out
+    const block = (u0, y0, w0, u1, y1, col) => {
+      const w1 = PORTAL_WALL;
+      quad(L(u0, y1, w0), L(u1, y1, w0), L(u1, y1, w1), L(u0, y1, w1), col);
+      quad(L(u0, y0, w0), L(u1, y0, w0), L(u1, y1, w0), L(u0, y1, w0), sh(col, 0.82));
+      quad(L(u0, y0, w0), L(u0, y0, w1), L(u0, y1, w1), L(u0, y1, w0), sh(col, 0.7));
+      quad(L(u1, y0, w0), L(u1, y0, w1), L(u1, y1, w1), L(u1, y1, w0), sh(col, 0.7));
+    };
+    const panel = (u0, y0, u1, y1, w, col, glow = 0) =>
+      quad(L(u0, y0, w), L(u1, y0, w), L(u1, y1, w), L(u0, y1, w), col, glow);
+    block(-1.7, 0, wf, -1.2, 3.4, STONE_TRIM);
+    block(1.2, 0, wf, 1.7, 3.4, STONE_TRIM);
+    block(-1.95, 3.4, wf - 0.1, 1.95, 4.0, sh(STONE_TRIM, 1.15));
     // keystone gem in the grade's colour: lit when open, dull when sealed
-    const gz = zf - 0.12;
+    const gw = wf - 0.12;
     quad(
-      [q.x, 3.95, gz],
-      [q.x + 0.22, 3.7, gz],
-      [q.x, 3.45, gz],
-      [q.x - 0.22, 3.7, gz],
+      L(0, 3.95, gw),
+      L(0.22, 3.7, gw),
+      L(0, 3.45, gw),
+      L(-0.22, 3.7, gw),
       q.open ? g : sh(g, 0.12),
       q.open ? 1 : 0,
     );
     // dark recess behind the opening
-    quad(
-      [q.x - 1.2, 0, HZ - 0.02],
-      [q.x + 1.2, 0, HZ - 0.02],
-      [q.x + 1.2, 3.4, HZ - 0.02],
-      [q.x - 1.2, 3.4, HZ - 0.02],
-      STONE_DARK,
-    );
+    panel(-1.2, 0, 1.2, 3.4, PORTAL_WALL - 0.02, STONE_DARK);
     if (!q.open) {
-      // sealed: courses of dark blocks filling the opening
-      const zs = HZ - 0.3;
+      // sealed: offset courses of dark blocks filling the opening
+      const ws = PORTAL_WALL - 0.3;
       for (let r = 0; r < 5; r++)
-        for (let c = 0; c < 3; c++) {
+        for (let c = 0; c < 4; c++) {
           const off = r % 2 ? 0.4 : 0,
-            x0 = clamp(q.x - 1.2 + c * 0.8 - off, q.x - 1.2, q.x + 1.2),
-            x1 = clamp(q.x - 0.4 + c * 0.8 - off, q.x - 1.2, q.x + 1.2),
-            m = 0.7 + 0.6 * hash2(c * 7 + r * 13 + (q.x * 10) | 0, r * 5 + c);
-          if (x1 - x0 < 0.05) continue;
-          quad(
-            [x0 + 0.02, r * 0.68 + 0.02, zs],
-            [x1 - 0.02, r * 0.68 + 0.02, zs],
-            [x1 - 0.02, r * 0.68 + 0.66, zs],
-            [x0 + 0.02, r * 0.68 + 0.66, zs],
+            u0 = clamp(-1.2 + c * 0.8 - off, -1.2, 1.2),
+            u1 = clamp(-0.4 + c * 0.8 - off, -1.2, 1.2),
+            m = 0.7 + 0.6 * hash2(c * 7 + r * 13 + qi * 29, r * 5 + c);
+          if (u1 - u0 < 0.05) continue;
+          panel(
+            u0 + 0.02,
+            r * 0.68 + 0.02,
+            u1 - 0.02,
+            r * 0.68 + 0.66,
+            ws,
             sh(STONE_TRIM, 0.34 * m),
           );
         }
-      // the last half block of the offset courses
-      for (let r = 1; r < 5; r += 2)
-        quad(
-          [q.x + 0.82, r * 0.68 + 0.02, zs],
-          [q.x + 1.18, r * 0.68 + 0.02, zs],
-          [q.x + 1.18, r * 0.68 + 0.66, zs],
-          [q.x + 0.82, r * 0.68 + 0.66, zs],
-          sh(STONE_TRIM, 0.3),
-        );
     }
     // half ring on the floor in front of the frame, opening into the hall
-    floorRing(
-      q.x,
-      HZ,
-      1.9,
-      2.25,
-      PI,
-      TAU,
-      10,
-      q.open ? sh(g, 0.8) : STONE_TRIM,
-      q.open ? 0.5 : 0,
-    );
-  }
+    const n = 10,
+      rc = q.open ? sh(g, 0.8) : STONE_TRIM;
+    for (let i = 0; i < n; i++) {
+      const t0 = (i / n) * PI,
+        t1 = ((i + 1) / n) * PI,
+        pt = (t, r) => L(Math.cos(t) * r, 0.03, PORTAL_WALL - Math.sin(t) * r);
+      quad(
+        pt(t0, 1.9),
+        pt(t1, 1.9),
+        pt(t1, 2.25),
+        pt(t0, 2.25),
+        sh(rc, 0.85 + 0.15 * (i % 2)),
+        q.open ? 0.5 : 0,
+      );
+    }
+  });
   // the training dummy's floor mark
-  floorRing(dummySpot.x, dummySpot.z, 1.35, 1.6, 0, TAU, 16, STONE_TRIM);
+  floorRing(dummySpot.x, dummySpot.z, 1.35, 1.6, 16, STONE_TRIM);
 
   // ---- lights ----
   const lights = [],
@@ -264,9 +302,9 @@ function genHub() {
   for (const q of portals)
     if (q.open)
       lights.push({
-        x: q.x,
+        x: portalFront(q, 0.4).x,
         y: 2,
-        z: q.z - 0.4,
+        z: portalFront(q, 0.4).z,
         c: GRADES[q.grade].col,
         i: 2.1,
         r: 15,

@@ -151,7 +151,8 @@ const HUD = (() => {
       p.hp < 30 && p.state !== "dead" ? 0.25 + 0.1 * Math.sin(G.t * 6) : 0;
     el.vigR.style.opacity = Math.max(G.flashRed, low).toFixed(2);
     el.vigW.style.opacity = (G.flashWhite * 0.35).toFixed(2);
-    el.fade.style.opacity = G.fade.toFixed(2);
+    // only while playing: a menu opened mid-transition must not be blacked out
+    el.fade.style.opacity = (G.state === "play" ? G.fade : 0).toFixed(2);
     // the hall has nothing to explore, so it has no minimap
     const hub = G.zone === "hub";
     el.map.style.display = hub ? "none" : "";

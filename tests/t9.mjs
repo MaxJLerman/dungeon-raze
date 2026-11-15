@@ -39,5 +39,12 @@ export default [
     wait: 900,
     shot: "cave_arrival",
   },
+  // what a returning player sees first, from each end of the row
+  ...["E", "S"].map((g) => ({
+    name: "hub_return_" + g,
+    eval: `(() => { const { G } = DF; DF.enterHub("${g}"); G.manual = true; DF.show("play"); return { pass: G.zone === "hub" }; })()`,
+    wait: 700,
+    shot: "hub_return_" + g,
+  })),
   { eval: `(() => { DF.enterHub(); return { pass: true }; })()` },
 ];

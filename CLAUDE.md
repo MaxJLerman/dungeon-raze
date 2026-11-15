@@ -89,7 +89,7 @@ is what you need to change the code without breaking it.
 - `G.zone` is `"hub"` for the hall or `"cave"`. `G.world` holds whichever
   world is active, and nothing else is kept loaded.
 - `enterHub(fromGrade)` builds the hall and puts the player at the start, or
-  in front of that grade's portal. `enterCave(gradeId, seed)` records
+  in front of that grade's portal looking toward the middle of the hall. `enterCave(gradeId, seed)` records
   `G.grade` and calls `newRun(seed)`. `newRun` still means "start a cave from
   this seed" and is what the cave tests call.
 - `genHub()` returns every field `genWorld` returns, with empty arrays where a
@@ -99,8 +99,11 @@ is what you need to change the code without breaking it.
   both collide and pack triangles the same way.
 - The hall is centred on the origin with north at +Z. The player starts facing
   +Z, so E, at +X, is on their left.
-- A portal is `{ x, z, yaw, grade, open }`. Its opening sits `PORTAL_IN`
-  behind that position, and stepping within `PORTAL_R` of the opening of an
+- A portal is `{ x, z, yaw, grade, open }`, listed in `hubPortals()`. The
+  position is a point on the floor in front of the frame and `yaw` faces into
+  the hall. The frame, its collision block, floor ring, glow, light, label and
+  return point are all built from the entry. Its opening sits `PORTAL_IN`
+  behind the position, and stepping within `PORTAL_R` of the opening of an
   open one calls `startTrans`, which fades out, swaps the world at full black and fades
   in. The transition is advanced by `update`, which does nothing else while
   `G.trans` is set, so `DF.sim` drives it in tests.
@@ -196,8 +199,9 @@ The class picker and HUD read `CLASSES` and need no changes.
 
 ### Open another portal
 
-1. Set `open: true` on its entry in `portals` in `genHub`. The frame, glow,
-   trigger, label and return point all follow from the entry.
+1. Set `open: true` on its entry in `hubPortals()`. The frame, glow, trigger,
+   label and return point all follow from the entry. Moving a gate is the
+   same kind of change: give it a new position and `yaw`.
 2. Give `enterCave` something to do with the grade, for example pass settings
    to `genWorld` and scale `EDEF` values. Today the grade only names the cave.
 3. Extend `tests/t8.mjs`: the "sealed frames do nothing" step assumes only
@@ -221,7 +225,8 @@ The class picker and HUD read `CLASSES` and need no changes.
   dummy, and `tests/t9.mjs` to look at the hall. Both use the `hub` mode:
   `SCRIPT=$PWD/tests/t8.mjs node test.mjs hub`. The cave scripts use `smoke`,
   which enters a cave after clicking play.
-- A test step that returns `{ pass: false }` fails the run with exit code 1.
+- A test step that returns an object with a `pass` value other than `true`
+  fails the run with exit code 1.
 - Screenshots are the only check on how things look. Take them; do not assume.
 
 ## Known problems
@@ -235,8 +240,6 @@ The class picker and HUD read `CLASSES` and need no changes.
   not be the enemy the player meant.
 - In the controls menu, Escape cannot be bound, and the pause key in the
   no-pointer-lock fallback is fixed to P.
-- The hall's north wall collides at the front face of the portal frames, so
-  between two frames the player stops half a metre short of the wall.
 - "Return to base" abandons the cave without asking, because nothing is lost
   yet. It will need a confirmation once runs carry rewards.
 

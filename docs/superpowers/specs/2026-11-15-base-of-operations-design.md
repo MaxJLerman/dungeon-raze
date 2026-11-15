@@ -158,7 +158,7 @@ constants.
 - **Player start:** on first arrival, on the centre line about 7 m in from the
   south wall, facing the row of arches. Any closer and the camera, which sits
   behind the player, would be pressed against the wall. On return from a cave, about 3.5 m in front of
-  the portal that was used, facing into the hall, so the player steps out of
+  the portal that was used, looking toward the middle of the hall, so the player steps out of
   it and cannot re-trigger it by accident. The return point is derived from
   each portal's position and facing, not stored as a constant.
 - **Dummy position:** mid-hall, about 5 m to the right of the centre line as

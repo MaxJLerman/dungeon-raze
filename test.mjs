@@ -74,7 +74,8 @@ if (process.env.SCRIPT) {
         r = { pass: false, threw: e.message.split("\n")[0] };
       }
       if (r !== undefined) console.log(s.name || "eval", JSON.stringify(r));
-      if (r && typeof r === "object" && r.pass === false) {
+      // a step that reports a pass at all must report true
+      if (r && typeof r === "object" && "pass" in r && r.pass !== true) {
         console.log("FAIL " + (s.name || "eval"));
         failed++;
       }

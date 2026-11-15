@@ -240,6 +240,8 @@ function frame(now) {
     }
     for (const k in taps) taps[k] = false;
   }
+  // nothing is simulated on the title, but its backdrop should still move
+  if (G.state === "title") G.t += dt;
   camUpdate(dt);
   render();
   HUD.update(dt);
@@ -441,7 +443,6 @@ window.DF = {
   toBase,
   hitEnemy,
   hurtPlayer,
-  makeEnemy,
   openMenu,
   sim(sec, each) {
     const n = Math.round(sec * 60);

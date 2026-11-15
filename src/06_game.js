@@ -882,6 +882,19 @@ const EDEF = {
       },
     },
   },
+  // The training dummy in the hall. The dummy flag makes it inert and
+  // unkillable: see makeEnemy, enemyUpdate, hitEnemy, kill and the execute
+  // case. It has no speed, senses or attacks because it never uses them.
+  dummy: {
+    name: "Training dummy",
+    dummy: true,
+    hp: 100,
+    posture: 60,
+    r: 0.5,
+    poise: 2,
+    top: 1.9,
+    atks: {},
+  },
 };
 
 function makePlayer(id) {
@@ -924,6 +937,7 @@ function makePlayer(id) {
     flash: 0,
     toolCD: 0,
     restCD: 0,
+    refillT: 0,
     buff: null,
     buffT: 0,
     throwT: 0,
@@ -955,23 +969,6 @@ function setClass(id) {
     parryWin: c.parry,
   });
 }
-// The training dummy in the hall. The dummy flag makes it inert and unkillable:
-// see makeEnemy, enemyUpdate, hitEnemy, kill and the execute case.
-EDEF.dummy = {
-  name: "Training dummy",
-  dummy: true,
-  hp: 100,
-  posture: 60,
-  speed: 1,
-  turn: 0,
-  r: 0.5,
-  sight: 0,
-  cd: 9,
-  poise: 2,
-  hunch: 0,
-  top: 1.9,
-  atks: {},
-};
 function makeEnemy(s) {
   const d = EDEF[s.type];
   return {
@@ -1030,6 +1027,12 @@ const ENV_CAVE = {
     fogD: R.env.fogD,
   },
   ENV_HUB = { amb: [0.15, 0.17, 0.22], fog: [0.03, 0.035, 0.05], fogD: 0.014 };
+// Copies, so nothing that later adjusts R.env can change the presets.
+function setEnv(e) {
+  R.env.amb = e.amb.slice();
+  R.env.fog = e.fog.slice();
+  R.env.fogD = e.fogD;
+}
 // Clears everything that must not carry from one world into the next.
 function resetRun() {
   G.bossDead = false;
@@ -1062,7 +1065,7 @@ function snapCam() {
 // Starts a cave from a seed. Tests call this directly.
 function newRun(seed) {
   G.zone = "cave";
-  Object.assign(R.env, ENV_CAVE);
+  setEnv(ENV_CAVE);
   G.seed = seed;
   G.world = genWorld(seed);
   R.setWorld(G.world.pos, G.world.col);
@@ -1076,7 +1079,7 @@ function newRun(seed) {
 // portal, facing into the hall; otherwise they stand at the start point.
 function enterHub(fromGrade = null) {
   G.zone = "hub";
-  Object.assign(R.env, ENV_HUB);
+  setEnv(ENV_HUB);
   G.world = genHub();
   R.setWorld(G.world.pos, G.world.col);
   resetRun();
@@ -1086,7 +1089,9 @@ function enterHub(fromGrade = null) {
     const f = portalFront(q, 3.5);
     p.x = f.x;
     p.z = f.z;
-    p.yaw = q.yaw;
+    // look toward the middle of the hall, not straight ahead: the end frames
+    // line up with the pillar rows
+    p.yaw = Math.atan2(-f.x, -f.z);
   }
   G.checkpoint = null;
   spawnEnemies();
@@ -1122,6 +1127,12 @@ function transUpdate(dt) {
   }
 }
 function respawn() {
+  // the hall has no shrine to wake at; start it over
+  if (!G.checkpoint) {
+    enterHub();
+    G.state = "play";
+    return;
+  }
   const p = G.player,
     c = G.checkpoint;
   Object.assign(p, {
@@ -1839,7 +1850,7 @@ function playerUpdate(dt) {
   if (G.zone === "hub") {
     // the hall is for practice: focus and tool charges come back on their own
     p.focus = Math.min(100, p.focus + 25 * dt);
-    p.refillT = (p.refillT || 0) + dt;
+    p.refillT += dt;
     if (p.refillT >= 1.5) {
       p.refillT = 0;
       p.tool = Math.min(c.tool.max, p.tool + 1);

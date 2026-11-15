@@ -52,8 +52,6 @@
         inset: 0;
         pointer-events: none;
         display: none;
-        /* keeps the bars' own stacking inside the HUD, so #fade covers it all */
-        isolation: isolate;
       }
       #hud.show {
         display: block;
@@ -315,6 +313,8 @@
       }
       #fade {
         background: #000;
+        /* above the health fill, which has z-index 1, so it covers the HUD */
+        z-index: 2;
       }
       .scr {
         position: absolute;
