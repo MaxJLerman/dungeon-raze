@@ -102,7 +102,7 @@ function genHub(layout = hubPortals()) {
         f = Math.min(f, Math.hypot(x - o.x, z - o.z) - o.r);
       F[j * W1 + i] = Math.max(-3, f);
     }
-  const { fieldAt, resolve, los } = fieldFns(F, minX, minZ, W, H);
+  const { fieldAt, resolve, los, route } = fieldFns(F, minX, minZ, W, H);
   const ceilAt = () => TOP;
 
   // ---- mesh ----
@@ -329,6 +329,7 @@ function genHub(layout = hubPortals()) {
     ceilAt,
     resolve,
     los,
+    route,
     pos: new Float32Array(P),
     col: new Uint8Array(C),
     lights,
