@@ -77,4 +77,17 @@ export default [
     const i = L().ins, w = window.__fakeInsets;
     const c = { l: i.l === w.l, r: i.r === w.r, t: i.t === w.t, b: i.b === w.b };
     return { pass: Object.values(c).every((v) => v === true), got: i, want: w };`),
+  step("forced mode keeps the page visible", `
+    const was = TOUCH.forced;
+    TOUCH.forced = true; TOUCH.setOn(true);
+    play(); await draw();
+    const cs = getComputedStyle(document.body);
+    const c = {
+      bodyShown: cs.display !== "none",
+      bodyColour: cs.color !== "rgb(255, 179, 71)",
+      overlay: getComputedStyle(document.getElementById("touch")).display !== "none",
+      readout: getComputedStyle(document.getElementById("treadout")).display !== "none",
+    };
+    TOUCH.forced = was; TOUCH.setOn(true); await draw();
+    return { pass: Object.values(c).every((v) => v === true), ...c, display: cs.display, colour: cs.color };`),
 ];
