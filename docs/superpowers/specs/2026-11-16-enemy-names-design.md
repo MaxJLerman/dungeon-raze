@@ -45,7 +45,11 @@ first step: the tags and the colour key now, real levels later.
 
 - A Brute tag and a boss tag that look alike at a glance. If orange and red
   cannot be told apart in a screenshot, the feature has failed.
-- Tags on enemies the player cannot see: through walls or far off in the dark.
+- Tags on enemies the player has not found yet and cannot see: through walls
+  or far off in the dark. This governs the looking rule. An enemy that has
+  noticed the player or been hurt keeps its tag and bars behind cover, as its
+  bars do today, because goal 3 ties the tag to the bars. Ruled after the
+  final review, which found the two statements in conflict.
 
 ## Approaches
 

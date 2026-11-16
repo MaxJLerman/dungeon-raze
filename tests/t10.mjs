@@ -51,6 +51,10 @@ export default [
     name: !!nm && nm.textContent === "The Ossuary Warden" && nm.classList.contains("tag") && nm.classList.contains("t2"),
   };
   return { pass: Object.values(c).every(Boolean), c, s };`),
+  step("a staggered boss has no glowing bar", `
+  ${aware("warden", 10, 0.3)} e.state = "stagger"; await draw();
+  const d = [...document.querySelectorAll("#ebars .eb")].find((q) => q.style.display !== "none"), cs = getComputedStyle(d);
+  return { pass: d.classList.contains("stag") && d.classList.contains("nobar") && cs.boxShadow === "none", shadow: cs.boxShadow };`),
   step("an unnoticed enemy off to the side has no tag", `
   stage("husk", 6, 0.5); await draw(); const s = slots();
   return { pass: s.length === 0, s };`),
