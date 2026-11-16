@@ -41,7 +41,7 @@ export default [
       thirtyOut: !hexContains(h, 100 + 0.95 * r * Math.cos(rad(30)), 200 + 0.95 * r * Math.sin(rad(30))),
     };
     return { pass: all(c), ...c };`),
-  step("problems catches overlap, bounds, hud and size", `
+  step("problems catches overlap, bounds, hud, move area and size", `
     const base = touchLayout(852, 393, Z, { size: 1, notch: true });
     const copy = () => JSON.parse(JSON.stringify(base));
     const o = layoutProblems(base);
@@ -49,8 +49,10 @@ export default [
     const b = copy(); { const k = by(b, "light"); k.x += b.W - b.ins.r - (k.x + k.d / 2) + 10; }
     const c = copy(); { const k = by(c, "lock"); c.map = { x: k.x - 20, y: k.y - 20, w: 80, h: 80 }; }
     const d = copy(); by(d, "tool").d = 45 / 0.866;
+    const e = copy(); { const k = by(e, "light"); k.x = 50; k.y = 200; }
     const r = { base: o.length === 0, overlap: layoutProblems(a).length > 0, bounds: layoutProblems(b).length > 0,
-      hud: layoutProblems(c).length > 0, size: layoutProblems(d).length > 0 };
+      hud: layoutProblems(c).length > 0, size: layoutProblems(d).length > 0,
+      move: layoutProblems(e).some((x) => /over move/.test(x)) };
     return { pass: all(r), ...r, baseProblems: o };`),
   step("notch off ignores insets", `
     const ins = { l: 47, r: 47, t: 0, b: 21 };

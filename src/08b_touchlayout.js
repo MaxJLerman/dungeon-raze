@@ -57,8 +57,12 @@ function layoutProblems(L) {
     const q = box(b);
     if (q.x < bx0 - 0.01 || q.x + q.w > bx1 + 0.01 || q.y < by0 - 0.01 || q.y + q.h > by1 + 0.01)
       out.push(b.act + " out of bounds");
-    for (const k of ["vitals", "map", "pause", "boss", "move"])
+    // move is { x0, y0, x1, y1 }; the others are { x, y, w, h }
+    const mv = L.move,
+      mr = { x: mv.x0, y: mv.y0, w: mv.x1 - mv.x0, h: mv.y1 - mv.y0 };
+    for (const k of ["vitals", "map", "pause", "boss"])
       if (hit(q, L[k])) out.push(b.act + " over " + k);
+    if (hit(q, mr)) out.push(b.act + " over move");
   }
   for (let i = 0; i < btns.length; i++)
     for (let j = i + 1; j < btns.length; j++) {
