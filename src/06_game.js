@@ -1043,6 +1043,21 @@ function makeEnemy(s) {
     best: 1e9,
     stuck: 0,
     rt: 0,
+    // where the player was last seen and how they were moving, seconds since
+    // then, and the step of a search: go, guess or look
+    lsx: s.x,
+    lsz: s.z,
+    lvx: 0,
+    lvz: 0,
+    lost: 0,
+    sub: "",
+    gd: 0,
+    gsx: 0,
+    gsz: 0,
+    gpx: 0,
+    gpz: 0,
+    ly: 0,
+    alertBy: null,
   };
 }
 function spawnEnemies() {
@@ -1247,9 +1262,47 @@ function takeToken(e) {
   return true;
 }
 
-function alertE(e, quiet) {
+// True when e can see the player: alive, within hunting sight range and with
+// a clear line. Facing does not matter to an enemy that is already hunting.
+function canSee(e) {
+  const p = G.player;
+  return (
+    p.state !== "dead" &&
+    Math.hypot(p.x - e.x, p.z - e.z) <= e.def.sight * PURSUIT.seeMul &&
+    G.world.los(e.x, e.z, p.x, p.z)
+  );
+}
+// Sight is broken: run to where the player was last seen, guess, look round.
+function toSearch(e) {
+  e.state = "search";
+  e.sub = "go";
+  e.t = 0;
+  e.gd = 0;
+  e.token = false;
+  e.plan = null;
+  e.route = null;
+  e.fails = 0;
+}
+// The hunt is over: forget the player and walk back to the post.
+function giveUp(e) {
+  e.aware = false;
+  e.state = "return";
+  e.token = false;
+  e.plan = null;
+  e.route = null;
+  e.fails = 0;
+}
+// by is the enemy that woke this one, if any. It passes on where it last saw
+// the player; otherwise the enemy starts from where the player is now.
+function alertE(e, quiet, by) {
   if (e.aware || e.dead) return;
   e.aware = true;
+  const src = by || G.player;
+  e.lsx = by ? by.lsx : src.x;
+  e.lsz = by ? by.lsz : src.z;
+  e.lvx = by ? by.lvx : src.vx;
+  e.lvz = by ? by.lvz : src.vz;
+  e.lost = 0;
   if (e.state === "idle" || e.state === "return") {
     e.state = "alert";
     e.t = 0;
@@ -1257,8 +1310,10 @@ function alertE(e, quiet) {
   if (!quiet) SFX.alert();
   if (e.def.boss) G.bossSeen = true;
   for (const o of G.enemies)
-    if (o !== e && !o.aware && !o.dead && Math.hypot(o.x - e.x, o.z - e.z) < 12)
+    if (o !== e && !o.aware && !o.dead && Math.hypot(o.x - e.x, o.z - e.z) < 12) {
       o.alertIn = 0.25 + Math.random() * 0.35;
+      o.alertBy = e;
+    }
 }
 function stagger(e) {
   e.state = "stagger";
@@ -1335,6 +1390,17 @@ function hitEnemy(e, dmg, post, o = {}) {
   if (e.def.dummy) e.hp = e.def.hp;
   e.flash = 1;
   alertE(e, true);
+  if (!e.def.boss && !e.def.dummy) {
+    // a hit tells the enemy where it came from
+    e.lsx = p.x;
+    e.lsz = p.z;
+    e.lvx = e.lvz = 0;
+    if (e.state === "search") {
+      e.sub = "go";
+      e.route = null;
+      e.fails = 0;
+    }
+  }
   if (e.state !== "stagger") {
     e.posture += post * (e.state === "wind" ? 1.25 : 1);
     e.postT = 0;
@@ -2513,12 +2579,22 @@ function enemyUpdate(e, dt) {
     tm = e.phase === 2 ? 0.85 : 1;
   if (e.alertIn > 0) {
     e.alertIn -= dt;
-    if (e.alertIn <= 0 && alive) alertE(e, true);
+    if (e.alertIn <= 0 && alive) alertE(e, true, e.alertBy);
   }
   if (!e.aware && alive) {
     const front = Math.abs(angDiff(e.yaw, toP)) < 1.75,
       rad = front ? d.sight : p.sprint ? 7.5 : p.state === "attack" ? 0 : 3.0;
     if (dist < rad && w.los(e.x, e.z, p.x, p.z)) alertE(e);
+  }
+  // sight memory, in every state, for a regular enemy that is hunting
+  if (e.aware && !d.boss) {
+    if (canSee(e)) {
+      e.lsx = p.x;
+      e.lsz = p.z;
+      e.lvx = p.vx;
+      e.lvz = p.vz;
+      e.lost = 0;
+    } else e.lost += dt;
   }
   const face = (rate) => {
     e.yaw = turnTo(e.yaw, toP, rate * dt);
@@ -2558,9 +2634,11 @@ function enemyUpdate(e, dt) {
         dist > (d.boss ? 38 : 46) ||
         (d.boss && Math.hypot(e.x - e.hx, e.z - e.hz) > 30)
       ) {
-        e.aware = false;
-        e.state = "return";
-        e.token = false;
+        giveUp(e);
+        break;
+      }
+      if (!d.boss && e.lost > PURSUIT.lostT) {
+        toSearch(e);
         break;
       }
       let ux = dx / (dist || 1),
@@ -2639,6 +2717,66 @@ function enemyUpdate(e, dt) {
             dt,
           );
         else eStep(e, tx, tz, d.speed * 0.42, dt);
+      }
+      break;
+    }
+    case "search": {
+      if (!alive) {
+        giveUp(e);
+        break;
+      }
+      if (e.lost === 0) {
+        // seen again
+        e.state = "chase";
+        e.route = null;
+        break;
+      }
+      if (e.sub === "go") {
+        if (e.fails >= 2) {
+          giveUp(e);
+          break;
+        }
+        if (!e.route && !setRoute(e, e.lsx, e.lsz)) break;
+        if (walkRoute(e, d.speed * spdMul, dt)) {
+          e.route = null;
+          e.t = 0;
+          if (Math.hypot(e.lvx, e.lvz) > 0.5) {
+            e.sub = "guess";
+            e.gd = 0;
+            e.gsx = e.gpx = e.x;
+            e.gsz = e.gpz = e.z;
+            e.stuck = 0;
+          } else {
+            e.sub = "look";
+            e.ly = e.yaw;
+          }
+        }
+      } else if (e.sub === "guess") {
+        // carry on the way the player was heading, sliding along walls
+        const v = Math.hypot(e.lvx, e.lvz) || 1,
+          gx = e.lvx / v,
+          gz = e.lvz / v;
+        e.t += dt;
+        e.yaw = turnTo(e.yaw, Math.atan2(gx, gz), d.turn * dt);
+        eStep(e, gx, gz, d.speed * 0.6, dt);
+        e.gd = Math.hypot(e.x - e.gsx, e.z - e.gsz);
+        let done = e.gd >= PURSUIT.guessDist || e.t >= PURSUIT.guessT;
+        if ((e.stuck += dt) >= 0.5) {
+          // no headway in half a second means a wall
+          if (Math.hypot(e.x - e.gpx, e.z - e.gpz) < 0.3) done = true;
+          e.gpx = e.x;
+          e.gpz = e.z;
+          e.stuck = 0;
+        }
+        if (done) {
+          e.sub = "look";
+          e.t = 0;
+          e.ly = e.yaw;
+        }
+      } else {
+        e.t += dt;
+        e.yaw = e.ly + Math.sin(e.t * 2.6) * 1.1;
+        if (e.t >= PURSUIT.look) giveUp(e);
       }
       break;
     }

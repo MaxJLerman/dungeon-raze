@@ -32,6 +32,24 @@ const step = (name, body) => ({
   ${body} })()`,
 });
 
+// One enemy of a kind posted 3 m north of a room's centre, hunting a player
+// who stands 3 m south of it. seen is where the player stood. hide() moves the
+// player down the tunnel toward the next room and reports that the enemy
+// cannot see them there.
+const scene = (kind = "husk") => `
+  const q0 = pair(24, 40); if (!q0) return { pass: false, pre: false };
+  const [a, b] = q0, e = type("${kind}"); only(e); post(e, a.x, a.z + 3); e.yaw = Math.PI; e.cd = 9; put(p, a.x, a.z - 3); p.vx = p.vz = 0; hunt(e);
+  const seen = { x: p.x, z: p.z };
+  // the hiding place: the first point down the tunnel toward the next room that is out of
+  // sight of the room and beyond hunting sight range
+  const R0 = w.route(a.x, a.z, b.x, b.z, 0.6); let hs = null;
+  for (let d = 20; R0 && d < 90 && !hs; d++) { const q = along(R0, a, d); if ([[a.x, a.z + 3], [a.x, a.z], [seen.x, seen.z]].every((o) => Math.hypot(o[0] - q.x, o[1] - q.z) > 25 && !w.los(o[0], o[1], q.x, q.z))) hs = q; }
+  if (!hs) return { pass: false, pre: false };
+  const hide = () => { put(p, hs.x, hs.z); p.vx = p.vz = 0; return !w.los(e.x, e.z, p.x, p.z) && D(e, p) > 22.5; };
+  // a second enemy beside the first, hunting too
+  const mate = (m, dx) => { post(m, a.x + dx, a.z + 3); m.yaw = Math.PI; m.cd = 9; hunt(m); G.enemies.push(m); return m; };
+  const nan = (o) => !(o.x === o.x && o.z === o.z);`;
+
 export default [
   // ---- Task 1: world.route ----
   step("route exists", `
@@ -107,4 +125,53 @@ export default [
   sim(3, () => { aware = aware && e.aware; never = never && e.state !== "return"; routed = routed || !!e.route; });
   const c = { aware, never, routed, closer: D(e, p) < d0 - 2 };
   return { pass: all(c), c, seed, d0: +d0.toFixed(1), d1: +D(e, p).toFixed(1) };`),
+  // ---- Task 3: sight, memory and the search state ----
+  step("a chasing enemy remembers where it saw the player", scene() + `
+  sim(0.3); const c = { seen: e.lost === 0, where: Math.hypot(e.lsx - p.x, e.lsz - p.z) < 0.3 };
+  return { pass: all(c), c, lost: e.lost };`),
+  step("lost sight", scene() + `
+  sim(0.3); const hp = e.hp, pre = hide(); let first = -1, least = 1e9, most = 0, reached = false, bad = false;
+  sim(40, (i) => { const d = D(e, seen); if (e.state === "search" && first < 0) first = i; least = Math.min(least, d); if (d < 1.5) reached = true;
+    if (reached && e.state === "search") most = Math.max(most, d); bad = bad || nan(e); return !home(e); });
+  const c = { pre, searched: first >= 0 && first <= 30, reached: least < 1.5, stayed: most < 2.5, home: home(e), hp: e.hp === hp, nan: !bad };
+  return { pass: all(c), c, first, least: +least.toFixed(2), most: +most.toFixed(2), state: e.state };`),
+  step("the guess carries on the way the player went", scene() + `
+  sim(0.3); const pre = hide(); e.lvx = 0; e.lvz = -5; const subs = []; let south = 0;
+  sim(40, () => { if (e.state === "search") { if (subs[subs.length - 1] !== e.sub) subs.push(e.sub); south = Math.max(south, seen.z - e.z); } return !home(e); });
+  const c = { pre, order: subs.join() === "go,guess,look", far: south > 3, capped: south <= 8.5, home: home(e) };
+  return { pass: all(c), c, subs, south: +south.toFixed(2) };`),
+  step("seen again", scene() + `
+  sim(0.3); const pre = hide(); sim(3, () => e.state !== "search"); const was = e.state; put(p, seen.x, seen.z); sim(1.5);
+  const c = { pre, was: was === "search", aware: e.aware === true, state: e.state !== "search" && e.state !== "return", seen: e.lost === 0 };
+  return { pass: all(c), c, state: e.state };`),
+  step("a hit redirects the search", scene() + `
+  sim(0.3); const pre = hide(); sim(20, () => !(e.state === "search" && e.sub === "look")); const was = e.sub;
+  const from = { x: e.x + 2, z: e.z }; put(p, from.x, from.z); DF.hitEnemy(e, 1, 0, { src: "bolt" });
+  const at = Math.hypot(e.lsx - from.x, e.lsz - from.z) < 0.01; hide(); sim(0.6);
+  const c = { pre, was: was === "look", at, state: e.state === "search", sub: e.sub === "go" || e.sub === "look", aware: e.aware === true };
+  return { pass: all(c), c, state: e.state, sub: e.sub };`),
+  step("a woken neighbour gets the same last-seen spot", scene().replace('only(e);', 'const spare = husks().filter((q) => q !== type("husk")); only(e);') + `
+  const m = spare[0]; post(m, a.x + 6, a.z + 3); m.yaw = 0; m.aware = false; m.state = "idle"; G.enemies.push(m);
+  e.aware = false; e.state = "idle"; DF.alertE(e); const ls = { x: e.lsx, z: e.lsz }; const pre = hide(); sim(1);
+  const c = { pre, seeded: Math.hypot(ls.x - seen.x, ls.z - seen.z) < 0.01, woke: m.aware === true, same: m.lsx === ls.x && m.lsz === ls.z };
+  return { pass: all(c), c };`),
+  step("a pack loses sight together", scene().replace('only(e);', 'const spare = husks().filter((q) => q !== type("husk")).slice(0, 3); only(e);') + `
+  const es = [e, mate(spare[0], -1.5), mate(spare[1], 1.5), mate(spare[2], 3)]; sim(0.3); const pre = hide(); let slow = 0, n = 0; const searched = new Set();
+  for (; n < 3600 && !es.every(home); n++) { safe(); const t0 = performance.now(); DF.update(1 / 60); slow = Math.max(slow, performance.now() - t0); for (const q of es) if (q.state === "search") searched.add(q); }
+  const c = { pre, four: es.length === 4 && spare.length === 3, searched: searched.size === 4, home: es.every(home), smooth: slow < 16 };
+  return { pass: all(c), c, slowMs: +slow.toFixed(2), secs: +(n / 60).toFixed(1), states: es.map((q) => q.state) };`),
+  step("the player dying sends hunters home", scene().replace('only(e);', 'const spare = husks().filter((q) => q !== type("husk")).slice(0, 1); only(e);') + `
+  const m = mate(spare[0], 2), gone = () => [e, m].every((q) => (q.state === "return" || q.state === "idle") && !q.aware);
+  // while chasing in view
+  sim(0.3); p.state = "dead"; DF.sim(0.1); const chasing = gone();
+  // while searching
+  p.state = "free"; safe(); put(p, seen.x, seen.z); put(e, e.hx, e.hz); put(m, m.hx, m.hz); hunt(e); hunt(m); e.cd = m.cd = 9; sim(0.3);
+  const pre = hide(); sim(3, () => !(e.state === "search" && m.state === "search")); const both = e.state === "search" && m.state === "search";
+  p.state = "dead"; DF.sim(0.1); const searching = gone();
+  const c = { pre, chasing, both, searching };
+  return { pass: all(c), c, states: [e.state, m.state] };`),
+  step("a spitter out of sight searches too", scene("spit") + `
+  sim(0.3); const pre = hide(); let searched = false; sim(60, () => { searched = searched || e.state === "search"; return !home(e); });
+  const c = { pre, searched, home: home(e) };
+  return { pass: all(c), c, state: e.state };`),
 ];

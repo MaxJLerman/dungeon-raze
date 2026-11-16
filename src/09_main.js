@@ -453,6 +453,7 @@ window.DF = {
   setBind,
   toBase,
   hitEnemy,
+  alertE,
   hurtPlayer,
   openMenu,
   sim(sec, each) {
