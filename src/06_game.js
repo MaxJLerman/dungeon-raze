@@ -20,6 +20,8 @@ const G = {
   checkpoint: null,
   bossDead: false,
   bossSeen: false,
+  // routes found so far in this update; setRoute allows two
+  routeN: 0,
   // true while the player is inside the boss chamber
   inBoss: false,
   gate: null,
@@ -913,10 +915,11 @@ const PURSUIT = {
   seeMul: 1.5, // hunting sight range as a multiple of sight
   lostT: 0.35, // seconds of broken sight tolerated before searching
   guessDist: 8, // metres walked on in the player's last direction
-  guessT: 2.5, // and the longest that walk may take
+  guessT: 3.5, // and the longest that walk may take; slow enemies stop short
   look: 2.5, // seconds spent looking around before giving up
   leash: 32, // furthest a regular enemy hunts from its post
-  edge: 4, // territory is the leash less this
+  edge: 6, // territory is the leash less this
+  pack: 16, // an enemy that sees the player keeps others this near informed
   provoke: 4, // seconds the leash is ignored after a hit
   bossPad: 3, // added to the boss chamber radius for leaving and for posts
 };
@@ -1045,6 +1048,9 @@ function makeEnemy(s) {
     best: 1e9,
     stuck: 0,
     rt: 0,
+    // where the current route was asked to end
+    rgx: s.x,
+    rgz: s.z,
     // where the player was last seen and how they were moving, seconds since
     // then, and the step of a search: go, guess or look
     lsx: s.x,
@@ -1060,6 +1066,8 @@ function makeEnemy(s) {
     gpz: 0,
     ly: 0,
     alertBy: null,
+    // true while a pack-mate that can see the player is feeding last seen
+    told: false,
     // seconds left in which a hit makes it ignore its leash
     prov: 0,
   };
@@ -1297,6 +1305,39 @@ function huntOver(e) {
     G.player.state === "dead" ||
     (e.prov <= 0 && Math.hypot(e.x - e.hx, e.z - e.hz) > leashOf(e))
   );
+}
+// A regular enemy that is hunting and can see the player right now.
+function seesNow(o) {
+  return o.aware && !o.dead && o.lost === 0 && !o.def.boss && !o.def.dummy;
+}
+// The nearest pack-mate of e that can see the player, within calling
+// distance, or null. e takes the player's position from it.
+function seeingMate(e) {
+  let best = null,
+    bd = PURSUIT.pack;
+  for (const o of G.enemies) {
+    if (o === e || !seesNow(o)) continue;
+    const d = Math.hypot(o.x - e.x, o.z - e.z);
+    if (d < bd) {
+      bd = d;
+      best = o;
+    }
+  }
+  return best;
+}
+// e can see the player: wake any regular enemy within calling distance that
+// is idle or walking home, as long as the player is in its territory or e is
+// provoked. The wake-up runs through alertIn, like a first alert.
+function callPack(e) {
+  for (const o of G.enemies) {
+    if (o === e || o.aware || o.dead || o.alertIn > 0) continue;
+    if (o.def.boss || o.def.dummy) continue;
+    if (o.state !== "idle" && o.state !== "return") continue;
+    if (Math.hypot(o.x - e.x, o.z - e.z) >= PURSUIT.pack) continue;
+    if (!inTerritory(o) && !(e.prov > 0)) continue;
+    o.alertIn = 0.25 + Math.random() * 0.35;
+    o.alertBy = e;
+  }
 }
 // Sight is broken: run to where the player was last seen, guess, look round.
 function toSearch(e) {
@@ -2518,6 +2559,8 @@ function setRoute(e, x, z) {
   if (G.routeN >= 2) return false;
   G.routeN++;
   e.route = G.world.route(e.x, e.z, x, z, e.r) || [{ x, z }];
+  e.rgx = x;
+  e.rgz = z;
   e.ri = 0;
   e.best = 1e9;
   e.stuck = 0;
@@ -2628,6 +2671,7 @@ function enemyUpdate(e, dt) {
         e.prov = by.prov;
         alertE(e, true, by);
       }
+      e.alertBy = null;
     }
   }
   if (
@@ -2647,13 +2691,32 @@ function enemyUpdate(e, dt) {
       e.lvx = p.vx;
       e.lvz = p.vz;
       e.lost = 0;
-    } else e.lost += dt;
+      e.told = false;
+      callPack(e);
+    } else {
+      e.lost += dt;
+      // a pack-mate that can see the player says where they are
+      const m = seeingMate(e);
+      e.told = !!m;
+      if (m) {
+        e.lsx = m.lsx;
+        e.lsz = m.lsz;
+        e.lvx = m.lvx;
+        e.lvz = m.lvz;
+      }
+    }
   }
   const face = (rate) => {
     e.yaw = turnTo(e.yaw, toP, rate * dt);
   };
   switch (e.state) {
     case "idle":
+      // shoved off the post, for example by one walking past: go back
+      if (!d.boss && Math.hypot(e.x - e.hx, e.z - e.hz) > 1) {
+        e.state = "return";
+        e.route = null;
+        e.fails = 0;
+      }
       break;
     case "alert":
       e.t += dt;
@@ -2667,18 +2730,28 @@ function enemyUpdate(e, dt) {
       const hx = e.hx - e.x,
         hz = e.hz - e.z,
         hd = Math.hypot(hx, hz);
-      if (hd < 0.6) {
+      const arrive = () => {
         e.state = "idle";
         e.yaw = e.hyaw;
+        e.route = null;
         if (d.boss) {
           e.hp = d.hp;
           e.phase = 1;
           G.bossSeen = false;
         }
+      };
+      if (hd < 0.6) {
+        arrive();
         break;
       }
       if (!e.route) setRoute(e, e.hx, e.hz);
-      walkRoute(e, d.speed * 0.8, dt);
+      // A post too tight against a wall for a body to stand on: the route
+      // ends as near as a body fits, and that spot becomes the post.
+      if (walkRoute(e, d.speed * 0.8, dt)) {
+        e.hx = e.x;
+        e.hz = e.z;
+        arrive();
+      }
       break;
     }
     case "chase": {
@@ -2789,6 +2862,19 @@ function enemyUpdate(e, dt) {
         e.route = null;
         break;
       }
+      // Told where the player is now, and it is not where this search was
+      // heading: go there instead. Planned at most twice a second.
+      e.rt -= dt;
+      if (
+        e.told &&
+        e.rt <= 0 &&
+        Math.hypot(e.lsx - e.rgx, e.lsz - e.rgz) > 2 &&
+        setRoute(e, e.lsx, e.lsz)
+      ) {
+        e.sub = "go";
+        e.fails = 0;
+        e.rt = 0.5;
+      }
       if (e.sub === "go") {
         if (e.fails >= 2) {
           giveUp(e);
@@ -2834,7 +2920,8 @@ function enemyUpdate(e, dt) {
       } else {
         e.t += dt;
         e.yaw = e.ly + Math.sin(e.t * 2.6) * 1.1;
-        if (e.t >= PURSUIT.look) giveUp(e);
+        // a pack-mate still has eyes on the player: keep looking
+        if (e.t >= PURSUIT.look && !e.told) giveUp(e);
       }
       break;
     }

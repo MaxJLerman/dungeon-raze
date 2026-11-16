@@ -111,11 +111,16 @@ function fieldFns(F, minX, minZ, W, H) {
     if (!(isFinite(ax) && isFinite(az) && isFinite(bx) && isFinite(bz)))
       return null;
     const need = rad + 0.25;
+    // The nearest usable grid point within 4 cells. One in plain view of
+    // (x, z) is preferred, so a body pressed against a thin wall is not
+    // started from the far side of it.
     const snap = (x, z) => {
       const ci = Math.round(x - minX),
         cj = Math.round(z - minZ);
       let best = -1,
-        bd = 1e9;
+        bd = 1e9,
+        seen = -1,
+        sd = 1e9;
       for (let j = cj - 4; j <= cj + 4; j++)
         for (let i = ci - 4; i <= ci + 4; i++) {
           if (i < 0 || j < 0 || i > W || j > H) continue;
@@ -126,8 +131,12 @@ function fieldFns(F, minX, minZ, W, H) {
             bd = d;
             best = k;
           }
+          if (d < sd && los(x, z, i + minX, j + minZ)) {
+            sd = d;
+            seen = k;
+          }
         }
-      return best;
+      return seen >= 0 ? seen : best;
     };
     const s = snap(ax, az),
       g = snap(bx, bz);

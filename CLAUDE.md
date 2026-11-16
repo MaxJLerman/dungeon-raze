@@ -181,21 +181,34 @@ is what you need to change the code without breaking it.
   with no provoke left. A hit sets `e.prov`, which suspends the leash for
   `PURSUIT.provoke` seconds, and a provoked enemy that wakes neighbours on
   their way home shares it with them.
+- **Pack.** An enemy that can see the player keeps regular enemies within
+  `PURSUIT.pack` in the hunt. One that is hunting but cannot see takes the
+  player's position from it every step (`seeingMate`, `e.told`), so its
+  search heads for where the player is now and it does not give up while it
+  is being told. One that is idle or walking home is woken (`callPack`),
+  under the territory rule below. The boss and the dummy take no part.
 - **Territory.** An enemy walking home notices the player again only when
   `inTerritory(e)`: the player is within the leash less `PURSUIT.edge` of its
   post. This stops it turning straight back at the leash edge.
 - **Boss chamber.** `G.inBoss` is set in `update`. While it is true, regular
   enemies give up and `alertE` refuses to wake them, whether by sight, a
-  neighbour or a hit. `genWorld` keeps tunnel posts out of the chamber.
+  neighbour or a hit. `genWorld` keeps tunnel posts out of the chamber. An
+  enemy hit in that time still flinches, so it can pass through `hit` and one
+  step of `chase` while unaware. `chase` sends an unaware regular enemy
+  straight home.
 - **The boss** has none of the above. It keeps its 38 m and 30 m limits and
   its heal on return, and routes round rock when the line to the player is
   blocked.
 - **Movement.** In view, enemies steer straight at the player and slide
   along walls. Out of view they follow a route: `setRoute(e, x, z)` asks
   `world.route` (at most two per `update`, so callers retry when it returns
-  false) and `walkRoute(e, speed, dt)` follows it. `search` and `return` use
+  false) and `walkRoute(e, speed, dt)` follows it. `routeAim(e)` is the step
+  both it and the boss use to find the next point. `search` and `return` use
   them. A route that makes no headway for 1.5 seconds is dropped and asked
   for again.
+- **Posts.** An idle regular enemy more than a metre from its post walks
+  back. If a body cannot stand on a post because it is too tight against a
+  wall, the nearest spot it can reach becomes the post.
 - Every pursuit number is in the `PURSUIT` table next to `EDEF`. An `EDEF`
   entry may carry its own `leash`.
 - `threat` on an `EDEF` entry is 0, 1 or 2: weaker than the player, around
@@ -282,7 +295,9 @@ The class picker and HUD read `CLASSES` and need no changes.
   animation frames before reading the DOM, because the HUD only updates when
   a frame is drawn.
 - Run `tests/t12.mjs` after any change to enemy movement, sight, giving up
-  or `fieldFns`. It uses `smoke`.
+  or `fieldFns`. It uses `smoke`. `DF.fieldFns` lets a test build a small
+  field by hand, which is how the route tests make walls and gaps of an exact
+  width.
 - Run `tests/t8.mjs` after any change to zones, portals, the hall or the
   dummy, and `tests/t9.mjs` to look at the hall. Both use the `hub` mode:
   `SCRIPT=$PWD/tests/t8.mjs node test.mjs hub`. The cave scripts use `smoke`,

@@ -437,6 +437,7 @@ window.DF = {
   enterCave,
   startTrans,
   genHub,
+  fieldFns,
   portalFront,
   GRADES,
   respawn,

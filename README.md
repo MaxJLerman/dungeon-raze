@@ -76,8 +76,10 @@ earlier ones.
 - **Pursuit:** enemies chase what they can see. Break their line of sight and
   they run to where they last saw you, carry on a little the way you were
   heading, look around, then walk back to their post. They also turn back 32
-  metres from their post, unless you have just hit them. While you are inside
-  the boss chamber no enemy but the boss hunts you.
+  metres from their post, unless you have just hit them. An enemy that can see
+  you keeps others within 16 metres in the hunt, so a pack does not split up
+  because one of them lost you round a corner. While you are inside the boss
+  chamber no enemy but the boss hunts you.
 - **Enemy names:** every enemy shows its name on a black plate above its head
   when it notices you or when you look at it. The colour of the name compares
   the enemy with you. White: weaker than you (Husk, Spitter, training dummy).

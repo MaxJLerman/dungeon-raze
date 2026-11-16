@@ -112,9 +112,16 @@ export default [
   const n = rooms[0], R = w.route(n.x - 3, n.z, n.x + 3, n.z, 0.5);
   return { pass: !!R && R.length === 1 && Math.abs(R[0].x - (n.x + 3)) < 1e-6 && Math.abs(R[0].z - n.z) < 1e-6, R };`),
   step("a wide body avoids a narrow gap", `
-  const a = w.route(w.spawn.x, w.spawn.z, w.boss.x, w.boss.z, 0.5), b = w.route(w.spawn.x, w.spawn.z, w.boss.x, w.boss.z, 1.35);
-  const lo = b ? clear(b, w.spawn) : -9;
-  return { pass: !!a && !!b && lo >= 1.35, lo, na: a && a.length, nb: b && b.length };`),
+  // 17 by 13 points. A wall along z = 6 has a narrow gap at x = 3 (clearance 0.8) and a wide
+  // one at x = 12 to 13. A body of radius 0.5 goes straight through the narrow gap; one of
+  // radius 0.9 does not fit and goes round by the wide one.
+  const W = 16, H = 12, F = new Float32Array(17 * 13);
+  for (let j = 0; j <= H; j++) for (let i = 0; i <= W; i++) F[j * 17 + i] = j !== 6 ? 2 : i === 3 ? 0.8 : i === 12 || i === 13 ? 2 : -1;
+  const f = DF.fieldFns(F, 0, 0, W, H), from = { x: 3, z: 2 }, slim = f.route(3, 2, 3, 10, 0.5), wide = f.route(3, 2, 3, 10, 0.9);
+  const xs = (R) => R.map((q) => q.x);
+  const c = { both: !!slim && !!wide, straight: !!slim && Math.max(...xs(slim)) < 5, round: !!wide && Math.max(...xs(wide)) >= 12,
+    clear: !!wide && clear(wide, from, f.fieldAt) >= 0.9, ends: !!wide && D(wide[wide.length - 1], { x: 3, z: 10 }) < 0.01 };
+  return { pass: all(c), c, slim, wide };`),
   step("no route is null", `
   const n = rooms[0]; let x = n.x; while (w.fieldAt(x, n.z) >= -1 && x < n.x + 60) x += 0.25;
   const timed = (f) => { const t0 = performance.now(); let r, threw = false; try { r = f(); } catch (e) { threw = String(e); } return { r, threw, ms: performance.now() - t0 }; };
@@ -125,6 +132,15 @@ export default [
   const c = { off: off.r === null, nan: nan.r === null, rock: !!end && w.fieldAt(end.x, end.z) >= 0.6, inRock: w.fieldAt(x, n.z) < -1,
     quiet: !off.threw && !nan.threw && !rock.threw, fast: off.ms < 30 && nan.ms < 30 && rock.ms < 30 };
   return { pass: all(c), c, ms: [off.ms, nan.ms, rock.ms].map((v) => +v.toFixed(1)) };`),
+  step("a start beside a thin wall stays on its own side", `
+  // 12 by 12 points. Open floor, a wall along x = 6 with a gap at the top rows, and a
+  // strip of low clearance at x = 4 and 5. A body at (5.3, 5) is nearer to open floor
+  // across the wall (7, 5) than to open floor on its own side (3, 5).
+  const W = 11, H = 11, F = new Float32Array(144);
+  for (let j = 0; j <= H; j++) for (let i = 0; i <= W; i++) F[j * 12 + i] = i === 6 && j < 10 ? -1 : (i === 4 || i === 5) && j < 10 ? 0.5 : 2;
+  const f = DF.fieldFns(F, 0, 0, W, H), R = f.route(5.3, 5, 2, 8, 0.5);
+  const c = { pre: f.fieldAt(5.3, 5) > 0 && !f.los(5.3, 5, 7, 5), found: !!R, side: !!R && R.every((q) => q.x < 6) };
+  return { pass: all(c), c, R };`),
   step("the hall routes round a pillar", `
   // a pillar stands at (-12, -9); a brazier at (-12, -5) rules out going further north
   const h = DF.genHub(), from = { x: -12, z: -11.5 }, R = h.route(-12, -11.5, -12, -7, 0.5);
@@ -183,12 +199,14 @@ export default [
   sim(0.3); const pre = hide(); sim(3, () => e.state !== "search"); const was = e.state; put(p, seen.x, seen.z); sim(1.5);
   const c = { pre, was: was === "search", aware: e.aware === true, state: e.state !== "search" && e.state !== "return", seen: e.lost === 0 };
   return { pass: all(c), c, state: e.state };`),
-  step("a hit redirects the search", scene() + `
-  sim(0.3); const pre = hide(); sim(20, () => !(e.state === "search" && e.sub === "look")); const was = e.sub;
-  const from = { x: e.x + 2, z: e.z }; put(p, from.x, from.z); DF.hitEnemy(e, 1, 0, { src: "bolt" });
-  const at = Math.hypot(e.lsx - from.x, e.lsz - from.z) < 0.01; hide(); sim(0.6);
-  const c = { pre, was: was === "look", at, state: e.state === "search", sub: e.sub === "go" || e.sub === "look", aware: e.aware === true };
-  return { pass: all(c), c, state: e.state, sub: e.sub };`),
+  step("a hit redirects the search", scene("brute") + `
+  // a Brute does not flinch from a light hit, so it is still searching when the hit lands
+  sim(0.3); const pre = hide(); sim(30, () => !(e.state === "search" && e.sub === "look")); const was = e.sub;
+  const from = { x: a.x, z: a.z + 5 }, d0 = D(e, from); put(p, from.x, from.z); DF.hitEnemy(e, 1, 0, { src: "bolt" });
+  const at = Math.hypot(e.lsx - from.x, e.lsz - from.z) < 0.01, turned = e.state === "search" && e.sub === "go"; hide();
+  let least = 1e9; sim(12, () => { least = Math.min(least, D(e, from)); return least >= 1; });
+  const c = { pre, was: was === "look", far: d0 > 6, at, turned, went: least < 1 };
+  return { pass: all(c), c, d0: +d0.toFixed(1), least: +least.toFixed(2), state: e.state, sub: e.sub };`),
   step("a woken neighbour gets the same last-seen spot", scene().replace('only(e);', 'const spare = husks().filter((q) => q !== type("husk")); only(e);') + `
   const m = spare[0]; post(m, a.x + 6, a.z + 3); m.yaw = 0; m.aware = false; m.state = "idle"; G.enemies.push(m);
   e.aware = false; e.state = "idle"; DF.alertE(e); const ls = { x: e.lsx, z: e.lsz }; const pre = hide(); sim(1);
@@ -212,6 +230,47 @@ export default [
   step("a spitter out of sight searches too", scene("spit") + `
   sim(0.3); const pre = hide(); let searched = false; sim(60, () => { searched = searched || e.state === "search"; return !home(e); });
   const c = { pre, searched, home: home(e) };
+  return { pass: all(c), c, state: e.state };`),
+  // ---- going home, after review ----
+  step("a post tight against a wall is still reached", `
+  const q0 = pair(24, 40); if (!q0) return { pass: false, pre: false };
+  const [a] = q0, e = type("husk"); let x = a.x; while (w.fieldAt(x, a.z) >= 0.35 && x < a.x + 40) x += 0.05;
+  only(e); e.hx = x; e.hz = a.z; put(e, a.x, a.z); e.aware = false; e.state = "return"; e.route = null; put(p, w.spawn.x, w.spawn.z);
+  const f = w.fieldAt(x, a.z); sim(20, () => e.state === "return");
+  const c = { pre: f > 0.1 && f < e.r, idle: e.state === "idle", near: D(e, { x: e.hx, z: e.hz }) < 1.6 };
+  return { pass: all(c), c, f: +f.toFixed(2), left: +D(e, { x: e.hx, z: e.hz }).toFixed(2) };`),
+  step("an idle enemy shoved off its post walks back", `
+  const q0 = pair(24, 40); if (!q0) return { pass: false, pre: false };
+  const [a] = q0, e = type("husk"); only(e); post(e, a.x, a.z); e.aware = false; e.state = "idle"; put(p, w.spawn.x, w.spawn.z);
+  put(e, a.x + 2.5, a.z); sim(8, () => !home(e));
+  return { pass: home(e), left: +D(e, { x: e.hx, z: e.hz }).toFixed(2), state: e.state };`),
+  // ---- the pack keeps each other in the hunt ----
+  step("a hunter out of sight is led by a pack-mate who can see", scene().replace('only(e);', 'const sp = type("spit"); only(e);') + `
+  // the spitter stands down the tunnel, within calling distance of the husk, at a spot that can
+  // see a hiding place the husk's room cannot
+  let spot = null, den = null;
+  for (let d = 8; d < 16 && !den; d++) { const q = along(R0, a, d); if (D(q, e) >= 15) continue;
+    for (let k = d + 5; k < d + 26 && !den; k++) { const g = along(R0, a, k); if (w.los(q.x, q.z, g.x, g.z) && [[a.x, a.z + 3], [a.x, a.z], [seen.x, seen.z]].every((o) => !w.los(o[0], o[1], g.x, g.z))) { spot = q; den = g; } } }
+  if (!den) return { pass: false, pre: false, why: "no spot" };
+  sim(0.3); post(sp, spot.x, spot.z); sp.cd = 9; hunt(sp); G.enemies.push(sp);
+  put(p, den.x, den.z); p.vx = p.vz = 0; const pre = !w.los(e.x, e.z, p.x, p.z) && w.los(sp.x, sp.z, p.x, p.z) && D(sp, p) < 28 && D(sp, e) < 16; let gave = false, saw = false;
+  sim(25, (i) => { gave = gave || e.state === "return" || e.state === "idle"; saw = saw || (i > 60 && e.lost === 0); return !saw && !gave; });
+  const c = { pre, stayed: !gave, saw };
+  return { pass: all(c), c, state: e.state, d: +D(e, p).toFixed(1) };`),
+  step("a pack-mate who can see calls back one that gave up", `
+  const q0 = pair(24, 40); if (!q0) return { pass: false, pre: false };
+  const [a] = q0, e = type("husk"), sp = type("spit"); only(e, sp);
+  post(e, a.x, a.z + 6); e.yaw = 0; e.aware = false; e.state = "idle"; post(sp, a.x + 5, a.z + 2); sp.cd = 9; hunt(sp); put(p, a.x, a.z - 5); p.vx = p.vz = 0;
+  const pre = D(e, p) > 7.5 && w.los(sp.x, sp.z, p.x, p.z); sim(1.5);
+  const c = { pre, woke: e.aware === true && !["idle", "return"].includes(e.state) };
+  return { pass: all(c), c, state: e.state };`),
+  step("the call does not reach past an enemy's territory", `
+  const q0 = pair(38, 40); if (!q0) return { pass: false, pre: false };
+  const [a, b] = q0, e = type("husk"), sp = type("spit"); only(e, sp);
+  put(e, a.x, a.z + 6); e.hx = b.x; e.hz = b.z; e.yaw = 0; e.aware = false; e.state = "return"; e.route = null;
+  post(sp, a.x + 5, a.z + 2); sp.cd = 9; hunt(sp); put(p, a.x, a.z - 5); p.vx = p.vz = 0;
+  const pre = D(p, b) > P.leash && w.los(sp.x, sp.z, p.x, p.z); sim(1.5);
+  const c = { pre, left: !e.aware && e.state === "return", mate: sp.aware === true };
   return { pass: all(c), c, state: e.state };`),
   // ---- Task 4: leash, territory and provoke ----
   step("leash", lead() + `
@@ -269,4 +328,15 @@ export default [
   const d = G.enemies.find((q) => q.def.dummy);
   const c = { pre, flag: G.inBoss === false, zone: G.zone === "hub", dummy: !!d && d.state === "idle" };
   return { pass: all(c), c };`),
+  // ---- the owner's complaint, end to end ----
+  step("a run to the boss does not bring the cave along", `
+  const B = w.boss, R = w.route(w.spawn.x, w.spawn.z, B.x, B.z, 0.6), reg = G.enemies.filter((q) => !q.def.boss), woke = new Set();
+  let s = 0, len = 0, a = w.spawn; for (const q of R) { len += D(a, q); a = q; }
+  // sprint the whole way: 8 m a second along the route, every enemy in the cave live
+  sim(120, () => { s += 8 / 60; const q = along(R, w.spawn, s); put(p, q.x, q.z); p.vx = p.vz = 0; for (const q of reg) if (q.aware) woke.add(q); return s < len; });
+  put(p, B.x, B.z); sim(3); const after3 = reg.filter((q) => q.aware).length;
+  sim(90, () => reg.some((q) => !q.dead && !(q.state === "idle" && !q.aware)));
+  const out = reg.filter((q) => !q.dead && !(q.state === "idle" && !q.aware && D(q, { x: q.hx, z: q.hz }) < 1.2));
+  const c = { woke: woke.size >= 5, quiet: after3 === 0, home: out.length === 0 };
+  return { pass: all(c), c, enemies: reg.length, woke: woke.size, after3, out: out.slice(0, 5).map((q) => q.type + " " + q.state + " " + D(q, { x: q.hx, z: q.hz }).toFixed(1)) };`),
 ];

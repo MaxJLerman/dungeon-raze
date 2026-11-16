@@ -221,10 +221,11 @@ One table in `src/06_game.js`, for example `PURSUIT`, so tuning is one place.
 | --------- | ------------ | ----------------------------------------------- |
 | `seeMul`  | 1.5          | Hunting sight range as a multiple of `sight`    |
 | `lostT`   | 0.35 s       | Broken sight tolerated before `search`          |
-| `guess`   | 8 m, 2.5 s   | Distance and time limit of the guess step       |
+| `guess`   | 8 m, 3.5 s   | Distance and time limit of the guess step       |
 | `look`    | 2.5 s        | Time spent looking around                       |
 | `leash`   | 32 m         | Furthest a regular enemy hunts from its post    |
-| `edge`    | 4 m          | Territory is the leash less this                |
+| `edge`    | 6 m          | Territory is the leash less this                |
+| `pack`    | 16 m         | Reach of an enemy that can see the player       |
 | `provoke` | 4 s          | Leash ignored for this long after a hit         |
 | `bossPad` | 3 m          | Added to `boss.r` for leaving and for posts     |
 
@@ -257,6 +258,27 @@ New `tests/t12.mjs`, run with `smoke`, driving `DF.sim` like the others:
    reaches its post.
 
 `tests/t5.mjs`, `t6.mjs`, `t8.mjs` and `t10.mjs` must still pass.
+
+## Changes after the first playtest and the review
+
+- **Pack.** The owner saw a Husk give up and walk away while a Spitter beside
+  it was still fighting, because the Husk lost sight at a corner and the
+  Spitter did not. An enemy that can see the player now keeps regular enemies
+  within `pack` in the hunt. One that is hunting without sight is told where
+  the player is every step, heads there, and does not give up while it is
+  being told. One that is idle or walking home is woken, if the player is in
+  its territory or the caller is provoked. The boss takes no part and the
+  boss chamber rule still wins.
+- **Ambush.** Hits on an enemy that the boss chamber rule keeps unaware get
+  no ambush bonus. The review found every such hit counted as one.
+- **Posts.** An idle enemy more than a metre off its post walks back. A post
+  too tight against a wall for a body to stand on is replaced by the nearest
+  spot it can reach.
+- **Numbers.** `guess` time went from 2.5 s to 3.5 s so a Husk can cover the
+  8 m. `edge` went from 4 m to 6 m to leave slack against the circling
+  distance.
+- **Routes.** A start or goal pressed against a thin wall snaps to open floor
+  on its own side when there is any in view.
 
 ## My calls, for the owner to check
 
