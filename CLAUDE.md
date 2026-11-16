@@ -116,8 +116,10 @@ is what you need to change the code without breaking it.
 ### Game state and time (`06_game.js`, `09_main.js`)
 
 - `G` is the single state object. `G.state` is one of `title`, `play`,
-  `pause`, `dead`, `win`, `class`, `controls`, and `show(state)` switches
-  screens.
+  `pause`, `dead`, `win`, `class`, `controls`, `howto`, and `show(state)`
+  switches screens. `MENUS` in `09_main.js` lists the screens that open on top
+  of the title or pause screen and return to it; add a new one there and to
+  `SCREENS`.
 - `update(dt)` advances the simulation. The frame loop scales `dt` for
   slow motion (`G.slowT`) and skips it for hit-stop (`G.hitstop`).
 - Timings in the data tables are in seconds, so the game is frame-rate
@@ -157,6 +159,19 @@ is what you need to change the code without breaking it.
   the enemy to an execution.
 - Enemies steer straight at the player and slide along walls. There is no
   pathfinding.
+- `threat` on an `EDEF` entry is 0, 1 or 2: weaker than the player, around
+  their level or slightly above, much stronger. Read it only through
+  `threatOf(e)`, which is where levels will plug in. It colours the name tag
+  above the enemy: `.tag.t0` white, `.t1` orange, `.t2` red, in
+  `index.tpl.html`. The same classes style the name on the big boss bar.
+- The HUD keeps a pool of ten overhead slots, each a name tag over a health
+  and posture bar. The locked target takes a slot first. A boss's slot is the
+  tag alone (`nobar`), because the big bar shows the rest.
+- A slot shows when the enemy is aware, hurt, or looked at, within 26 metres.
+  "Looked at" is `looked` in `08_hud.js`: the enemy's body is inside a box
+  around the screen centre and `world.los` from the player is clear. The box
+  is tall because the resting camera looks down, so an enemy straight ahead
+  sits above the centre. The HUD only reads enemies; looking never wakes one.
 - `EDEF.dummy` is the training dummy. Its `dummy: true` flag is honoured in
   five places: `makeEnemy` (always aware, so no ambush bonus and its bar
   shows), `enemyUpdate` (pinned in place, no AI), `hitEnemy` (health restored
@@ -189,8 +204,9 @@ The class picker and HUD read `CLASSES` and need no changes.
 
 ### Add an enemy
 
-1. Add an entry to `EDEF` with its attacks. An attack with `trig` can start a
-   sequence; one without can only be reached through another's `chain`.
+1. Add an entry to `EDEF` with its attacks and its `threat`. An attack with
+   `trig` can start a sequence; one without can only be reached through
+   another's `chain`.
    `unb: true` makes it unblockable and shows the red warning.
 2. Add a figure in `makeEnemyFig`, with `f.rim` and `f.eye`.
 3. Reference the type name in `PACKS` in `03_world.js`.
@@ -221,6 +237,10 @@ The class picker and HUD read `CLASSES` and need no changes.
   drive the simulation directly instead of waiting in real time.
 - Run `tests/t5.mjs` after any change to cave generation and `tests/t6.mjs`
   after any change to classes or combat rules.
+- Run `tests/t10.mjs` after any change to the HUD, enemy name tags or menus,
+  and `tests/t11.mjs` to look at them. Both use `smoke`. Their steps wait two
+  animation frames before reading the DOM, because the HUD only updates when
+  a frame is drawn.
 - Run `tests/t8.mjs` after any change to zones, portals, the hall or the
   dummy, and `tests/t9.mjs` to look at the hall. Both use the `hub` mode:
   `SCRIPT=$PWD/tests/t8.mjs node test.mjs hub`. The cave scripts use `smoke`,
