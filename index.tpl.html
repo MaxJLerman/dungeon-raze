@@ -335,6 +335,52 @@
         font-size: 14px;
         letter-spacing: 0.04em;
       }
+      #touch {
+        position: fixed;
+        inset: 0;
+        display: none;
+        pointer-events: none;
+        z-index: 3;
+      }
+      body.touch #touch.show {
+        display: block;
+      }
+      #touch svg {
+        position: absolute;
+        left: 0;
+        top: 0;
+        display: block;
+        overflow: hidden;
+      }
+      #touch .lbl {
+        font-family: var(--body);
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        user-select: none;
+      }
+      #treadout {
+        position: fixed;
+        left: 50%;
+        bottom: 2px;
+        transform: translateX(-50%);
+        display: none;
+        z-index: 4;
+        font: 11px ui-monospace, Menlo, monospace;
+        color: var(--dim);
+        pointer-events: none;
+      }
+      body.touch #hint {
+        display: none;
+      }
+      body.touch #vitals,
+      body.touch #map,
+      body.touch #boss {
+        box-sizing: border-box;
+        right: auto;
+        bottom: auto;
+        transform: none;
+        max-width: none;
+      }
       .vig {
         position: absolute;
         inset: 0;
@@ -693,6 +739,8 @@
       <div id="cross"></div>
       <div id="hint"></div>
     </div>
+    <div id="touch"><svg></svg></div>
+    <div id="treadout"></div>
     <div id="fade" class="vig"></div>
 
     <div id="scr-title" class="scr wide">

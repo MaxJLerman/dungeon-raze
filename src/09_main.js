@@ -255,6 +255,7 @@ function frame(now) {
   camUpdate(dt);
   render();
   HUD.update(dt);
+  TOUCH.update(dt);
   if (G.state === "dead" && !$("scr-dead").classList.contains("show"))
     show("dead");
   if (G.state === "win" && !$("scr-win").classList.contains("show"))
@@ -269,6 +270,7 @@ function boot() {
   }
   loadOpt();
   HUD.init();
+  TOUCH.init();
   enterHub();
   renderPicker();
   renderControls();
@@ -437,6 +439,7 @@ window.DF = {
   enterCave,
   startTrans,
   genHub,
+  TOUCH,
   touchLayout,
   layoutProblems,
   hexContains,
