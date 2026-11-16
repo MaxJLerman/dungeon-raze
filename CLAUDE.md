@@ -299,7 +299,7 @@ The class picker and HUD read `CLASSES` and need no changes.
 - Hiding and shooting with a ranged class is not prevented. An enemy that is
   hit runs to where the shot came from, which is the only counter.
 - A regular enemy hit from inside the boss chamber takes the damage and does
-  not respond.
+  not respond. Such hits get no ambush bonus (`held` in `hitEnemy`).
 - Enemies only route when the player is out of view. In view they still
   steer straight, so a wide enemy can catch on a corner the line of sight
   just clears.

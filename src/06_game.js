@@ -1396,7 +1396,16 @@ function hitEnemy(e, dmg, post, o = {}) {
   let mult = 1;
   const close = o.src === "melee" || o.src === "blink" || o.src === "exec";
   const back = Math.abs(angDiff(e.yaw, Math.atan2(p.x - e.x, p.z - e.z))) > 2.1;
-  if (!e.aware && o.src !== "reflect" && o.src !== "aoe" && c.ambush > 1) {
+  // An enemy that the boss chamber rule keeps from waking is not caught off
+  // guard: without this every hit on it would be an ambush.
+  const held = G.inBoss && !e.def.boss;
+  if (
+    !e.aware &&
+    !held &&
+    o.src !== "reflect" &&
+    o.src !== "aoe" &&
+    c.ambush > 1
+  ) {
     mult = c.ambush;
     say("AMBUSH", "crit");
     SFX.crit();

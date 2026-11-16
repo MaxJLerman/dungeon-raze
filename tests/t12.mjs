@@ -250,6 +250,12 @@ export default [
   const hp0 = h.hp; DF.hitEnemy(h, 5, 0, { src: "bolt" }); sim(1);
   const c = { pre: home(s), hurt: h.hp < hp0, h: !h.aware && (h.state === "idle" || h.state === "return"), s: idle(s) };
   return { pass: all(c), c, states: [h.state, s.state] };`),
+  step("a hit from inside the chamber gets no ambush bonus", shed + `
+  // every class has an ambush multiplier for an unaware enemy; it must not apply on every hit here
+  const pre = home(h) && G.player.cls.ambush > 1, drops = []; G.msgs.length = 0;
+  for (let i = 0; i < 3; i++) { const hp0 = h.hp; DF.hitEnemy(h, 5, 0, { src: "bolt" }); drops.push(+(hp0 - h.hp).toFixed(2)); sim(0.5); }
+  const c = { pre, plain: drops.every((v) => v === 5), quiet: !G.msgs.some((q) => q.text === "AMBUSH"), unaware: !h.aware };
+  return { pass: all(c), c, drops };`),
   step("the boss still fights in its chamber", mouth + `
   only(boss0); inside(); sim(2); const e = boss0;
   return { pass: !!e && e.aware === true && e.state !== "idle" && e.state !== "return", state: e && e.state };`),
