@@ -116,8 +116,10 @@ is what you need to change the code without breaking it.
 ### Game state and time (`06_game.js`, `09_main.js`)
 
 - `G` is the single state object. `G.state` is one of `title`, `play`,
-  `pause`, `dead`, `win`, `class`, `controls`, and `show(state)` switches
-  screens.
+  `pause`, `dead`, `win`, `class`, `controls`, `howto`, and `show(state)`
+  switches screens. `MENUS` in `09_main.js` lists the screens that open on top
+  of the title or pause screen and return to it; add a new one there and to
+  `SCREENS`.
 - `update(dt)` advances the simulation. The frame loop scales `dt` for
   slow motion (`G.slowT`) and skips it for hit-stop (`G.hitstop`).
 - Timings in the data tables are in seconds, so the game is frame-rate

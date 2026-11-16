@@ -3,7 +3,17 @@ const canvas = $("c");
 const RM = !!(
   window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches
 );
-const SCREENS = ["title", "pause", "dead", "win", "class", "controls"];
+const SCREENS = [
+  "title",
+  "pause",
+  "dead",
+  "win",
+  "class",
+  "controls",
+  "howto",
+];
+// screens opened on top of the title or pause screen, which Back returns to
+const MENUS = ["class", "controls", "howto"];
 let menuBack = "title",
   rebind = null,
   swallowClick = false;
@@ -15,7 +25,7 @@ function show(state) {
     state === "play" ||
       state === "pause" ||
       state === "dead" ||
-      ((state === "class" || state === "controls") && menuBack !== "title"),
+      (MENUS.includes(state) && menuBack !== "title"),
   );
   if (state === "win") {
     const t = Math.floor(G.runT),
@@ -66,9 +76,9 @@ function toBase() {
   play();
 }
 function openMenu(which) {
-  if (G.state !== "class" && G.state !== "controls") menuBack = G.state;
+  if (!MENUS.includes(G.state)) menuBack = G.state;
   if (which === "controls") renderControls();
-  else renderPicker();
+  else if (which === "class") renderPicker();
   show(which);
 }
 
@@ -316,8 +326,7 @@ function boot() {
         play();
       } else if (G.state === "pause" || G.state === "title") play();
     }
-    if (e.code === "Escape" && (G.state === "class" || G.state === "controls"))
-      show(menuBack);
+    if (e.code === "Escape" && MENUS.includes(G.state)) show(menuBack);
   });
   addEventListener("keyup", (e) => {
     keys[e.code] = false;

@@ -49,7 +49,7 @@ earlier ones.
 
 | File                 | What it holds                                                                               |
 | -------------------- | ------------------------------------------------------------------------------------------- |
-| `index.tpl.html`     | Page shell: CSS, HUD elements, and the title, pause, class, controls, death and win screens |
+| `index.tpl.html`     | Page shell: CSS, HUD elements, and the title, pause, class, controls, how to play, death and win screens |
 | `src/01_math.js`     | Math helpers, seeded random numbers, value noise, 4x4 matrices                              |
 | `src/02_gl.js`       | Renderer `R`: lit pass, additive effects pass, scene nodes `Nd`, primitive meshes           |
 | `src/03_world.js`    | `genWorld(seed)`: cave graph, walkable field, collision, world mesh, lights, spawns         |
@@ -90,7 +90,8 @@ earlier ones.
 - **Cave:** sixteen chambers on a jittered grid joined by winding tunnels, with
   extra tunnels so routes loop. A new layout every run. Shrines are checkpoints.
 - **Menus:** class picker, controls menu with rebinding, mouse sensitivity and
-  inverted look.
+  inverted look, and a How to play screen with the name colour key and combat
+  tips. How to play opens from the title and pause screens.
 
 ## Tests
 
@@ -108,18 +109,18 @@ object with a `pass` value other than `true` fails the run, and the process
 exits with code 1.
 Screenshots go to `shots/`.
 
-| Script         | What it checks                                                                          |
-| -------------- | --------------------------------------------------------------------------------------- |
-| `tests/t2.mjs` | Parry, ambush, stagger and execution, dodge, boss, win, death and respawn, long bot run |
-| `tests/t3.mjs` | How fast each enemy type kills a player who stands still                                |
-| `tests/t4.mjs` | Screenshots of key combat moments                                                       |
-| `tests/t5.mjs` | Forty generated caves for blocked tunnels and bad spawn points                          |
-| `tests/t6.mjs` | Every class: chain, heavy, tool, ability, rebinding, bot run per class                  |
-| `tests/t7.mjs` | Screenshots of the menus and each class                                                 |
-| `tests/t8.mjs` | The hall, portals, transition, training dummy and return to base. Run in `hub` mode     |
-| `tests/t9.mjs` | Screenshots of the hall, portal, dummy and the arrival in the cave. Run in `hub` mode   |
-| `tests/t10.mjs` | Enemy name tags, threat colours, look zone, How to play screen                         |
-| `tests/t11.mjs` | Screenshots of the name tags and the How to play screen                                |
+| Script          | What it checks                                                                          |
+| --------------- | --------------------------------------------------------------------------------------- |
+| `tests/t2.mjs`  | Parry, ambush, stagger and execution, dodge, boss, win, death and respawn, long bot run |
+| `tests/t3.mjs`  | How fast each enemy type kills a player who stands still                                |
+| `tests/t4.mjs`  | Screenshots of key combat moments                                                       |
+| `tests/t5.mjs`  | Forty generated caves for blocked tunnels and bad spawn points                          |
+| `tests/t6.mjs`  | Every class: chain, heavy, tool, ability, rebinding, bot run per class                  |
+| `tests/t7.mjs`  | Screenshots of the menus and each class                                                 |
+| `tests/t8.mjs`  | The hall, portals, transition, training dummy and return to base. Run in `hub` mode     |
+| `tests/t9.mjs`  | Screenshots of the hall, portal, dummy and the arrival in the cave. Run in `hub` mode   |
+| `tests/t10.mjs` | Enemy name tags, threat colours, look zone, How to play screen                          |
+| `tests/t11.mjs` | Screenshots of the name tags and the How to play screen                                 |
 
 `tests/t1.mjs` is an early real-time script kept for reference; the others drive
 the simulation directly and are the ones to copy.

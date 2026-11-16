@@ -98,4 +98,33 @@ export default [
   step("looking at the boss shows only its tag", `
   stage("warden", 10); await draw(); const s = slots();
   return { pass: s.length === 1 && s[0].tier === 2 && s[0].nobar === true && !document.getElementById("boss").classList.contains("show"), s };`),
+  // ---- the How to play screen ----
+  step("how to play opens from the title", `
+  const $ = (q) => document.querySelector(q), on = (q) => $(q).classList.contains("show");
+  DF.show("title"); $('#scr-title [data-open="howto"]').click();
+  const c = { state: G.state === "howto", shown: on("#scr-howto"), hud: !on("#hud") };
+  $("#scr-howto [data-back]").click(); c.back = G.state === "title" && !on("#scr-howto");
+  return { pass: Object.values(c).every(Boolean), c };`),
+  step("how to play opens from pause", `
+  const $ = (q) => document.querySelector(q), on = (q) => $(q).classList.contains("show");
+  DF.newRun(99); DF.show("play"); DF.show("pause"); $('#scr-pause [data-open="howto"]').click();
+  const c = { state: G.state === "howto", shown: on("#scr-howto"), hud: on("#hud") };
+  window.dispatchEvent(new KeyboardEvent("keydown", { code: "Escape" })); c.back = G.state === "pause" && !on("#scr-howto");
+  return { pass: Object.values(c).every(Boolean), c };`),
+  step("the colour key is right", `
+  const tags = [...document.querySelectorAll("#scr-howto .tag")], text = document.getElementById("scr-howto").textContent.replace(/\\s+/g, " ");
+  DF.show("title"); DF.openMenu("howto");
+  const col = tags.map((t) => getComputedStyle(t).color), bg = tags.map((t) => getComputedStyle(t).backgroundColor);
+  const c = {
+    three: tags.length === 3 && tags.every((t, i) => t.classList.contains("t" + i)),
+    colours: col.join("|") === "${WHITE}|${ORANGE}|${RED}",
+    black: bg.length === 3 && bg.every((b) => b === "${BLACK}"),
+    white: text.includes("weaker than you"), orange: text.includes("around your level or slightly above"), red: text.includes("much stronger than you"),
+  };
+  DF.show("title");
+  return { pass: Object.values(c).every(Boolean), c, col };`),
+  step("the tips moved", `
+  const text = (document.getElementById("scr-howto") || document.createElement("p")).textContent.replace(/\\s+/g, " ");
+  const c = { title: document.querySelector("#scr-title .tips") === null, parry: text.includes("Pale flash"), posture: text.includes("Orange bar full"), shrines: text.includes("Shrines") };
+  return { pass: Object.values(c).every(Boolean), c };`),
 ];
