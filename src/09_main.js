@@ -437,6 +437,7 @@ window.DF = {
   enterCave,
   startTrans,
   genHub,
+  fieldFns,
   portalFront,
   GRADES,
   respawn,
@@ -445,6 +446,7 @@ window.DF = {
   MOVES,
   EDEF,
   threatOf,
+  PURSUIT,
   CLASSES,
   BIND,
   OPT,
@@ -452,6 +454,7 @@ window.DF = {
   setBind,
   toBase,
   hitEnemy,
+  alertE,
   hurtPlayer,
   openMenu,
   sim(sec, each) {

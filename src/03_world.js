@@ -47,7 +47,179 @@ function fieldFns(F, minX, minZ, W, H) {
     }
     return true;
   }
-  return { fieldAt, resolve, los };
+  // ---- routes ----
+  // A* over the grid points of F. Buffers are made on the first call and
+  // reused, so a search allocates nothing in proportion to the grid.
+  const NP = W1 * (H + 1);
+  let rG = null,
+    rFrom,
+    rSeen,
+    rDone,
+    rEpoch = 0;
+  const hK = [],
+    hI = [];
+  function hPush(k, i) {
+    let c = hK.length;
+    hK.push(k);
+    hI.push(i);
+    while (c > 0) {
+      const q = (c - 1) >> 1;
+      if (hK[q] <= k) break;
+      hK[c] = hK[q];
+      hI[c] = hI[q];
+      c = q;
+    }
+    hK[c] = k;
+    hI[c] = i;
+  }
+  function hPop() {
+    const top = hI[0],
+      k = hK.pop(),
+      i = hI.pop(),
+      n = hK.length;
+    if (n) {
+      let c = 0;
+      for (;;) {
+        let l = c * 2 + 1;
+        if (l >= n) break;
+        if (l + 1 < n && hK[l + 1] < hK[l]) l++;
+        if (hK[l] >= k) break;
+        hK[c] = hK[l];
+        hI[c] = hI[l];
+        c = l;
+      }
+      hK[c] = k;
+      hI[c] = i;
+    }
+    return top;
+  }
+  // true when the straight line keeps at least min clearance, sampled every
+  // half metre. The first point is not tested: it is where the walker stands.
+  function lineClear(ax, az, bx, bz, min) {
+    const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 0.5));
+    for (let i = 1; i <= n; i++) {
+      const t = i / n;
+      if (fieldAt(lerp(ax, bx, t), lerp(az, bz, t)) < min) return false;
+    }
+    return true;
+  }
+  // A walkable route from (ax, az) to (bx, bz) for a body of radius rad: the
+  // points to walk to in order, not including the start. null when there is
+  // none. The last point is the goal itself when a body fits there, otherwise
+  // the nearest grid point where it does.
+  function route(ax, az, bx, bz, rad) {
+    if (!(isFinite(ax) && isFinite(az) && isFinite(bx) && isFinite(bz)))
+      return null;
+    const need = rad + 0.25;
+    // The nearest usable grid point within 4 cells. One in plain view of
+    // (x, z) is preferred, so a body pressed against a thin wall is not
+    // started from the far side of it.
+    const snap = (x, z) => {
+      const ci = Math.round(x - minX),
+        cj = Math.round(z - minZ);
+      let best = -1,
+        bd = 1e9,
+        seen = -1,
+        sd = 1e9;
+      for (let j = cj - 4; j <= cj + 4; j++)
+        for (let i = ci - 4; i <= ci + 4; i++) {
+          if (i < 0 || j < 0 || i > W || j > H) continue;
+          const k = j * W1 + i;
+          if (F[k] < need) continue;
+          const d = Math.hypot(i + minX - x, j + minZ - z);
+          if (d < bd) {
+            bd = d;
+            best = k;
+          }
+          if (d < sd && los(x, z, i + minX, j + minZ)) {
+            sd = d;
+            seen = k;
+          }
+        }
+      return seen >= 0 ? seen : best;
+    };
+    const s = snap(ax, az),
+      g = snap(bx, bz);
+    if (s < 0 || g < 0) return null;
+    if (!rG) {
+      rG = new Float32Array(NP);
+      rFrom = new Int32Array(NP);
+      rSeen = new Uint32Array(NP);
+      rDone = new Uint32Array(NP);
+    }
+    const ep = ++rEpoch,
+      gi = g % W1,
+      gj = (g / W1) | 0;
+    const est = (k) => {
+      const dx = Math.abs((k % W1) - gi),
+        dz = Math.abs(((k / W1) | 0) - gj);
+      return dx + dz - 0.5858 * Math.min(dx, dz);
+    };
+    hK.length = hI.length = 0;
+    rG[s] = 0;
+    rFrom[s] = -1;
+    rSeen[s] = ep;
+    hPush(est(s), s);
+    let pops = 0,
+      found = false;
+    while (hK.length) {
+      const k = hPop();
+      if (rDone[k] === ep) continue;
+      rDone[k] = ep;
+      if (k === g) {
+        found = true;
+        break;
+      }
+      if (++pops > 60000) break;
+      const i = k % W1,
+        j = (k / W1) | 0,
+        gk = rG[k];
+      for (let dj = -1; dj <= 1; dj++)
+        for (let di = -1; di <= 1; di++) {
+          if (!di && !dj) continue;
+          const ni = i + di,
+            nj = j + dj;
+          if (ni < 0 || nj < 0 || ni > W || nj > H) continue;
+          const nk = nj * W1 + ni;
+          if (F[nk] < need || rDone[nk] === ep) continue;
+          // a diagonal may not squeeze past a blocked corner
+          if (di && dj && (F[k + di] < need || F[k + dj * W1] < need)) continue;
+          const ng = gk + (di && dj ? 1.4142 : 1);
+          if (rSeen[nk] === ep && rG[nk] <= ng) continue;
+          rSeen[nk] = ep;
+          rG[nk] = ng;
+          rFrom[nk] = k;
+          hPush(ng + est(nk), nk);
+        }
+    }
+    if (!found) return null;
+    const pts = [];
+    for (let k = g; k !== s && k >= 0; k = rFrom[k])
+      pts.push({ x: (k % W1) + minX, z: ((k / W1) | 0) + minZ });
+    pts.push({ x: (s % W1) + minX, z: ((s / W1) | 0) + minZ });
+    pts.reverse();
+    if (fieldAt(bx, bz) >= rad) pts.push({ x: bx, z: bz });
+    // thin: keep a point only when the walk cannot go straight past it
+    const out = [],
+      thin = rad + 0.1;
+    let cx = ax,
+      cz = az,
+      i = 0;
+    while (i < pts.length) {
+      let j = i;
+      while (
+        j + 1 < pts.length &&
+        lineClear(cx, cz, pts[j + 1].x, pts[j + 1].z, thin)
+      )
+        j++;
+      out.push(pts[j]);
+      cx = pts[j].x;
+      cz = pts[j].z;
+      i = j + 1;
+    }
+    return out;
+  }
+  return { fieldAt, resolve, los, route };
 }
 // Collects world triangles: positions as floats, colours square-root encoded
 // in bytes with the glow amount in the alpha byte.
@@ -257,7 +429,7 @@ function genWorld(seed) {
           (vnoise(x * 0.63, z * 0.63) - 0.5) * 0.55,
       );
     }
-  const { fieldAt, resolve, los } = fieldFns(F, minX, minZ, W, H);
+  const { fieldAt, resolve, los, route } = fieldFns(F, minX, minZ, W, H);
   const ceilRaw = (f) => 3.1 + 1.45 * Math.sqrt(Math.max(f + 0.5, 0));
   const ceilAt = (x, z) => ceilRaw(fieldAt(x, z));
   // ---- mesh ----
@@ -615,7 +787,16 @@ function genWorld(seed) {
     const A = nodes[e.a],
       B = nodes[e.b],
       far = A.depth <= B.depth ? B : A,
-      m = e.pts[(e.pts.length / 2) | 0];
+      keep = boss.r + PURSUIT.bossPad,
+      inBoss = (q) => Math.hypot(q.x - boss.x, q.z - boss.z) < keep,
+      last = e.pts.length - 1;
+    // A post inside the boss chamber is moved back up its tunnel, away from
+    // the chamber, until it is outside. No random numbers are used for this.
+    let mi = (e.pts.length / 2) | 0;
+    const dir = inBoss(e.pts[0]) ? 1 : -1;
+    while (mi >= 0 && mi <= last && inBoss(e.pts[mi])) mi += dir;
+    if (mi < 0 || mi > last) continue;
+    const m = e.pts[mi];
     spawns.push({
       type: "husk",
       x: m.x,
@@ -651,6 +832,7 @@ function genWorld(seed) {
     ceilAt,
     resolve,
     los,
+    route,
     pos: new Float32Array(P),
     col: new Uint8Array(C),
     lights,
