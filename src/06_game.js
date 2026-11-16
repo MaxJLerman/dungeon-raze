@@ -905,6 +905,19 @@ const EDEF = {
 // How an enemy compares with the player: 0 weaker, 1 around the player's
 // level or slightly above, 2 much stronger. Fixed per type until levels
 // exist; then this compares levels and nothing else needs to change.
+// How regular enemies hunt and when they stop. One table so tuning is one
+// place. The boss keeps its own limits in the chase case of enemyUpdate.
+const PURSUIT = {
+  seeMul: 1.5, // hunting sight range as a multiple of sight
+  lostT: 0.35, // seconds of broken sight tolerated before searching
+  guessDist: 8, // metres walked on in the player's last direction
+  guessT: 2.5, // and the longest that walk may take
+  look: 2.5, // seconds spent looking around before giving up
+  leash: 32, // furthest a regular enemy hunts from its post
+  edge: 4, // territory is the leash less this
+  provoke: 4, // seconds the leash is ignored after a hit
+  bossPad: 3, // added to the boss chamber radius for leaving and for posts
+};
 function threatOf(e) {
   return e.def.threat;
 }
@@ -1022,6 +1035,14 @@ function makeEnemy(s) {
     token: false,
     snap: null,
     dur: 0,
+    // the route being walked: points in order, the next one, how many were
+    // abandoned since the state began, and progress toward the next point
+    route: null,
+    ri: 0,
+    fails: 0,
+    best: 1e9,
+    stuck: 0,
+    rt: 0,
   };
 }
 function spawnEnemies() {
@@ -1067,6 +1088,7 @@ function resetRun() {
   G.flashWhite = 0;
   G.trans = null;
   G.fade = 0;
+  G.routeN = 0;
 }
 function snapCam() {
   cam.yaw = G.player.yaw;
@@ -2384,6 +2406,53 @@ function eStep(e, dx, dz, spd, dt) {
   e.speed = spd;
   e.walk += (spd * dt * 2.0) / e.fig.o.sc;
 }
+// Gives e a route to (x, z). A point nothing can route to becomes a straight
+// walk, so an enemy never stands still for want of a route. At most two
+// routes are found per update; false means ask again next step.
+function setRoute(e, x, z) {
+  if (G.routeN >= 2) return false;
+  G.routeN++;
+  e.route = G.world.route(e.x, e.z, x, z, e.r) || [{ x, z }];
+  e.ri = 0;
+  e.best = 1e9;
+  e.stuck = 0;
+  return true;
+}
+// The unit direction from e to the next point of its route, moving on past
+// points it has reached. null when there is no route or it has been walked.
+function routeAim(e) {
+  const R = e.route;
+  if (!R) return null;
+  while (e.ri < R.length) {
+    const q = R[e.ri],
+      dx = q.x - e.x,
+      dz = q.z - e.z,
+      dl = Math.hypot(dx, dz);
+    if (dl >= 0.6) return { x: dx / dl, z: dz / dl, d: dl };
+    e.ri++;
+    e.best = 1e9;
+    e.stuck = 0;
+  }
+  return null;
+}
+// Walks e along its route. True once the last point is reached. A walk that
+// makes no headway for 1.5 seconds drops the route and counts a failure.
+function walkRoute(e, spd, dt) {
+  if (!e.route) return false;
+  const a = routeAim(e);
+  if (!a) return true;
+  if (a.d < e.best - 0.2) {
+    e.best = a.d;
+    e.stuck = 0;
+  } else if ((e.stuck += dt) > 1.5) {
+    e.route = null;
+    e.fails++;
+    return false;
+  }
+  e.yaw = turnTo(e.yaw, Math.atan2(a.x, a.z), e.def.turn * dt);
+  eStep(e, a.x, a.z, spd, dt);
+  return false;
+}
 function shoot(e, a, dmg, spd) {
   G.projs.push({
     x: e.x + Math.sin(a) * (e.r + 0.3),
@@ -2431,7 +2500,7 @@ function enemyUpdate(e, dt) {
     dist = Math.hypot(dx, dz),
     toP = Math.atan2(dx, dz),
     alive = p.state !== "dead";
-  if (dist > 75 && !e.aware) return;
+  if (dist > 75 && !e.aware && e.state !== "return") return;
   e.postT += dt;
   if (e.postT > 2.5 && e.state !== "stagger")
     e.posture = Math.max(0, e.posture - 14 * dt);
@@ -2479,8 +2548,8 @@ function enemyUpdate(e, dt) {
         }
         break;
       }
-      e.yaw = turnTo(e.yaw, Math.atan2(hx, hz), d.turn * dt);
-      eStep(e, hx / hd, hz / hd, d.speed * 0.8, dt);
+      if (!e.route) setRoute(e, e.hx, e.hz);
+      walkRoute(e, d.speed * 0.8, dt);
       break;
     }
     case "chase": {
@@ -2494,10 +2563,25 @@ function enemyUpdate(e, dt) {
         e.token = false;
         break;
       }
-      face(d.turn);
-      const ux = dx / (dist || 1),
+      let ux = dx / (dist || 1),
         uz = dz / (dist || 1),
-        tx = -uz * e.strafe,
+        aim = null;
+      if (d.boss) {
+        // the boss always knows where the player is; with rock in the way
+        // it walks round, planning again at most twice a second
+        if (w.los(e.x, e.z, p.x, p.z)) e.route = null;
+        else {
+          e.rt -= dt;
+          if ((!e.route || e.rt <= 0) && setRoute(e, p.x, p.z)) e.rt = 0.5;
+          aim = routeAim(e);
+        }
+      }
+      if (aim) {
+        ux = aim.x;
+        uz = aim.z;
+        e.yaw = turnTo(e.yaw, Math.atan2(ux, uz), d.turn * dt);
+      } else face(d.turn);
+      const tx = -uz * e.strafe,
         tz = ux * e.strafe;
       e.strafeT -= dt;
       if (e.strafeT <= 0) {
@@ -2824,6 +2908,7 @@ function separate() {
 }
 function update(dt) {
   G.t += dt;
+  G.routeN = 0;
   // a portal transition freezes the world until it has finished
   if (G.trans) {
     transUpdate(dt);

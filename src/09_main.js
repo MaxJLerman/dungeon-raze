@@ -445,6 +445,7 @@ window.DF = {
   MOVES,
   EDEF,
   threatOf,
+  PURSUIT,
   CLASSES,
   BIND,
   OPT,

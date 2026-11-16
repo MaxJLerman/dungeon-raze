@@ -16,7 +16,11 @@ const step = (name, body) => ({
   const sim = (sec, each) => DF.sim(sec, (i) => { safe(); return each ? each(i) : undefined; });
   let rooms = w.nodes.filter((n) => n.kind === "room");
   // two joined rooms whose centres are at least min apart with no line of sight
-  const pair = (min) => { for (const a of rooms) for (const j of a.adj) { const b = w.nodes[j]; if (b.kind === "room" && D(a, b) >= min && !w.los(a.x, a.z, b.x, b.z)) return [a, b]; } return null; };
+  // and, with far, both at least that far from the start
+  const pair = (min, far = 0) => { for (const a of rooms) for (const j of a.adj) { const b = w.nodes[j]; if (b.kind === "room" && D(a, b) >= min && D(a, w.spawn) >= far && D(b, w.spawn) >= far && !w.los(a.x, a.z, b.x, b.z)) return [a, b]; } return null; };
+  // the same, trying seeds until one has such a pair; returns [a, b, seed]
+  const pairAny = (min, far) => { for (let s = 99; s < 140; s++) { if (s !== 99) reseed(s); const q = pair(min, far); if (q) return [...q, s]; } return null; };
+  const husks = () => G.enemies.filter((q) => q.type === "husk");
   const type = (t) => G.enemies.find((q) => q.type === t);
   // start a cave from another seed and refresh the shortcuts
   const reseed = (s) => { DF.newRun(s); DF.show("play"); w = G.world; p = G.player; rooms = w.nodes.filter((n) => n.kind === "room"); };
@@ -69,4 +73,38 @@ export default [
   const h = DF.genHub(), from = { x: -12, z: -11.5 }, R = h.route(-12, -11.5, -12, -7, 0.5);
   const c = { pre: h.fieldAt(-12, -11.5) >= 0.8 && h.fieldAt(-12, -7) >= 0.8 && h.fieldAt(-12, -9) < 0, ends: !!R && D(R[R.length - 1], { x: -12, z: -7 }) < 0.01, found: !!R, bends: !!R && R.length > 1, clear: !!R && clear(R, from, h.fieldAt) >= 0.5 };
   return { pass: all(c), c, R };`),
+  // ---- Task 2: following a route, going home, the boss round rock ----
+  step("a returning enemy rounds the bend home", `
+  // every joined pair of rooms on this seed with no line of sight, both ways
+  const e = type("husk"), bad = []; let n = 0; only(e); put(p, w.spawn.x, w.spawn.z);
+  for (const a of rooms) for (const j of a.adj) { const b = w.nodes[j]; if (b.kind !== "room" || D(a, w.spawn) < 40 || D(b, w.spawn) < 40 || w.los(a.x, a.z, b.x, b.z)) continue;
+    n++; e.hx = a.x; e.hz = a.z; put(e, b.x, b.z); e.aware = false; e.state = "return"; e.route = null; sim(60, () => !home(e));
+    if (!home(e)) bad.push(a.id + "<-" + b.id + " left " + D(e, { x: e.hx, z: e.hz }).toFixed(1)); }
+  return { pass: n >= 4 && bad.length === 0, n, bad };`),
+  step("far return", `
+  const q = pairAny(30, 80); if (!q) return { pass: false, pre: false };
+  const [a, b, seed] = q, e = type("husk"); only(e); e.hx = a.x; e.hz = a.z; put(e, b.x, b.z); e.aware = false; e.state = "return"; put(p, w.spawn.x, w.spawn.z);
+  let near = 1e9; sim(60, () => { near = Math.min(near, D(e, p)); return !home(e); });
+  return { pass: home(e) && near > 75, seed, near: +near.toFixed(1), left: +D(e, { x: e.hx, z: e.hz }).toFixed(1), state: e.state };`),
+  step("an unreachable post does not freeze the walk", `
+  const n = rooms.slice().sort((a, b) => D(a, w.spawn) - D(b, w.spawn))[1], e = type("husk"); only(e); put(e, n.x, n.z); e.hx = w.minX - 50; e.hz = n.z; e.aware = false; e.state = "return";
+  put(p, n.x, n.z + 40); const x0 = e.x, z0 = e.z; let threw = false; try { DF.sim(2); } catch (err) { threw = String(err); }
+  const moved = Math.hypot(e.x - x0, e.z - z0);
+  return { pass: moved > 3 && e.x === e.x && e.z === e.z && !threw, moved: +moved.toFixed(1), threw };`),
+  step("route budget", `
+  const q = pairAny(30, 40); if (!q) return { pass: false, pre: false };
+  const [a, b] = q, es = husks().slice(0, 4); only(...es); put(p, w.spawn.x, w.spawn.z);
+  es.forEach((e, i) => { e.hx = a.x + i; e.hz = a.z; put(e, b.x + i * 1.5 - 2, b.z); e.aware = false; e.state = "return"; });
+  DF.update(1 / 60); const n1 = es.filter((e) => e.route).length; DF.update(1 / 60); const n2 = es.filter((e) => e.route).length;
+  return { pass: es.length === 4 && n1 === 2 && n2 === 4, n1, n2 };`),
+  step("the boss walks round rock", `
+  let spot = null, seed = 0, e, prev;
+  for (let s = 99; s < 140 && !spot; s++) { if (s !== 99) reseed(s); seed = s; e = type("warden"); prev = w.nodes[w.path[w.path.length - 2]];
+    const R = w.route(e.x, e.z, prev.x, prev.z, 0.6); if (!R) continue;
+    for (let d = 6; d < 60; d++) { const q = along(R, e, d); if (D(q, e) < 28 && !w.los(e.x, e.z, q.x, q.z)) { spot = q; break; } } }
+  if (!spot) return { pass: false, pre: false };
+  only(e); hunt(e); put(p, spot.x, spot.z); p.vx = p.vz = 0; const d0 = D(e, p); let aware = true, never = true, routed = false;
+  sim(3, () => { aware = aware && e.aware; never = never && e.state !== "return"; routed = routed || !!e.route; });
+  const c = { aware, never, routed, closer: D(e, p) < d0 - 2 };
+  return { pass: all(c), c, seed, d0: +d0.toFixed(1), d1: +D(e, p).toFixed(1) };`),
 ];
