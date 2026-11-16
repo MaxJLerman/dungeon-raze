@@ -50,6 +50,25 @@ const scene = (kind = "husk") => `
   const mate = (m, dx) => { post(m, a.x + dx, a.z + 3); m.yaw = Math.PI; m.cd = 9; hunt(m); G.enemies.push(m); return m; };
   const nan = (o) => !(o.x === o.x && o.z === o.z);`;
 
+// Two husks walking home through a room that is more than a leash from their
+// posts, with the player beside them and outside both territories.
+const away = `
+  const q0 = pair(38, 40); if (!q0) return { pass: false, pre: false };
+  const [a, b] = q0, e = husks()[0], m = husks()[1]; only(e, m);
+  [e, m].forEach((q, i) => { put(q, a.x + i * 2, a.z + 3); q.hx = b.x + i * 2; q.hz = b.z; q.yaw = Math.PI; q.aware = false; q.state = "return"; q.route = null; });
+  put(p, a.x, a.z - 3); p.vx = p.vz = 0;
+  const hunting = (q) => q.aware === true && !["idle", "return", "dead"].includes(q.state);
+  const walking = (q) => !q.aware && (q.state === "return" || q.state === "idle");`;
+// A husk posted in a room chases a player who keeps 7 m ahead of it down the
+// route to the next room, always in view.
+const lead = (setup = "") => `
+  const q0 = pair(40, 40); if (!q0) return { pass: false, pre: false };
+  const [a, b] = q0, e = type("husk"); only(e); post(e, a.x, a.z); ${setup} const R = w.route(a.x, a.z, b.x, b.z, 0.6); hunt(e);
+  let s = 0, most = 0, view = false, last = false; const H = { x: e.hx, z: e.hz };
+  sim(40, () => { while (s < 200 && D(along(R, a, s), e) < 7) s += 0.1; const q = along(R, a, s); put(p, q.x, q.z); p.vx = p.vz = 0;
+    most = Math.max(most, D(e, H)); if (e.state === "return") { view = last; return false; } last = w.los(e.x, e.z, p.x, p.z) && D(e, p) < 22.5; });
+  const gave = e.state === "return"; sim(40, () => !home(e));`;
+
 export default [
   // ---- Task 1: world.route ----
   step("route exists", `
@@ -174,4 +193,23 @@ export default [
   sim(0.3); const pre = hide(); let searched = false; sim(60, () => { searched = searched || e.state === "search"; return !home(e); });
   const c = { pre, searched, home: home(e) };
   return { pass: all(c), c, state: e.state };`),
+  // ---- Task 4: leash, territory and provoke ----
+  step("leash", lead() + `
+  const c = { gave, far: most > 28, capped: most < 34, view, home: home(e) };
+  return { pass: all(c), c, most: +most.toFixed(1), state: e.state };`),
+  step("an enemy's own leash wins", lead("e.def = { ...e.def, leash: 12 };") + `
+  const c = { gave, capped: most < 14, home: home(e) };
+  return { pass: all(c), c, most: +most.toFixed(1), state: e.state };`),
+  step("a returning enemy ignores a player outside its territory", away + `
+  const pre = D(p, { x: e.hx, z: e.hz }) > P.leash && D(p, { x: m.hx, z: m.hz }) > P.leash; sim(1.5);
+  const c = { pre, e: walking(e) && e.state === "return", m: walking(m) && m.state === "return" };
+  return { pass: all(c), c, states: [e.state, m.state] };`),
+  step("provoked", away + `
+  DF.hitEnemy(e, 1, 0, { src: "melee" }); sim(1); const c = { hit: hunting(e), mate: hunting(m), shared: m.prov > 0 };
+  sim(6); c.calmE = walking(e); c.calmM = walking(m);
+  return { pass: all(c), c, states: [e.state, m.state] };`),
+  step("a returning enemy notices inside its territory", `
+  const q0 = pair(24, 40); if (!q0) return { pass: false, pre: false };
+  const [a] = q0, e = type("husk"); only(e); e.hx = a.x; e.hz = a.z; put(e, a.x, a.z + 6); e.yaw = Math.PI; e.aware = false; e.state = "return"; put(p, a.x, a.z - 4); sim(1);
+  return { pass: e.aware === true && !["idle", "return"].includes(e.state), state: e.state };`),
 ];

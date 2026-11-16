@@ -1058,6 +1058,8 @@ function makeEnemy(s) {
     gpz: 0,
     ly: 0,
     alertBy: null,
+    // seconds left in which a hit makes it ignore its leash
+    prov: 0,
   };
 }
 function spawnEnemies() {
@@ -1272,6 +1274,25 @@ function canSee(e) {
     G.world.los(e.x, e.z, p.x, p.z)
   );
 }
+// How far from its post a regular enemy will hunt.
+function leashOf(e) {
+  return e.def.leash || PURSUIT.leash;
+}
+// True when the player is close enough to e's post for e to take notice of
+// them on its way home. Narrower than the leash, so an enemy that gave up at
+// the leash does not turn straight back.
+function inTerritory(e) {
+  const p = G.player;
+  return Math.hypot(p.x - e.hx, p.z - e.hz) < leashOf(e) - PURSUIT.edge;
+}
+// True when a regular enemy should stop hunting: the player is dead, or it
+// is past its leash and no recent hit is keeping it out there.
+function huntOver(e) {
+  return (
+    G.player.state === "dead" ||
+    (e.prov <= 0 && Math.hypot(e.x - e.hx, e.z - e.hz) > leashOf(e))
+  );
+}
 // Sight is broken: run to where the player was last seen, guess, look round.
 function toSearch(e) {
   e.state = "search";
@@ -1389,6 +1410,8 @@ function hitEnemy(e, dmg, post, o = {}) {
   e.hp -= dmg * mult;
   if (e.def.dummy) e.hp = e.def.hp;
   e.flash = 1;
+  // a hit always starts a hunt, even past the leash
+  if (!e.def.boss && !e.def.dummy) e.prov = PURSUIT.provoke;
   alertE(e, true);
   if (!e.def.boss && !e.def.dummy) {
     // a hit tells the enemy where it came from
@@ -2571,6 +2594,7 @@ function enemyUpdate(e, dt) {
   if (e.postT > 2.5 && e.state !== "stagger")
     e.posture = Math.max(0, e.posture - 14 * dt);
   e.cd -= dt;
+  e.prov = Math.max(0, e.prov - dt);
   e.kx = damp(e.kx, 0, 10, dt);
   e.kz = damp(e.kz, 0, 10, dt);
   e.x += e.kx * dt;
@@ -2579,9 +2603,22 @@ function enemyUpdate(e, dt) {
     tm = e.phase === 2 ? 0.85 : 1;
   if (e.alertIn > 0) {
     e.alertIn -= dt;
-    if (e.alertIn <= 0 && alive) alertE(e, true, e.alertBy);
+    if (e.alertIn <= 0 && alive) {
+      // one walking home is woken only inside its territory, or by a
+      // provoked neighbour, whose provoke it then shares
+      const by = e.alertBy;
+      if (d.boss || e.state !== "return" || inTerritory(e)) alertE(e, true, by);
+      else if (by && by.prov > 0) {
+        e.prov = by.prov;
+        alertE(e, true, by);
+      }
+    }
   }
-  if (!e.aware && alive) {
+  if (
+    !e.aware &&
+    alive &&
+    (d.boss || e.state !== "return" || inTerritory(e))
+  ) {
     const front = Math.abs(angDiff(e.yaw, toP)) < 1.75,
       rad = front ? d.sight : p.sprint ? 7.5 : p.state === "attack" ? 0 : 3.0;
     if (dist < rad && w.los(e.x, e.z, p.x, p.z)) alertE(e);
@@ -2630,9 +2667,9 @@ function enemyUpdate(e, dt) {
     }
     case "chase": {
       if (
-        !alive ||
-        dist > (d.boss ? 38 : 46) ||
-        (d.boss && Math.hypot(e.x - e.hx, e.z - e.hz) > 30)
+        d.boss
+          ? !alive || dist > 38 || Math.hypot(e.x - e.hx, e.z - e.hz) > 30
+          : huntOver(e)
       ) {
         giveUp(e);
         break;
@@ -2721,7 +2758,7 @@ function enemyUpdate(e, dt) {
       break;
     }
     case "search": {
-      if (!alive) {
+      if (huntOver(e)) {
         giveUp(e);
         break;
       }
