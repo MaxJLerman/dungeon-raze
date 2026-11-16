@@ -17,6 +17,7 @@ const HUD = (() => {
       knives: $("knives"),
       blink: $("blinkR"),
       boss: $("boss"),
+      bn: $("bossNm"),
       bh: $("bhF"),
       bp: $("bpF"),
       ret: $("ret"),
@@ -31,12 +32,19 @@ const HUD = (() => {
       fade: $("fade"),
     };
     const host = $("ebars");
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 10; i++) {
       const d = document.createElement("div");
       d.className = "eb";
-      d.innerHTML = "<i></i><b></b>";
+      d.innerHTML = '<span class="tag"></span><i></i><b></b>';
       host.appendChild(d);
-      ebars.push({ d, hp: d.firstChild, po: d.lastChild });
+      ebars.push({
+        d,
+        nm: d.firstChild,
+        hp: d.children[1],
+        po: d.lastChild,
+        name: "",
+        tier: -1,
+      });
     }
     const ph = $("plabels");
     for (let i = 0; i < GRADE_IDS.length; i++) {
@@ -89,6 +97,11 @@ const HUD = (() => {
     for (const e of G.enemies) if (e.def.boss && !e.dead && e.aware) boss = e;
     el.boss.classList.toggle("show", !!boss);
     if (boss) {
+      if (el.bossE !== boss) {
+        el.bossE = boss;
+        el.bn.textContent = boss.def.name;
+        el.bn.className = "tag t" + threatOf(boss);
+      }
       el.bh.style.width = sat(boss.hp / boss.def.hp) * 100 + "%";
       el.bp.style.width = sat(boss.posture / boss.def.posture) * 100 + "%";
     }
@@ -106,24 +119,37 @@ const HUD = (() => {
         L[1].toFixed(1) +
         "px) rotate(45deg)";
     } else el.ret.style.display = "none";
-    // enemy bars
+    // enemy names and bars: a name tag over a health and posture bar. The
+    // boss gets the tag alone, because the big bar already shows the rest.
     let n = 0;
-    for (const e of G.enemies) {
-      if (n >= ebars.length) break;
-      if (e.dead || e.def.boss || !e.vis) continue;
-      if (!e.aware && e.hp >= e.def.hp) continue;
-      const d = Math.hypot(e.x - p.x, e.z - p.z);
-      if (d > 26) continue;
+    const slot = (e) => {
+      if (n >= ebars.length || e.dead || !e.vis) return;
+      if (Math.hypot(e.x - p.x, e.z - p.z) > 26) return;
       const s = R.toScreen(e.x, e.def.top + 0.25, e.z);
-      if (!s) continue;
-      const b = ebars[n++];
+      if (!s) return;
+      if (!e.aware && e.hp >= e.def.hp) return;
+      const b = ebars[n++],
+        tier = threatOf(e);
+      if (b.name !== e.def.name) {
+        b.name = e.def.name;
+        b.nm.textContent = b.name;
+      }
+      if (b.tier !== tier) {
+        b.tier = tier;
+        b.nm.className = "tag t" + tier;
+      }
       b.d.style.display = "block";
       b.d.style.transform =
         "translate(" + (s[0] - 32).toFixed(1) + "px," + s[1].toFixed(1) + "px)";
       b.hp.style.width = sat(e.hp / e.def.hp) * 100 + "%";
       b.po.style.width = sat(e.posture / e.def.posture) * 100 + "%";
       b.d.classList.toggle("stag", e.state === "stagger");
-    }
+      b.d.classList.toggle("nobar", !!e.def.boss);
+    };
+    // the locked target goes first so a full pool never drops it
+    const lk = p.lock && !p.lock.dead ? p.lock : null;
+    if (lk) slot(lk);
+    for (const e of G.enemies) if (e !== lk) slot(e);
     for (let i = n; i < ebars.length; i++) ebars[i].d.style.display = "none";
     // prompt
     const ex =

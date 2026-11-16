@@ -58,7 +58,7 @@ earlier ones.
 | `src/05_figures.js`  | Player and enemy figures, base pose, enemy attack poses                                     |
 | `src/06_game.js`     | Game state `G`, key bindings, classes, moves, combat rules, enemy AI, projectiles           |
 | `src/07_render.js`   | Player and enemy posing per state, light selection, per-frame drawing                       |
-| `src/08_hud.js`      | `HUD`: bars, enemy bars, lock-on reticle, messages, minimap                                 |
+| `src/08_hud.js`      | `HUD`: bars, enemy name tags and bars, lock-on reticle, messages, minimap                   |
 | `src/09_main.js`     | Input events, menus, camera, main loop, test hook `window.DF`                               |
 | `build.mjs`          | The build script                                                                            |
 | `test.mjs`, `tests/` | Headless test runner and scenario scripts                                                   |
@@ -73,6 +73,12 @@ earlier ones.
 - **Enemies:** Husk (fast melee), Brute (armoured, has an unblockable slam),
   Spitter (ranged, its shots can be parried back), and the Ossuary Warden boss
   with two phases.
+- **Enemy names:** every enemy shows its name on a black plate above its head
+  when it notices you or when you look at it. The colour of the name compares
+  the enemy with you. White: weaker than you (Husk, Spitter, training dummy).
+  Orange: around your level or slightly above (Brute). Red: much stronger than
+  you (the Ossuary Warden). Levels are not implemented yet, so today the
+  colour is fixed per enemy type.
 - **Base of operations:** a built hall where every session starts. Six portal
   frames stand along the far wall in rank order, E to S. Only E is open; the
   rest are sealed until grades are given difficulty and rewards. Walking into
@@ -112,6 +118,8 @@ Screenshots go to `shots/`.
 | `tests/t7.mjs` | Screenshots of the menus and each class                                                 |
 | `tests/t8.mjs` | The hall, portals, transition, training dummy and return to base. Run in `hub` mode     |
 | `tests/t9.mjs` | Screenshots of the hall, portal, dummy and the arrival in the cave. Run in `hub` mode   |
+| `tests/t10.mjs` | Enemy name tags, threat colours, look zone, How to play screen                         |
+| `tests/t11.mjs` | Screenshots of the name tags and the How to play screen                                |
 
 `tests/t1.mjs` is an early real-time script kept for reference; the others drive
 the simulation directly and are the ones to copy.

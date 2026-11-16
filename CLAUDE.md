@@ -157,6 +157,14 @@ is what you need to change the code without breaking it.
   the enemy to an execution.
 - Enemies steer straight at the player and slide along walls. There is no
   pathfinding.
+- `threat` on an `EDEF` entry is 0, 1 or 2: weaker than the player, around
+  their level or slightly above, much stronger. Read it only through
+  `threatOf(e)`, which is where levels will plug in. It colours the name tag
+  above the enemy: `.tag.t0` white, `.t1` orange, `.t2` red, in
+  `index.tpl.html`. The same classes style the name on the big boss bar.
+- The HUD keeps a pool of ten overhead slots, each a name tag over a health
+  and posture bar. The locked target takes a slot first. A boss's slot is the
+  tag alone (`nobar`), because the big bar shows the rest.
 - `EDEF.dummy` is the training dummy. Its `dummy: true` flag is honoured in
   five places: `makeEnemy` (always aware, so no ambush bonus and its bar
   shows), `enemyUpdate` (pinned in place, no AI), `hitEnemy` (health restored
@@ -189,7 +197,7 @@ The class picker and HUD read `CLASSES` and need no changes.
 
 ### Add an enemy
 
-1. Add an entry to `EDEF` with its attacks. An attack with `trig` can start a
+1. Add an entry to `EDEF` with its attacks and its `threat`. An attack with `trig` can start a
    sequence; one without can only be reached through another's `chain`.
    `unb: true` makes it unblockable and shows the red warning.
 2. Add a figure in `makeEnemyFig`, with `f.rim` and `f.eye`.
@@ -221,6 +229,10 @@ The class picker and HUD read `CLASSES` and need no changes.
   drive the simulation directly instead of waiting in real time.
 - Run `tests/t5.mjs` after any change to cave generation and `tests/t6.mjs`
   after any change to classes or combat rules.
+- Run `tests/t10.mjs` after any change to the HUD, enemy name tags or menus,
+  and `tests/t11.mjs` to look at them. Both use `smoke`. Their steps wait two
+  animation frames before reading the DOM, because the HUD only updates when
+  a frame is drawn.
 - Run `tests/t8.mjs` after any change to zones, portals, the hall or the
   dummy, and `tests/t9.mjs` to look at the hall. Both use the `hub` mode:
   `SCRIPT=$PWD/tests/t8.mjs node test.mjs hub`. The cave scripts use `smoke`,

@@ -189,11 +189,9 @@
       #boss.show {
         display: flex;
       }
-      #boss .nm {
-        font-family: var(--display);
+      #boss .nm .tag {
         font-size: 20px;
-        letter-spacing: 0.08em;
-        text-shadow: 0 2px 8px #000;
+        padding: 2px 10px;
       }
       #boss .bhp {
         height: 10px;
@@ -263,6 +261,46 @@
       #ebars .eb.stag {
         outline-color: var(--ember);
         box-shadow: 0 0 10px var(--ember);
+      }
+      /* An enemy's name. The text colour is its threat: see threatOf. */
+      .tag {
+        display: inline-block;
+        padding: 1px 6px 2px;
+        background: #000;
+        font-family: var(--body);
+        font-size: 13px;
+        font-weight: 600;
+        line-height: 1.25;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+      .tag.t0 {
+        color: #fff;
+      }
+      .tag.t1 {
+        color: #db4d00;
+      }
+      .tag.t2 {
+        color: #c40016;
+        font-family: var(--display);
+        font-size: 16px;
+      }
+      #ebars .eb .tag {
+        position: absolute;
+        left: 50%;
+        bottom: 100%;
+        margin-bottom: 4px;
+        transform: translateX(-50%);
+      }
+      /* the boss has the big bar, so its slot is a name only */
+      #ebars .eb.nobar {
+        background: none;
+        outline: none;
+      }
+      #ebars .eb.nobar i,
+      #ebars .eb.nobar b {
+        display: none;
       }
       #prompt {
         position: absolute;
@@ -618,7 +656,7 @@
       <div id="ret"></div>
       <div id="prompt"></div>
       <div id="boss">
-        <div class="nm">The Ossuary Warden</div>
+        <div class="nm"><span class="tag t2" id="bossNm"></span></div>
         <div class="bar bhp"><i id="bhF"></i></div>
         <div class="bar bpo"><i id="bpF"></i></div>
       </div>

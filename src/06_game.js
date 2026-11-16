@@ -687,6 +687,7 @@ const MOVES = {
 const EDEF = {
   husk: {
     name: "Husk",
+    threat: 0,
     hp: 42,
     posture: 50,
     speed: 4.4,
@@ -725,6 +726,7 @@ const EDEF = {
   },
   brute: {
     name: "Brute",
+    threat: 1,
     hp: 120,
     posture: 100,
     speed: 2.9,
@@ -775,6 +777,7 @@ const EDEF = {
   },
   spit: {
     name: "Spitter",
+    threat: 0,
     hp: 30,
     posture: 36,
     speed: 3.4,
@@ -801,6 +804,7 @@ const EDEF = {
   warden: {
     name: "The Ossuary Warden",
     boss: true,
+    threat: 2,
     hp: 620,
     posture: 140,
     speed: 3.7,
@@ -887,6 +891,7 @@ const EDEF = {
   // case. It has no speed, senses or attacks because it never uses them.
   dummy: {
     name: "Training dummy",
+    threat: 0,
     dummy: true,
     hp: 100,
     posture: 60,
@@ -896,6 +901,13 @@ const EDEF = {
     atks: {},
   },
 };
+
+// How an enemy compares with the player: 0 weaker, 1 around the player's
+// level or slightly above, 2 much stronger. Fixed per type until levels
+// exist; then this compares levels and nothing else needs to change.
+function threatOf(e) {
+  return e.def.threat;
+}
 
 function makePlayer(id) {
   const w = G.world,
