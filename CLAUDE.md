@@ -165,6 +165,11 @@ is what you need to change the code without breaking it.
 - The HUD keeps a pool of ten overhead slots, each a name tag over a health
   and posture bar. The locked target takes a slot first. A boss's slot is the
   tag alone (`nobar`), because the big bar shows the rest.
+- A slot shows when the enemy is aware, hurt, or looked at, within 26 metres.
+  "Looked at" is `looked` in `08_hud.js`: the enemy's body is inside a box
+  around the screen centre and `world.los` from the player is clear. The box
+  is tall because the resting camera looks down, so an enemy straight ahead
+  sits above the centre. The HUD only reads enemies; looking never wakes one.
 - `EDEF.dummy` is the training dummy. Its `dummy: true` flag is honoured in
   five places: `makeEnemy` (always aware, so no ambush bonus and its bar
   shows), `enemyUpdate` (pinned in place, no AI), `hitEnemy` (health restored
@@ -197,8 +202,9 @@ The class picker and HUD read `CLASSES` and need no changes.
 
 ### Add an enemy
 
-1. Add an entry to `EDEF` with its attacks and its `threat`. An attack with `trig` can start a
-   sequence; one without can only be reached through another's `chain`.
+1. Add an entry to `EDEF` with its attacks and its `threat`. An attack with
+   `trig` can start a sequence; one without can only be reached through
+   another's `chain`.
    `unb: true` makes it unblockable and shows the red warning.
 2. Add a figure in `makeEnemyFig`, with `f.rim` and `f.eye`.
 3. Reference the type name in `PACKS` in `03_world.js`.

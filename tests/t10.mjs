@@ -79,4 +79,23 @@ export default [
   p.x = d.x; p.z = d.z - 4; p.yaw = 0; p.lock = null; cam.yaw = 0.5; cam.pitch = 0.3; cam.px = p.x; cam.pz = p.z; cam.cd = 5.6;
   await draw(); const s = slots();
   return { pass: s.length === 1 && s[0].name === "Training dummy" && s[0].tier === 0 && s[0].color === "${WHITE}", s };`),
+  // ---- the look zone: an unnoticed enemy near the middle of the screen ----
+  step("looking shows the tag and full bars", `
+  const e = stage("husk"); await draw(); await draw(); const s = slots();
+  return { pass: s.length === 1 && s[0].name === "Husk" && s[0].tier === 0 && s[0].hp === "100%" && e.aware === false && e.state === "idle", s, aware: e.aware, state: e.state };`),
+  step("resting camera pitch still counts", `
+  stage("husk", 12, 0, 0.3); await draw(); const s = slots();
+  return { pass: s.length === 1 && s[0].name === "Husk", s };`),
+  step("a wall hides the tag", `
+  stage("husk"); G.world.los = () => false; await draw(); const s = slots();
+  return { pass: s.length === 0, s };`),
+  step("beyond 26 metres there is no tag", `
+  const e = stage("husk"); e.z = G.player.z + 30; cam.pitch = Math.atan2(1.62 - e.def.top * 0.55, 30); G.world.los = () => true; await draw(); const s = slots();
+  return { pass: s.length === 0, s };`),
+  step("a pack in the zone all show", `
+  const e = stage("husk"), o = G.enemies.find((q) => q.type === "spit"); o.x = e.x; o.z = e.z + 1.5; o.aware = false; await draw(); const s = slots();
+  return { pass: s.length === 2 && s.map((q) => q.name).sort().join() === "Husk,Spitter", s };`),
+  step("looking at the boss shows only its tag", `
+  stage("warden", 10); await draw(); const s = slots();
+  return { pass: s.length === 1 && s[0].tier === 2 && s[0].nobar === true && !document.getElementById("boss").classList.contains("show"), s };`),
 ];

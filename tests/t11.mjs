@@ -14,5 +14,6 @@ const room = (pitch) =>
 export default [
   scene("tags_pack", `${room(0.3)} put("husk", 1.7, 6); put("spit", 0, 6.4); put("brute", -1.9, 6);`),
   scene("tags_boss", `${room(0.2)} put("warden", 1.8, 9); put("brute", -2.2, 9);`),
+  scene("tags_look", `${room(0.3)} put("brute", 0, 10, false);`),
   scene("tags_dummy", `DF.setClass("fighter"); DF.enterHub(); DF.show("play"); const d = G.enemies.find((e) => e.def.dummy), p = G.player; p.x = d.x; p.z = d.z - 4; p.yaw = 0; cam.yaw = 0.3; cam.pitch = 0.25; cam.px = p.x; cam.pz = p.z; cam.cd = 5.6;`),
 ];

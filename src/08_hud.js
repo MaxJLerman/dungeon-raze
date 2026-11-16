@@ -60,6 +60,21 @@ const HUD = (() => {
       s += '<u class="' + (i < n ? "on" : "") + '">' + ch + "</u>";
     return s;
   }
+  // True when the player is looking at an enemy: it is near the middle of the
+  // screen with nothing solid between them. s is the screen point above its
+  // head. The zone is a tall box because the camera rests above the player
+  // looking down, which puts an enemy straight ahead above the screen centre.
+  // The box grows with the enemy's size on screen. This only reads.
+  function looked(e, s) {
+    const m = R.toScreen(e.x, e.y + e.def.top * 0.55, e.z);
+    if (!m) return false;
+    const W = canvas.clientWidth,
+      H = canvas.clientHeight,
+      hh = Math.abs(m[1] - s[1]);
+    if (Math.abs(m[0] - W / 2) > 0.1 * H + 0.5 * hh) return false;
+    if (Math.abs(m[1] - H / 2) > 0.28 * H + hh) return false;
+    return G.world.los(G.player.x, G.player.z, e.x, e.z);
+  }
   function update(dt) {
     const p = G.player;
     if (!p) return;
@@ -127,7 +142,8 @@ const HUD = (() => {
       if (Math.hypot(e.x - p.x, e.z - p.z) > 26) return;
       const s = R.toScreen(e.x, e.def.top + 0.25, e.z);
       if (!s) return;
-      if (!e.aware && e.hp >= e.def.hp) return;
+      // shown once it has noticed the player or been hurt, or when looked at
+      if (!e.aware && e.hp >= e.def.hp && !looked(e, s)) return;
       const b = ebars[n++],
         tier = threatOf(e);
       if (b.name !== e.def.name) {
