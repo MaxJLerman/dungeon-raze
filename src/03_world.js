@@ -778,7 +778,16 @@ function genWorld(seed) {
     const A = nodes[e.a],
       B = nodes[e.b],
       far = A.depth <= B.depth ? B : A,
-      m = e.pts[(e.pts.length / 2) | 0];
+      keep = boss.r + PURSUIT.bossPad,
+      inBoss = (q) => Math.hypot(q.x - boss.x, q.z - boss.z) < keep,
+      last = e.pts.length - 1;
+    // A post inside the boss chamber is moved back up its tunnel, away from
+    // the chamber, until it is outside. No random numbers are used for this.
+    let mi = (e.pts.length / 2) | 0;
+    const dir = inBoss(e.pts[0]) ? 1 : -1;
+    while (mi >= 0 && mi <= last && inBoss(e.pts[mi])) mi += dir;
+    if (mi < 0 || mi > last) continue;
+    const m = e.pts[mi];
     spawns.push({
       type: "husk",
       x: m.x,

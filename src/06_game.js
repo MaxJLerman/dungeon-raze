@@ -20,6 +20,8 @@ const G = {
   checkpoint: null,
   bossDead: false,
   bossSeen: false,
+  // true while the player is inside the boss chamber
+  inBoss: false,
   gate: null,
   flashRed: 0,
   flashWhite: 0,
@@ -1106,6 +1108,7 @@ function resetRun() {
   G.trans = null;
   G.fade = 0;
   G.routeN = 0;
+  G.inBoss = false;
 }
 function snapCam() {
   cam.yaw = G.player.yaw;
@@ -1285,10 +1288,12 @@ function inTerritory(e) {
   const p = G.player;
   return Math.hypot(p.x - e.hx, p.z - e.hz) < leashOf(e) - PURSUIT.edge;
 }
-// True when a regular enemy should stop hunting: the player is dead, or it
-// is past its leash and no recent hit is keeping it out there.
+// True when a regular enemy should stop hunting: the player is in the boss
+// chamber or dead, or it is past its leash and no recent hit is keeping it
+// out there. A hit never overrides the boss chamber.
 function huntOver(e) {
   return (
+    G.inBoss ||
     G.player.state === "dead" ||
     (e.prov <= 0 && Math.hypot(e.x - e.hx, e.z - e.hz) > leashOf(e))
   );
@@ -1317,6 +1322,8 @@ function giveUp(e) {
 // the player; otherwise the enemy starts from where the player is now.
 function alertE(e, quiet, by) {
   if (e.aware || e.dead) return;
+  // nothing but the boss takes notice of a player in the boss chamber
+  if (G.inBoss && !e.def.boss) return;
   e.aware = true;
   const src = by || G.player;
   e.lsx = by ? by.lsx : src.x;
@@ -2674,6 +2681,11 @@ function enemyUpdate(e, dt) {
         giveUp(e);
         break;
       }
+      // a flinch can end here without the enemy ever having been alerted
+      if (!d.boss && !e.aware) {
+        giveUp(e);
+        break;
+      }
       if (!d.boss && e.lost > PURSUIT.lostT) {
         toSearch(e);
         break;
@@ -3090,6 +3102,15 @@ function update(dt) {
     return;
   }
   if (G.zone === "cave") G.runT += dt;
+  // The boss chamber: in once within its radius, out once past the pad, so
+  // standing on the line does not flicker.
+  const bc = G.world.boss;
+  if (!bc) G.inBoss = false;
+  else {
+    const bd = Math.hypot(G.player.x - bc.x, G.player.z - bc.z);
+    if (bd < bc.r) G.inBoss = true;
+    else if (bd > bc.r + PURSUIT.bossPad) G.inBoss = false;
+  }
   playerUpdate(dt);
   for (const e of G.enemies) enemyUpdate(e, dt);
   projUpdate(dt);

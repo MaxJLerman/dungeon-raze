@@ -81,6 +81,11 @@ is what you need to change the code without breaking it.
   walkable area. `world.los(ax, az, bx, bz)` tests line of sight.
 - Walls come from marching squares on the same grid, so what you see matches
   what you collide with. Floor and ceiling are sheets over the same cells.
+- `world.route(ax, az, bx, bz, rad)` finds a walkable route for a body of
+  that radius by searching the same grid. It returns the points to walk to in
+  order, not including the start, or `null` when there is none. It lives in
+  `fieldFns`, so the hall has it too. `world.path` is something else: the
+  list of chamber ids from the start to the boss.
 - The ceiling height at a point is `world.ceilAt(x, z)`.
 - Spawn packs are chosen by a chamber's distance from the start, in `PACKS`.
 
@@ -108,7 +113,8 @@ is what you need to change the code without breaking it.
   in. The transition is advanced by `update`, which does nothing else while
   `G.trans` is set, so `DF.sim` drives it in tests.
 - `resetRun()` clears everything that must not cross a world swap. Add new
-  per-run state there.
+  per-run state there. It clears `G.inBoss`, the flag for the player being
+  inside the boss chamber.
 - `R.env` (ambient and fog) is set per zone from `ENV_HUB` and `ENV_CAVE`.
 - In the hall, focus and tool charges refill on their own, the minimap is
   hidden and the run timer does not advance.
@@ -150,15 +156,48 @@ is what you need to change the code without breaking it.
 
 ### Enemies
 
-- State machine in `enemyUpdate`: `idle`, `alert`, `chase`, `wind`, `act`,
-  `rec`, `hit`, `recoil`, `stagger`, `roar`, `return`, `dead`.
+- State machine in `enemyUpdate`: `idle`, `alert`, `chase`, `search`, `wind`,
+  `act`, `rec`, `hit`, `recoil`, `stagger`, `roar`, `return`, `dead`.
 - At most two non-boss enemies may attack at once. They claim a token with
   `takeToken`; the rest circle.
 - `poise` 0 flinches on any hit, 1 only on heavy hits, 2 never.
 - Posture fills from hits and parries and breaks into `stagger`, which opens
   the enemy to an execution.
-- Enemies steer straight at the player and slide along walls. There is no
-  pathfinding.
+- `aware` means "hunting the player": true in `chase` and `search`, false in
+  `idle` and `return`.
+- **Sight.** A regular enemy that is hunting follows the player only while
+  `canSee(e)` holds: the line is clear and the player is within `sight` times
+  `PURSUIT.seeMul`, in any direction. While it can see, it records where the
+  player is and how they are moving (`lsx`, `lsz`, `lvx`, `lvz`). `lost` is
+  the time since. A hit, or a neighbour's wake-up, also sets the last-seen
+  spot.
+- **Search.** After `PURSUIT.lostT` of broken sight, `chase` hands on to
+  `search` (`toSearch`), which has three steps in `e.sub`: `go` routes to the
+  last-seen spot, `guess` walks on the way the player was heading, `look`
+  stands and sweeps. Seeing the player in any step returns to `chase`.
+- **Giving up.** `giveUp(e)` is the one way a hunt ends: unaware, state
+  `return`. `huntOver(e)` decides it for regular enemies: the player is in
+  the boss chamber or dead, or the enemy is past `leashOf(e)` from its post
+  with no provoke left. A hit sets `e.prov`, which suspends the leash for
+  `PURSUIT.provoke` seconds, and a provoked enemy that wakes neighbours on
+  their way home shares it with them.
+- **Territory.** An enemy walking home notices the player again only when
+  `inTerritory(e)`: the player is within the leash less `PURSUIT.edge` of its
+  post. This stops it turning straight back at the leash edge.
+- **Boss chamber.** `G.inBoss` is set in `update`. While it is true, regular
+  enemies give up and `alertE` refuses to wake them, whether by sight, a
+  neighbour or a hit. `genWorld` keeps tunnel posts out of the chamber.
+- **The boss** has none of the above. It keeps its 38 m and 30 m limits and
+  its heal on return, and routes round rock when the line to the player is
+  blocked.
+- **Movement.** In view, enemies steer straight at the player and slide
+  along walls. Out of view they follow a route: `setRoute(e, x, z)` asks
+  `world.route` (at most two per `update`, so callers retry when it returns
+  false) and `walkRoute(e, speed, dt)` follows it. `search` and `return` use
+  them. A route that makes no headway for 1.5 seconds is dropped and asked
+  for again.
+- Every pursuit number is in the `PURSUIT` table next to `EDEF`. An `EDEF`
+  entry may carry its own `leash`.
 - `threat` on an `EDEF` entry is 0, 1 or 2: weaker than the player, around
   their level or slightly above, much stronger. Read it only through
   `threatOf(e)`, which is where levels will plug in. It colours the name tag
@@ -204,7 +243,8 @@ The class picker and HUD read `CLASSES` and need no changes.
 
 ### Add an enemy
 
-1. Add an entry to `EDEF` with its attacks and its `threat`. An attack with
+1. Add an entry to `EDEF` with its attacks and its `threat`, and a `leash`
+   if it should hunt nearer or further than `PURSUIT.leash`. An attack with
    `trig` can start a sequence; one without can only be reached through
    another's `chain`.
    `unb: true` makes it unblockable and shows the red warning.
@@ -241,6 +281,8 @@ The class picker and HUD read `CLASSES` and need no changes.
   and `tests/t11.mjs` to look at them. Both use `smoke`. Their steps wait two
   animation frames before reading the DOM, because the HUD only updates when
   a frame is drawn.
+- Run `tests/t12.mjs` after any change to enemy movement, sight, giving up
+  or `fieldFns`. It uses `smoke`.
 - Run `tests/t8.mjs` after any change to zones, portals, the hall or the
   dummy, and `tests/t9.mjs` to look at the hall. Both use the `hub` mode:
   `SCRIPT=$PWD/tests/t8.mjs node test.mjs hub`. The cave scripts use `smoke`,
@@ -254,7 +296,13 @@ The class picker and HUD read `CLASSES` and need no changes.
 - Balance is untested by hand. In bot runs the Fighter looks strongest and a
   pack kills a passive player in about seven seconds.
 - The camera can pass through characters at close range.
-- Enemies can snag on tight bends because they have no pathfinding.
+- Hiding and shooting with a ranged class is not prevented. An enemy that is
+  hit runs to where the shot came from, which is the only counter.
+- A regular enemy hit from inside the boss chamber takes the damage and does
+  not respond.
+- Enemies only route when the player is out of view. In view they still
+  steer straight, so a wide enemy can catch on a corner the line of sight
+  just clears.
 - There is no gamepad support.
 - The Assassin's blink picks its own target when nothing is locked, which may
   not be the enemy the player meant.

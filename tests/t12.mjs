@@ -69,6 +69,26 @@ const lead = (setup = "") => `
     most = Math.max(most, D(e, H)); if (e.state === "return") { view = last; return false; } last = w.los(e.x, e.z, p.x, p.z) && D(e, p) < 22.5; });
   const gave = e.state === "return"; sim(40, () => !home(e));`;
 
+// The tunnel mouth of the boss chamber. at(k) is the first point down the
+// route out of the chamber that is boss.r + k from its centre, so a negative
+// k is inside. A husk and a spitter are posted just outside, where they can
+// see in, and hunting a player who stands further up the tunnel. inside()
+// moves the player in.
+const mouth = `
+  const B = w.boss, prev = w.nodes[w.path[w.path.length - 2]], R = w.route(B.x, B.z, prev.x, prev.z, 0.6);
+  const at = (k) => { for (let d = 0; d < 120; d += 0.5) { const q = along(R, B, d); if (D(q, B) >= B.r + k) return q; } return null; };
+  const h = type("husk"), s = type("spit"), boss0 = type("warden"), ph = at(4), ps = at(7), out = at(14);
+  // deep: a spot at least 2 m inside the chamber that both posts can see
+  let deep = null; for (let k = -2; k >= -14 && !deep; k--) { const q = at(k); if (q && ph && ps && w.los(ph.x, ph.z, q.x, q.z) && w.los(ps.x, ps.z, q.x, q.z)) deep = q; }
+  if (!R || !ph || !ps || !out || !deep) return { pass: false, pre: false };
+  only(h, s); post(h, ph.x, ph.z); post(s, ps.x, ps.z); hunt(h); hunt(s); put(p, out.x, out.z); p.vx = p.vz = 0; sim(0.5);
+  const inside = () => { put(p, deep.x, deep.z); p.vx = p.vz = 0; };
+  const idle = (q) => q.state === "idle" && !q.aware;`;
+// The same, run on until the player has been inside for 14 seconds.
+const shed = mouth + `
+  const sees = w.los(h.x, h.z, deep.x, deep.z) && D(h, deep) < 22.5; inside(); let shots = false, within = false, quick = false;
+  sim(14, (i) => { if (i === 150) quick = !h.aware && !s.aware; if (i < 300) return; shots = shots || G.projs.some((q) => q.own === "e" && q.src && !q.src.def.boss); within = within || D(h, B) < B.r || D(s, B) < B.r; });`;
+
 export default [
   // ---- Task 1: world.route ----
   step("route exists", `
@@ -212,4 +232,35 @@ export default [
   const q0 = pair(24, 40); if (!q0) return { pass: false, pre: false };
   const [a] = q0, e = type("husk"); only(e); e.hx = a.x; e.hz = a.z; put(e, a.x, a.z + 6); e.yaw = Math.PI; e.aware = false; e.state = "return"; put(p, a.x, a.z - 4); sim(1);
   return { pass: e.aware === true && !["idle", "return"].includes(e.state), state: e.state };`),
+  // ---- Task 5: the boss chamber ----
+  step("the chamber flag", mouth + `
+  only(); const mid = at(1.5), far = at(4), seq = [];
+  for (const q of [deep, mid, far]) { put(p, q.x, q.z); DF.update(1 / 60); seq.push(G.inBoss); }
+  return { pass: seq[0] === true && seq[1] === true && seq[2] === false, seq };`),
+  step("stepping into the chamber sheds the pack", shed + `
+  // sees: the husk could see the player in there, so without the rule it would keep hunting
+  const c = { sees, quick, home: home(h) && home(s), quiet: !shots, outside: !within };
+  return { pass: all(c), c, states: [h.state, s.state] };`),
+  step("the pack cannot notice a player in the chamber", shed + `
+  for (const q of [h, s]) q.yaw = Math.atan2(p.x - q.x, p.z - q.z);
+  const pre = home(h) && w.los(h.x, h.z, p.x, p.z) && D(h, p) < h.def.sight; sim(3);
+  const c = { pre, h: idle(h), s: idle(s) };
+  return { pass: all(c), c, states: [h.state, s.state], d: +D(h, p).toFixed(1) };`),
+  step("a hit from inside the chamber does not start a hunt", shed + `
+  const hp0 = h.hp; DF.hitEnemy(h, 5, 0, { src: "bolt" }); sim(1);
+  const c = { pre: home(s), hurt: h.hp < hp0, h: !h.aware && (h.state === "idle" || h.state === "return"), s: idle(s) };
+  return { pass: all(c), c, states: [h.state, s.state] };`),
+  step("the boss still fights in its chamber", mouth + `
+  only(boss0); inside(); sim(2); const e = boss0;
+  return { pass: !!e && e.aware === true && e.state !== "idle" && e.state !== "return", state: e && e.state };`),
+  step("no post in the boss chamber", `
+  const bad = []; let n = 0;
+  for (let k = 1; k <= 40; k++) { reseed(k * 7919); for (const sp of w.spawns) { if (sp.type === "warden") continue; n++;
+    const d = D(sp, w.boss); if (d < w.boss.r + P.bossPad) bad.push(k + " " + sp.type + " " + d.toFixed(1)); if (w.fieldAt(sp.x, sp.z) < 0.45) bad.push(k + " field"); } }
+  return { pass: bad.length === 0 && n > 1000, n, bad: bad.slice(0, 8), nbad: bad.length };`),
+  step("leaving for the hall clears the chamber flag", mouth + `
+  inside(); DF.update(1 / 60); const pre = G.inBoss === true; DF.enterHub(); DF.sim(1);
+  const d = G.enemies.find((q) => q.def.dummy);
+  const c = { pre, flag: G.inBoss === false, zone: G.zone === "hub", dummy: !!d && d.state === "idle" };
+  return { pass: all(c), c };`),
 ];

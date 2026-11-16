@@ -73,6 +73,11 @@ earlier ones.
 - **Enemies:** Husk (fast melee), Brute (armoured, has an unblockable slam),
   Spitter (ranged, its shots can be parried back), and the Ossuary Warden boss
   with two phases.
+- **Pursuit:** enemies chase what they can see. Break their line of sight and
+  they run to where they last saw you, carry on a little the way you were
+  heading, look around, then walk back to their post. They also turn back 32
+  metres from their post, unless you have just hit them. While you are inside
+  the boss chamber no enemy but the boss hunts you.
 - **Enemy names:** every enemy shows its name on a black plate above its head
   when it notices you or when you look at it. The colour of the name compares
   the enemy with you. White: weaker than you (Husk, Spitter, training dummy).
@@ -121,6 +126,7 @@ Screenshots go to `shots/`.
 | `tests/t9.mjs`  | Screenshots of the hall, portal, dummy and the arrival in the cave. Run in `hub` mode   |
 | `tests/t10.mjs` | Enemy name tags, threat colours, look zone, How to play screen                          |
 | `tests/t11.mjs` | Screenshots of the name tags and the How to play screen                                 |
+| `tests/t12.mjs` | Routes, lost sight and searching, leash, provoke, boss chamber                          |
 
 `tests/t1.mjs` is an early real-time script kept for reference; the others drive
 the simulation directly and are the ones to copy.
