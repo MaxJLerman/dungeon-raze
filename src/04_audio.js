@@ -185,6 +185,9 @@ const SFX = (() => {
       tone(0.3, 120, 35, 0.8, "sine");
       noise(0.08, 4000, 2000, 0.3, "highpass", 0.7, 0.02);
     },
+    beep() {
+      tone(0.06, 1900, 1900, 0.12, "square");
+    },
     shot() {
       tone(0.25, 520, 180, 0.3, "sawtooth");
       noise(0.2, 800, 2500, 0.2, "bandpass", 2);

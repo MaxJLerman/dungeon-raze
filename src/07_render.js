@@ -729,6 +729,13 @@ function render() {
     for (const y of [0.45, 1.0, 1.55])
       R.sprite(g.x, y, g.z, 0.55, c[0], c[1], c[2], a);
   }
+  for (const b of G.bombs) {
+    // a blinking light, faster as it runs out
+    const per = b.t > 1 ? 0.5 : 0.2,
+      on = b.t % per < per * 0.5;
+    R.sprite(b.x, b.y, b.z, 0.14, 0.3, 0.3, 0.32, 1);
+    if (on) R.sprite(b.x, b.y + 0.05, b.z, 0.32, CRIMSON[0], CRIMSON[1], CRIMSON[2], 1.8);
+  }
   for (const pr of G.projs) {
     const c = pr.c,
       k = pr.kind;
@@ -745,6 +752,10 @@ function render() {
           c[2],
           1.5 - i * 0.12,
         );
+      continue;
+    }
+    if (k === "sticky") {
+      R.sprite(pr.x, pr.y, pr.z, 0.16, c[0], c[1], c[2], 1.4);
       continue;
     }
     if (k === "bullet") {

@@ -28,6 +28,38 @@ export default [
   return { pass: most === 7 && back > e.r + 3.5 && p.tool === 1, most, back, tool: p.tool }; `),
   },
   {
+    name: "sticky bomb",
+    eval: cls("enforcer", `
+  const e = tp((e) => e.type === 'brute', 6); e.state = 'idle'; const h0 = e.hp; K('tool'); let stuck = null;
+  DF.sim(1, () => { const b = G.bombs[0]; if (b && b.e) stuck = b.e; });
+  e.x += 2; DF.sim(0.05); const b = G.bombs[0], follows = b && Math.hypot(b.x - e.x, b.z - e.z) < e.r + 0.6;
+  DF.sim(2.5); const c = { stuck: stuck === e, follows, gone: G.bombs.length === 0, hurt: e.hp < h0 };
+  return { pass: Object.values(c).every(Boolean), c }; `),
+  },
+  {
+    name: "sticky bomb hurts its thrower at half",
+    eval: cls("enforcer", `
+  const e = tp((e) => e.type === 'brute', 6); e.state = 'idle'; p.iframe = 0;
+  G.bombs.push({ x: p.x + 1, y: 1, z: p.z, e: null, ox: 0, oz: 0, t: 0.05 }); const hp0 = p.hp; DF.sim(0.2);
+  return { pass: Math.abs(hp0 - p.hp - 22.5) < 0.6, lost: hp0 - p.hp }; `),
+  },
+  {
+    name: "sticky bomb dodged and cleared",
+    eval: cls("enforcer", `
+  G.bombs.push({ x: p.x + 1, y: 1, z: p.z, e: null, ox: 0, oz: 0, t: 0.05 }); p.iframe = 1; const hp0 = p.hp; DF.sim(0.2);
+  const dodged = p.hp === hp0;
+  G.bombs.push({ x: p.x + 1, y: 1, z: p.z, e: null, ox: 0, oz: 0, t: 2 }); DF.enterHub();
+  return { pass: dodged && G.bombs.length === 0, dodged, left: G.bombs.length }; `),
+  },
+  {
+    name: "sticky bomb on a dying enemy",
+    eval: cls("enforcer", `
+  const e = tp((e) => e.type === 'husk', 5); G.bombs.push({ x: e.x, y: 1, z: e.z, e, ox: 0, oz: 0, t: 1 });
+  DF.hitEnemy(e, 999, 0, {}); const at = [e.x, e.z]; DF.sim(0.3); const b = G.bombs[0];
+  const dropped = b && b.e === null && Math.hypot(b.x - at[0], b.z - at[1]) < 1; DF.sim(1);
+  return { pass: dropped && G.bombs.length === 0, dropped }; `),
+  },
+  {
     name: "fortress parry",
     eval: cls(
       "tanker",

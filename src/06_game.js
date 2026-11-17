@@ -1277,6 +1277,7 @@ function resetRun() {
   G.deaths = 0;
   G.runT = 0;
   G.projs = [];
+  G.bombs = [];
   G.parts = [];
   G.arcs = [];
   G.rings = [];
@@ -1394,6 +1395,7 @@ function respawn() {
   });
   G.world.resolve(p, 0.6);
   G.projs = [];
+  G.bombs = [];
   G.rings = [];
   G.pending = [];
   G.bossSeen = false;
@@ -2190,6 +2192,12 @@ function useTool(ix, iz, il) {
     p.throwT = 0.35;
     p.iframe = Math.max(p.iframe, 0.25);
     explode(p.x, p.z, 5, 12, 32, VIOLET);
+  } else if (id === "sticky") {
+    const a = p.lock ? Math.atan2(p.lock.x - p.x, p.lock.z - p.z) : aimRanged();
+    p.yaw = a;
+    p.throwT = 0.25;
+    fire({ speed: 22, dmg: 0, post: 0, kind: "sticky", life: 0.9 }, a);
+    SFX.knife();
   } else if (id === "leap") {
     const a = aimRanged();
     p.yaw = a;
@@ -3293,6 +3301,50 @@ function enemyUpdate(e, dt) {
       break;
   }
 }
+// The Enforcer's sticky bomb: stuck to an enemy (moving with it) or to a
+// spot, it goes off after STICKY.t seconds and hurts the thrower too, at
+// STICKY.self of the damage, through hurtPlayer.
+const STICKY = { t: 3, r: 3.5, dmg: 45, post: 40, self: 0.5 };
+function plantBomb(x, z, e) {
+  G.bombs.push({
+    x,
+    y: e ? 1.1 : 0.4,
+    z,
+    e,
+    ox: e ? x - e.x : 0,
+    oz: e ? z - e.z : 0,
+    t: STICKY.t,
+  });
+  SFX.beep();
+}
+function bombsUpdate(dt) {
+  const p = G.player,
+    w = G.world;
+  for (const b of G.bombs) {
+    if (b.e && b.e.dead) {
+      b.e = null;
+      b.y = 0.4;
+    }
+    if (b.e) {
+      b.x = b.e.x + b.ox;
+      b.z = b.e.z + b.oz;
+    }
+    // beeps quicken as it runs out
+    const per = b.t > 1 ? 0.5 : 0.2,
+      was = Math.floor(b.t / per);
+    b.t -= dt;
+    if (b.t > 0 && Math.floor(b.t / per) !== was) SFX.beep();
+    if (b.t <= 0) {
+      explode(b.x, b.z, STICKY.r, STICKY.dmg, STICKY.post, CRIMSON);
+      if (
+        Math.hypot(p.x - b.x, p.z - b.z) < STICKY.r + 0.5 &&
+        w.los(b.x, b.z, p.x, p.z)
+      )
+        hurtPlayer(STICKY.dmg * STICKY.self, null, { px: b.x, pz: b.z });
+    }
+  }
+  G.bombs = G.bombs.filter((b) => b.t > 0);
+}
 function projUpdate(dt) {
   const p = G.player,
     w = G.world;
@@ -3301,6 +3353,12 @@ function projUpdate(dt) {
     pr.x += pr.vx * dt;
     pr.z += pr.vz * dt;
     const wall = w.fieldAt(pr.x, pr.z) < 0.12;
+    if (pr.kind === "sticky" && (wall || pr.life <= 0)) {
+      // it sticks where it stopped, a step back from a wall
+      plantBomb(pr.x - pr.vx * dt, pr.z - pr.vz * dt, null);
+      pr.life = -1;
+      continue;
+    }
     if (wall || pr.life <= 0) {
       if (pr.aoe)
         explode(
@@ -3341,6 +3399,11 @@ function projUpdate(dt) {
       for (const e of G.enemies) {
         if (e.dead || (pr.hitSet && pr.hitSet.has(e))) continue;
         if (Math.hypot(pr.x - e.x, pr.z - e.z) < e.r + 0.45 + (pr.rad || 0)) {
+          if (pr.kind === "sticky") {
+            plantBomb(pr.x, pr.z, e);
+            pr.life = -1;
+            break;
+          }
           if (pr.aoe) {
             explode(pr.x, pr.z, pr.aoe, pr.dmg, pr.post, pr.c);
             pr.life = -1;
@@ -3426,6 +3489,7 @@ function update(dt) {
   playerUpdate(dt);
   for (const e of G.enemies) enemyUpdate(e, dt);
   projUpdate(dt);
+  bombsUpdate(dt);
   for (const q of G.pending) {
     q.t -= dt;
     if (q.t <= 0) {
