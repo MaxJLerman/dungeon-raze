@@ -72,8 +72,10 @@ function play() {
   SFX.init();
   show("play");
   TOUCH.release();
-  // a touch screen has no pointer to lock, and goes fullscreen instead
+  // a touch screen has no pointer to lock, and goes fullscreen instead, and
+  // so does a pad
   if (TOUCH.on) TOUCH.enterPlay();
+  else if (PAD.active) PAD.enterPlay();
   else lockPointer();
   canvas.focus();
   for (const k in taps) taps[k] = false;
@@ -336,7 +338,12 @@ function boot() {
       keys[e.code] = true;
       if (!e.ctrlKey && !e.metaKey && !/^F\d+$/.test(e.code))
         e.preventDefault();
-      if (e.code === "KeyP" && G.noLock) show("pause");
+      // with no pointer lock, the browser sends no Esc to leave, so pause here
+      if (
+        (e.code === "Escape" || e.code === "KeyP") &&
+        document.pointerLockElement !== canvas
+      )
+        show("pause");
       if (e.code === BIND.mute && !e.repeat) SFX.toggle();
       return;
     }
@@ -394,6 +401,14 @@ function boot() {
       !G.noLock
     )
       show("pause");
+  });
+  // leaving fullscreen pauses on a desktop, which touch does for itself. Only
+  // a change out of fullscreen counts, not an event with nothing left to leave.
+  let wasFull = false;
+  document.addEventListener("fullscreenchange", () => {
+    const full = !!document.fullscreenElement;
+    if (!TOUCH.on && G.state === "play" && wasFull && !full) show("pause");
+    wasFull = full;
   });
   document.addEventListener("pointerlockerror", () => {
     G.noLock = true;
@@ -490,6 +505,7 @@ window.DF = {
   PAD,
   PAD_BIND,
   DEFAULT_PAD,
+  SFX,
   touchLayout,
   layoutProblems,
   hexContains,

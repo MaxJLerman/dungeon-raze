@@ -21,6 +21,11 @@ const PAD = {
   sprint: false,
   // the lock flick fires once per push, and the stick must rest in between
   flickArm: true,
+  // codes that stay ignored until they are released, so a button held across
+  // a screen change is not read again on the new screen
+  mute: new Set(),
+  // the screen the last poll saw
+  screen: null,
   pads() {
     try {
       const l = navigator.getGamepads ? navigator.getGamepads() : null;
@@ -69,26 +74,58 @@ const PAD = {
       ? "ps"
       : "xbox";
   },
+  // from a pad press: a pad has no pointer to lock, so play goes fullscreen
+  enterPlay() {
+    try {
+      const r = document.documentElement.requestFullscreen();
+      if (r && r.catch) r.catch(() => {});
+    } catch (e) {}
+  },
   poll(dt) {
     const list = PAD.pads();
+    const wasConnected = PAD.connected;
     PAD.connected = list.length > 0;
     PAD.std = list.every((p) => p.mapping === "standard");
     document.body.classList.toggle("padc", PAD.connected);
     // buttons: down on any pad counts, and the press edge is against the last
     // poll's merged state, so the first press of a new pad is not lost
-    const now = {};
+    const now = {},
+      screenChanged = PAD.screen !== G.state;
+    PAD.screen = G.state;
     let pressed = null;
     for (let i = 0; i < 18; i++) {
-      for (const p of list) {
-        if (!PAD.down(p.buttons[i], i)) continue;
-        now[i] = true;
-        if (!PAD.prev[i] && !pressed) pressed = p;
+      const c = "P:" + i,
+        down = list.find((p) => PAD.down(p.buttons[i], i));
+      // a screen change mutes what is held now, until it is let go
+      if (down && screenChanged) PAD.mute.add(c);
+      if (!down) PAD.mute.delete(c);
+      if (PAD.mute.has(c)) {
+        keys[c] = false;
+        delete taps[c];
+        continue;
       }
-      const c = "P:" + i;
-      keys[c] = !!now[i];
-      if (now[i] && !PAD.prev[i]) taps[c] = true;
+      keys[c] = !!down;
+      if (!down) continue;
+      now[i] = true;
+      if (!PAD.prev[i]) {
+        taps[c] = true;
+        if (!pressed) pressed = down;
+      }
     }
     PAD.prev = now;
+    // a press may be what lets the browser start audio
+    if (pressed) {
+      try {
+        SFX.init();
+      } catch (e) {}
+    }
+    // a pad that was listed and is gone leaves nothing held, and pauses play
+    if (wasConnected && !PAD.connected) {
+      for (const k in keys) if (k.startsWith("P:")) keys[k] = false;
+      for (const k in taps) if (k.startsWith("P:")) delete taps[k];
+      PAD.sprint = false;
+      if (G.state === "play") show("pause");
+    }
     // a pad only takes over the prompts by a press or a real stick push
     let act = pressed;
     if (!act)
@@ -99,17 +136,26 @@ const PAD = {
       PAD.famSeen = true;
       PAD.setActive(true);
     } else if (!PAD.famSeen && list.length) PAD.fam = PAD.famOf(list[0]);
+    // the pause button, and the back button of the pause screen, are fixed
+    if (taps["P:9"] && (G.state === "play" || G.state === "pause")) {
+      delete taps["P:9"];
+      if (G.state === "play") show("pause");
+      else play();
+    } else if (taps["P:1"] && G.state === "pause") {
+      delete taps["P:1"];
+      play();
+    }
     // sticks
     const lv = PAD.vec(list, 0),
       rv = PAD.vec(list, 2),
-      play = G.state === "play",
+      inPlay = G.state === "play",
       p = G.player;
     PAD.move = { x: lv.x, y: -lv.y, mag: lv.mag };
     PAD.look = { x: rv.x * rv.mag, y: rv.y * rv.mag };
     // the latch reads the tap without consuming it
-    if (play && PAD_BIND.sprint && taps[PAD_BIND.sprint]) PAD.sprint = !PAD.sprint;
-    if (PAD.move.mag === 0 || !play || (p && p.stam <= 0)) PAD.sprint = false;
-    if (play && !(p && p.lock)) {
+    if (inPlay && PAD_BIND.sprint && taps[PAD_BIND.sprint]) PAD.sprint = !PAD.sprint;
+    if (PAD.move.mag === 0 || !inPlay || (p && p.stam <= 0)) PAD.sprint = false;
+    if (inPlay && !(p && p.lock)) {
       const sn = OPT.psens * dt;
       cam.yaw -= PAD.look.x * 3.0 * sn;
       cam.pitch = clamp(
@@ -119,10 +165,12 @@ const PAD = {
       );
     }
     // a flick of the right stick while locked switches target
+    // a push held past the flick line while not locked also uses up the flick,
+    // so locking with the stick held does not switch at once
     if (rv.mag === 0) PAD.flickArm = true;
-    else if (play && p && p.lock && PAD.flickArm && Math.abs(rv.x) > 0.7) {
+    else if (Math.abs(rv.x) > 0.7) {
+      if (inPlay && p && p.lock && PAD.flickArm) mouse.wheel = Math.sign(rv.x);
       PAD.flickArm = false;
-      mouse.wheel = Math.sign(rv.x);
     }
   },
   init() {

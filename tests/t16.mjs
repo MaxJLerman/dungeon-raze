@@ -4,7 +4,9 @@
 // Every step returns an object with a boolean `pass`.
 //
 // A fake pad comes from window.__pads. G.manual stops the frame loop from
-// polling, so each step polls the pads itself, once per simulated tick.
+// polling, so each step polls the pads itself, once per simulated tick. An empty
+// pad list is an unplugged pad, which pauses play, so a step that stays in play
+// lets go of a button with pads(mk()).
 const step = (name, body) => ({
   name,
   eval: `(async () => { const { G, cam, keys, taps } = DF; G.manual = true;
@@ -30,7 +32,7 @@ const step = (name, body) => ({
     Object.assign(DF.PAD_BIND, DF.DEFAULT_PAD); window.__rumble = [];
     pads(); tick(); DF.PAD.setActive(false);
   };
-  const stage = () => { DF.newRun(99); DF.show("play"); const p = G.player, n = G.world.nodes.find((q) => q.kind === "room"); for (const o of G.enemies) o.x += 1000; p.x = n.x; p.z = n.z; p.yaw = 0; cam.yaw = 0; p.lock = null; return p; };
+  const stage = () => { DF.newRun(99); DF.show("play"); const p = G.player, n = G.world.nodes.find((q) => q.kind === "room"); for (const o of G.enemies) o.x += 1000; p.x = n.x; p.z = n.z; p.yaw = 0; cam.yaw = 0; p.lock = null; DF.PAD.poll(0); return p; };
   reset();
   ${body} })()`,
 });
@@ -48,7 +50,7 @@ export default [
     pads(mk({ b: { [i]: 1 } }));
     const s = seen(code);
     if (!(s.key && s.tap)) bad.push([a, code, s]);
-    pads(); tick(2);
+    pads(mk()); tick(2);
     if (keys[code]) bad.push([a, code, "stuck"]);
   }
   c.bad = bad;
@@ -65,18 +67,18 @@ export default [
   const c = {};
   pads(mk({ b: { 0: 1 } })); tick();
   c.press = DF.PAD.active === true && document.body.classList.contains("pad");
-  pads(); tick();
+  pads(mk()); tick();
   window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyW", key: "w" }));
   c.key = DF.PAD.active === false && !document.body.classList.contains("pad");
-  pads(mk({ b: { 0: 1 } })); tick(2); pads(); tick();
+  pads(mk({ b: { 0: 1 } })); tick(2); pads(mk()); tick();
   window.dispatchEvent(new MouseEvent("mousemove", { movementX: 5 }));
   c.mouse = DF.PAD.active === false;
-  pads(mk({ b: { 1: 1 } })); tick(); pads(); tick();
+  pads(mk({ b: { 1: 1 } })); tick(); pads(mk()); tick();
   window.dispatchEvent(new MouseEvent("mousemove", { movementX: 0, movementY: 0 }));
   c.stillMouse = DF.PAD.active === true;
   window.dispatchEvent(new PointerEvent("pointerdown", { pointerType: "touch" }));
   c.touch = DF.PAD.active === false;
-  pads(mk({ b: { 1: 1 } })); tick(); pads(); tick();
+  pads(mk({ b: { 1: 1 } })); tick(); pads(mk()); tick();
   window.dispatchEvent(new PointerEvent("pointerdown", { pointerType: "mouse" }));
   c.mouseDown = DF.PAD.active === true;
   window.dispatchEvent(new KeyboardEvent("keydown", { code: "AudioVolumeUp", key: "AudioVolumeUp" }));
@@ -187,14 +189,14 @@ export default [
   step("flick switches lock target", `
   const p = stage();
   const [a, b] = G.enemies; a.x = p.x - 2; a.z = p.z + 6; b.x = p.x + 2; b.z = p.z + 6; a.dead = b.dead = false;
-  pads(mk({ b: { 11: 1 } })); tick(1); pads(); tick(1);
+  pads(mk({ b: { 11: 1 } })); tick(1); pads(mk()); tick(1);
   const first = p.lock;
   // count lock changes tick by tick
   let changes = 0, wheel = 0, last = p.lock;
   pads(mk({ axes: [0, 0, 0.9, 0] }));
   for (let i = 0; i < 10; i++) { DF.sim(1 / 60, () => { DF.PAD.poll(1 / 60); if (DF.mouse.wheel) wheel++; }); if (p.lock !== last) { changes++; last = p.lock; } }
   const afterFirst = p.lock;
-  pads(); tick(3);
+  pads(mk()); tick(3);
   let changes2 = 0, wheel2 = 0;
   pads(mk({ axes: [0, 0, -0.9, 0] }));
   for (let i = 0; i < 10; i++) { DF.sim(1 / 60, () => { DF.PAD.poll(1 / 60); if (DF.mouse.wheel) wheel2++; }); if (p.lock !== last) { changes2++; last = p.lock; } }
@@ -215,4 +217,125 @@ export default [
   tick(30); DF.TOUCH.move = { x: 0, y: 0, mag: 0 };
   const dx = p.x - x0, dz = p.z - z0;
   return { pass: dx < -1 && Math.abs(dz) < Math.abs(dx) * 0.3, dx, dz };`),
+  step("Menu pauses and resumes", `
+  stage(); tick(2);
+  const c = { start: G.state === "play" };
+  pads(mk({ b: { 9: 1 } })); tick(1); c.paused = G.state === "pause";
+  pads(mk()); tick(2); c.stays = G.state === "pause";
+  pads(mk({ b: { 9: 1 } })); tick(1); c.resumed = G.state === "play";
+  pads(mk()); tick(2);
+  pads(mk({ b: { 9: 1 } })); tick(1); pads(mk()); tick(2);
+  c.again = G.state === "pause";
+  pads(mk({ b: { 1: 1 } })); tick(1); c.backResumes = G.state === "play";
+  pads(mk()); tick(2);
+  c.noTap = taps["P:9"] !== true;
+  return { pass: Object.values(c).every(Boolean), c, state: G.state };`),
+  step("a held button is not seen again after a screen change", `
+  stage(); tick(2);
+  pads(mk({ b: { 9: 1 } })); tick(1);
+  const c = { paused: G.state === "pause" };
+  tick(20); c.holdsPause = G.state === "pause";
+  pads(mk()); tick(2); c.stillPause = G.state === "pause";
+  pads(mk({ b: { 9: 1 } })); tick(1); pads(mk()); tick(2);
+  c.resumed = G.state === "play";
+  // hold attack across a screen change: nothing is seen until it is let go
+  pads(mk({ b: { 5: 1 } })); tick(1); c.sees = keys["P:5"] === true;
+  G.player.state = "free";
+  DF.show("pause"); tick(1); DF.play();
+  let saw = false, tapped = false;
+  for (let i = 0; i < 5; i++) { DF.sim(1 / 60, () => { DF.PAD.poll(1 / 60); if (keys["P:5"]) saw = true; if (taps["P:5"]) tapped = true; }); }
+  c.muted = !saw && !tapped && G.player.state !== "attack";
+  pads(mk()); tick(2);
+  pads(mk({ b: { 5: 1 } })); const r = (() => { let t = null; DF.sim(1 / 60, () => { DF.PAD.poll(1 / 60); t = { key: keys["P:5"] === true, tap: taps["P:5"] === true }; }); return t; })();
+  c.again = r.key && r.tap;
+  return { pass: Object.values(c).every(Boolean), c, saw, tapped };`),
+  step("unplugging pauses", `
+  stage(); pads(mk({})); tick(3);
+  const c = { was: DF.PAD.connected === true && document.body.classList.contains("padc") };
+  pads(); tick(1);
+  c.paused = G.state === "pause";
+  c.gone = DF.PAD.connected === false && !document.body.classList.contains("padc");
+  return { pass: Object.values(c).every(Boolean), c, state: G.state };`),
+  step("unplugging while guarding leaves nothing held", `
+  const p = stage(); pads(mk({ b: { 4: 1 } })); tick(10);
+  const c = { guarding: p.state === "guard" && keys["P:4"] === true };
+  pads(); tick(1);
+  c.cleared = keys["P:4"] === false && G.state === "pause";
+  DF.play(); tick(10);
+  c.free = p.state !== "guard";
+  return { pass: Object.values(c).every(Boolean), c, state: p.state };`),
+  step("play from the pad skips pointer lock and tries fullscreen", `
+  let lock = 0, fs = 0, err = null;
+  const onErr = (e) => { err = String(e.message || e); };
+  window.addEventListener("error", onErr); window.addEventListener("unhandledrejection", onErr);
+  const cv = document.getElementById("c") || document.querySelector("canvas");
+  const oLock = cv.requestPointerLock, oFs = document.documentElement.requestFullscreen;
+  cv.requestPointerLock = () => { lock++; return Promise.reject(new Error("no")); };
+  document.documentElement.requestFullscreen = () => { fs++; return Promise.reject(new Error("no")); };
+  DF.show("title"); DF.PAD.setActive(true);
+  DF.play();
+  await draw();
+  const c = { lock: lock === 0, fs: fs === 1, state: G.state === "play", err: err === null };
+  // with no pad active, the pointer is locked and fullscreen is left alone
+  DF.show("pause"); DF.PAD.setActive(false); lock = fs = 0; DF.play(); await draw();
+  c.mouse = lock === 1 && fs === 0;
+  cv.requestPointerLock = oLock; document.documentElement.requestFullscreen = oFs;
+  window.removeEventListener("error", onErr); window.removeEventListener("unhandledrejection", onErr);
+  DF.show("play"); G.noLock = false;
+  return { pass: Object.values(c).every(Boolean), c, lock, fs, err };`),
+  step("Esc and P pause without pointer lock", `
+  stage();
+  const c = { noLockEl: document.pointerLockElement === null };
+  window.dispatchEvent(new KeyboardEvent("keydown", { code: "Escape", key: "Escape" }));
+  c.esc = G.state === "pause";
+  DF.show("play");
+  window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyP", key: "p" }));
+  c.p = G.state === "pause";
+  DF.show("play");
+  return { pass: Object.values(c).every(Boolean), c };`),
+  step("leaving fullscreen pauses on desktop", `
+  // fullscreen is real here, since headless Chromium grants it
+  if (document.fullscreenElement) { await document.exitFullscreen(); await draw(); }
+  stage();
+  const c = { desktop: DF.TOUCH.on === false, none: !document.fullscreenElement };
+  // an event with no change in fullscreen is no reason to pause
+  document.dispatchEvent(new Event("fullscreenchange"));
+  c.stray = G.state === "play";
+  let real = false;
+  try { await document.documentElement.requestFullscreen(); real = !!document.fullscreenElement; } catch (e) {}
+  await new Promise((r) => setTimeout(r, 150));
+  c.entered = G.state === "play";
+  if (real) { await document.exitFullscreen(); await new Promise((r) => setTimeout(r, 200)); }
+  else { c.skipped = true; c.paused = true; }
+  if (real) c.paused = G.state === "pause";
+  return { pass: Object.values(c).every(Boolean), c, real };`),
+  step("audio is tried on pad presses", `
+  stage(); tick(2);
+  let n = 0; const o = DF.SFX.init; DF.SFX.init = function () { n++; return o.apply(this, arguments); };
+  pads(mk({ b: { 5: 1 } })); tick(1);
+  const first = n;
+  tick(5); const held = n;
+  DF.SFX.init = o;
+  return { pass: first >= 1 && held === first, first, held };`),
+  step("no camera turn while locked", `
+  const p = stage();
+  const [a] = G.enemies; a.x = p.x; a.z = p.z + 6; a.dead = false;
+  pads(mk({ b: { 11: 1 } })); tick(1); pads(mk()); tick(1);
+  const locked = !!p.lock;
+  pads(mk({ axes: [0, 0, 0.5, 0] }));
+  const y0 = cam.yaw; DF.PAD.poll(1 / 60);
+  return { pass: locked && cam.yaw === y0, locked, y0, y1: cam.yaw };`),
+  step("locking with the stick held does not flick", `
+  const p = stage();
+  const [a, b] = G.enemies; a.x = p.x - 2; a.z = p.z + 6; b.x = p.x + 2; b.z = p.z + 6; a.dead = b.dead = false;
+  pads(mk({ axes: [0, 0, 0.9, 0] })); tick(3);
+  pads(mk({ axes: [0, 0, 0.9, 0], b: { 11: 1 } })); tick(1);
+  pads(mk({ axes: [0, 0, 0.9, 0] }));
+  const first = p.lock;
+  let changed = false, last = p.lock;
+  for (let i = 0; i < 10; i++) { tick(1); if (p.lock !== last) changed = true; last = p.lock; }
+  pads(mk()); tick(3);
+  pads(mk({ axes: [0, 0, 0.9, 0] })); tick(3);
+  const after = p.lock;
+  return { pass: !!first && !changed && !!after && after !== first, hadFirst: !!first, changed, flicked: after !== first };`),
 ];
