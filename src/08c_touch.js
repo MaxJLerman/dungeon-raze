@@ -48,6 +48,7 @@ const TOUCH = {
     readout = null,
     lastKey = "",
     shown = false,
+    insC = null, // the probe's insets, read again only after a resize
     btnEls = {},
     stickEls = null;
 
@@ -63,14 +64,15 @@ const TOUCH = {
     const f = TOUCH.fakeInsets || window.__fakeInsets;
     if (f)
       return { l: f.l || 0, r: f.r || 0, t: f.t || 0, b: f.b || 0 };
+    if (insC) return insC;
     const cs = getComputedStyle(probe);
     const n = (v) => parseFloat(v) || 0;
-    return {
+    return (insC = {
       l: n(cs.paddingLeft),
       r: n(cs.paddingRight),
       t: n(cs.paddingTop),
       b: n(cs.paddingBottom),
-    };
+    });
   }
   const el = (name, attrs, parent) => {
     const e = document.createElementNS(SVGNS, name);
@@ -160,11 +162,17 @@ const TOUCH = {
       let empty = false;
       if (COUNTS[act]) {
         const n = p[COUNTS[act]];
-        e.cnt.textContent = n;
+        if (e.n !== n) {
+          e.n = n;
+          e.cnt.textContent = n;
+        }
         empty = !(n > 0);
       } else if (act === "special") empty = p.focus < p.cls.special.cost;
-      e.g.classList.toggle("empty", empty);
-      e.poly.classList.toggle("empty", empty);
+      if (e.empty !== empty) {
+        e.empty = empty;
+        e.g.classList.toggle("empty", empty);
+        e.poly.classList.toggle("empty", empty);
+      }
     }
   }
   // inline left/top/width/height for the three HUD parts, or none
@@ -226,6 +234,7 @@ const TOUCH = {
     TOUCH.on = v;
     document.body.classList.toggle("touch", v);
     if (v) {
+      insC = null;
       relayout();
       // show the buttons now, not at the next frame, so the next touch lands on them
       shown = G.state === "play";
@@ -336,6 +345,13 @@ const TOUCH = {
     const o = classify(e.clientX, e.clientY);
     o.x0 = o.x = e.clientX;
     o.y0 = o.y = e.clientY;
+    if (o.kind === "move") {
+      // the stick body stays inside its area, clear of the health bars
+      const m = TOUCH.layout.move,
+        R = TOUCH.layout.R;
+      o.x0 = o.x0 < m.x0 + R ? m.x0 + R : o.x0 > m.x1 - R ? m.x1 - R : o.x0;
+      o.y0 = o.y0 < m.y0 + R ? m.y0 + R : o.y0 > m.y1 - R ? m.y1 - R : o.y0;
+    }
     o.t0 = performance.now();
     o.hist = [{ t: o.t0, x: o.x, y: o.y }];
     owners.set(e.pointerId, o);
@@ -394,8 +410,13 @@ const TOUCH = {
       host.addEventListener(t, t === "pointerdown" ? onDown : t === "pointermove" ? onMove : onUp);
     // the last input decides the mode: a key or a mouse brings back the desktop
     // controls, a touch brings back the buttons. A forced page stays as it is.
-    addEventListener("keydown", () => {
-      if (TOUCH.on && !TOUCH.forced) setOn(false);
+    // Keys a phone sends without a keyboard (volume, media, an on-screen
+    // keyboard's composition) do not count as a keyboard.
+    addEventListener("keydown", (e) => {
+      if (!TOUCH.on || TOUCH.forced) return;
+      if (e.isComposing || e.keyCode === 229) return;
+      if (!e.code || e.code === "Unidentified" || /^(Audio|Media)/.test(e.code)) return;
+      setOn(false);
     });
     addEventListener("pointermove", (e) => {
       if (TOUCH.on && !TOUCH.forced && e.pointerType === "mouse") setOn(false);
@@ -403,22 +424,52 @@ const TOUCH = {
     document.addEventListener(
       "pointerdown",
       (e) => {
-        if (!TOUCH.on && e.pointerType === "touch") setOn(true);
+        if (TOUCH.on || e.pointerType !== "touch") return;
+        setOn(true);
+        // the touch that woke the controls is the first press on them
+        onDown(e);
       },
       true,
     );
-    // the Back gesture pauses the game instead of leaving the page
+    // The Back gesture pauses the game instead of leaving the page. Back on the
+    // pause screen or a menu stays where it is, as its Back button would.
     addEventListener("popstate", () => {
       armed = false;
-      if (TOUCH.on && G.state === "play") {
+      if (!TOUCH.on) return;
+      if (G.state === "play") {
         show("pause");
         arm();
-      }
+      } else if (MENUS.includes(G.state)) {
+        const to = menuBack;
+        show(to);
+        if (to !== "title") arm();
+      } else if (G.state === "pause" || G.state === "dead" || G.state === "win") arm();
     });
-    const re = () => relayout();
+    // Android's Back leaves fullscreen first, with no popstate: that pauses too
+    const pauseIfPlaying = () => {
+      if (TOUCH.on && G.state === "play") show("pause");
+    };
+    const fsChange = () => {
+      if (!(document.fullscreenElement || document.webkitFullscreenElement)) pauseIfPlaying();
+    };
+    document.addEventListener("fullscreenchange", fsChange);
+    document.addEventListener("webkitfullscreenchange", fsChange);
+    // a hidden page or a lost focus pauses, so no enemy plays on while you are away
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) pauseIfPlaying();
+    });
+    addEventListener("blur", pauseIfPlaying);
+    // a resize that changed nothing must not drop the fingers
+    const re = () => {
+      insC = null;
+      if (key() !== lastKey) relayout();
+    };
     addEventListener("resize", re);
     addEventListener("orientationchange", re);
     if (window.visualViewport) visualViewport.addEventListener("resize", re);
+    // the rotate screen: a tap tries fullscreen and a landscape lock
+    const rot = $("rotate");
+    if (rot) rot.addEventListener("click", () => goLandscape());
     setOn(detect());
   };
   // one history entry for Back to use up; put back whenever it has been used
@@ -430,11 +481,9 @@ const TOUCH = {
       armed = true;
     } catch (e) {}
   }
-  // From the tap that starts play: fullscreen, then a landscape lock, then the
-  // Back catcher. A browser may refuse or lack any of them (iPhone has no
-  // fullscreen for pages), and none of that may stop the game.
-  TOUCH.enterPlay = () => {
-    arm();
+  // Fullscreen, then a landscape lock. A browser may refuse or lack either
+  // (iPhone has no fullscreen for pages), and none of that may stop the game.
+  function goLandscape() {
     const quiet = () => {};
     const lock = () => {
       try {
@@ -456,9 +505,17 @@ const TOUCH = {
     } catch (e) {
       lock();
     }
+  }
+  // From the tap that starts play: the Back catcher, then goLandscape
+  TOUCH.enterPlay = () => {
+    arm();
+    goLandscape();
   };
   TOUCH.setOn = setOn;
-  TOUCH.relayout = relayout;
+  TOUCH.relayout = () => {
+    insC = null;
+    relayout();
+  };
   // runs every frame: the buttons show only while playing, and a change in
   // size, insets or settings that no event reported is picked up here
   TOUCH.update = (dt) => {
