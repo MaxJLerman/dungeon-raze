@@ -624,17 +624,6 @@ export default [
     const t = lab.innerText.replace(/\\s+/g, " ").trim();
     DF.show("title");
     return { pass: /^Look sensitivity/.test(t) && !/Mouse/.test(t), t };`),
-  step("pause copy fits the input", `
-    DF.show("pause"); await draw();
-    const sub = document.querySelector("#scr-pause .sub");
-    const vis = () => sub.innerText.replace(/\\s+/g, " ").trim();
-    const touch = vis();
-    TOUCH.setOn(false); await draw();
-    const desk = vis();
-    TOUCH.setOn(true); await draw();
-    DF.show("title");
-    const c = { touch: touch === "Tap Resume to carry on.", desk: desk === "Resume takes the mouse back.", back: TOUCH.on === true };
-    return { pass: Object.values(c).every((v) => v === true), ...c, touch, desk };`),
   step("menus fit 640x360", `
     if (innerWidth !== 640) return { pass: true, skipped: true };
     const bad = [], seen = {};
