@@ -2065,8 +2065,14 @@ function playerUpdate(dt) {
   }
   if (c.focusRegen) p.focus = Math.min(100, p.focus + c.focusRegen * dt);
   // input
-  const f = (held("fwd") ? 1 : 0) - (held("back") ? 1 : 0),
-    s = (held("right") ? 1 : 0) - (held("left") ? 1 : 0);
+  let f = (held("fwd") ? 1 : 0) - (held("back") ? 1 : 0),
+    s = (held("right") ? 1 : 0) - (held("left") ? 1 : 0),
+    im = 1; // how far the touch stick is pushed
+  if (TOUCH.move.mag > 0) {
+    f = TOUCH.move.y;
+    s = TOUCH.move.x;
+    im = TOUCH.move.mag;
+  }
   const fx = Math.sin(cam.yaw),
     fz = Math.cos(cam.yaw);
   let ix = fx * f - fz * s,
@@ -2161,7 +2167,7 @@ function playerUpdate(dt) {
       }
       if (p.buf && doAct(p.buf)) break;
       p.sprint = held("sprint") && il > 0 && p.stam > 0;
-      const sp = p.sprint ? c.run : p.lock ? c.walk * 0.88 : c.walk;
+      const sp = p.sprint ? c.run : (p.lock ? c.walk * 0.88 : c.walk) * im;
       p.vx = damp(p.vx, ix * sp, 14, dt);
       p.vz = damp(p.vz, iz * sp, 14, dt);
       mvx = p.vx;

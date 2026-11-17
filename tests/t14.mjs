@@ -11,12 +11,12 @@ const step = (name, body) => ({
   const T = {
     down: async (id, x, y) => { pts.set(id, { x, y }); await send("touchStart"); },
     move: async (id, x, y) => { pts.set(id, { x, y }); await send("touchMove"); },
-    up: async (id) => { const p = pts.get(id); pts.delete(id); await __touch("touchEnd", [...pts].map(([i, q]) => ({ id: i, x: q.x, y: q.y }))); },
+    up: async (id) => { const p = pts.get(id); pts.delete(id); await __touch("touchEnd", [{ id, x: p.x, y: p.y }]); },
     cancel: async () => { pts.clear(); await __touch("touchCancel", []); },
   };
   const L = () => TOUCH.layout;
   const btn = (act) => L().btns.find((b) => b.act === act);
-  const play = () => { DF.newRun(99); DF.show("play"); TOUCH.release(); };
+  const play = () => { DF.newRun(99); DF.show("play"); TOUCH.release(); for (const k in DF.taps) DF.taps[k] = false; };
   ${body} })()`,
 });
 
@@ -203,4 +203,169 @@ export default [
     const c = { held: held.length === 0, owners: TOUCH.owners.size === 0, move: TOUCH.move.mag === 0 };
     await T.cancel();
     return { pass: Object.values(c).every((v) => v === true), ...c, held };`),
+
+  // ---- stick, look, aim and flick ----
+  step("small push walks slowly", `
+    play(); await draw();
+    const p = G.player, r = L().rest, R = L().R;
+    await T.down(1, r.x, r.y);
+    await T.move(1, r.x, r.y - R * 0.25);
+    await T.move(1, r.x, r.y - R * 0.5);
+    await draw();
+    DF.sim(1);
+    const v = Math.hypot(p.vx, p.vz) / p.cls.walk, mag = TOUCH.move.mag;
+    await T.up(1);
+    return { pass: v > 0.3 && v < 0.55, v, mag };`),
+  step("full push runs", `
+    play(); await draw();
+    const p = G.player, r = L().rest, R = L().R;
+    await T.down(1, r.x, r.y);
+    await T.move(1, r.x, r.y - R * 0.5);
+    await T.move(1, r.x, r.y - R);
+    await draw();
+    DF.sim(1);
+    const v = Math.hypot(p.vx, p.vz) / p.cls.walk, sprint = p.sprint;
+    await T.up(1);
+    return { pass: v > 0.9 && v < 1.1 && !sprint, v, sprint };`),
+  step("past the ring sprints", `
+    play(); await draw();
+    const p = G.player, r = L().rest, d = L().ring + 4;
+    await T.down(1, r.x, r.y);
+    await T.move(1, r.x, r.y - d / 2);
+    await T.move(1, r.x, r.y - d);
+    await draw();
+    DF.sim(0.5);
+    const c = { sprint: p.sprint === true, key: DF.keys["T:sprint"] === true };
+    await T.up(1);
+    c.keyOff = !DF.keys["T:sprint"];
+    return { pass: Object.values(c).every((v) => v === true), ...c };`),
+  step("lifting stops", `
+    play(); await draw();
+    const p = G.player, r = L().rest, R = L().R;
+    await T.down(1, r.x, r.y);
+    await T.move(1, r.x, r.y - R);
+    await draw();
+    DF.sim(0.5);
+    const moving = Math.hypot(p.vx, p.vz) > 1;
+    await T.up(1);
+    DF.sim(0.5);
+    const v = Math.hypot(p.vx, p.vz);
+    return { pass: moving && v < 0.2 && TOUCH.move.mag === 0, moving, v, mag: TOUCH.move.mag };`),
+  step("stick follows the thumb", `
+    play(); await draw();
+    const r = L().rest, x = r.x + 60, y = r.y;
+    await T.down(1, x, y);
+    const o = [...TOUCH.owners.values()].find((q) => q.kind === "move");
+    await draw();
+    const base = document.querySelector("#touch .stick-base");
+    const c = {
+      owner: !!o && Math.abs(o.x0 - x) < 0.01 && Math.abs(o.y0 - y) < 0.01,
+      still: TOUCH.move.mag === 0,
+      base: Math.abs(+base.getAttribute("cx") - x) < 1 && Math.abs(+base.getAttribute("cy") - y) < 1,
+    };
+    await T.move(1, x, y - L().R);
+    await draw();
+    const knob = document.querySelector("#touch .stick-knob");
+    c.knob = !!knob && Math.abs(+knob.getAttribute("cy") - (y - L().R)) < 1;
+    c.dir = TOUCH.move.y > 0.99 && Math.abs(TOUCH.move.x) < 0.01;
+    await T.up(1);
+    await draw();
+    c.rest = Math.abs(+base.getAttribute("cx") - r.x) < 1 && Math.abs(+base.getAttribute("cy") - r.y) < 1;
+    return { pass: Object.values(c).every((v) => v === true), ...c };`),
+  step("camera drag turns", `
+    play(); await draw();
+    G.player.lock = null;
+    const W = L().W, x = W * 0.5, y = L().H * 0.3, y0 = cam.yaw, p0 = cam.pitch;
+    await T.down(1, x, y);
+    const kind = [...TOUCH.owners.values()][0].kind;
+    for (let i = 1; i <= 6; i++) await T.move(1, x + W * 0.25 * i / 6, y);
+    await draw();
+    const d = cam.yaw - y0, want = -Math.PI / 4 * DF.OPT.sens;
+    await T.up(1);
+    return { pass: kind === "look" && Math.abs(d - want) < Math.abs(want) * 0.1 && Math.abs(cam.pitch - p0) < 0.01, kind, d, want };`),
+  step("three fingers at once", `
+    play(); await draw();
+    G.player.lock = null;
+    const r = L().rest, R = L().R, W = L().W, a = btn("light"), x = W * 0.5, y = L().H * 0.3;
+    await T.down(1, r.x, r.y);
+    await T.move(1, r.x, r.y - R);
+    await draw();
+    await T.down(2, x, y);
+    await T.down(3, a.x, a.y);
+    const y0 = cam.yaw;
+    for (let i = 1; i <= 4; i++) await T.move(2, x + W * 0.05 * i, y);
+    await draw();
+    const c = { stick: TOUCH.move.mag > 0.9, yaw: Math.abs(cam.yaw - y0) > 0.05, light: DF.keys["T:light"] === true };
+    await T.up(2);
+    c.stickKept = TOUCH.move.mag > 0.9;
+    c.lightKept = DF.keys["T:light"] === true;
+    await T.up(3); await T.up(1);
+    return { pass: Object.values(c).every((v) => v === true), ...c };`),
+  step("aim while attacking", `
+    play(); await draw();
+    G.player.lock = null;
+    const a = btn("light"), W = L().W, dir = a.x + W * 0.2 < W - 2 ? 1 : -1, y0 = cam.yaw;
+    await T.down(1, a.x, a.y);
+    await T.move(1, a.x + dir * 4, a.y);
+    await draw();
+    const still = cam.yaw === y0;
+    for (let i = 1; i <= 5; i++) await T.move(1, a.x + dir * W * 0.04 * i, a.y);
+    await draw();
+    const c = { still, yaw: Math.abs(cam.yaw - y0) > 0.1, held: DF.keys["T:light"] === true };
+    await T.up(1);
+    c.released = !DF.keys["T:light"];
+    return { pass: Object.values(c).every((v) => v === true), ...c, d: cam.yaw - y0 };`),
+  step("flick switches lock", `
+    DF.newRun(99); DF.show("play"); TOUCH.release();
+    const p = G.player, n = G.world.nodes.find((q) => q.kind === "room");
+    const hs = G.enemies.filter((q) => q.type === "husk").slice(0, 2);
+    for (const o of G.enemies) if (!hs.includes(o)) o.x += 1000;
+    p.x = n.x; p.z = n.z - 2; p.yaw = 0; p.lock = null; cam.yaw = 0; cam.px = p.x; cam.pz = p.z;
+    hs[0].x = p.x - 1.5; hs[1].x = p.x + 1.5;
+    for (const h of hs) { h.z = p.z + 4; h.aware = false; h.state = "idle"; }
+    await draw();
+    const lk = btn("lock");
+    await T.down(1, lk.x, lk.y); await T.up(1);
+    DF.sim(1 / 60);
+    const first = p.lock;
+    const W = L().W, x = W * 0.5, y = L().H * 0.3;
+    await T.down(2, x, y);
+    // sent together, so the three moves are stamped within a few ms of each
+    // other; awaiting each one waits on a frame and can take over 100 ms
+    const fire = [];
+    for (let i = 1; i <= 3; i++) { pts.set(2, { x: x + W * 0.1 * i / 3, y }); fire.push(send("touchMove")); }
+    await Promise.all(fire);
+    await draw();
+    DF.sim(1 / 60);
+    const second = p.lock;
+    await T.up(2);
+    const other = hs.find((h) => h !== first);
+    return { pass: hs.length === 2 && !!first && hs.includes(first) && second === other && second !== first, hs: hs.length, first: !!first, switched: second === other };`),
+  step("a slow drag does not flick", `
+    DF.newRun(99); DF.show("play"); TOUCH.release();
+    const p = G.player, n = G.world.nodes.find((q) => q.kind === "room");
+    const hs = G.enemies.filter((q) => q.type === "husk").slice(0, 2);
+    for (const o of G.enemies) if (!hs.includes(o)) o.x += 1000;
+    p.x = n.x; p.z = n.z - 2; p.yaw = 0; p.lock = null; cam.yaw = 0; cam.px = p.x; cam.pz = p.z;
+    hs[0].x = p.x - 1.5; hs[1].x = p.x + 1.5;
+    for (const h of hs) { h.z = p.z + 4; h.aware = false; h.state = "idle"; }
+    await draw();
+    const lk = btn("lock");
+    await T.down(1, lk.x, lk.y); await T.up(1);
+    DF.sim(1 / 60);
+    const first = p.lock;
+    const W = L().W, x = W * 0.5, y = L().H * 0.3;
+    await T.down(2, x, y);
+    for (let i = 1; i <= 4; i++) { await T.move(2, x + W * 0.04 * i, y); await draw(); await new Promise((r) => setTimeout(r, 300)); }
+    DF.sim(1 / 60);
+    await T.up(2);
+    return { pass: !!first && p.lock === first, same: p.lock === first };`),
+  step("keyboard movement unchanged", `
+    play(); await draw();
+    const p = G.player;
+    DF.keys[DF.BIND.fwd] = true;
+    DF.sim(1);
+    DF.keys[DF.BIND.fwd] = false;
+    const v = Math.hypot(p.vx, p.vz) / p.cls.walk;
+    return { pass: v > 0.9 && v < 1.1, v };`),
 ];

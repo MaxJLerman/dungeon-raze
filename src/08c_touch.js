@@ -46,7 +46,8 @@ const TOUCH = {
     readout = null,
     lastKey = "",
     shown = false,
-    btnEls = {};
+    btnEls = {},
+    stickEls = null;
 
   function detect() {
     const mm = (q) => !!(window.matchMedia && matchMedia(q).matches);
@@ -92,8 +93,10 @@ const TOUCH = {
     svg.setAttribute("height", L.H);
     // the stick: where it rests, and the ring to push past to sprint
     const st = el("g", { class: "stick", opacity: 0.35 }, svg);
-    el("circle", { class: "stick-ring", cx: L.rest.x, cy: L.rest.y, r: L.ring, fill: "none", stroke: "rgba(255,179,71,.55)", "stroke-width": 2, "stroke-dasharray": "6 6" }, st);
-    el("circle", { class: "stick-base", cx: L.rest.x, cy: L.rest.y, r: L.R, fill: "rgba(10,13,20,.3)", stroke: "rgba(232,226,212,.5)", "stroke-width": 2 }, st);
+    const ring = el("circle", { class: "stick-ring", cx: L.rest.x, cy: L.rest.y, r: L.ring, fill: "none", stroke: "rgba(255,179,71,.55)", "stroke-width": 2, "stroke-dasharray": "6 6" }, st);
+    const base = el("circle", { class: "stick-base", cx: L.rest.x, cy: L.rest.y, r: L.R, fill: "rgba(10,13,20,.3)", stroke: "rgba(232,226,212,.5)", "stroke-width": 2 }, st);
+    const knob = el("circle", { class: "stick-knob", cx: L.rest.x, cy: L.rest.y, r: L.R * 0.42, fill: "rgba(232,226,212,.35)", stroke: "rgba(232,226,212,.8)", "stroke-width": 2 }, st);
+    stickEls = { g: st, ring, base, knob };
     const g = el("g", { class: "btns", opacity: OPT.topac ?? 0.6 }, svg);
     btnEls = {};
     for (const b of L.btns) {
@@ -112,6 +115,7 @@ const TOUCH = {
       btnEls[b.act] = { g: bg, poly, cnt };
     }
     refresh();
+    drawStick(null);
     // pause: a square with two bars
     const q = L.pause,
       pg = el("g", { class: "pause", opacity: OPT.topac ?? 0.6 }, svg);
@@ -120,6 +124,30 @@ const TOUCH = {
       bh = q.h * 0.4;
     for (const dx of [-0.17, 0.17])
       el("rect", { x: q.x + q.w / 2 + dx * q.w - bw / 2, y: q.y + (q.h - bh) / 2, width: bw, height: bh, fill: "rgba(232,226,212,.85)" }, pg);
+  }
+  // the stick is drawn where the finger landed, with the knob at the finger
+  // clamped to the base; with no finger it goes back to its faint rest place
+  function drawStick(o) {
+    if (!stickEls) return;
+    const L = TOUCH.layout,
+      c = o ? { x: o.x0, y: o.y0 } : L.rest;
+    let kx = c.x,
+      ky = c.y;
+    if (o) {
+      const dx = o.x - o.x0,
+        dy = o.y - o.y0,
+        d = Math.hypot(dx, dy),
+        k = d > L.R ? L.R / d : 1;
+      kx += dx * k;
+      ky += dy * k;
+    }
+    for (const n of ["ring", "base"]) {
+      stickEls[n].setAttribute("cx", c.x);
+      stickEls[n].setAttribute("cy", c.y);
+    }
+    stickEls.knob.setAttribute("cx", kx);
+    stickEls.knob.setAttribute("cy", ky);
+    stickEls.g.setAttribute("opacity", o ? 0.9 : 0.35);
   }
   // counts on the buttons, and dimming of the ones that cannot be used now
   function refresh() {
@@ -200,6 +228,11 @@ const TOUCH = {
       keys["T:" + o.act] = false;
       if (btnEls[o.act]) btnEls[o.act].poly.classList.remove("down");
     }
+    if (o.kind === "move") {
+      TOUCH.move.x = TOUCH.move.y = TOUCH.move.mag = 0;
+      keys["T:sprint"] = false;
+      drawStick(null);
+    }
     return o;
   }
   function release() {
@@ -207,6 +240,7 @@ const TOUCH = {
     for (const k in keys) if (k.startsWith("T:")) keys[k] = false;
     for (const act in btnEls) btnEls[act].poly.classList.remove("down");
     TOUCH.move.x = TOUCH.move.y = TOUCH.move.mag = 0;
+    drawStick(null);
   }
   TOUCH.release = release;
   const accepts = (e) =>
@@ -217,8 +251,46 @@ const TOUCH = {
     const q = L.pause;
     if (x >= q.x && x <= q.x + q.w && y >= q.y && y <= q.y + q.h) return { kind: "pause" };
     const m = L.move;
-    if (x >= m.x0 && x <= m.x1 && y >= m.y0 && y <= m.y1) return { kind: "move" };
+    // one stick: a second finger in its area turns the camera instead
+    if (x >= m.x0 && x <= m.x1 && y >= m.y0 && y <= m.y1 && !hasKind("move")) return { kind: "move" };
     return { kind: "look" };
+  }
+  const hasKind = (k) => {
+    for (const o of owners.values()) if (o.kind === k) return true;
+    return false;
+  };
+  // the stick's vector, from where the finger landed
+  function steer(o) {
+    const L = TOUCH.layout,
+      dx = o.x - o.x0,
+      dy = o.y - o.y0,
+      d = Math.hypot(dx, dy),
+      raw = d / L.R,
+      m = TOUCH.move;
+    m.mag = raw < 0.15 ? 0 : Math.min(1, (raw - 0.15) / 0.85);
+    m.x = m.mag > 0 ? dx / d : 0;
+    m.y = m.mag > 0 ? -dy / d : 0;
+    keys["T:sprint"] = d > L.ring;
+    drawStick(o);
+  }
+  // turns the camera as a mouse would: a drag of the screen's width is half a turn
+  function look(dxPx, dyPx) {
+    const W = TOUCH.layout.W;
+    mouse.dx += (dxPx * Math.PI) / (W * cam.sens);
+    mouse.dy += (dyPx * Math.PI) / (W * cam.sens);
+  }
+  // a quick sideways swipe of a look finger switches the lock target
+  function flick(o, t) {
+    const h = o.hist;
+    h.push({ t, x: o.x, y: o.y });
+    while (h.length > 1 && t - h[0].t > 250) h.shift();
+    if (o.flicked || !G.player || !G.player.lock) return;
+    const dx = o.x - h[0].x,
+      dy = o.y - h[0].y;
+    if (Math.abs(dx) >= Math.max(40, 0.06 * TOUCH.layout.W) && Math.abs(dx) > 2 * Math.abs(dy)) {
+      mouse.wheel = Math.sign(dx);
+      o.flicked = true;
+    }
   }
   function onDown(e) {
     if (!TOUCH.on || !TOUCH.layout || !accepts(e) || G.state !== "play") return;
@@ -231,7 +303,9 @@ const TOUCH = {
     o.x0 = o.x = e.clientX;
     o.y0 = o.y = e.clientY;
     o.t0 = performance.now();
+    o.hist = [{ t: o.t0, x: o.x, y: o.y }];
     owners.set(e.pointerId, o);
+    if (o.kind === "move") steer(o);
     if (o.kind === "btn") {
       keys["T:" + o.act] = true;
       taps["T:" + o.act] = true;
@@ -242,8 +316,23 @@ const TOUCH = {
     const o = owners.get(e.pointerId);
     if (!o || !accepts(e)) return;
     e.preventDefault();
-    o.x = e.clientX;
-    o.y = e.clientY;
+    // a frame may bring several moves in one event; each is read in order
+    const list = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
+    for (const s of list.length ? list : [e]) {
+      const dx = s.clientX - o.x,
+        dy = s.clientY - o.y;
+      o.x = s.clientX;
+      o.y = s.clientY;
+      if (o.kind === "look") {
+        look(dx, dy);
+        flick(o, s.timeStamp);
+      } else if (o.kind === "btn" && o.act === "light") {
+        // the Attack finger aims once it has clearly moved
+        if (!o.aim && Math.hypot(o.x - o.x0, o.y - o.y0) > 8) o.aim = true;
+        if (o.aim) look(dx, dy);
+      }
+    }
+    if (o.kind === "move") steer(o);
   }
   function onUp(e) {
     const o = owners.get(e.pointerId);
