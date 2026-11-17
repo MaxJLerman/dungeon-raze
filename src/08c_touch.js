@@ -97,7 +97,7 @@ const TOUCH = {
     const base = el("circle", { class: "stick-base", cx: L.rest.x, cy: L.rest.y, r: L.R, fill: "rgba(10,13,20,.3)", stroke: "rgba(232,226,212,.5)", "stroke-width": 2 }, st);
     const knob = el("circle", { class: "stick-knob", cx: L.rest.x, cy: L.rest.y, r: L.R * 0.42, fill: "rgba(232,226,212,.35)", stroke: "rgba(232,226,212,.8)", "stroke-width": 2 }, st);
     stickEls = { g: st, ring, base, knob };
-    const g = el("g", { class: "btns", opacity: OPT.topac ?? 0.6 }, svg);
+    const g = el("g", { class: "btns" }, svg);
     btnEls = {};
     for (const b of L.btns) {
       const [label, col] = LOOK[b.act];
@@ -118,7 +118,7 @@ const TOUCH = {
     drawStick(null);
     // pause: a square with two bars
     const q = L.pause,
-      pg = el("g", { class: "pause", opacity: OPT.topac ?? 0.6 }, svg);
+      pg = el("g", { class: "pause" }, svg);
     el("rect", { x: q.x, y: q.y, width: q.w, height: q.h, rx: 4, fill: "rgba(10,13,20,.45)", stroke: "rgba(232,226,212,.6)", "stroke-width": 2 }, pg);
     const bw = q.w * 0.14,
       bh = q.h * 0.4;
@@ -187,9 +187,10 @@ const TOUCH = {
     release();
     const ins = insets();
     TOUCH.layout = touchLayout(innerWidth, innerHeight, ins, {
-      size: OPT.tsize ?? 1,
-      notch: OPT.tnotch ?? true,
+      size: clamp(Number(OPT.tsize) || 1, 0.8, 1.2),
+      notch: OPT.tnotch !== false,
     });
+    host.style.setProperty("--tac", clamp(Number(OPT.topac) || 0.6, 0.2, 1));
     lastKey = key();
     draw();
     place(true);
@@ -226,7 +227,10 @@ const TOUCH = {
     owners.delete(id);
     if (o.kind === "btn" && !heldBy(o.act)) {
       keys["T:" + o.act] = false;
-      if (btnEls[o.act]) btnEls[o.act].poly.classList.remove("down");
+      if (btnEls[o.act]) {
+        btnEls[o.act].g.classList.remove("down");
+        btnEls[o.act].poly.classList.remove("down");
+      }
     }
     if (o.kind === "move") {
       TOUCH.move.x = TOUCH.move.y = TOUCH.move.mag = 0;
@@ -238,7 +242,10 @@ const TOUCH = {
   function release() {
     for (const id of [...owners.keys()]) lift(id);
     for (const k in keys) if (k.startsWith("T:")) keys[k] = false;
-    for (const act in btnEls) btnEls[act].poly.classList.remove("down");
+    for (const act in btnEls) {
+      btnEls[act].g.classList.remove("down");
+      btnEls[act].poly.classList.remove("down");
+    }
     TOUCH.move.x = TOUCH.move.y = TOUCH.move.mag = 0;
     drawStick(null);
   }
@@ -309,7 +316,10 @@ const TOUCH = {
     if (o.kind === "btn") {
       keys["T:" + o.act] = true;
       taps["T:" + o.act] = true;
-      if (btnEls[o.act]) btnEls[o.act].poly.classList.add("down");
+      if (btnEls[o.act]) {
+        btnEls[o.act].g.classList.add("down");
+        btnEls[o.act].poly.classList.add("down");
+      }
     }
   }
   function onMove(e) {

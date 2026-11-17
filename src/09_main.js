@@ -150,6 +150,11 @@ function renderControls() {
   $("sens").value = OPT.sens;
   $("sensV").textContent = OPT.sens.toFixed(2) + "×";
   $("invY").checked = OPT.invY;
+  $("tsize").value = OPT.tsize;
+  $("tsizeV").textContent = OPT.tsize.toFixed(2) + "×";
+  $("topac").value = OPT.topac;
+  $("topacV").textContent = Math.round(OPT.topac * 100) + "%";
+  $("tnotch").checked = OPT.tnotch;
   HUD.hint();
 }
 function finishRebind(code) {
@@ -415,11 +420,33 @@ function boot() {
     OPT.invY = e.target.checked;
     saveOpt();
   });
+  // touch settings: each one saves and lays the buttons out again
+  $("tsize").addEventListener("input", (e) => {
+    OPT.tsize = clamp(parseFloat(e.target.value) || 1, 0.8, 1.2);
+    $("tsizeV").textContent = OPT.tsize.toFixed(2) + "×";
+    saveOpt();
+    TOUCH.relayout();
+  });
+  $("topac").addEventListener("input", (e) => {
+    OPT.topac = clamp(parseFloat(e.target.value) || 0.6, 0.2, 1);
+    $("topacV").textContent = Math.round(OPT.topac * 100) + "%";
+    saveOpt();
+    TOUCH.relayout();
+  });
+  $("tnotch").addEventListener("change", (e) => {
+    OPT.tnotch = e.target.checked;
+    saveOpt();
+    TOUCH.relayout();
+  });
   $("btnDefaults").addEventListener("click", () => {
     Object.assign(BIND, DEFAULT_BINDS);
     OPT.sens = 1;
     OPT.invY = false;
+    OPT.tsize = 1;
+    OPT.topac = 0.6;
+    OPT.tnotch = true;
     saveOpt();
+    TOUCH.relayout();
     renderControls();
     renderPicker();
   });
@@ -466,6 +493,8 @@ window.DF = {
   alertE,
   hurtPlayer,
   openMenu,
+  loadOpt,
+  saveOpt,
   sim(sec, each) {
     const n = Math.round(sec * 60);
     for (let i = 0; i < n; i++) {

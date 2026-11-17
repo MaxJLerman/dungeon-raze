@@ -368,4 +368,89 @@ export default [
     DF.keys[DF.BIND.fwd] = false;
     const v = Math.hypot(p.vx, p.vz) / p.cls.walk;
     return { pass: v > 0.9 && v < 1.1, v };`),
+  step("controls screen shows touch settings", `
+    DF.openMenu("controls"); await draw();
+    const vis = (id) => getComputedStyle(document.getElementById(id)).display !== "none";
+    const lab = document.querySelector('label[for="tnotch"]');
+    const note = document.getElementById("tnotchNote");
+    const c = {
+      tset: vis("tset"),
+      binds: !vis("binds"),
+      label: !!lab && lab.textContent.trim() === "Keep controls clear of the notch and rounded corners",
+      note: !!note && note.textContent.trim() === "Off can put buttons under the notch or a curved corner, where touches may not register.",
+      size: !!document.getElementById("tsize"),
+      opac: !!document.getElementById("topac"),
+    };
+    return { pass: Object.values(c).every((v) => v === true), ...c };`),
+  step("size slider grows and is capped", `
+    DF.openMenu("controls"); await draw();
+    const set = async (v) => { const e = document.getElementById("tsize"); e.value = v; e.dispatchEvent(new Event("input", { bubbles: true })); await draw(); };
+    const W = innerWidth, H = innerHeight;
+    await set(1.2);
+    const l = L(), sc = l.scale, probs = DF.layoutProblems(l);
+    const up = sc + 0.05;
+    const next = up > 1.2 + 1e-9 ? null : DF.touchLayout(W, H, l.ins, { size: up, notch: true }).scale;
+    const c = {
+      range: sc >= 1 - 1e-9 && sc <= 1.2 + 1e-9,
+      fits: probs.length === 0,
+      largest: up > 1.2 + 1e-9 || next < up - 1e-9,
+    };
+    if (W === 1376 && H === 1032) c.ipad = Math.abs(btn("light").d - 1.2 * 104) < 0.01;
+    if (W === 756 && H === 308) c.pixel = sc < 1.2 - 1e-9 && sc >= 1 - 1e-9;
+    await set(1);
+    c.reset = L().scale === 1;
+    return { pass: Object.values(c).every((v) => v === true), ...c, sc, probs, W, H };`),
+  step("opacity slider", `
+    DF.openMenu("controls"); await draw();
+    const e = document.getElementById("topac");
+    e.value = 0.3; e.dispatchEvent(new Event("input", { bubbles: true }));
+    play(); await draw();
+    const op = (act) => parseFloat(getComputedStyle(document.querySelector('.btn[data-act="' + act + '"]')).opacity);
+    const idle = op("guard");
+    const b = btn("light");
+    await T.down(1, b.x, b.y); await draw();
+    const held = op("light"), other = op("guard");
+    await T.up(1); await draw();
+    const after = op("light");
+    DF.openMenu("controls"); await draw();
+    e.value = 0.6; e.dispatchEvent(new Event("input", { bubbles: true }));
+    const c = { idle: Math.abs(idle - 0.3) < 0.01, held: held === 1, other: Math.abs(other - 0.3) < 0.01, after: Math.abs(after - 0.3) < 0.01 };
+    return { pass: Object.values(c).every((v) => v === true), ...c, idle, held, other, after };`),
+  step("notch toggle moves controls by the insets", `
+    DF.openMenu("controls"); await draw();
+    TOUCH.fakeInsets = { l: 47, r: 47, t: 0, b: 21 }; TOUCH.relayout(); await draw();
+    const a0 = { x: btn("light").x, y: btn("light").y };
+    const cb = document.getElementById("tnotch");
+    cb.checked = false; cb.dispatchEvent(new Event("change", { bubbles: true })); await draw();
+    const a1 = { x: btn("light").x, y: btn("light").y };
+    cb.checked = true; cb.dispatchEvent(new Event("change", { bubbles: true })); await draw();
+    const a2 = { x: btn("light").x, y: btn("light").y };
+    TOUCH.fakeInsets = null; TOUCH.relayout();
+    const c = {
+      dx: Math.abs(a1.x - a0.x - 47) < 0.01,
+      dy: Math.abs(a1.y - a0.y - 21) < 0.01,
+      back: Math.abs(a2.x - a0.x) < 0.01 && Math.abs(a2.y - a0.y) < 0.01,
+      on: DF.OPT.tnotch === true,
+    };
+    return { pass: Object.values(c).every((v) => v === true), ...c, a0, a1, a2 };`),
+  step("settings persist", `
+    DF.openMenu("controls"); await draw();
+    const fire = (id, v, ev) => { const e = document.getElementById(id); if (e.type === "checkbox") e.checked = v; else e.value = v; e.dispatchEvent(new Event(ev, { bubbles: true })); };
+    fire("tsize", 0.9, "input"); fire("topac", 0.4, "input"); fire("tnotch", false, "change");
+    const o = JSON.parse(localStorage["dungeon-raze.v2"]).o;
+    const saved = Math.abs(o.tsize - 0.9) < 1e-9 && Math.abs(o.topac - 0.4) < 1e-9 && o.tnotch === false;
+    DF.OPT.tsize = 1; DF.OPT.topac = 0.6; DF.OPT.tnotch = true;
+    DF.loadOpt();
+    const back = Math.abs(DF.OPT.tsize - 0.9) < 1e-9 && Math.abs(DF.OPT.topac - 0.4) < 1e-9 && DF.OPT.tnotch === false;
+    // bad stored values are ignored
+    const keep = JSON.parse(localStorage["dungeon-raze.v2"]);
+    const tryBad = (o2) => { DF.OPT.tsize = 1; DF.OPT.topac = 0.6; DF.OPT.tnotch = true; localStorage["dungeon-raze.v2"] = JSON.stringify({ b: keep.b, o: Object.assign({}, keep.o, o2) }); DF.loadOpt(); return DF.OPT.tsize === 1 && DF.OPT.topac === 0.6 && DF.OPT.tnotch === true; };
+    const bad = [{ tsize: "big", topac: "x", tnotch: "no" }, { tsize: 5, topac: 0, tnotch: 1 }, { tsize: null, topac: null, tnotch: null }, { tsize: 0.5, topac: 9, tnotch: "x" }].map(tryBad);
+    localStorage["dungeon-raze.v2"] = JSON.stringify(keep);
+    document.getElementById("btnDefaults").click(); await draw();
+    const d = { size: DF.OPT.tsize === 1, opac: DF.OPT.topac === 0.6, notch: DF.OPT.tnotch === true,
+      ui: document.getElementById("tsize").value === "1" && document.getElementById("topac").value === "0.6" && document.getElementById("tnotch").checked === true,
+      stored: JSON.parse(localStorage["dungeon-raze.v2"]).o.tsize === 1 };
+    const c = { saved, back, bad: bad.every((v) => v), ...d };
+    return { pass: Object.values(c).every((v) => v === true), ...c, badRes: bad };`),
 ];

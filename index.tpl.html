@@ -349,11 +349,21 @@
         -webkit-touch-callout: none;
         user-select: none;
       }
-      #touch .hex.down {
-        filter: brightness(1.8);
+      #touch {
+        --tac: 0.6;
+      }
+      #touch .btn,
+      #touch .pause {
+        opacity: var(--tac);
       }
       #touch .btn.empty {
-        opacity: 0.4;
+        opacity: calc(var(--tac) * 0.4);
+      }
+      #touch .btn.down {
+        opacity: 1;
+      }
+      #touch .hex.down {
+        filter: brightness(1.8);
       }
       #touch svg {
         position: absolute;
@@ -674,6 +684,50 @@
         height: 18px;
         accent-color: var(--vein);
       }
+      #tset {
+        display: none;
+        width: min(560px, 100%);
+      }
+      #tset label {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 17px;
+        margin-bottom: 12px;
+      }
+      #tset input[type="range"] {
+        width: 180px;
+        accent-color: var(--vein);
+      }
+      #tset input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        accent-color: var(--vein);
+      }
+      #tsizeV,
+      #topacV {
+        font-variant-numeric: tabular-nums;
+        color: var(--vein);
+        min-width: 48px;
+      }
+      #tnotchNote {
+        margin: -6px 0 14px 28px;
+        font-size: 14px;
+        color: var(--dim);
+      }
+      .touchonly {
+        display: none;
+      }
+      body.touch #binds,
+      body.touch .kbonly {
+        display: none;
+      }
+      body.touch #tset {
+        display: block;
+      }
+      body.touch .touchonly {
+        display: block;
+      }
       #sensV {
         font-variant-numeric: tabular-nums;
         color: var(--vein);
@@ -788,11 +842,43 @@
     </div>
     <div id="scr-controls" class="scr wide">
       <h1 class="sm">Controls</h1>
-      <p class="sub">
+      <p class="sub kbonly">
         Click a binding, then press the key or mouse button you want. Esc
         cancels. A key already in use swaps places.
       </p>
+      <p class="sub touchonly">Settings for the on-screen controls.</p>
       <div id="binds"></div>
+      <div id="tset">
+        <label for="tsize"
+          >Button size
+          <input
+            id="tsize"
+            type="range"
+            min="0.8"
+            max="1.2"
+            step="0.05"
+            value="1"
+          />
+          <span id="tsizeV">1.00×</span></label
+        >
+        <label for="topac"
+          >Button opacity
+          <input
+            id="topac"
+            type="range"
+            min="0.2"
+            max="1"
+            step="0.05"
+            value="0.6"
+          />
+          <span id="topacV">60%</span></label
+        >
+        <label for="tnotch"
+          ><input id="tnotch" type="checkbox" checked />
+          Keep controls clear of the notch and rounded corners</label
+        >
+        <p id="tnotchNote">Off can put buttons under the notch or a curved corner, where touches may not register.</p>
+      </div>
       <div class="opts">
         <label for="sens"
           >Mouse sensitivity

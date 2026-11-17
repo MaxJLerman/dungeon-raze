@@ -102,7 +102,16 @@ const ACTIONS = [
   ["mute", "Sound on or off"],
 ];
 const BIND = Object.assign({}, DEFAULT_BINDS);
-const OPT = { cls: "assassin", sens: 1, invY: false };
+// tsize scales the touch buttons, topac is their idle opacity and tnotch keeps
+// them clear of the notch and rounded corners
+const OPT = {
+  cls: "assassin",
+  sens: 1,
+  invY: false,
+  tsize: 1,
+  topac: 0.6,
+  tnotch: true,
+};
 // a touch button sets "T:action" and is read here beside the bound key
 const held = (a) => !!keys[BIND[a]] || !!keys["T:" + a],
   hit = (a) => {
@@ -168,6 +177,10 @@ function loadOpt() {
       if (CLASSES[d.o.cls]) OPT.cls = d.o.cls;
       if (d.o.sens > 0.1 && d.o.sens < 5) OPT.sens = d.o.sens;
       OPT.invY = !!d.o.invY;
+      const num = (v, lo, hi) => typeof v === "number" && v >= lo && v <= hi;
+      if (num(d.o.tsize, 0.8, 1.2)) OPT.tsize = d.o.tsize;
+      if (num(d.o.topac, 0.2, 1)) OPT.topac = d.o.topac;
+      if (typeof d.o.tnotch === "boolean") OPT.tnotch = d.o.tnotch;
     }
   } catch (e) {
     /* ignore */
