@@ -323,6 +323,7 @@
         gap: 2.2vmin;
         padding: 5vmin 4vmin 3vmin;
         box-sizing: border-box;
+        overflow: hidden;
         transform-origin: 50% 50%;
         background:
           linear-gradient(160deg, rgba(255, 255, 255, 0.06), transparent 45%),
@@ -348,6 +349,15 @@
         box-shadow: 0 0 2.5vmin var(--pc);
         opacity: 0.85;
       }
+      /* unlocked, the kit needs the room: a smaller emblem and tighter text */
+      #plaque.open {
+        gap: 1.4vmin;
+      }
+      #plaque.open .emb {
+        width: 6vmin;
+        height: 6vmin;
+        margin-top: 0;
+      }
       #plaque.sealed .emb {
         box-shadow: none;
         opacity: 0.4;
@@ -363,8 +373,11 @@
         font-size: clamp(20px, 5vmin, 34px);
       }
       #plaqueBody {
-        font-size: clamp(12px, 2.4vmin, 16px);
-        line-height: 1.35;
+        flex: 0 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        font-size: clamp(11px, 2.2vmin, 16px);
+        line-height: 1.25;
         opacity: 0.9;
       }
       #plaqueBody div {
@@ -375,6 +388,7 @@
         margin-right: 0.5em;
       }
       #plaqueMarks {
+        flex: none;
         display: flex;
         gap: 1.2vmin;
         margin-top: auto;
@@ -391,6 +405,7 @@
         box-shadow: 0 0 1.4vmin var(--pc);
       }
       #plaqueClose {
+        flex: none;
         font-size: clamp(12px, 2.3vmin, 16px);
         letter-spacing: 0.1em;
         opacity: 0.8;
@@ -423,6 +438,16 @@
         letter-spacing: 0.12em;
         color: var(--ember);
         text-shadow: 0 2px 10px #000;
+      }
+      /* under touch the prompt is a box from the layout, tapped to inspect */
+      body.touch #prompt {
+        transform: none;
+        box-sizing: border-box;
+        text-align: center;
+        line-height: 44px;
+        border-radius: 6px;
+        background: rgba(10, 13, 20, 0.45);
+        border: 1px solid rgba(255, 179, 71, 0.6);
       }
       kbd {
         font-family: var(--body);

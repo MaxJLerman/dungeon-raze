@@ -85,6 +85,19 @@ export default [
     const a = by(on, "light"), b = by(off, "light");
     const c = { x: near(b.x - a.x, ins.r, 0.001), y: near(b.y - a.y, ins.b, 0.001), same: on.scale === 1 && off.scale === 1 };
     return { pass: all(c), ...c, dx: b.x - a.x, dy: b.y - a.y, scales: [on.scale, off.scale] };`),
+  step("plaque controls", `
+    // the Inspect prompt, the plaque's close area and the D-pad come from the
+    // layout: the prompt clear of the buttons and HUD, the D-pad inside the
+    // stick area, the close area clear of the D-pad
+    const out = {};
+    for (const [W, H, ins] of [[905, 412, Z], [448, 280, Z], [667, 375, { l: 47, r: 47, t: 0, b: 21 }], [1180, 820, Z]]) {
+      const L = touchLayout(W, H, ins, { size: 1, notch: true });
+      const has = !!(L.prompt && L.close && L.dpad), m = L.move, d = L.dpad || {};
+      const inside = has && d.x - d.d / 2 >= m.x0 && d.x + d.d / 2 <= m.x1 && d.y - d.d / 2 >= m.y0 && d.y + d.d / 2 <= m.y1;
+      const arm = has && d.d / 3 >= 40;
+      out[W + "x" + H] = has && inside && arm && layoutProblems(L).length === 0;
+    }
+    return { pass: all(out), ...out };`),
   step("sweep", `
     const cases = [];
     const phoneIns = (s) => [Z, { l: 24, r: 24, t: 0, b: 0 }, ...(s >= 320 ? [{ l: 47, r: 47, t: 0, b: 21 }] : [])];

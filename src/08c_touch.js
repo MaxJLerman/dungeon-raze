@@ -37,6 +37,8 @@ const TOUCH = {
   };
   // buttons that show how many are left
   const COUNTS = { heal: "flasks", tool: "tool" };
+  // whether the D-pad is drawn, for the plaque being open
+  let dpadShown = null;
   const HUD_BOXES = [
     ["vitals", "vitals"],
     ["map", "map"],
@@ -120,6 +122,27 @@ const TOUCH = {
     }
     refresh();
     drawStick(null);
+    // the D-pad for entering a plaque's code, shown only while one is open
+    const d = L.dpad,
+      a = d.d / 3,
+      dg = el("g", { class: "dpad" }, svg);
+    for (const [dir, ox, oy, pts] of [
+      ["fwd", 0, -1, [0, -0.32, -0.22, 0.12, 0.22, 0.12]],
+      ["back", 0, 1, [0, 0.32, -0.22, -0.12, 0.22, -0.12]],
+      ["left", -1, 0, [-0.32, 0, 0.12, -0.22, 0.12, 0.22]],
+      ["right", 1, 0, [0.32, 0, -0.12, -0.22, -0.12, 0.22]],
+    ]) {
+      const cx = d.x + ox * a,
+        cy = d.y + oy * a,
+        ag = el("g", { class: "btn", "data-act": dir }, dg);
+      const poly = el("rect", { class: "arm", x: cx - a / 2, y: cy - a / 2, width: a, height: a, rx: 6, fill: "rgba(10,13,20,.45)", stroke: "rgba(232,226,212,.75)", "stroke-width": 2 }, ag);
+      el("polygon", { points: [0, 2, 4].map((i) => cx + pts[i] * a + "," + (cy + pts[i + 1] * a)).join(" "), fill: "rgba(232,226,212,.85)" }, ag);
+      btnEls[dir] = { g: ag, poly, cnt: null };
+    }
+    // drawn as things stand, so the next idle frame has nothing to change
+    dpadShown = G.state === "play" && !!G.insp;
+    dg.style.display = dpadShown ? "" : "none";
+    stickEls.g.style.display = dpadShown ? "none" : "";
     // pause: a square with two bars
     const q = L.pause,
       pg = el("g", { class: "pause" }, svg);
@@ -178,6 +201,16 @@ const TOUCH = {
   // inline left/top/width/height for the three HUD parts, or none
   function place(on) {
     const L = TOUCH.layout;
+    // the prompt sits in its box; the plaque card takes its size, and the HUD
+    // centres it
+    const pr = $("prompt"),
+      pc = $("plaque");
+    if (on && L) {
+      Object.assign(pr.style, { left: L.prompt.x + "px", top: L.prompt.y + "px", width: L.prompt.w + "px", height: L.prompt.h + "px" });
+      Object.assign(pc.style, { width: L.close.w + "px", height: L.close.h + "px" });
+    } else {
+      for (const e of [pr, pc]) e.style.left = e.style.top = e.style.width = e.style.height = "";
+    }
     for (const [id, k] of HUD_BOXES) {
       const e = $(id);
       if (on && L) {
@@ -288,10 +321,30 @@ const TOUCH = {
   TOUCH.release = release;
   const accepts = (e) =>
     e.pointerType === "touch" || e.pointerType === "pen" || (TOUCH.forced && e.pointerType === "mouse");
+  const inBox = (q, x, y) => x >= q.x && x <= q.x + q.w && y >= q.y && y <= q.y + q.h;
+  // the Inspect prompt shows, so a tap on it opens the plaque
+  const promptUp = () =>
+    G.zone === "hub" && G.player && G.player.state === "free" && !G.insp && !!plaqueAt();
   function classify(x, y) {
     const L = TOUCH.layout,
       // with a pad connected the buttons and stick are gone, so a finger there turns the camera
       hid = document.body.classList.contains("padhide");
+    if (G.insp) {
+      // a plaque is open: the D-pad and the buttons enter its code, a tap on
+      // the plaque closes it, and nothing moves or turns
+      const d = L.dpad,
+        dx = x - d.x,
+        dy = y - d.y,
+        a = d.d / 6;
+      if (!hid && Math.max(Math.abs(dx), Math.abs(dy)) <= d.d / 2 && Math.min(Math.abs(dx), Math.abs(dy)) <= a)
+        if (Math.max(Math.abs(dx), Math.abs(dy)) > a)
+          return { kind: "btn", act: Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "right" : "left") : dy > 0 ? "back" : "fwd" };
+      if (!hid) for (const b of L.btns) if (hexContains(b, x, y)) return { kind: "btn", act: b.act };
+      if (inBox(L.pause, x, y)) return { kind: "pause" };
+      if (inBox(L.close, x, y)) return { kind: "btn", act: "interact" };
+      return { kind: "none" };
+    }
+    if (promptUp() && inBox(L.prompt, x, y)) return { kind: "btn", act: "interact" };
     if (!hid) for (const b of L.btns) if (hexContains(b, x, y)) return { kind: "btn", act: b.act };
     const q = L.pause;
     if (x >= q.x && x <= q.x + q.w && y >= q.y && y <= q.y + q.h) return { kind: "pause" };
@@ -536,5 +589,13 @@ const TOUCH = {
     }
     if (key() !== lastKey) relayout();
     if (s) refresh();
+    // the D-pad takes the stick's place while a plaque is open
+    const ins = s && !!G.insp;
+    if (ins !== dpadShown && svg) {
+      dpadShown = ins;
+      const dg = svg.querySelector(".dpad");
+      if (dg) dg.style.display = ins ? "" : "none";
+      if (stickEls) stickEls.g.style.display = ins ? "none" : "";
+    }
   };
 })();

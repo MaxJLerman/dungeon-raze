@@ -376,7 +376,7 @@ const HUD = (() => {
   // what closes the plaque: Interact, or pausing when Interact's key is also
   // a code key and so enters the code instead
   function closeName() {
-    if (TOUCH.on && !PAD.active) return "Close";
+    if (TOUCH.on && !PAD.active) return "Tap the plaque to close";
     const a = PAD.active ? PAD_BIND : BIND,
       ik = a.interact,
       shared = ["dodge", "heal", "tool"].some((x) => a[x] && a[x] === ik);

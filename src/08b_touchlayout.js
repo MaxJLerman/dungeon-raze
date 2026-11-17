@@ -132,6 +132,19 @@ function layoutProblems(L) {
   // (1.45 R) is only a drag threshold and the finger is captured wherever it
   // goes, so the ring may reach past the area.
   const { rest, R, move } = L;
+  // the plaque controls
+  if (L.prompt) {
+    const pq = L.prompt;
+    for (const b of btns) if (hit(pq, box(b))) out.push("prompt over " + b.act);
+    for (const k of ["vitals", "map", "pause", "boss"]) if (hit(pq, L[k])) out.push("prompt over " + k);
+    const d = L.dpad,
+      dq = { x: d.x - d.d / 2, y: d.y - d.d / 2, w: d.d, h: d.d };
+    if (dq.x < move.x0 - 0.01 || dq.x + dq.w > move.x1 + 0.01 || dq.y < move.y0 - 0.01 || dq.y + dq.h > move.y1 + 0.01)
+      out.push("dpad outside move area");
+    if (d.d / 3 < 40) out.push("dpad arm " + (d.d / 3).toFixed(1));
+    if (hit(dq, L.close)) out.push("plaque over dpad");
+    if (L.close.w < 150) out.push("plaque " + L.close.w.toFixed(1));
+  }
   if (
     rest.x - R < move.x0 ||
     rest.x + R > move.x1 ||
@@ -195,7 +208,36 @@ function layoutAt(W, H, ins, scale) {
     y0 = Math.max(vitals.y + vitals.h, boss.y + boss.h) + g;
   const move = { x0, y0, x1: W * 0.42, y1: H - ins.b };
   const rest = { x: x0 + ring + 4, y: move.y1 - m - ring };
-  return { W, H, scale, ins, P, u, k, S, g, m, R, ring, btns, move, rest, vitals, map, pause, boss };
+  // In the hall. The Inspect prompt, tapped to open a plaque: low in the
+  // middle as on a desktop if that is clear of the buttons and the HUD, else
+  // moved left of the buttons, else up under the HUD. It may cover the stick
+  // area, and takes the finger only while it shows.
+  const pw = clamp(W * 0.3, 150, 240),
+    ph = 48,
+    over = (r, q) => r.x < q.x + q.w && q.x < r.x + r.w && r.y < q.y + q.h && q.y < r.y + r.h,
+    hexBox = (b) => ({ x: b.x - b.d / 2, y: b.y - b.d * 0.433, w: b.d, h: b.d * 0.866 }),
+    clear = (r) => !btns.some((b) => over(r, hexBox(b))) && ![vitals, map, pause, boss].some((q) => over(r, q)),
+    leftOf = Math.max(x0, Math.min(W / 2 - pw / 2, Math.min(...btns.map((b) => b.x - b.d / 2)) - g - pw));
+  const spots = [
+    [W / 2 - pw / 2, H * 0.62 - ph / 2],
+    [leftOf, H * 0.62 - ph / 2],
+    [W / 2 - pw / 2, y0],
+    [leftOf, y0],
+  ].map(([x, y]) => ({ x, y, w: pw, h: ph }));
+  const prompt = spots.find(clear) || spots[0];
+  // While a plaque is open: a D-pad at the left of the stick area, and the
+  // plaque card in the middle, which a tap closes. The card is as wide as the
+  // room the D-pad leaves on both sides.
+  const dd = Math.min(2.4 * R, move.y1 - move.y0, move.x1 - move.x0),
+    dpad = {
+      x: move.x0 + dd / 2,
+      y: clamp(rest.y, move.y0 + dd / 2, move.y1 - dd / 2),
+      d: dd,
+    };
+  const cw = Math.min(s * 0.62, 420, W - 2 * (dpad.x + dd / 2 + g)),
+    chh = Math.min(s * 0.8, 540),
+    close = { x: W / 2 - cw / 2, y: H / 2 - chh / 2, w: cw, h: chh };
+  return { W, H, scale, ins, P, u, k, S, g, m, R, ring, btns, move, rest, vitals, map, pause, boss, prompt, dpad, close };
 }
 
 // the largest size at or below o.size, down to 0.8, that passes
