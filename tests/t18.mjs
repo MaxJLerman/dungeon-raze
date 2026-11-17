@@ -13,7 +13,7 @@ const local = (() => {
 })();
 const step = (name, body) => ({
   name,
-  eval: `(() => { const { G, cam } = DF; G.manual = true; const K = (a) => { DF.taps[DF.BIND[a]] = true; }; ${body} })()`,
+  eval: `(async () => { const { G, cam } = DF; G.manual = true; const K = (a) => { DF.taps[DF.BIND[a]] = true; }; ${body} })()`,
 });
 // stand facing the first plaque, close enough to inspect it
 // (in play: removing a fake pad in an earlier step pauses the game)
@@ -21,19 +21,23 @@ const stand = `DF.show("play"); const p = G.player, q = G.world.plaques[0], f = 
   p.x = f.x; p.z = f.z; p.yaw = cam.yaw = q.yaw + Math.PI; p.state = "free"; DF.sim(0.05);`;
 export default [
   step("default binds", `
-  const c = { key: DF.DEFAULT_BINDS.interact === "Space", dodge: DF.DEFAULT_BINDS.dodge === "KeyB",
+  const c = { key: DF.DEFAULT_BINDS.interact === "KeyG", dodge: DF.DEFAULT_BINDS.dodge === "Space",
     pad: DF.DEFAULT_PAD.interact === "P:0", padDodge: DF.DEFAULT_PAD.dodge === "P:1" };
   return { pass: Object.values(c).every(Boolean), c };`),
-  step("old save moves dodge off Space", `
+  step("old saves take the new dodge and interact keys", `
   const save = (b) => localStorage.setItem("dungeon-raze.v2", JSON.stringify({ b, p: {}, o: {} }));
-  Object.assign(DF.BIND, DF.DEFAULT_BINDS);
-  save(Object.assign({}, DF.DEFAULT_BINDS, { dodge: "Space", interact: undefined }));
-  DF.loadOpt(); const moved = DF.BIND.dodge === "KeyB" && DF.BIND.interact === "Space";
-  Object.assign(DF.BIND, DF.DEFAULT_BINDS);
-  save(Object.assign({}, DF.DEFAULT_BINDS, { dodge: "Space", heavy: "KeyB", interact: undefined }));
-  DF.loadOpt(); const kept = DF.BIND.dodge === "Space" && DF.BIND.heavy === "KeyB";
+  const load = (b) => { Object.assign(DF.BIND, DF.DEFAULT_BINDS); save(Object.assign({}, DF.DEFAULT_BINDS, b)); DF.loadOpt(); return { ...DF.BIND }; };
+  // from before plaques: dodge on Space, no interact
+  const a = load({ dodge: "Space", interact: undefined }), oldest = a.dodge === "Space" && a.interact === "KeyG";
+  // from the plaques release: dodge on B, interact on Space
+  const b = load({ dodge: "KeyB", interact: "Space" }), moved = b.dodge === "Space" && b.interact === "KeyG";
+  // unless the player has put something else on G
+  const c = load({ dodge: "KeyB", interact: "Space", heavy: "KeyG" }),
+    kept = c.dodge === "KeyB" && c.interact === "Space" && c.heavy === "KeyG";
+  // a dodge the player chose stays where it is
+  const d = load({ dodge: "KeyC", interact: "Space" }), chosen = d.dodge === "KeyC" && d.interact === "Space";
   Object.assign(DF.BIND, DF.DEFAULT_BINDS); DF.saveOpt();
-  return { pass: moved && kept, moved, kept };`),
+  return { pass: oldest && moved && kept && chosen, oldest, moved, kept, chosen };`),
   step("hidden until unlocked", `
   DF.UNLOCKED.clear(); DF.saveOpt(); DF.renderPicker();
   const cards = () => [...document.querySelectorAll(".picker .card")].map((b) => b.dataset.cls);
@@ -65,7 +69,7 @@ export default [
   at(f.x, f.z, q.yaw); const away = DF.plaqueAt() === null;
   at(0, -10, 0); const far = DF.plaqueAt() === null;
   at(f.x, f.z, q.yaw + Math.PI);
-  return pr().then((el) => { const t = el.textContent; return { pass: near && away && far && /Inspect/.test(t) && /Space/.test(t), near, away, far, t }; });`),
+  return pr().then((el) => { const t = el.textContent; return { pass: near && away && far && /Inspect/.test(t) && /\\bG\\b/.test(t), near, away, far, t }; });`),
   step("inspect opens and closes", `
   DF.enterHub(); ${stand} const cy = cam.yaw; K("interact"); DF.sim(0.6);
   const open = p.state === "inspect" && G.insp && G.insp.k === 1;
@@ -105,14 +109,14 @@ export default [
   pads[0].axes[2] = 0; const still = Math.abs(cam.yaw - cy) < 1e-6; DF.closePlaque(true); navigator.getGamepads = () => [];
   DF.PAD.poll(1 / 60); return { pass: open && still, open, still };`),
   step("keyboard code unlocks", `
-  DF.UNLOCKED.clear(); DF.saveOpt(); DF.setPlaqueCode("enforcer", "UUDDLRBXYB"); DF.enterHub(); ${stand}
+  DF.UNLOCKED.clear(); DF.saveOpt(); DF.setPlaqueCode("enforcer", "fwd fwd back back left right dodge heal tool dodge"); DF.enterHub(); ${stand}
   const B = DF.BIND, key = { U: B.fwd, D: B.back, L: B.left, R: B.right, B: B.dodge, X: B.heal, Y: B.tool };
   K("interact"); DF.sim(0.6); const send = (s) => { for (const ch of s) { DF.taps[key[ch]] = true; DF.sim(0.05); } };
   send("UUDDLRBXYX"); const wrong = !DF.UNLOCKED.has("enforcer");
   send("UUDDLRBXYB"); const right = DF.UNLOCKED.has("enforcer") && G.msgs.some((m) => /ENFORCER UNLOCKED/.test(m.text));
   DF.closePlaque(true); DF.UNLOCKED.clear(); DF.saveOpt(); DF.resetPlaqueCodes(); return { pass: wrong && right, wrong, right };`),
   step("pad code unlocks", `
-  DF.UNLOCKED.clear(); DF.setPlaqueCode("enforcer", "LRLRYYXB"); DF.enterHub(); ${stand}
+  DF.UNLOCKED.clear(); DF.setPlaqueCode("enforcer", "left right left right tool tool heal dodge"); DF.enterHub(); ${stand}
   const pads = [{ index: 0, connected: true, mapping: "standard", id: "fake",
     buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })), axes: [0, 0, 0, 0] }];
   navigator.getGamepads = () => pads; const btn = { U: 12, D: 13, L: 14, R: 15, B: 1, X: 2, Y: 3 };
@@ -122,7 +126,7 @@ export default [
   const ok = DF.UNLOCKED.has("enforcer"); DF.closePlaque(true); navigator.getGamepads = () => []; DF.PAD.poll(1 / 60);
   DF.UNLOCKED.clear(); DF.saveOpt(); DF.resetPlaqueCodes(); return { pass: ok };`),
   step("a D-pad bound to an action still enters its direction", `
-  DF.UNLOCKED.clear(); DF.setPlaqueCode("enforcer", "UUDD"); DF.enterHub(); ${stand}
+  DF.UNLOCKED.clear(); DF.setPlaqueCode("enforcer", "fwd fwd back back"); DF.enterHub(); ${stand}
   DF.setPadBind("tool", "P:12"); DF.setPadBind("heal", "P:13"); const pads = [{ index: 0, connected: true, mapping: "standard", id: "fake",
     buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })), axes: [0, 0, 0, 0] }];
   navigator.getGamepads = () => pads;
@@ -156,7 +160,7 @@ export default [
   const ok = p.state === "inspect" && !p.sprint; DF.closePlaque(true);
   return { pass: ok, sprint: p.sprint };`),
   step("left stick enters directions once per push", `
-  DF.UNLOCKED.clear(); DF.setPlaqueCode("enforcer", "UDLRUDLR"); DF.enterHub(); ${stand}
+  DF.UNLOCKED.clear(); DF.setPlaqueCode("enforcer", "fwd back left right fwd back left right"); DF.enterHub(); ${stand}
   const pads = [{ index: 0, connected: true, mapping: "standard", id: "fake",
     buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })), axes: [0, 0, 0, 0] }];
   navigator.getGamepads = () => pads; DF.taps[DF.BIND.interact] = true; DF.sim(0.6, () => DF.PAD.poll(1 / 60));
@@ -166,7 +170,7 @@ export default [
   const ok = DF.UNLOCKED.has("enforcer"); DF.closePlaque(true); navigator.getGamepads = () => []; DF.PAD.poll(1 / 60);
   DF.UNLOCKED.clear(); DF.saveOpt(); DF.resetPlaqueCodes(); return { pass: ok };`),
   step("held keys, sealed and already open plaques take nothing", `
-  DF.UNLOCKED.clear(); DF.setPlaqueCode("enforcer", "UUUUUUUU"); DF.enterHub(); ${stand}
+  DF.UNLOCKED.clear(); DF.setPlaqueCode("enforcer", "fwd fwd fwd fwd fwd fwd fwd fwd"); DF.enterHub(); ${stand}
   DF.keys[DF.BIND.fwd] = true; K("interact"); DF.sim(1); DF.keys[DF.BIND.fwd] = false;
   const held = G.insp.syms.length === 0 && !DF.UNLOCKED.has("enforcer"); DF.closePlaque(true);
   DF.unlockClass("enforcer"); G.msgs.length = 0; let writes = 0; const real = Storage.prototype.setItem;
@@ -179,14 +183,31 @@ export default [
   Storage.prototype.setItem = real; DF.closePlaque(true); DF.UNLOCKED.clear(); DF.saveOpt(); DF.resetPlaqueCodes();
   return { pass: held && opened && sealed, held, opened, sealed };`),
   step("shared key enters the symbol", `
-  DF.UNLOCKED.clear(); DF.setPlaqueCode("enforcer", "BBBBBBBB"); DF.BIND.dodge = "Space"; DF.enterHub(); ${stand}
+  DF.UNLOCKED.clear(); DF.setPlaqueCode("enforcer", "dodge dodge dodge dodge dodge dodge dodge dodge"); DF.BIND.dodge = "Space"; DF.BIND.interact = "Space"; DF.enterHub(); ${stand}
   K("interact"); DF.sim(0.6); for (let i = 0; i < 8; i++) { DF.taps.Space = true; DF.sim(0.05); }
   const ok = DF.UNLOCKED.has("enforcer") && p.state === "inspect"; DF.closePlaque(true);
-  DF.BIND.dodge = "KeyB"; DF.UNLOCKED.clear(); DF.saveOpt(); DF.resetPlaqueCodes(); return { pass: ok };`),
+  Object.assign(DF.BIND, DF.DEFAULT_BINDS); DF.UNLOCKED.clear(); DF.saveOpt(); DF.resetPlaqueCodes(); return { pass: ok };`),
+  step("a code reads in each input's own notation", `
+  const s = ["right", "heal", "fwd", "back", "left", "dodge", "tool"], t = (m) => DF.codeText(s, m).join(" ");
+  const got = { kb: t("kb"), touch: t("touch"), xbox: t("xbox"), ps: t("ps") };
+  const want = { kb: "D E W S A Space R", touch: "→ FLASK ↑ ↓ ← DODGE TOOL", xbox: "→ X ↑ ↓ ← B Y", ps: "→ □ ↑ ↓ ← ○ △" };
+  DF.BIND.dodge = "KeyC"; DF.PAD_BIND.heal = "P:0";
+  const rebound = DF.codeText(["dodge"], "kb")[0] === "C" && DF.codeText(["heal"], "xbox")[0] === "A";
+  Object.assign(DF.BIND, DF.DEFAULT_BINDS); Object.assign(DF.PAD_BIND, DF.DEFAULT_PAD);
+  const same = Object.keys(want).every((k) => got[k] === want[k]);
+  return { pass: same && rebound, got, rebound };`),
+  step("the plaque marks show presses in the input in use", `
+  DF.UNLOCKED.clear(); DF.setPlaqueCode("enforcer", "tool tool tool tool"); DF.enterHub(); ${stand}
+  K("interact"); DF.sim(0.6); K("right"); DF.sim(0.05); K("heal"); DF.sim(0.05);
+  const marks = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() =>
+    r([...document.querySelectorAll("#plaqueMarks .on")].map((e) => e.textContent).join(" ")))));
+  const kb = await marks(); DF.PAD.active = true; DF.PAD.fam = "ps"; const ps = await marks();
+  DF.PAD.fam = "xbox"; const xb = await marks(); DF.PAD.active = false;
+  DF.closePlaque(true); DF.resetPlaqueCodes();
+  return { pass: kb === "D E" && ps === "→ □" && xb === "→ X", kb, ps, xb };`),
   step("the real code", local && local.enforcer ? `
   DF.UNLOCKED.clear(); DF.enterHub(); ${stand}
-  const B = DF.BIND, key = { U: B.fwd, D: B.back, L: B.left, R: B.right, B: B.dodge, X: B.heal, Y: B.tool };
-  K("interact"); DF.sim(0.6); for (const ch of ${JSON.stringify(local && local.enforcer)}) { DF.taps[key[ch]] = true; DF.sim(0.05); }
+  K("interact"); DF.sim(0.6); for (const a of ${JSON.stringify(local && local.enforcer)}.split(" ")) { K(a); DF.sim(0.05); }
   const ok = DF.UNLOCKED.has("enforcer"); DF.closePlaque(true); DF.UNLOCKED.clear(); DF.saveOpt(); return { pass: ok };`
     : `return { pass: true, skipped: "no tests/codes.local.json" };`),
 ];

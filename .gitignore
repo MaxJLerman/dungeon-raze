@@ -5,5 +5,5 @@ dist/
 .vscode/
 .superpowers
 
-# plain plaque codes, kept out of the repo
-tests/codes.local.json
+# plain plaque codes, and anything made from them, kept out of the repo
+tests/codes.local.*
