@@ -1,14 +1,18 @@
 // ---------- Touch controls ----------
 // Draws the on-screen buttons from touchLayout() and puts the health bars,
-// map and boss bar into the boxes it gives them. Input handling is not here
-// yet. Touch mode starts on when the browser reports a touch screen, or when
-// the URL has ?touch=1.
+// map and boss bar into the boxes it gives them. Every finger belongs to the
+// control it first touched, whatever it slides over afterwards: a button sets
+// keys["T:act"] and taps["T:act"], read through held() and hit(). The stick and
+// the camera area are classified here but acted on later. Touch mode starts on
+// when the browser reports a touch screen, or when the URL has ?touch=1.
 const TOUCH = {
   on: false,
   layout: null,
   fakeInsets: null, // tests only: { l, r, t, b } used in place of the real insets
   forced: false,
   move: { x: 0, y: 0, mag: 0 },
+  // pointerId -> { kind: "btn"|"pause"|"move"|"look", act?, x0, y0, t0, x, y }
+  owners: new Map(),
   // set up in init
   init: null,
   update: null,
@@ -29,6 +33,8 @@ const TOUCH = {
     tool: ["TOOL", "232,226,212"],
     special: ["ABILITY", "180,140,255"],
   };
+  // buttons that show how many are left
+  const COUNTS = { heal: "flasks", tool: "tool" };
   const HUD_BOXES = [
     ["vitals", "vitals"],
     ["map", "map"],
@@ -39,7 +45,8 @@ const TOUCH = {
     probe = null,
     readout = null,
     lastKey = "",
-    shown = false;
+    shown = false,
+    btnEls = {};
 
   function detect() {
     const mm = (q) => !!(window.matchMedia && matchMedia(q).matches);
@@ -88,13 +95,23 @@ const TOUCH = {
     el("circle", { class: "stick-ring", cx: L.rest.x, cy: L.rest.y, r: L.ring, fill: "none", stroke: "rgba(255,179,71,.55)", "stroke-width": 2, "stroke-dasharray": "6 6" }, st);
     el("circle", { class: "stick-base", cx: L.rest.x, cy: L.rest.y, r: L.R, fill: "rgba(10,13,20,.3)", stroke: "rgba(232,226,212,.5)", "stroke-width": 2 }, st);
     const g = el("g", { class: "btns", opacity: OPT.topac ?? 0.6 }, svg);
+    btnEls = {};
     for (const b of L.btns) {
       const [label, col] = LOOK[b.act];
       const dark = b.act === "lock" || b.act === "tool";
-      el("polygon", { class: "hex", "data-act": b.act, points: hexPoints(b), fill: dark ? "rgba(10,13,20,.45)" : "rgba(" + col + ",.2)", stroke: "rgba(" + col + ",.85)", "stroke-width": 2, "stroke-linejoin": "round" }, g);
-      const t = el("text", { class: "lbl", x: b.x, y: b.y, "text-anchor": "middle", "dominant-baseline": "central", "font-size": clamp(b.d * 0.866 * 0.2, 9, 18), fill: "rgba(255,255,255,.85)" }, g);
+      const bg = el("g", { class: "btn", "data-act": b.act }, g);
+      const poly = el("polygon", { class: "hex", "data-act": b.act, points: hexPoints(b), fill: dark ? "rgba(10,13,20,.45)" : "rgba(" + col + ",.2)", stroke: "rgba(" + col + ",.85)", "stroke-width": 2, "stroke-linejoin": "round" }, bg);
+      const counted = !!COUNTS[b.act],
+        fs = clamp(b.d * 0.866 * 0.2, 9, 18);
+      const t = el("text", { class: "lbl", x: b.x, y: counted ? b.y - b.d * 0.12 : b.y, "text-anchor": "middle", "dominant-baseline": "central", "font-size": fs, fill: "rgba(255,255,255,.85)" }, bg);
       t.textContent = label;
+      let cnt = null;
+      if (counted) {
+        cnt = el("text", { class: "lbl cnt", "data-act": b.act, x: b.x, y: b.y + b.d * 0.2, "text-anchor": "middle", "dominant-baseline": "central", "font-size": fs * 1.4, fill: "rgba(255,255,255,.95)" }, bg);
+      }
+      btnEls[b.act] = { g: bg, poly, cnt };
     }
+    refresh();
     // pause: a square with two bars
     const q = L.pause,
       pg = el("g", { class: "pause", opacity: OPT.topac ?? 0.6 }, svg);
@@ -103,6 +120,22 @@ const TOUCH = {
       bh = q.h * 0.4;
     for (const dx of [-0.17, 0.17])
       el("rect", { x: q.x + q.w / 2 + dx * q.w - bw / 2, y: q.y + (q.h - bh) / 2, width: bw, height: bh, fill: "rgba(232,226,212,.85)" }, pg);
+  }
+  // counts on the buttons, and dimming of the ones that cannot be used now
+  function refresh() {
+    const p = G.player;
+    if (!p || !p.cls) return;
+    for (const act in btnEls) {
+      const e = btnEls[act];
+      let empty = false;
+      if (COUNTS[act]) {
+        const n = p[COUNTS[act]];
+        e.cnt.textContent = n;
+        empty = !(n > 0);
+      } else if (act === "special") empty = p.focus < p.cls.special.cost;
+      e.g.classList.toggle("empty", empty);
+      e.poly.classList.toggle("empty", empty);
+    }
   }
   // inline left/top/width/height for the three HUD parts, or none
   function place(on) {
@@ -122,6 +155,8 @@ const TOUCH = {
   }
   function relayout() {
     if (!TOUCH.on) return;
+    // a finger that was on a control that moves is no longer on it
+    release();
     const ins = insets();
     TOUCH.layout = touchLayout(innerWidth, innerHeight, ins, {
       size: OPT.tsize ?? 1,
@@ -151,6 +186,74 @@ const TOUCH = {
       readout.style.display = "none";
     }
   }
+  // ---- fingers ----
+  const owners = TOUCH.owners;
+  const heldBy = (act) => {
+    for (const o of owners.values()) if (o.kind === "btn" && o.act === act) return true;
+    return false;
+  };
+  function lift(id) {
+    const o = owners.get(id);
+    if (!o) return null;
+    owners.delete(id);
+    if (o.kind === "btn" && !heldBy(o.act)) {
+      keys["T:" + o.act] = false;
+      if (btnEls[o.act]) btnEls[o.act].poly.classList.remove("down");
+    }
+    return o;
+  }
+  function release() {
+    for (const id of [...owners.keys()]) lift(id);
+    for (const k in keys) if (k.startsWith("T:")) keys[k] = false;
+    for (const act in btnEls) btnEls[act].poly.classList.remove("down");
+    TOUCH.move.x = TOUCH.move.y = TOUCH.move.mag = 0;
+  }
+  TOUCH.release = release;
+  const accepts = (e) =>
+    e.pointerType === "touch" || e.pointerType === "pen" || (TOUCH.forced && e.pointerType === "mouse");
+  function classify(x, y) {
+    const L = TOUCH.layout;
+    for (const b of L.btns) if (hexContains(b, x, y)) return { kind: "btn", act: b.act };
+    const q = L.pause;
+    if (x >= q.x && x <= q.x + q.w && y >= q.y && y <= q.y + q.h) return { kind: "pause" };
+    const m = L.move;
+    if (x >= m.x0 && x <= m.x1 && y >= m.y0 && y <= m.y1) return { kind: "move" };
+    return { kind: "look" };
+  }
+  function onDown(e) {
+    if (!TOUCH.on || !TOUCH.layout || !accepts(e) || G.state !== "play") return;
+    e.preventDefault();
+    try {
+      host.setPointerCapture(e.pointerId);
+    } catch (err) {}
+    if (owners.has(e.pointerId)) lift(e.pointerId);
+    const o = classify(e.clientX, e.clientY);
+    o.x0 = o.x = e.clientX;
+    o.y0 = o.y = e.clientY;
+    o.t0 = performance.now();
+    owners.set(e.pointerId, o);
+    if (o.kind === "btn") {
+      keys["T:" + o.act] = true;
+      taps["T:" + o.act] = true;
+      if (btnEls[o.act]) btnEls[o.act].poly.classList.add("down");
+    }
+  }
+  function onMove(e) {
+    const o = owners.get(e.pointerId);
+    if (!o || !accepts(e)) return;
+    e.preventDefault();
+    o.x = e.clientX;
+    o.y = e.clientY;
+  }
+  function onUp(e) {
+    const o = owners.get(e.pointerId);
+    if (!o || !accepts(e)) return;
+    e.preventDefault();
+    o.x = e.clientX;
+    o.y = e.clientY;
+    lift(e.pointerId);
+    if (o.kind === "pause" && e.type === "pointerup" && G.state === "play") show("pause");
+  }
   TOUCH.init = () => {
     host = $("touch");
     svg = host.querySelector("svg");
@@ -161,6 +264,8 @@ const TOUCH = {
       "padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)";
     document.body.appendChild(probe);
     TOUCH.forced = /[?&]touch=1(&|$)/.test(location.search);
+    for (const t of ["pointerdown", "pointermove", "pointerup", "pointercancel"])
+      host.addEventListener(t, t === "pointerdown" ? onDown : t === "pointermove" ? onMove : onUp);
     const re = () => relayout();
     addEventListener("resize", re);
     addEventListener("orientationchange", re);
@@ -179,5 +284,6 @@ const TOUCH = {
       host.classList.toggle("show", s);
     }
     if (key() !== lastKey) relayout();
+    if (s) refresh();
   };
 })();

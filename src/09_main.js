@@ -48,6 +48,7 @@ function show(state) {
     document.exitPointerLock();
   if (state !== "play") {
     for (const k in keys) keys[k] = false;
+    TOUCH.release();
   }
 }
 function lockPointer() {
@@ -64,7 +65,9 @@ function lockPointer() {
 function play() {
   SFX.init();
   show("play");
-  lockPointer();
+  TOUCH.release();
+  // a touch screen has no pointer to lock
+  if (!TOUCH.on) lockPointer();
   canvas.focus();
   for (const k in taps) taps[k] = false;
   mouse.dx = mouse.dy = 0;

@@ -103,8 +103,14 @@ const ACTIONS = [
 ];
 const BIND = Object.assign({}, DEFAULT_BINDS);
 const OPT = { cls: "assassin", sens: 1, invY: false };
-const held = (a) => !!keys[BIND[a]],
-  hit = (a) => tap(BIND[a]);
+// a touch button sets "T:action" and is read here beside the bound key
+const held = (a) => !!keys[BIND[a]] || !!keys["T:" + a],
+  hit = (a) => {
+    // both taps are read, so that both are consumed
+    const k = tap(BIND[a]),
+      t = tap("T:" + a);
+    return k || t;
+  };
 function keyName(c) {
   if (!c) return "Unbound";
   const M = {

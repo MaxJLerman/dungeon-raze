@@ -344,6 +344,16 @@
       }
       body.touch #touch.show {
         display: block;
+        pointer-events: auto;
+        touch-action: none;
+        -webkit-touch-callout: none;
+        user-select: none;
+      }
+      #touch .hex.down {
+        filter: brightness(1.8);
+      }
+      #touch .btn.empty {
+        opacity: 0.4;
       }
       #touch svg {
         position: absolute;
