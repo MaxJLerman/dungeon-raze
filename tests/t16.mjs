@@ -629,6 +629,7 @@ export default [
   c.padonly = txt(document.querySelector(".padonly")) === "Choose a controller binding with ✕ or A, then press the button you want. Options or Menu cancels.";
   c.padonlyHidden = document.querySelector(".padonly").getClientRects().length === 0;
   pads(mk({ b: { 2: 1 } })); tick(2); pads(mk()); tick(2);
+  c.sensLabel = document.querySelector('label[for="sens"] > span').innerText.trim().startsWith("Mouse sensitivity");
   c.padonlyShown = document.querySelector(".padonly").getClientRects().length > 0 && document.querySelector(".kbonly").getClientRects().length === 0;
   reset(); DF.saveOpt(); DF.show("title");
   return { pass: Object.values(c).every(Boolean), c };`),
@@ -684,7 +685,7 @@ export default [
   DF.openMenu("class"); await draw(); c.key = kit() === DF.keyName(DF.BIND.tool);
   pads(mk()); tick(); pads(mk({ b: { 2: 1 } })); tick(2); await draw(); c.xbox = kit() === "Y";
   pads(mk()); tick(); pads(mk({ id: PS, b: { 2: 1 } })); tick(2); await draw(); c.ps = kit() === "△";
-  window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyW", key: "w" })); await draw(); c.back = kit() === c.key ? true : kit() === DF.keyName(DF.BIND.tool);
+  window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyW", key: "w" })); await draw(); c.back = kit() === DF.keyName(DF.BIND.tool);
   pads(mk()); tick(); reset(); DF.show("title");
   return { pass: Object.values(c).every(Boolean), c };`),
   step("How to play names the pause button", `
