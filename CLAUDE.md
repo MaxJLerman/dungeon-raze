@@ -481,8 +481,9 @@ is what you need to change the code without breaking it.
   above the enemy: `.tag.t0` white, `.t1` orange, `.t2` red, in
   `index.tpl.html`. The same classes style the name on the big boss bar.
 - The HUD keeps a pool of ten overhead slots, each a name tag over a health
-  and posture bar. The locked target takes a slot first. A boss's slot is the
-  tag alone (`nobar`), because the big bar shows the rest.
+  and posture bar. The locked target takes a slot first. A boss on the big bar
+  gets no slot, even when locked, because that bar shows its name. A boss
+  that has not noticed the player gets the tag alone (`nobar`).
 - A slot shows when the enemy is aware, hurt, or looked at, within 26 metres.
   "Looked at" is `looked` in `08_hud.js`: the enemy's body is inside a box
   around the screen centre and `world.los` from the player is clear. The box

@@ -42,24 +42,26 @@ export default [
   step("a hurt spitter has a white tag", `
   const e = stage("spit", 6, 0.5); e.hp -= 1; await draw(); const s = slots();
   return { pass: s.length === 1 && s[0].name === "Spitter" && s[0].tier === 0, s };`),
-  step("the boss has a red tag and no small bars", `
+  step("an aware boss has no overhead tag", `
   ${aware("warden", 10, 0.3)} const s = slots(), big = document.getElementById("boss"), nm = document.getElementById("bossNm");
   const c = {
-    slot: s.length === 1 && s[0].name === "The Ossuary Warden" && s[0].tier === 2 && s[0].nobar === true,
-    red: s.length === 1 && s[0].color === "${RED}" && s[0].bg === "${BLACK}",
+    slot: s.length === 0,
     big: big.classList.contains("show"),
     name: !!nm && nm.textContent === "The Ossuary Warden" && nm.classList.contains("tag") && nm.classList.contains("t2"),
   };
   return { pass: Object.values(c).every(Boolean), c, s };`),
+  step("a locked boss has no overhead tag", `
+  ${aware("warden", 10, 0.3)} G.player.lock = e; await draw(); const s = slots();
+  return { pass: s.length === 0 && document.getElementById("boss").classList.contains("show"), s };`),
   step("a staggered boss has no glowing bar", `
-  ${aware("warden", 10, 0.3)} e.state = "stagger"; await draw();
+  const e = stage("warden", 10); e.state = "stagger"; await draw();
   const d = [...document.querySelectorAll("#ebars .eb")].find((q) => q.style.display !== "none"), cs = getComputedStyle(d);
   return { pass: d.classList.contains("stag") && d.classList.contains("nobar") && cs.boxShadow === "none", shadow: cs.boxShadow };`),
   step("an unnoticed enemy off to the side has no tag", `
   stage("husk", 6, 0.5); await draw(); const s = slots();
   return { pass: s.length === 0, s };`),
   step("a reused slot is rewritten", `
-  { ${aware("warden", 10, 0.3)} }
+  stage("warden", 10); await draw();
   const before = slots();
   ${aware("husk")} const s = slots();
   return { pass: before.length === 1 && before[0].nobar === true && s.length === 1 && s[0].name === "Husk" && s[0].tier === 0 && s[0].nobar === false && s[0].color === "${WHITE}", before, s };`),
@@ -99,9 +101,9 @@ export default [
   step("a pack in the zone all show", `
   const e = stage("husk"), o = G.enemies.find((q) => q.type === "spit"); o.x = e.x; o.z = e.z + 1.5; o.aware = false; await draw(); const s = slots();
   return { pass: s.length === 2 && s.map((q) => q.name).sort().join() === "Husk,Spitter", s };`),
-  step("looking at the boss shows only its tag", `
+  step("looking at an unnoticing boss shows only its tag", `
   stage("warden", 10); await draw(); const s = slots();
-  return { pass: s.length === 1 && s[0].tier === 2 && s[0].nobar === true && !document.getElementById("boss").classList.contains("show"), s };`),
+  return { pass: s.length === 1 && s[0].name === "The Ossuary Warden" && s[0].tier === 2 && s[0].nobar === true && s[0].color === "${RED}" && s[0].bg === "${BLACK}" && !document.getElementById("boss").classList.contains("show"), s };`),
   // ---- the How to play screen ----
   step("how to play opens from the title", `
   const $ = (q) => document.querySelector(q), on = (q) => $(q).classList.contains("show");
