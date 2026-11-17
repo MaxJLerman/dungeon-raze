@@ -1,6 +1,7 @@
 # DungeonRaze
 
-A third-person melee and ranged combat prototype that runs in a desktop browser.
+A third-person melee and ranged combat prototype that runs in a desktop or
+mobile browser.
 You pick one of five classes and start in a base of operations: a hall with six
 portal frames graded E to S and a training dummy. The open portal leads to a
 procedurally generated cave of looping tunnels, where you kill the boss in the
@@ -12,8 +13,43 @@ a finished game, and nothing in it is balanced by hand yet.
 ## Play
 
 Run `node build.mjs`, then open `dist/index.html` in a recent desktop Chrome,
-Edge, Firefox or Safari. It runs straight from disk with no server. It needs a
-keyboard and a mouse.
+Edge, Firefox or Safari. It runs straight from disk with no server. On a
+desktop it needs a keyboard and a mouse.
+
+Phones and tablets play in landscape by touch. The file runs on Android and on
+desktop. iPhones cannot open it from disk, so they need the GitHub Pages
+address, once that is set up. Adding `?touch=1` to the address forces the touch
+controls on a desktop, with a readout of the screen size, so the layout can be
+checked with a mouse.
+
+### Touch controls
+
+The buttons are hexagons in a honeycomb at the bottom right, with Attack at the
+centre. The stick is the left 42% of the screen. The controls appear when play
+starts and the keyboard hint is hidden.
+
+| Control                         | What it does                                                           |
+| ------------------------------- | ---------------------------------------------------------------------- |
+| Stick (left side of the screen) | Walk. It appears where the thumb lands. A small push walks slowly      |
+| Past the dashed ring            | Sprint                                                                 |
+| Drag anywhere else              | Turn the camera. A second finger in the stick area also turns it       |
+| Quick swipe sideways            | While locked on, switch to the next target                             |
+| Attack                          | Light attack chain. Drag the finger to aim while attacking             |
+| Heavy, Dodge                    | Heavy attack and dodge                                                 |
+| Guard                           | Hold to guard. Guarding just as a hit lands parries                         |
+| Lock                            | Lock on to the nearest enemy, or let go                                |
+| Flask, Tool, Ability            | Heal, use the class tool, use the class ability. Flask and Tool show how many are left |
+| Pause (top right)               | Opens the pause menu                                                   |
+
+A finger belongs to the control it first touched, so sliding off a button
+keeps it held. The Back gesture pauses the game instead of leaving the page.
+Holding the device upright shows "Turn your device sideways to play." and
+pauses. Pressing a key or moving a mouse brings back the desktop controls, and
+a touch brings back the buttons.
+
+The Controls menu has three settings for touch: button size (0.8 to 1.2 times,
+cut down on small screens so everything fits), button opacity (20% to 100%),
+and "Keep controls clear of the notch and rounded corners", on by default.
 
 ## Technology
 
@@ -23,7 +59,7 @@ keyboard and a mouse.
 | Rendering      | WebGL 2, through a small renderer written for this project (`src/02_gl.js`) |
 | Sound          | Web Audio API, every effect synthesized in code (`src/04_audio.js`)         |
 | HUD and menus  | Ordinary HTML and CSS laid over the canvas                                  |
-| Saved settings | `localStorage`, key `dungeon-raze.v2` (bindings, sensitivity, class)        |
+| Saved settings | `localStorage`, key `dungeon-raze.v2` (bindings, sensitivity, class, touch settings) |
 | Build          | One Node script that concatenates the source into a single HTML file        |
 | Tests          | Playwright driving headless Chromium with software WebGL                    |
 | Fonts          | Two Google Fonts, with system fallbacks when offline                        |
@@ -59,6 +95,8 @@ earlier ones.
 | `src/06_game.js`     | Game state `G`, key bindings, classes, moves, combat rules, enemy AI, projectiles           |
 | `src/07_render.js`   | Player and enemy posing per state, light selection, per-frame drawing                       |
 | `src/08_hud.js`      | `HUD`: bars, enemy name tags and bars, lock-on reticle, messages, minimap                   |
+| `src/08b_touchlayout.js` | `touchLayout()`: where every touch button, the stick area and the HUD boxes go, and `layoutProblems()` |
+| `src/08c_touch.js`   | `TOUCH`: draws the buttons, tracks fingers, switches touch mode, fullscreen and Back        |
 | `src/09_main.js`     | Input events, menus, camera, main loop, test hook `window.DF`                               |
 | `build.mjs`          | The build script                                                                            |
 | `test.mjs`, `tests/` | Headless test runner and scenario scripts                                                   |
@@ -129,6 +167,15 @@ Screenshots go to `shots/`.
 | `tests/t10.mjs` | Enemy name tags, threat colours, look zone, How to play screen                          |
 | `tests/t11.mjs` | Screenshots of the name tags and the How to play screen                                 |
 | `tests/t12.mjs` | Routes, lost sight and searching, leash, provoke, boss chamber                          |
+| `tests/t13.mjs` | Touch layout geometry, hit shapes and a size sweep. Run in `title` mode                 |
+| `tests/t14.mjs` | Touch play with real touches under device emulation: buttons, stick, look, settings, portrait, Back |
+| `tests/t15.mjs` | Screenshots of the hall and a fight with touch controls on every device                 |
+
+The touch scripts `t14` and `t15` run under emulated phones and tablets. Run
+one device with `DEVICE=pixel-9 SCRIPT=$PWD/tests/t14.mjs node test.mjs smoke`,
+or every device in `tests/devices.mjs` with
+`node tests/touch-all.mjs tests/t14.mjs`. Screenshots are named
+`shots/<device>-<name>.png`.
 
 `tests/t1.mjs` is an early real-time script kept for reference; the others drive
 the simulation directly and are the ones to copy.

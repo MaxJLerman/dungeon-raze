@@ -8,6 +8,7 @@
   },
   "scripts": {
     "build": "node build.mjs",
+    "test:touch": "node tests/touch-all.mjs tests/t14.mjs",
     "dev": "echo 'Visit the dev server: http://localhost:8000'; echo; python3 -m http.server 8000 -d dist"
   },
   "keywords": [],

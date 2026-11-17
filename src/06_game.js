@@ -102,9 +102,24 @@ const ACTIONS = [
   ["mute", "Sound on or off"],
 ];
 const BIND = Object.assign({}, DEFAULT_BINDS);
-const OPT = { cls: "assassin", sens: 1, invY: false };
-const held = (a) => !!keys[BIND[a]],
-  hit = (a) => tap(BIND[a]);
+// tsize scales the touch buttons, topac is their idle opacity and tnotch keeps
+// them clear of the notch and rounded corners
+const OPT = {
+  cls: "assassin",
+  sens: 1,
+  invY: false,
+  tsize: 1,
+  topac: 0.6,
+  tnotch: true,
+};
+// a touch button sets "T:action" and is read here beside the bound key
+const held = (a) => !!keys[BIND[a]] || !!keys["T:" + a],
+  hit = (a) => {
+    // both taps are read, so that both are consumed
+    const k = tap(BIND[a]),
+      t = tap("T:" + a);
+    return k || t;
+  };
 function keyName(c) {
   if (!c) return "Unbound";
   const M = {
@@ -162,6 +177,10 @@ function loadOpt() {
       if (CLASSES[d.o.cls]) OPT.cls = d.o.cls;
       if (d.o.sens > 0.1 && d.o.sens < 5) OPT.sens = d.o.sens;
       OPT.invY = !!d.o.invY;
+      const num = (v, lo, hi) => typeof v === "number" && v >= lo && v <= hi;
+      if (num(d.o.tsize, 0.8, 1.2)) OPT.tsize = d.o.tsize;
+      if (num(d.o.topac, 0.2, 1)) OPT.topac = d.o.topac;
+      if (typeof d.o.tnotch === "boolean") OPT.tnotch = d.o.tnotch;
     }
   } catch (e) {
     /* ignore */
@@ -2059,8 +2078,14 @@ function playerUpdate(dt) {
   }
   if (c.focusRegen) p.focus = Math.min(100, p.focus + c.focusRegen * dt);
   // input
-  const f = (held("fwd") ? 1 : 0) - (held("back") ? 1 : 0),
-    s = (held("right") ? 1 : 0) - (held("left") ? 1 : 0);
+  let f = (held("fwd") ? 1 : 0) - (held("back") ? 1 : 0),
+    s = (held("right") ? 1 : 0) - (held("left") ? 1 : 0),
+    im = 1; // how far the touch stick is pushed
+  if (TOUCH.move.mag > 0) {
+    f = TOUCH.move.y;
+    s = TOUCH.move.x;
+    im = TOUCH.move.mag;
+  }
   const fx = Math.sin(cam.yaw),
     fz = Math.cos(cam.yaw);
   let ix = fx * f - fz * s,
@@ -2155,7 +2180,7 @@ function playerUpdate(dt) {
       }
       if (p.buf && doAct(p.buf)) break;
       p.sprint = held("sprint") && il > 0 && p.stam > 0;
-      const sp = p.sprint ? c.run : p.lock ? c.walk * 0.88 : c.walk;
+      const sp = p.sprint ? c.run : (p.lock ? c.walk * 0.88 : c.walk) * im;
       p.vx = damp(p.vx, ix * sp, 14, dt);
       p.vz = damp(p.vz, iz * sp, 14, dt);
       mvx = p.vx;

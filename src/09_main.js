@@ -19,7 +19,13 @@ let menuBack = "title",
   swallowClick = false;
 function show(state) {
   G.state = state;
-  for (const s of SCREENS) $("scr-" + s).classList.toggle("show", s === state);
+  for (const s of SCREENS) {
+    const e = $("scr-" + s);
+    // a screen that comes up again starts at its top
+    const fresh = s === state && !e.classList.contains("show");
+    e.classList.toggle("show", s === state);
+    if (fresh) e.scrollTop = 0;
+  }
   $("hud").classList.toggle(
     "show",
     state === "play" ||
@@ -48,6 +54,7 @@ function show(state) {
     document.exitPointerLock();
   if (state !== "play") {
     for (const k in keys) keys[k] = false;
+    TOUCH.release();
   }
 }
 function lockPointer() {
@@ -64,7 +71,10 @@ function lockPointer() {
 function play() {
   SFX.init();
   show("play");
-  lockPointer();
+  TOUCH.release();
+  // a touch screen has no pointer to lock, and goes fullscreen instead
+  if (TOUCH.on) TOUCH.enterPlay();
+  else lockPointer();
   canvas.focus();
   for (const k in taps) taps[k] = false;
   mouse.dx = mouse.dy = 0;
@@ -83,6 +93,15 @@ function openMenu(which) {
 }
 
 // ---- class picker ----
+// the key shown beside a kit line, and the name of the touch button
+const KIT_KEYS = {
+  Tool: ["tool", "TOOL"],
+  Ability: ["special", "ABILITY"],
+  Heavy: ["heavy", "HEAVY"],
+};
+// text for a mouse and keyboard, and for a touch screen; the CSS shows one
+const both = (kb, touch) =>
+  '<span class="lk-mouse">' + kb + '</span><span class="lk-touch">' + touch + "</span>";
 function renderPicker() {
   for (const host of document.querySelectorAll(".picker")) {
     const cur = CLASSES[OPT.cls];
@@ -115,13 +134,9 @@ function renderPicker() {
           (k) =>
             "<div><b>" +
             k[0] +
-            (k[0] === "Tool"
-              ? " <kbd>" + keyName(BIND.tool) + "</kbd>"
-              : k[0] === "Ability"
-                ? " <kbd>" + keyName(BIND.special) + "</kbd>"
-                : k[0] === "Heavy"
-                  ? " <kbd>" + keyName(BIND.heavy) + "</kbd>"
-                  : "") +
+            (KIT_KEYS[k[0]]
+              ? " <kbd>" + both(keyName(BIND[KIT_KEYS[k[0]][0]]), KIT_KEYS[k[0]][1]) + "</kbd>"
+              : "") +
             "</b><span>" +
             k[1] +
             "</span></div>",
@@ -147,6 +162,11 @@ function renderControls() {
   $("sens").value = OPT.sens;
   $("sensV").textContent = OPT.sens.toFixed(2) + "×";
   $("invY").checked = OPT.invY;
+  $("tsize").value = OPT.tsize;
+  $("tsizeV").textContent = OPT.tsize.toFixed(2) + "×";
+  $("topac").value = OPT.topac;
+  $("topacV").textContent = Math.round(OPT.topac * 100) + "%";
+  $("tnotch").checked = OPT.tnotch;
   HUD.hint();
 }
 function finishRebind(code) {
@@ -255,6 +275,7 @@ function frame(now) {
   camUpdate(dt);
   render();
   HUD.update(dt);
+  TOUCH.update(dt);
   if (G.state === "dead" && !$("scr-dead").classList.contains("show"))
     show("dead");
   if (G.state === "win" && !$("scr-win").classList.contains("show"))
@@ -269,6 +290,7 @@ function boot() {
   }
   loadOpt();
   HUD.init();
+  TOUCH.init();
   enterHub();
   renderPicker();
   renderControls();
@@ -333,6 +355,7 @@ function boot() {
   });
   addEventListener("blur", () => {
     for (const k in keys) keys[k] = false;
+    TOUCH.release();
   });
   canvas.addEventListener("mousedown", (e) => {
     if (G.state !== "play") return;
@@ -410,11 +433,33 @@ function boot() {
     OPT.invY = e.target.checked;
     saveOpt();
   });
+  // touch settings: each one saves and lays the buttons out again
+  $("tsize").addEventListener("input", (e) => {
+    OPT.tsize = clamp(parseFloat(e.target.value) || 1, 0.8, 1.2);
+    $("tsizeV").textContent = OPT.tsize.toFixed(2) + "×";
+    saveOpt();
+    TOUCH.relayout();
+  });
+  $("topac").addEventListener("input", (e) => {
+    OPT.topac = clamp(parseFloat(e.target.value) || 0.6, 0.2, 1);
+    $("topacV").textContent = Math.round(OPT.topac * 100) + "%";
+    saveOpt();
+    TOUCH.relayout();
+  });
+  $("tnotch").addEventListener("change", (e) => {
+    OPT.tnotch = e.target.checked;
+    saveOpt();
+    TOUCH.relayout();
+  });
   $("btnDefaults").addEventListener("click", () => {
     Object.assign(BIND, DEFAULT_BINDS);
     OPT.sens = 1;
     OPT.invY = false;
+    OPT.tsize = 1;
+    OPT.topac = 0.6;
+    OPT.tnotch = true;
     saveOpt();
+    TOUCH.relayout();
     renderControls();
     renderPicker();
   });
@@ -437,6 +482,10 @@ window.DF = {
   enterCave,
   startTrans,
   genHub,
+  TOUCH,
+  touchLayout,
+  layoutProblems,
+  hexContains,
   fieldFns,
   portalFront,
   GRADES,
@@ -457,6 +506,8 @@ window.DF = {
   alertE,
   hurtPlayer,
   openMenu,
+  loadOpt,
+  saveOpt,
   sim(sec, each) {
     const n = Math.round(sec * 60);
     for (let i = 0; i < n; i++) {

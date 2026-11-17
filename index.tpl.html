@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>DungeonRaze</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link
@@ -37,8 +37,11 @@
         overflow: hidden;
         user-select: none;
         -webkit-user-select: none;
+        -webkit-touch-callout: none;
+        overscroll-behavior: none;
       }
       #c {
+        touch-action: none;
         position: absolute;
         inset: 0;
         width: 100%;
@@ -50,6 +53,7 @@
       #hud {
         position: absolute;
         inset: 0;
+        overflow: hidden;
         pointer-events: none;
         display: none;
       }
@@ -335,6 +339,99 @@
         font-size: 14px;
         letter-spacing: 0.04em;
       }
+      #touch {
+        position: fixed;
+        inset: 0;
+        display: none;
+        pointer-events: none;
+        z-index: 3;
+        touch-action: none;
+        /* a drawing from before a turn must not widen the page */
+        overflow: hidden;
+      }
+      body.touch #touch.show {
+        display: block;
+        pointer-events: auto;
+        touch-action: none;
+        -webkit-touch-callout: none;
+        user-select: none;
+      }
+      #touch {
+        --tac: 0.6;
+      }
+      #touch .btn,
+      #touch .pause {
+        opacity: var(--tac);
+      }
+      #touch .btn.empty {
+        opacity: calc(var(--tac) * 0.4);
+      }
+      #touch .btn.down {
+        opacity: 1;
+      }
+      #touch .hex.down {
+        filter: brightness(1.8);
+      }
+      #touch svg {
+        position: absolute;
+        left: 0;
+        top: 0;
+        display: block;
+        overflow: hidden;
+      }
+      #touch .lbl {
+        font-family: var(--body);
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        user-select: none;
+      }
+      #treadout {
+        position: fixed;
+        left: 50%;
+        bottom: 2px;
+        transform: translateX(-50%);
+        display: none;
+        z-index: 4;
+        font: 11px ui-monospace, Menlo, monospace;
+        color: var(--dim);
+        pointer-events: none;
+      }
+      body.touch #hint {
+        display: none;
+      }
+      /* the Flask and Tool buttons show these counts; only the readout stays,
+         on one line, so it cannot wrap out of the vitals box */
+      body.touch #flasks,
+      body.touch #knives {
+        display: none;
+      }
+      body.touch #blinkR {
+        white-space: nowrap;
+      }
+      /* the name plate stays inside the boss box, which can be narrow */
+      body.touch #boss .nm {
+        min-width: 0;
+      }
+      body.touch #boss .nm .tag {
+        display: inline-block;
+        box-sizing: border-box;
+        max-width: 100%;
+        font-size: 14px;
+        padding: 2px 8px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        vertical-align: top;
+      }
+      body.touch #vitals,
+      body.touch #map,
+      body.touch #boss {
+        box-sizing: border-box;
+        right: auto;
+        bottom: auto;
+        transform: none;
+        max-width: none;
+      }
       .vig {
         position: absolute;
         inset: 0;
@@ -364,7 +461,10 @@
         justify-content: center;
         align-items: flex-start;
         gap: 18px;
-        padding: 24px clamp(20px, 7vw, 110px);
+        padding: max(24px, env(safe-area-inset-top))
+          max(clamp(20px, 7vw, 110px), env(safe-area-inset-right))
+          max(24px, env(safe-area-inset-bottom))
+          max(clamp(20px, 7vw, 110px), env(safe-area-inset-left));
         background: linear-gradient(
           90deg,
           rgba(5, 7, 12, 0.94) 0%,
@@ -372,6 +472,8 @@
           rgba(5, 7, 12, 0.05) 78%
         );
         overflow-y: auto;
+        touch-action: pan-y;
+        overscroll-behavior: contain;
       }
       .scr.show {
         display: flex;
@@ -405,9 +507,15 @@
         padding: 12px 30px;
         cursor: pointer;
       }
-      .scr button:hover {
-        background: var(--bone);
-        color: var(--abyss);
+      body.touch .scr button {
+        min-height: 44px;
+      }
+      /* a touch screen keeps :hover after a tap, so only a pointer that hovers gets it */
+      @media (hover: hover) {
+        .scr button:hover {
+          background: var(--bone);
+          color: var(--abyss);
+        }
       }
       .scr button:focus-visible {
         outline: 2px solid var(--vein);
@@ -530,8 +638,10 @@
         background: rgba(88, 224, 255, 0.12);
         box-shadow: inset 0 -3px 0 var(--vein);
       }
-      .scr button.card:hover span {
-        color: inherit;
+      @media (hover: hover) {
+        .scr button.card:hover span {
+          color: inherit;
+        }
       }
       .kit {
         display: grid;
@@ -618,6 +728,50 @@
         height: 18px;
         accent-color: var(--vein);
       }
+      #tset {
+        display: none;
+        width: min(560px, 100%);
+      }
+      #tset label {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 17px;
+        margin-bottom: 12px;
+      }
+      #tset input[type="range"] {
+        width: 180px;
+        accent-color: var(--vein);
+      }
+      #tset input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        accent-color: var(--vein);
+      }
+      #tsizeV,
+      #topacV {
+        font-variant-numeric: tabular-nums;
+        color: var(--vein);
+        min-width: 48px;
+      }
+      #tnotchNote {
+        margin: -6px 0 14px 28px;
+        font-size: 14px;
+        color: var(--dim);
+      }
+      .touchonly {
+        display: none;
+      }
+      body.touch #binds,
+      body.touch .kbonly {
+        display: none;
+      }
+      body.touch #tset {
+        display: block;
+      }
+      body.touch .touchonly {
+        display: block;
+      }
       #sensV {
         font-variant-numeric: tabular-nums;
         color: var(--vein);
@@ -635,13 +789,79 @@
         box-shadow: 0 0 0 2px rgba(5, 7, 12, 0.6);
         display: none;
       }
-      .touch {
+      .touch-note {
         display: none;
         color: var(--ember);
       }
       @media (pointer: coarse) {
-        .touch {
+        .touch-note {
           display: block;
+        }
+      }
+      .lk-touch {
+        display: none;
+      }
+      body.touch .lk-touch {
+        display: inline;
+      }
+      body.touch .lk-mouse {
+        display: none;
+      }
+      #rotate {
+        position: fixed;
+        inset: 0;
+        z-index: 10;
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 22px;
+        padding: 24px;
+        text-align: center;
+        background: var(--abyss);
+        touch-action: none;
+      }
+      body.touch.portrait #rotate {
+        display: flex;
+      }
+      #rotate p {
+        margin: 0;
+        font-family: var(--display);
+        font-size: clamp(22px, 6vw, 34px);
+        letter-spacing: 0.06em;
+        max-width: 18ch;
+        text-wrap: balance;
+      }
+      #rotate small {
+        max-width: 30ch;
+        font-size: clamp(13px, 3.4vw, 16px);
+        line-height: 1.4;
+        color: var(--dim);
+      }
+      #rotate svg {
+        width: 84px;
+        height: 84px;
+        fill: none;
+        stroke: var(--ember);
+        stroke-width: 2.5;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        animation: turn 2.6s ease-in-out infinite;
+      }
+      @keyframes turn {
+        0%,
+        25% {
+          transform: rotate(0);
+        }
+        65%,
+        100% {
+          transform: rotate(-90deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #rotate svg {
+          animation: none;
+          transform: rotate(-90deg);
         }
       }
       @media (max-width: 720px) {
@@ -661,6 +881,78 @@
         }
         #hint {
           display: none;
+        }
+      }
+      /* short landscape screens: phones on their side */
+      @media (max-height: 420px) {
+        .scr {
+          gap: 8px;
+          padding-top: max(10px, env(safe-area-inset-top));
+          padding-bottom: max(10px, env(safe-area-inset-bottom));
+        }
+        .scr h1,
+        .scr h1.sm {
+          font-size: clamp(26px, 6vw, 40px);
+        }
+        .scr .sub {
+          font-size: 16px;
+          line-height: 1.25;
+        }
+        .scr h2 {
+          font-size: 20px;
+          margin: 2px 0 -4px;
+        }
+        .scr button {
+          font-size: 18px;
+          padding: 6px 20px;
+        }
+        .row {
+          gap: 8px;
+        }
+        .picker {
+          gap: 8px;
+        }
+        .cards {
+          grid-template-columns: repeat(5, 1fr);
+          gap: 6px;
+        }
+        .scr button.card {
+          padding: 6px 8px;
+          font-size: 13px;
+        }
+        .scr button.card b {
+          font-size: 17px;
+        }
+        /* the title keeps its buttons in view; the class screen has the kit */
+        #scr-title .kit {
+          display: none;
+        }
+        .kit {
+          font-size: 14px;
+          padding: 8px 10px;
+          gap: 3px;
+        }
+        .kit > div {
+          grid-template-columns: 90px 1fr;
+          gap: 6px;
+        }
+        .tips,
+        .key,
+        .ctl {
+          font-size: 14px;
+        }
+        .key {
+          gap: 6px 14px;
+        }
+        #tset label {
+          margin-bottom: 6px;
+        }
+        #tnotchNote {
+          margin: -2px 0 6px 28px;
+          font-size: 13px;
+        }
+        .opts {
+          gap: 12px;
         }
       }
     </style>
@@ -693,6 +985,16 @@
       <div id="cross"></div>
       <div id="hint"></div>
     </div>
+    <div id="touch"><svg></svg></div>
+    <div id="treadout"></div>
+    <div id="rotate">
+      <svg viewBox="0 0 48 48" aria-hidden="true">
+        <rect x="15" y="6" width="18" height="36" rx="3" />
+        <path d="M22 37h4" />
+      </svg>
+      <p>Turn your device sideways to play.</p>
+      <small>Tap to try landscape. If it stays upright, turn off rotation lock.</small>
+    </div>
     <div id="fade" class="vig"></div>
 
     <div id="scr-title" class="scr wide">
@@ -701,7 +1003,10 @@
         Six gates stand in the hall, graded E to S. Only the first is open.
         Pick a class, step through it, and come back alive.
       </p>
-      <p class="touch">This needs a keyboard and a mouse.</p>
+      <p class="touch-note">
+        On a phone or tablet, turn it sideways. The controls appear when you
+        start.
+      </p>
       <div class="picker"></div>
       <div class="row">
         <button id="btnPlay" type="button">Enter the hall</button
@@ -711,7 +1016,10 @@
     </div>
     <div id="scr-pause" class="scr">
       <h1>Paused</h1>
-      <p class="sub">Resume takes the mouse back.</p>
+      <p class="sub">
+        <span class="lk-mouse">Resume takes the mouse back.</span
+        ><span class="lk-touch">Tap Resume to carry on.</span>
+      </p>
       <div class="row">
         <button id="btnResume" type="button">Resume</button
         ><button type="button" data-open="class">Change class</button
@@ -730,14 +1038,49 @@
     </div>
     <div id="scr-controls" class="scr wide">
       <h1 class="sm">Controls</h1>
-      <p class="sub">
+      <p class="sub kbonly">
         Click a binding, then press the key or mouse button you want. Esc
         cancels. A key already in use swaps places.
       </p>
+      <p class="sub touchonly">Settings for the on-screen controls.</p>
       <div id="binds"></div>
+      <div id="tset">
+        <label for="tsize"
+          >Button size
+          <input
+            id="tsize"
+            type="range"
+            min="0.8"
+            max="1.2"
+            step="0.05"
+            value="1"
+          />
+          <span id="tsizeV">1.00×</span></label
+        >
+        <label for="topac"
+          >Button opacity
+          <input
+            id="topac"
+            type="range"
+            min="0.2"
+            max="1"
+            step="0.05"
+            value="0.6"
+          />
+          <span id="topacV">60%</span></label
+        >
+        <label for="tnotch"
+          ><input id="tnotch" type="checkbox" checked />
+          Keep controls clear of the notch and rounded corners</label
+        >
+        <p id="tnotchNote">Off can put buttons under the notch or a curved corner, where touches may not register.</p>
+      </div>
       <div class="opts">
         <label for="sens"
-          >Mouse sensitivity
+          ><span
+            ><span class="lk-mouse">Mouse</span
+            ><span class="lk-touch">Look</span> sensitivity</span
+          >
           <input
             id="sens"
             type="range"
@@ -794,7 +1137,8 @@
         </li>
         <li>
           <b>Shrines</b> are checkpoints and refill everything.
-          <b>Esc</b> pauses.
+          <b class="lk-mouse">Esc</b><b class="lk-touch">The pause button</b>
+          pauses.
         </li>
       </ul>
       <div class="row"><button type="button" data-back="1">Back</button></div>

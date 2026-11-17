@@ -17,7 +17,32 @@ const b = await chromium.launch({
     "--enable-webgl",
   ],
 });
-const p = await b.newPage({ viewport: { width: 1280, height: 720 } });
+// DEVICE=<id from tests/devices.mjs> emulates a phone or tablet with touch
+let dev = null,
+  p;
+if (process.env.DEVICE) {
+  dev = (await import("./tests/devices.mjs")).default.find(
+    (d) => d.id === process.env.DEVICE,
+  );
+  if (!dev) throw new Error("unknown DEVICE " + process.env.DEVICE);
+  const ctx = await b.newContext({
+    viewport: { width: dev.w, height: dev.h },
+    deviceScaleFactor: dev.dpr,
+    isMobile: true,
+    hasTouch: true,
+  });
+  p = await ctx.newPage();
+  const cdp = await ctx.newCDPSession(p);
+  await p.exposeFunction("__touch", (type, touchPoints) =>
+    cdp.send("Input.dispatchTouchEvent", { type, touchPoints }),
+  );
+  await p.exposeFunction("__viewport", (w, h) =>
+    p.setViewportSize({ width: w, height: h }),
+  );
+  await p.addInitScript((ins) => {
+    window.__fakeInsets = ins;
+  }, dev.ins);
+} else p = await b.newPage({ viewport: { width: 1280, height: 720 } });
 const errs = [];
 p.on("console", (m) => {
   if (m.type() === "error" && !/ERR_|Failed to load resource/.test(m.text()))
@@ -36,10 +61,13 @@ await p.route("**/*", (r) =>
 );
 await p.goto("file://" + ROOT + "dist/index.html");
 await p.waitForTimeout(1500);
-const shot = (n) => p.screenshot({ path: `${ROOT}shots/${n}.png` });
+const shot = (n) =>
+  p.screenshot({ path: `${ROOT}shots/${dev ? dev.id + "-" : ""}${n}.png` });
 await shot("title");
 if (mode !== "title") {
-  await p.click("#btnPlay");
+  // a phone taps; a mouse click would count as a mouse and turn touch mode off
+  if (dev) await p.tap("#btnPlay");
+  else await p.click("#btnPlay");
   await p.waitForTimeout(600);
   if (mode === "smoke")
     await p.evaluate(() => {
