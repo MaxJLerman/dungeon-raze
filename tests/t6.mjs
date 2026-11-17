@@ -24,8 +24,9 @@ export default [
   const e = tp((e) => e.type === 'brute', 3); K('heavy'); let most = 0;
   DF.sim(0.6, () => { most = Math.max(most, G.projs.filter((q) => q.kind === 'pellet').length); });
   p.state = 'free'; p.tool = 0; e.state = 'stagger'; e.t = 0; e.dur = 3; DF.startExecute(e); DF.sim(0.2);
-  const back = Math.hypot(p.x - e.x, p.z - e.z); DF.sim(1);
-  return { pass: most === 7 && back > e.r + 3.5 && p.tool === 1, most, back, tool: p.tool }; `),
+  const back = Math.hypot(p.x - e.x, p.z - e.z); const rnd = Math.random; Math.random = () => 0.99; // no kill refill
+  DF.sim(1, () => !p.exDone); Math.random = rnd; const tool = p.tool;
+  return { pass: most === 7 && back > e.r + 3.5 && tool === 1, most, back, tool }; `),
   },
   {
     name: "sticky bomb",
@@ -58,6 +59,26 @@ export default [
   DF.hitEnemy(e, 999, 0, {}); const at = [e.x, e.z]; DF.sim(0.3); const b = G.bombs[0];
   const dropped = b && b.e === null && Math.hypot(b.x - at[0], b.z - at[1]) < 1; DF.sim(1);
   return { pass: dropped && G.bombs.length === 0, dropped }; `),
+  },
+  {
+    name: "grapple pulls light enemies, pulls you to heavy ones",
+    eval: cls("enforcer", `
+  const out = {};
+  for (const type of ['husk', 'brute']) {
+    const e = tp((e) => e.type === type, 9); e.state = 'idle'; p.state = 'free'; p.focus = 100; p.lock = e;
+    const e0 = [e.x, e.z], p0 = [p.x, p.z]; K('special'); DF.sim(0.8);
+    out[type] = { gap: +Math.hypot(p.x - e.x, p.z - e.z).toFixed(2), eMoved: Math.hypot(e.x - e0[0], e.z - e0[1]) > 3,
+      pMoved: Math.hypot(p.x - p0[0], p.z - p0[1]) > 3, focus: p.focus | 0 };
+  }
+  const c = { husk: out.husk.eMoved && !out.husk.pMoved && out.husk.gap < 2.5,
+    brute: out.brute.pMoved && !out.brute.eMoved && out.brute.gap < 3, cost: out.husk.focus <= 66 };
+  return { pass: Object.values(c).every(Boolean), c, out }; `),
+  },
+  {
+    name: "grapple with no target spends nothing",
+    eval: cls("enforcer", `
+  for (const e of G.enemies) e.dead = true; p.focus = 100; p.lock = null; K('special'); DF.sim(0.3);
+  return { pass: p.focus >= 99 && p.state === 'free', focus: p.focus, state: p.state }; `),
   },
   {
     name: "fortress parry",

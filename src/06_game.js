@@ -1146,6 +1146,7 @@ function makePlayer(id) {
     buff: null,
     buffT: 0,
     throwT: 0,
+    gLine: 0,
     ddur: 0.42,
   };
 }
@@ -2055,6 +2056,70 @@ function startBlink(ix, iz, il) {
   sparks(p.x, 1.1, p.z, 14, CYAN, 4, 0.5);
   return true;
 }
+// The grapple's target: the locked enemy, or the one the camera points at,
+// within 14 m and in sight.
+function grappleTarget() {
+  const p = G.player,
+    w = G.world,
+    ok = (e) =>
+      e &&
+      !e.dead &&
+      Math.hypot(e.x - p.x, e.z - p.z) <= 14 &&
+      w.los(p.x, p.z, e.x, e.z);
+  if (p.lock) return ok(p.lock) ? p.lock : null;
+  const a = aimRanged();
+  let best = null,
+    bd = 0.3;
+  for (const e of G.enemies) {
+    if (!ok(e)) continue;
+    const d = Math.abs(angDiff(a, Math.atan2(e.x - p.x, e.z - p.z)));
+    if (d <= bd) {
+      bd = d;
+      best = e;
+    }
+  }
+  return best;
+}
+// light enemies come to the Enforcer; heavy ones, the boss and the pinned
+// dummy pull the Enforcer to them
+function grappleLight(e) {
+  return !e.def.boss && !e.def.dummy && e.def.poise === 0;
+}
+function startGrapple() {
+  const p = G.player,
+    e = grappleTarget();
+  if (!e) {
+    say("No target", "bad", 0.8);
+    return false;
+  }
+  const a = Math.atan2(e.x - p.x, e.z - p.z),
+    gap = e.r + 1.2;
+  p.yaw = a;
+  p.gT = e;
+  SFX.hook();
+  if (grappleLight(e)) {
+    e.yank = {
+      tx: p.x + Math.sin(a) * gap,
+      tz: p.z + Math.cos(a) * gap,
+      t: 0.25,
+    };
+    p.throwT = 0.3;
+    p.gLine = 0.3;
+  } else {
+    p.state = "grapple";
+    p.t = 0;
+    p.gx = e.x - Math.sin(a) * gap;
+    p.gz = e.z - Math.cos(a) * gap;
+    p.buf = null;
+    p.gLine = 0.35;
+    if (!e.def.dummy && !e.def.boss) {
+      e.state = "hit";
+      e.t = 0;
+      e.dur = 0.85;
+    }
+  }
+  return true;
+}
 function useSpecial(ix, iz, il) {
   const p = G.player,
     sp = p.cls.special,
@@ -2137,6 +2202,8 @@ function useSpecial(ix, iz, il) {
     SFX.tele(true);
     p.throwT = 0.5;
     say("STARFALL", "good", 1);
+  } else if (sp.id === "grapple") {
+    if (!startGrapple()) return false;
   } else if (sp.id === "volley") {
     const a = aimRanged();
     p.yaw = a;
@@ -2228,6 +2295,7 @@ function playerUpdate(dt) {
     }
   }
   if (p.throwT > 0) p.throwT -= dt;
+  if (p.gLine > 0) p.gLine -= dt;
   if (p.state === "dead") {
     p.t += dt;
     return;
@@ -2664,6 +2732,19 @@ function playerUpdate(dt) {
       if (p.t > 0.62) p.state = "free";
       break;
     }
+    case "grapple": {
+      // reeled to a heavy target, untouchable on the way
+      p.t += dt;
+      p.vx = p.vz = 0;
+      p.iframe = Math.max(p.iframe, 0.1);
+      const k = Math.min(1, dt / Math.max(dt, 0.3 - p.t + dt));
+      p.x += (p.gx - p.x) * k;
+      p.z += (p.gz - p.z) * k;
+      w.resolve(p, p.r);
+      if (p.gT && !p.gT.dead) p.yaw = Math.atan2(p.gT.x - p.x, p.gT.z - p.z);
+      if (p.t >= 0.3) p.state = "free";
+      break;
+    }
     case "blink": {
       p.t += dt;
       p.vx = p.vz = 0;
@@ -2865,6 +2946,20 @@ function enemyUpdate(e, dt) {
   if (e.state === "dead") {
     e.t += dt;
     if (e.t > 2.4) e.gone = true;
+    return;
+  }
+  if (e.yank) {
+    // reeled in by the Enforcer's grapple, then reeling from it
+    const y = e.yank,
+      k = Math.min(1, dt / Math.max(dt, y.t));
+    e.x += (y.tx - e.x) * k;
+    e.z += (y.tz - e.z) * k;
+    w.resolve(e, e.r);
+    y.t -= dt;
+    if (y.t <= 0) e.yank = null;
+    e.state = "hit";
+    e.t = 0;
+    e.dur = 0.5;
     return;
   }
   const dx = p.x - e.x,

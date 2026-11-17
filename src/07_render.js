@@ -579,6 +579,25 @@ function render() {
     R.ring(e.x, 0.14, e.z, e.r + 0.25, e.r + 0.5, 0.9, 0.95, 1, 0.7);
   }
   // weapon glints + buff auras
+  // the grapple's line, from the hand to its target
+  if (p.gLine > 0 && p.gT && p.fig.handR) {
+    const h = R.nodePos(p.fig.handR, 0, -0.3, 0),
+      tg = p.gT,
+      ty = 1.1 * tg.fig.o.sc,
+      a = Math.min(1, p.gLine * 6);
+    R.ribbon(
+      8,
+      (u, side) => [
+        lerp(h[0], tg.x, u),
+        lerp(h[1], ty, u) + (side ? 0.025 : -0.025),
+        lerp(h[2], tg.z, u),
+      ],
+      0.75,
+      0.75,
+      0.8,
+      () => a,
+    );
+  }
   if (p.fig.root.vis && p.state !== "dead") {
     const cc = p.cls.col;
     for (const [h, z] of p.fig.tips) {
