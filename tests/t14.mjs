@@ -55,6 +55,9 @@ export default [
     const boss = document.getElementById("boss");
     const prev = boss.style.display;
     boss.style.display = "flex";
+    // the real name: a long one is what can run out of a narrow box
+    const nm = document.getElementById("bossNm");
+    nm.textContent = "The Ossuary Warden";
     await draw();
     const within = (id, B) => {
       const e = document.getElementById(id), r = e.getBoundingClientRect();
@@ -73,7 +76,11 @@ export default [
       bossFit: fits("boss"),
       hint: getComputedStyle(document.getElementById("hint")).display === "none",
     };
-    const m = { vitalsH: document.getElementById("vitals").scrollHeight, vitalsW: document.getElementById("vitals").scrollWidth, bossH: boss.scrollHeight, readout: document.getElementById("blinkR").textContent };
+    // the name plate must lie inside the boss box, clear of the pause button
+    const nr = nm.getBoundingClientRect(), bb = boss.getBoundingClientRect(), pz = L().pause;
+    c.nameIn = nr.left >= bb.left - 1 && nr.right <= bb.right + 1 && nr.top >= bb.top - 1 && nr.bottom <= bb.bottom + 1;
+    c.nameClear = nr.right <= pz.x + 1 || nr.left >= pz.x + pz.w - 1 || nr.bottom <= pz.y || nr.top >= pz.y + pz.h;
+    const m = { nameW: nr.width, boxW: bb.width, vitalsH: document.getElementById("vitals").scrollHeight, vitalsW: document.getElementById("vitals").scrollWidth, bossH: boss.scrollHeight, readout: document.getElementById("blinkR").textContent };
     boss.style.display = prev;
     return { pass: Object.values(c).every((v) => v === true), ...c, ...m };`),
   step("layout passes on this device", `

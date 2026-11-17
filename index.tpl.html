@@ -408,6 +408,21 @@
       body.touch #blinkR {
         white-space: nowrap;
       }
+      /* the name plate stays inside the boss box, which can be narrow */
+      body.touch #boss .nm {
+        min-width: 0;
+      }
+      body.touch #boss .nm .tag {
+        display: inline-block;
+        box-sizing: border-box;
+        max-width: 100%;
+        font-size: 14px;
+        padding: 2px 8px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        vertical-align: top;
+      }
       body.touch #vitals,
       body.touch #map,
       body.touch #boss {
