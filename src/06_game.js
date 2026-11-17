@@ -2075,6 +2075,18 @@ function startBlink(ix, iz, il) {
   sparks(p.x, 1.1, p.z, 14, CYAN, 4, 0.5);
   return true;
 }
+// The hall plaque the player is at: within 2.6 m of its face and roughly in
+// the camera's view, or null.
+function plaqueAt() {
+  const p = G.player;
+  if (G.zone !== "hub" || !p) return null;
+  for (const q of G.world.plaques) {
+    if (Math.hypot(q.x - p.x, q.z - p.z) > 2.6) continue;
+    if (Math.abs(angDiff(cam.yaw, Math.atan2(q.x - p.x, q.z - p.z))) < 1.2)
+      return q;
+  }
+  return null;
+}
 // The grapple's target: the locked enemy, or the one the camera points at,
 // within 14 m and in sight.
 function grappleTarget() {

@@ -35,4 +35,21 @@ export default [
   let ok = true; try { ok = DF.unlockClass("enforcer") && DF.classOpen("enforcer"); } catch (e) { ok = false; }
   Storage.prototype.setItem = real; DF.UNLOCKED.clear(); DF.saveOpt();
   return { pass: fell && ok, fell, ok };`),
+  step("plaques on the left wall", `
+  DF.enterHub(); const w = G.world, P = w.plaques;
+  const c = { three: P.length === 3, ids: P.map((q) => q.id).join() === "enforcer,sapper,riftwalker",
+    wall: P.every((q) => q.x > 14 && Math.abs(q.yaw + Math.PI / 2) < 1e-6),
+    reach: P.every((q) => w.fieldAt(DF.plaqueFront(q, 1.6).x, DF.plaqueFront(q, 1.6).z) >= 0.8),
+    clear: P.every((q) => w.portals.every((g) => Math.hypot(g.x - q.x, g.z - q.z) > 4)),
+    cave: (DF.newRun(7), Array.isArray(G.world.plaques) && G.world.plaques.length === 0) };
+  DF.enterHub(); return { pass: Object.values(c).every(Boolean), c };`),
+  step("inspect prompt", `
+  DF.enterHub(); const p = G.player, q = G.world.plaques[0], f = DF.plaqueFront(q, 1.6);
+  const at = (x, z, yaw) => { p.x = x; p.z = z; p.yaw = cam.yaw = yaw; DF.sim(0.05); };
+  const pr = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(document.getElementById("prompt")))));
+  at(f.x, f.z, q.yaw + Math.PI); const near = DF.plaqueAt() === q;
+  at(f.x, f.z, q.yaw); const away = DF.plaqueAt() === null;
+  at(0, -10, 0); const far = DF.plaqueAt() === null;
+  at(f.x, f.z, q.yaw + Math.PI);
+  return pr().then((el) => { const t = el.textContent; return { pass: near && away && far && /Inspect/.test(t) && /Space/.test(t), near, away, far, t }; });`),
 ];

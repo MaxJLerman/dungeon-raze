@@ -748,6 +748,16 @@ function render() {
     for (const y of [0.45, 1.0, 1.55])
       R.sprite(g.x, y, g.z, 0.55, c[0], c[1], c[2], a);
   }
+  // plaques: an unlocked class glows in its colour, a live locked one faintly
+  for (const q of G.world.plaques || []) {
+    if (!q.cls) continue;
+    const open = classOpen(q.cls),
+      c = open ? CLASSES[q.cls].col : [0.7, 0.75, 0.85],
+      k = open ? 0.55 + 0.1 * Math.sin(G.t * 2) : 0.18,
+      f = portalFront(q, 0.14);
+    R.sprite(f.x, PLAQUE_Y, f.z, 0.55, c[0], c[1], c[2], k);
+    R.sprite(f.x, PLAQUE_Y, f.z, 1.4, c[0], c[1], c[2], k * 0.3);
+  }
   for (const b of G.bombs) {
     // a blinking light, faster as it runs out
     const per = b.t > 1 ? 0.5 : 0.2,

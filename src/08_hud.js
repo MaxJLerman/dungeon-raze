@@ -172,6 +172,8 @@ const HUD = (() => {
       p.state !== "dead" && p.state !== "execute" ? nearestStaggered() : null;
     let pr = "";
     if (ex) pr = "<kbd>" + (PAD.active ? actKey("light") : TOUCH.on ? "ATTACK" : keyName(BIND.light)) + "</kbd> Execute";
+    else if (p.state === "free" && plaqueAt())
+      pr = "<kbd>" + (PAD.active ? actKey("interact") : TOUCH.on ? "TAP" : keyName(BIND.interact)) + "</kbd> Inspect";
     if (el.pr !== pr) {
       el.pr = pr;
       el.prompt.innerHTML = pr;
