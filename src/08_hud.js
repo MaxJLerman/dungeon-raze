@@ -171,7 +171,7 @@ const HUD = (() => {
     const ex =
       p.state !== "dead" && p.state !== "execute" ? nearestStaggered() : null;
     let pr = "";
-    if (ex) pr = "<kbd>" + keyName(BIND.light) + "</kbd> Execute";
+    if (ex) pr = "<kbd>" + (TOUCH.on ? "ATTACK" : keyName(BIND.light)) + "</kbd> Execute";
     if (el.pr !== pr) {
       el.pr = pr;
       el.prompt.innerHTML = pr;

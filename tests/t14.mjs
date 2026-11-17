@@ -161,7 +161,9 @@ export default [
     cv.requestPointerLock = function () { locks++; return realLock.apply(this, arguments); };
     G.noLock = false;
     DF.newRun(99); DF.play(); TOUCH.release(); await draw();
+    // leaving fullscreen pauses (Android Back); carry on without asking for it again
     await leaveFs();
+    DF.show("play"); TOUCH.release();
     for (const k in DF.taps) DF.taps[k] = false;
     const b = btn("light");
     await T.down(1, b.x, b.y); await T.up(1);
@@ -539,7 +541,7 @@ export default [
     const c = {
       exists: !!r,
       shown: !!r && getComputedStyle(r).display !== "none",
-      text: !!r && r.textContent.trim() === "Turn your device sideways to play.",
+      text: !!r && !!r.querySelector("p") && r.querySelector("p").textContent.trim() === "Turn your device sideways to play.",
       paused: G.state === "pause",
       cls: document.body.classList.contains("portrait"),
       covers: !!top && !!r && r.contains(top),
@@ -661,4 +663,235 @@ export default [
     }
     DF.show("title");
     return { pass: bad.length === 0, bad, seen };`),
+
+  // ---- final review fixes: pause on Back from fullscreen, hide and blur; rotate tap ----
+  step("leaving fullscreen during play pauses", `
+    const fsEl = () => document.fullscreenElement || document.webkitFullscreenElement;
+    play(); await draw();
+    // real fullscreen if this browser grants it here, else only the event
+    let real = false;
+    try { await document.documentElement.requestFullscreen(); real = !!fsEl(); } catch (e) {}
+    await new Promise((r) => setTimeout(r, 150));
+    const c = { stays: G.state === "play" };
+    if (real) { await document.exitFullscreen(); await new Promise((r) => setTimeout(r, 200)); }
+    else document.dispatchEvent(new Event("fullscreenchange"));
+    c.paused = G.state === "pause";
+    play(); document.dispatchEvent(new Event("webkitfullscreenchange"));
+    c.webkit = G.state === "pause";
+    // a change while fullscreen is on is not a reason to pause; desktop never pauses on it
+    play(); TOUCH.setOn(false);
+    document.dispatchEvent(new Event("fullscreenchange"));
+    c.desktop = G.state === "play";
+    TOUCH.setOn(true);
+    DF.show("pause"); document.dispatchEvent(new Event("fullscreenchange"));
+    c.stillPause = G.state === "pause";
+    await leaveFs();
+    return { pass: Object.values(c).every((v) => v === true), ...c, real };`),
+  step("hiding the page or losing focus pauses", `
+    const hide = (v) => { Object.defineProperty(document, "hidden", { configurable: true, get: () => v }); document.dispatchEvent(new Event("visibilitychange")); };
+    const c = {};
+    play(); hide(false); c.shownKeeps = G.state === "play";
+    hide(true); c.hidden = G.state === "pause";
+    hide(false); delete document.hidden;
+    play(); const g = btn("guard"); await T.down(1, g.x, g.y);
+    window.dispatchEvent(new Event("blur"));
+    c.blur = G.state === "pause";
+    c.released = !DF.keys["T:guard"] && TOUCH.owners.size === 0;
+    await T.cancel();
+    // desktop keeps its own rule: pointer lock loss pauses, blur and hide do not
+    play(); TOUCH.setOn(false);
+    window.dispatchEvent(new Event("blur")); c.deskBlur = G.state === "play";
+    hide(true); c.deskHide = G.state === "play";
+    hide(false); delete document.hidden;
+    TOUCH.setOn(true);
+    return { pass: Object.values(c).every((v) => v === true), ...c };`),
+  step("the rotate screen takes a tap", `
+    play(); await draw();
+    const W = innerWidth, H = innerHeight;
+    await __viewport(H, W); await draw(); await draw();
+    const r = document.getElementById("rotate");
+    const de = document.documentElement, so = screen.orientation;
+    const log = { fs: 0, lock: 0, arg: null };
+    de.requestFullscreen = function () { log.fs++; return Promise.resolve(); };
+    if (so) so.lock = (a) => { log.lock++; log.arg = a; return Promise.reject(new Error("no")); };
+    const hist = history.length, state0 = history.state;
+    const note = r.querySelector("small");
+    const c = {
+      line: !!note && note.textContent.trim() === "Tap to try landscape. If it stays upright, turn off rotation lock.",
+      msg: r.querySelector("p").textContent.trim() === "Turn your device sideways to play.",
+      smaller: !!note && parseFloat(getComputedStyle(note).fontSize) < parseFloat(getComputedStyle(r.querySelector("p")).fontSize),
+    };
+    await T.down(1, innerWidth / 2, innerHeight / 2); await T.up(1);
+    await new Promise((x) => setTimeout(x, 200));
+    c.fs = log.fs === 1;
+    c.lock = !so || (log.lock === 1 && log.arg === "landscape");
+    c.notPlaying = G.state !== "play";
+    c.noBack = history.length === hist && history.state === state0;
+    // a refused request must not break the tap either
+    de.requestFullscreen = function () { throw new Error("no"); };
+    await T.down(1, innerWidth / 2, innerHeight / 2); await T.up(1);
+    await new Promise((x) => setTimeout(x, 100));
+    c.refused = G.state !== "play";
+    delete de.requestFullscreen; if (so) delete so.lock;
+    await __viewport(W, H); await draw(); await draw();
+    return { pass: Object.values(c).every((v) => v === true), ...c, log };`),
+
+  // ---- final review fixes: resizes, media keys, the waking touch ----
+  step("a resize that changes nothing keeps the fingers", `
+    play(); await draw();
+    const g = btn("guard"), a = btn("light");
+    await T.down(1, g.x, g.y); await T.down(2, a.x, a.y);
+    const c = { before: TOUCH.owners.size === 2 };
+    window.dispatchEvent(new Event("resize"));
+    window.dispatchEvent(new Event("orientationchange"));
+    if (window.visualViewport) visualViewport.dispatchEvent(new Event("resize"));
+    await draw();
+    c.owners = TOUCH.owners.size === 2;
+    c.held = !!DF.keys["T:guard"] && !!DF.keys["T:light"];
+    await T.up(1); await T.up(2);
+    return { pass: Object.values(c).every((v) => v === true), ...c };`),
+  step("media keys and composition do not switch to desktop", `
+    play(); await draw();
+    const fire = (init) => dispatchEvent(new KeyboardEvent("keydown", init));
+    const c = {};
+    for (const code of ["AudioVolumeUp", "AudioVolumeDown", "AudioVolumeMute", "MediaPlayPause", "MediaTrackNext", "Unidentified", ""]) {
+      fire({ code });
+      c["k" + code] = TOUCH.on === true;
+    }
+    fire({ code: "KeyA", isComposing: true }); c.composing = TOUCH.on === true;
+    fire({ code: "KeyA", keyCode: 229 }); c.ime = TOUCH.on === true;
+    fire({ code: "KeyW" }); c.real = TOUCH.on === false;
+    dispatchEvent(new KeyboardEvent("keyup", { code: "KeyW" }));
+    TOUCH.setOn(true); await draw();
+    return { pass: Object.values(c).every((v) => v === true), ...c };`),
+  step("the touch that brings the controls back is not lost", `
+    play(); TOUCH.setOn(true); await draw();
+    const g = { x: btn("guard").x, y: btn("guard").y };
+    const s = L().move, st = { x: s.x0 + 40, y: s.y1 - 40 };
+    TOUCH.setOn(false); await draw();
+    const c = { off: TOUCH.on === false };
+    await T.down(1, g.x, g.y);
+    c.on = TOUCH.on === true;
+    c.held = !!DF.keys["T:guard"];
+    c.once = TOUCH.owners.size === 1;
+    c.tapped = !!DF.taps["T:guard"];
+    await T.up(1);
+    c.released = !DF.keys["T:guard"] && TOUCH.owners.size === 0;
+    await new Promise((r) => setTimeout(r, 300));
+    c.noClick = !DF.taps.Mouse0 && !DF.keys.Mouse0;
+    // the same on the stick area, and no menu touch counts
+    TOUCH.setOn(false); await draw();
+    await T.down(2, st.x, st.y);
+    c.stick = [...TOUCH.owners.values()].some((o) => o.kind === "move");
+    await T.up(2);
+    TOUCH.setOn(true); await draw();
+    for (const k in DF.taps) DF.taps[k] = false;
+    DF.show("pause"); TOUCH.setOn(false); await draw();
+    await T.down(3, g.x, g.y);
+    c.menu = TOUCH.on === true && TOUCH.owners.size === 0 && !DF.keys["T:guard"];
+    await T.up(3);
+    return { pass: Object.values(c).every((v) => v === true), ...c };`),
+
+  // ---- final review fixes: wording, stick, hover, per-frame work ----
+  step("touch wording under touch, desktop wording on desktop", `
+    const vis = (e) => e.innerText.replace(/\\s+/g, " ").trim();
+    const c = {};
+    // the Execute prompt
+    play(); await draw();
+    const n = G.world.nodes.find((q) => q.kind === "room"), p = G.player;
+    const e = G.enemies.find((q) => q.type === "husk");
+    for (const o of G.enemies) if (o !== e) o.x += 1000;
+    p.x = n.x; p.z = n.z - 2; e.x = n.x; e.z = n.z + 1; e.state = "stagger"; e.dead = false;
+    await draw();
+    const pr = document.getElementById("prompt");
+    c.exTouch = vis(pr) === "ATTACK Execute";
+    TOUCH.setOn(false); await draw();
+    c.exDesk = vis(pr) === "Left click Execute";
+    TOUCH.setOn(true);
+    e.state = "idle"; e.x += 1000; await draw();
+    // How to play
+    DF.show("pause"); DF.openMenu("howto"); await draw();
+    const sh = [...document.querySelectorAll("#scr-howto li")].find((l) => /Shrines/.test(l.textContent));
+    c.howTouch = /pause button pauses/.test(vis(sh)) && !/Esc/.test(vis(sh));
+    TOUCH.setOn(false); await draw();
+    c.howDesk = /Esc pauses/.test(vis(sh)) && !/pause button/.test(vis(sh));
+    TOUCH.setOn(true);
+    // the class kit
+    DF.show("pause"); DF.openMenu("class"); await draw();
+    const kits = () => [...document.querySelectorAll(".scr.show .kit kbd")].map(vis);
+    c.kitTouch = JSON.stringify(kits()) === JSON.stringify(["HEAVY", "TOOL", "ABILITY"]);
+    TOUCH.setOn(false); await draw();
+    const kn = kits();
+    c.kitDesk = kn.length === 3 && kn.every((t) => t && !/^(HEAVY|TOOL|ABILITY)$/.test(t));
+    TOUCH.setOn(true);
+    DF.show("title");
+    return { pass: Object.values(c).every((v) => v === true), ...c };`),
+  step("the stick stays inside its area", `
+    play(); await draw();
+    const m = L().move, R = L().R, tol = 0.01;
+    const base = () => document.querySelector(".stick-base");
+    const inside = () => {
+      const b = base(), cx = +b.getAttribute("cx"), cy = +b.getAttribute("cy");
+      return cx - R >= m.x0 - tol && cx + R <= m.x1 + tol && cy - R >= m.y0 - tol && cy + R <= m.y1 + tol;
+    };
+    const c = {};
+    const owner = () => [...TOUCH.owners.values()].find((o) => o.kind === "move");
+    await T.down(1, m.x0 + 2, m.y0 + 2); await draw();
+    c.tlOwner = !!owner() && owner().x0 >= m.x0 + R - tol && owner().y0 >= m.y0 + R - tol;
+    c.tlDrawn = inside();
+    await T.up(1);
+    await T.down(1, m.x1 - 2, m.y1 - 2); await draw();
+    c.brOwner = !!owner() && owner().x0 <= m.x1 - R + tol && owner().y0 <= m.y1 - R + tol;
+    c.brDrawn = inside();
+    await T.up(1);
+    // a touch well inside lands where it was
+    const mx = (m.x0 + m.x1) / 2, my = (m.y0 + m.y1) / 2;
+    await T.down(1, mx, my); await draw();
+    c.mid = !!owner() && Math.abs(owner().x0 - mx) < tol && Math.abs(owner().y0 - my) < tol;
+    await T.up(1);
+    return { pass: Object.values(c).every((v) => v === true), ...c };`),
+  step("a tap leaves no hover on menu buttons", `
+    const flat = (rules, out, med) => { for (const r of rules) { if (r.cssRules && r.conditionText !== undefined) flat(r.cssRules, out, r.conditionText); else if (r.selectorText) out.push([r.selectorText, med]); } return out; };
+    const all = [];
+    for (const s of document.styleSheets) { try { flat(s.cssRules, all, ""); } catch (e) {} }
+    const hov = all.filter(([sel]) => /\\.scr button.*:hover/.test(sel));
+    const c = { found: hov.length >= 1, wrapped: hov.every(([, m]) => /hover:\\s*hover/.test(m)) };
+    return { pass: Object.values(c).every((v) => v === true), ...c, hov };`),
+  step("an idle frame does no DOM work", `
+    play(); await draw();
+    const saved = window.__fakeInsets, savedF = TOUCH.fakeInsets;
+    window.__fakeInsets = undefined; TOUCH.fakeInsets = null;
+    TOUCH.relayout();
+    let calls = 0; const orig = window.getComputedStyle;
+    window.getComputedStyle = function () { calls++; return orig.apply(this, arguments); };
+    const mo = new MutationObserver(() => {});
+    mo.observe(document.getElementById("touch"), { childList: true, subtree: true, characterData: true, attributes: true });
+    for (let i = 0; i < 30; i++) TOUCH.update(0.016);
+    const muts = mo.takeRecords().length;
+    mo.disconnect();
+    window.getComputedStyle = orig;
+    window.__fakeInsets = saved; TOUCH.fakeInsets = savedF;
+    TOUCH.relayout(); await draw();
+    return { pass: calls === 0 && muts === 0, calls, muts };`),
+
+  // last: a failing Back here would leave the page, so each Back checks the entry first
+  step("Back on pause or a menu stays in the game", `
+    const armed = () => !!(history.state && history.state.dungeonRaze);
+    const back = async () => { history.back(); await new Promise((r) => setTimeout(r, 200)); };
+    const href = location.href, c = {};
+    DF.newRun(99); DF.play(); await draw();
+    await back();
+    c.paused = G.state === "pause"; c.armed1 = armed();
+    // Back on the pause screen stays on it and keeps the entry
+    if (armed()) { await back(); c.pauseStays = G.state === "pause"; c.armed2 = armed(); } else c.pauseStays = false;
+    // a menu on top of pause: Back goes to pause, as its Back button does
+    DF.openMenu("controls"); await draw();
+    if (armed()) { await back(); c.menuBack = G.state === "pause"; c.armed3 = armed(); } else c.menuBack = false;
+    for (const m of ["class", "howto"]) {
+      DF.openMenu(m); await draw();
+      if (armed()) { await back(); c["menu_" + m] = G.state === "pause" && armed(); } else c["menu_" + m] = false;
+    }
+    c.same = location.href === href;
+    DF.play(); await draw(); await leaveFs();
+    return { pass: Object.values(c).every((v) => v === true), ...c };`),
 ];

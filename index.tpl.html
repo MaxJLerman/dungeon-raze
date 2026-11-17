@@ -510,9 +510,12 @@
       body.touch .scr button {
         min-height: 44px;
       }
-      .scr button:hover {
-        background: var(--bone);
-        color: var(--abyss);
+      /* a touch screen keeps :hover after a tap, so only a pointer that hovers gets it */
+      @media (hover: hover) {
+        .scr button:hover {
+          background: var(--bone);
+          color: var(--abyss);
+        }
       }
       .scr button:focus-visible {
         outline: 2px solid var(--vein);
@@ -635,8 +638,10 @@
         background: rgba(88, 224, 255, 0.12);
         box-shadow: inset 0 -3px 0 var(--vein);
       }
-      .scr button.card:hover span {
-        color: inherit;
+      @media (hover: hover) {
+        .scr button.card:hover span {
+          color: inherit;
+        }
       }
       .kit {
         display: grid;
@@ -827,17 +832,17 @@
         max-width: 18ch;
         text-wrap: balance;
       }
-      #rotate svg {
-        width: 84px;
-        height: 84px;
-        fill: none;
-        stroke: var(--ember);
       #rotate small {
         max-width: 30ch;
         font-size: clamp(13px, 3.4vw, 16px);
         line-height: 1.4;
         color: var(--dim);
       }
+      #rotate svg {
+        width: 84px;
+        height: 84px;
+        fill: none;
+        stroke: var(--ember);
         stroke-width: 2.5;
         stroke-linecap: round;
         stroke-linejoin: round;
@@ -988,12 +993,12 @@
         <path d="M22 37h4" />
       </svg>
       <p>Turn your device sideways to play.</p>
+      <small>Tap to try landscape. If it stays upright, turn off rotation lock.</small>
     </div>
     <div id="fade" class="vig"></div>
 
     <div id="scr-title" class="scr wide">
       <h1>DungeonRaze</h1>
-      <small>Tap to try landscape. If it stays upright, turn off rotation lock.</small>
       <p class="sub">
         Six gates stand in the hall, graded E to S. Only the first is open.
         Pick a class, step through it, and come back alive.
@@ -1132,7 +1137,8 @@
         </li>
         <li>
           <b>Shrines</b> are checkpoints and refill everything.
-          <b>Esc</b> pauses.
+          <b class="lk-mouse">Esc</b><b class="lk-touch">The pause button</b>
+          pauses.
         </li>
       </ul>
       <div class="row"><button type="button" data-back="1">Back</button></div>

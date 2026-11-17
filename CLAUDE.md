@@ -180,23 +180,47 @@ is what you need to change the code without breaking it.
   pointer, or no hover with touch points, or the URL has `?touch=1`
   (`TOUCH.forced`). It adds `body.touch`, which the CSS uses to show the
   buttons and hide keyboard-only parts. Unless forced, the last input decides:
-  a key or a mouse move turns it off, a touch turns it on. A forced page
-  ignores the mouse and shows a readout of size, insets and scale.
+  a key or a mouse move turns it off, a touch turns it on, and that touch is
+  handled as the first press on the controls. Volume and media keys, an
+  on-screen keyboard's composition and unidentified keys do not count as a
+  keyboard. A forced page ignores the mouse and shows a readout of size,
+  insets and scale.
 - Layout follows the visible size and the safe-area insets, read through a
-  hidden probe element with `env(safe-area-inset-*)`. `update` checks every
-  frame, and resize, orientation and visual viewport events call `relayout`.
+  hidden probe element with `env(safe-area-inset-*)`, which is read again only
+  after a resize, orientation or visual viewport event or a `TOUCH.relayout()`
+  call. `update` compares the size and settings every frame, and those events
+  call `relayout` only when that comparison changed, so a resize that changed
+  nothing keeps the fingers.
   Tests fake the insets with `window.__fakeInsets` or `TOUCH.fakeInsets`.
 - Held upright, a touch device gets `body.portrait`, which shows `#rotate`
-  ("Turn your device sideways to play.") over everything, and the game pauses.
-  The layout is made for a visible short side of 280 px or more.
-- `TOUCH.enterPlay` runs from the play tap: fullscreen, then a landscape lock,
-  then one history entry so that Back pauses the game (`popstate` pauses and
-  arms another). Each can be refused or missing, as on iPhone, and every
-  refusal is caught.
+  ("Turn your device sideways to play.", with a smaller line about rotation
+  lock) over everything, and the game pauses. A tap on it asks for fullscreen
+  and a landscape lock (`goLandscape`), for phones with auto-rotate off; it
+  does not arm Back or start play. The layout is made for a visible short side
+  of 280 px or more.
+- `TOUCH.enterPlay` runs from the play tap: one history entry so that Back
+  pauses the game, then `goLandscape` (fullscreen, then a landscape lock).
+  `popstate` under touch pauses from play and arms another entry. From the
+  pause, dead and win screens it only arms another, and from a menu it goes
+  to the menu's return screen as that screen's Back button does, so a second
+  Back does not leave the page. Back is not caught on the title screen. Each
+  of fullscreen and the lock can be refused or missing, as on iPhone, and
+  every refusal is caught.
+- Under touch the game also pauses when fullscreen ends (Android's Back
+  leaves fullscreen first and sends no `popstate`), when the page is hidden
+  and when the window loses focus. Resume asks for fullscreen again. Desktop
+  keeps its own rule, pausing when pointer lock is lost. A test that calls
+  `exitFullscreen` in play therefore ends up paused.
 - Settings are `OPT.tsize` (0.8 to 1.2), `OPT.topac` (0.2 to 1) and
   `OPT.tnotch`, saved under `o` in `dungeon-raze.v2` and set in the Controls
   menu. Menu text that differs by input uses `.kbonly` and `.touchonly`, or
-  `.lk-mouse` and `.lk-touch` inline.
+  `.lk-mouse` and `.lk-touch` inline. The Execute prompt and the class kit
+  show the button names (ATTACK, HEAVY, TOOL, ABILITY) under touch, and How to
+  play names the pause button. Button hover styles apply only where
+  `(hover: hover)`, so a tap leaves nothing highlighted.
+- The stick lands where the thumb does, but its origin is clamped so the stick
+  body stays inside the stick area, clear of the health bars. Landing at an
+  edge therefore starts with the stick already pushed.
 - Under touch the HUD hides the flask and tool counts, because the Flask and
   Tool buttons show them, and the boss name plate is held inside the boss box.
 

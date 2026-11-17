@@ -93,6 +93,15 @@ function openMenu(which) {
 }
 
 // ---- class picker ----
+// the key shown beside a kit line, and the name of the touch button
+const KIT_KEYS = {
+  Tool: ["tool", "TOOL"],
+  Ability: ["special", "ABILITY"],
+  Heavy: ["heavy", "HEAVY"],
+};
+// text for a mouse and keyboard, and for a touch screen; the CSS shows one
+const both = (kb, touch) =>
+  '<span class="lk-mouse">' + kb + '</span><span class="lk-touch">' + touch + "</span>";
 function renderPicker() {
   for (const host of document.querySelectorAll(".picker")) {
     const cur = CLASSES[OPT.cls];
@@ -125,13 +134,9 @@ function renderPicker() {
           (k) =>
             "<div><b>" +
             k[0] +
-            (k[0] === "Tool"
-              ? " <kbd>" + keyName(BIND.tool) + "</kbd>"
-              : k[0] === "Ability"
-                ? " <kbd>" + keyName(BIND.special) + "</kbd>"
-                : k[0] === "Heavy"
-                  ? " <kbd>" + keyName(BIND.heavy) + "</kbd>"
-                  : "") +
+            (KIT_KEYS[k[0]]
+              ? " <kbd>" + both(keyName(BIND[KIT_KEYS[k[0]][0]]), KIT_KEYS[k[0]][1]) + "</kbd>"
+              : "") +
             "</b><span>" +
             k[1] +
             "</span></div>",
