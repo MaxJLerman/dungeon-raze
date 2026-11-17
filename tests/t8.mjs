@@ -200,10 +200,12 @@ export default [
   step("pause hides the fade, checked", `
   const fd = document.getElementById("fade"), hud = document.getElementById("hud"), hp = document.getElementById("hpF"), r = hp.getBoundingClientRect();
   const hidden = getComputedStyle(fd).opacity === "0";
-  // as before this work, the health fill sits above the pause menu
+  // the pause menu covers the health fill, as it covers the rest of the HUD
+  // (t10 "menus cover the health bar")
   hud.style.pointerEvents = "auto"; const top = document.elementFromPoint(r.left + 2, r.top + 2); hud.style.pointerEvents = "";
+  const covered = !!top && document.getElementById("scr-pause").contains(top);
   G.trans = null; G.fade = 0; DF.show("title"); window.__t0 = G.t;
-  return { pass: hidden && top === hp, hidden, top: top && top.id };`),
+  return { pass: hidden && covered, hidden, top: top && top.id };`),
   { wait: 500 },
   step("the title backdrop animates", `
   const moved = G.t - window.__t0; DF.enterHub(); DF.show("play"); return { pass: moved > 0.2, moved };`),
