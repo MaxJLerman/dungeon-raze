@@ -164,8 +164,11 @@ is what you need to change the code without breaking it.
   `place()` writes the HUD boxes as inline styles. To add a button, add it to
   `TOUCH_BTNS` and `LOOK`, give it a spot in `layoutAt`, and make
   `layoutProblems` pass on every device in `tests/devices.mjs`.
-- The sizes, honeycomb offsets and margins are in the comments and code of
-  `layoutAt`. They derive from the short side of the screen.
+- The sizes, button positions and margins are in the comments and code of
+  `layoutAt`. They derive from the short side of the screen. The button
+  arrangement is one the owner drew on a OnePlus 13 (905 by 412): each
+  button sits a set gap from the one it hangs off, in the direction that
+  layout had, and `tests/t13.mjs` holds it to within 3 px there.
 - `TOUCH` is the controller. A finger belongs to the control it first touched
   (`TOUCH.owners`, keyed by pointer id) until it lifts: a button, the pause
   square, the stick or the camera. A second finger in the stick area turns the
