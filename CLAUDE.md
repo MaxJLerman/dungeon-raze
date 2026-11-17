@@ -538,9 +538,6 @@ The class picker and HUD read `CLASSES` and need no changes.
 - Controllers are checked only with a faked Gamepad API. No real pad has been
   tried.
 - Whether a pad press may start audio and fullscreen differs by browser.
-- `tests/t8.mjs` step "pause hides the fade, checked" fails. It failed
-  before the controller branch too (seen on commit d3d1666). Every other step
-  of t8 passes.
 - The DualSense mapping in Firefox may be wrong. A pad that does not report
   the standard mapping gets a note in the Controls menu.
 - iPhones cannot run the file directly; they play at
