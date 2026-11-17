@@ -486,6 +486,7 @@ window.DF = {
   touchLayout,
   layoutProblems,
   hexContains,
+  hexGap,
   fieldFns,
   portalFront,
   GRADES,
