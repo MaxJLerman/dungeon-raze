@@ -1,0 +1,8 @@
+#!/bin/sh
+# Strip auto-injected AI attribution trailers (Co-Authored-By, "Generated with")
+# so they never land in commit history, regardless of which tool or agent wrote
+# the message. See project CLAUDE.md: no Co-Authored-By trailers allowed.
+MSG_FILE="$1"
+TMP="$(mktemp)"
+grep -ivE '^(Co-Authored-By:|🤖 Generated with|Generated with \[?Claude|Claude-Session:)' "$MSG_FILE" > "$TMP" || true
+mv "$TMP" "$MSG_FILE"
