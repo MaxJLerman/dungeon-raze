@@ -156,8 +156,9 @@ is what you need to change the code without breaking it.
   `hit('action')`, which look the code up in `BIND`.
 - To add an action: add it to `DEFAULT_BINDS` and `ACTIONS`, then read it with
   `held` or `hit`. The controls menu picks it up automatically.
-- `interact` is Space and pad A or Cross (`P:0`). Dodge is B on the keyboard.
-  `loadOpt` moves an old save's dodge off Space to B, unless B is taken.
+- `interact` is G and pad A or Cross (`P:0`). Dodge is Space on the keyboard.
+  The plaques release had dodge on B and Interact on Space; `loadOpt` moves a
+  save holding exactly that pair to Space and G, unless G is taken.
   In the hall, a free player at a plaque opens it with `interact` before
   any other action is read. The jump planned for the same button must keep
   that priority.
@@ -653,9 +654,10 @@ The class picker and HUD read `CLASSES` and need no changes.
    world generation, loot and progression, rendering and effects, HUD, touch
    layout, touch input, tests.
    Agree shared data shapes (`CLASSES`, `MOVES`, `EDEF`) before fanning out.
-7. A jump. The owner asked for it on Space and A or Cross, with dodge moving
-   to B on keyboard (not Ctrl: Ctrl+W closes the tab). Near a plaque the same
-   button inspects instead. What the jump is for in a fight (movement,
+7. A jump. The owner first asked for it on Space and A or Cross, with dodge
+   on B. Dodge has since gone back to Space and Interact to G, so the
+   keyboard key for a jump needs asking again (not Ctrl: Ctrl+W closes the
+   tab). On a pad, near a plaque the same button inspects instead. What the jump is for in a fight (movement,
    clearing slam shockwaves, jump attacks, invulnerability) is undecided; ask
    the owner before building it. The floor is flat, so there is nothing to
    jump onto. A touch Jump button must fit the owner's honeycomb layout.

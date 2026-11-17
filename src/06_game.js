@@ -78,13 +78,13 @@ const DEFAULT_BINDS = {
   light: "Mouse0",
   heavy: "KeyF",
   guard: "Mouse2",
-  dodge: "KeyB",
+  dodge: "Space",
   lock: "KeyQ",
   special: "KeyV",
   tool: "KeyR",
   heal: "KeyE",
   mute: "KeyM",
-  interact: "Space",
+  interact: "KeyG",
 };
 const ACTIONS = [
   ["fwd", "Move forward"],
@@ -226,10 +226,17 @@ function loadOpt() {
     if (!d) return;
     for (const k in DEFAULT_BINDS)
       if (d.b && typeof d.b[k] === "string") BIND[k] = d.b[k];
-    // dodge used to default to Space, which Interact now has: an old save
-    // moves it to B unless something else already holds B
-    if (d.b && d.b.dodge === "Space" && !Object.values(d.b).includes("KeyB"))
-      BIND.dodge = "KeyB";
+    // the plaques release had dodge on B and Interact on Space: a save with
+    // that pair takes today's defaults, Space and G, unless G is taken
+    if (
+      d.b &&
+      d.b.dodge === "KeyB" &&
+      d.b.interact === "Space" &&
+      !Object.values(d.b).includes("KeyG")
+    ) {
+      BIND.dodge = "Space";
+      BIND.interact = "KeyG";
+    }
     // a pad code that is not bindable, or no longer exists, is the default
     if (d.p && typeof d.p === "object")
       for (const k in DEFAULT_PAD)

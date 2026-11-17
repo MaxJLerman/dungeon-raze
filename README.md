@@ -15,8 +15,8 @@ a finished game, and nothing in it is balanced by hand yet.
 Run `node build.mjs`, then open `dist/index.html` in a recent desktop Chrome,
 Edge, Firefox or Safari. It runs straight from disk with no server. On a
 desktop it needs a keyboard and a mouse, or a controller. The keys are listed
-under Controls in the game and can be rebound there. Dodge is B and Interact
-is Space.
+under Controls in the game and can be rebound there. Dodge is Space and Interact
+is G.
 
 Phones and tablets play in landscape by touch. The file runs on Android and on
 desktop. iPhones cannot open it from disk, so they play at
@@ -166,7 +166,7 @@ earlier ones.
   rest are sealed until grades are given difficulty and rewards. Walking into
   the open portal starts a new cave. The pause, death and win screens return
   you to the hall. Three plaques hang on the left-hand wall; walk up to one and
-  press Interact (Space, or A / Cross) to look at it.
+  press Interact (G, or A / Cross) to look at it.
 - **Training dummy:** stands in the hall, takes every attack and ability, can
   be staggered and executed, and never dies. Focus and tool charges refill on
   their own in the hall.
