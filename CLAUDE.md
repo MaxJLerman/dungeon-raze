@@ -16,6 +16,9 @@ is what you need to change the code without breaking it.
   dropped by the owner. Do not reintroduce it unless asked.
 - The intended next stage is to widen the game with several agents working in
   parallel, once the owner says the combat feels right.
+- Touch controls for phones and tablets were added on branch
+  `feat/touch-controls`, tested under Chromium device emulation only. No
+  phone has been played on yet.
 - The game starts in a base of operations: a built hall with six portal frames
   graded E, D, C, B, A and S, and a training dummy. Only E is open and it leads
   to the cave. Grades carry no difficulty or rewards yet; the owner wants
@@ -140,6 +143,62 @@ is what you need to change the code without breaking it.
   `hit('action')`, which look the code up in `BIND`.
 - To add an action: add it to `DEFAULT_BINDS` and `ACTIONS`, then read it with
   `held` or `hit`. The controls menu picks it up automatically.
+- A touch button does not go through `BIND`. It sets `keys["T:" + action]`
+  and `taps["T:" + action]`, and `held(a)` and `hit(a)` read that key beside
+  the bound one. `hit` reads both taps so that both are consumed. The stick
+  sets `T:sprint` when it is pushed past its ring. An action with a touch
+  button needs an entry in `TOUCH_BTNS` and `LOOK` (see below).
+
+### Touch (`08b_touchlayout.js`, `08c_touch.js`)
+
+- `touchLayout(W, H, insets, { size, notch })` is a pure function. It returns
+  every position: `btns` (`{ act, x, y, d }`, `d` is corner-to-corner width),
+  `pause`, the stick area `move`, its resting place `rest`, radius `R` and
+  sprint `ring`, and the `vitals`, `map` and `boss` boxes for the HUD. It
+  tries the requested size and steps down by 0.05, to 0.8 at the least, until
+  `layoutProblems(L)` finds nothing. `L.scale` is the size it used.
+- **Every control comes from the layout.** Nothing else in `src/` holds a
+  pixel position for a touch control. The overlay is an SVG drawn from
+  `TOUCH.layout`, hit-testing is `hexContains` on the same entries, and
+  `place()` writes the HUD boxes as inline styles. To add a button, add it to
+  `TOUCH_BTNS` and `LOOK`, give it a spot in `layoutAt`, and make
+  `layoutProblems` pass on every device in `tests/devices.mjs`.
+- The sizes, honeycomb offsets and margins are in the comments and code of
+  `layoutAt`. They derive from the short side of the screen.
+- `TOUCH` is the controller. A finger belongs to the control it first touched
+  (`TOUCH.owners`, keyed by pointer id) until it lifts: a button, the pause
+  square, the stick or the camera. A second finger in the stick area turns the
+  camera. `release()` drops every finger and every `T:` key, and runs when the
+  state leaves play, on every relayout and when touch mode turns off.
+- The stick lands where the thumb does. `TOUCH.move` is `{ x, y, mag }`, and
+  `playerUpdate` uses it in place of the movement keys while `mag > 0`, with
+  `mag` scaling walk speed. A drag of the camera area is added to `mouse.dx`
+  and `mouse.dy`, as a mouse would be. The Attack finger aims after it moves
+  8 px. A quick sideways swipe of a camera finger while locked sets
+  `mouse.wheel`, which switches the lock.
+- **Touch mode.** `TOUCH.on` is set at start when the browser reports a coarse
+  pointer, or no hover with touch points, or the URL has `?touch=1`
+  (`TOUCH.forced`). It adds `body.touch`, which the CSS uses to show the
+  buttons and hide keyboard-only parts. Unless forced, the last input decides:
+  a key or a mouse move turns it off, a touch turns it on. A forced page
+  ignores the mouse and shows a readout of size, insets and scale.
+- Layout follows the visible size and the safe-area insets, read through a
+  hidden probe element with `env(safe-area-inset-*)`. `update` checks every
+  frame, and resize, orientation and visual viewport events call `relayout`.
+  Tests fake the insets with `window.__fakeInsets` or `TOUCH.fakeInsets`.
+- Held upright, a touch device gets `body.portrait`, which shows `#rotate`
+  ("Turn your device sideways to play.") over everything, and the game pauses.
+  The layout is made for a visible short side of 280 px or more.
+- `TOUCH.enterPlay` runs from the play tap: fullscreen, then a landscape lock,
+  then one history entry so that Back pauses the game (`popstate` pauses and
+  arms another). Each can be refused or missing, as on iPhone, and every
+  refusal is caught.
+- Settings are `OPT.tsize` (0.8 to 1.2), `OPT.topac` (0.2 to 1) and
+  `OPT.tnotch`, saved under `o` in `dungeon-raze.v2` and set in the Controls
+  menu. Menu text that differs by input uses `.kbonly` and `.touchonly`, or
+  `.lk-mouse` and `.lk-touch` inline.
+- Under touch the HUD hides the flask and tool counts, because the Flask and
+  Tool buttons show them, and the boss name plate is held inside the boss box.
 
 ### Player
 
@@ -284,6 +343,23 @@ The class picker and HUD read `CLASSES` and need no changes.
   Returning `false` from `eachStep` stops early.
 - Simulate input by setting `DF.keys[DF.BIND.fwd] = true` or
   `DF.taps[DF.BIND.light] = true`.
+- `DEVICE=<id> node test.mjs smoke` runs the page as a phone or tablet from
+  `tests/devices.mjs`: its viewport and pixel ratio, touch on, fake insets, and
+  play started by a tap. It exposes `__touch(type, points)`, which sends real
+  touches through the Chrome DevTools protocol, and `__viewport(w, h)`.
+  `node tests/touch-all.mjs <script>` runs a script on every device in turn and
+  prints one line each.
+- Run `tests/t13.mjs` after any change to `touchLayout`. It runs on the plain
+  desktop page: `SCRIPT=$PWD/tests/t13.mjs node test.mjs title`.
+- Run `tests/t14.mjs` on every device after any change to the touch controller,
+  the touch HUD or menus on small screens:
+  `node tests/touch-all.mjs tests/t14.mjs`. Touch steps send real touches, so
+  they wait two animation frames before reading the result, compare positions
+  with a tolerance, and read `TOUCH.owners` by iteration because the browser
+  numbers pointers itself.
+- Run `tests/t15.mjs` on every device to look at the controls over the hall
+  and over a fight. Open `shots/<device>-touch-hall.png` and
+  `shots/<device>-touch-fight.png` and check them by eye.
 - Headless Chromium needs these flags for WebGL:
   `--use-angle=swiftshader --enable-unsafe-swiftshader --ignore-gpu-blocklist`.
   Rendering is slow there, a few seconds per screenshot, which is why tests
@@ -319,6 +395,12 @@ The class picker and HUD read `CLASSES` and need no changes.
   steer straight, so a wide enemy can catch on a corner the line of sight
   just clears.
 - There is no gamepad support.
+- iPhones cannot run the file directly; they need the GitHub Pages address.
+- Touch was checked only in Chromium device emulation. Fullscreen, the
+  orientation lock and the Back gesture in particular have not run on a real
+  phone or on Safari.
+- A swipe to switch lock target picks the next target without regard to the
+  direction of the swipe.
 - The Assassin's blink picks its own target when nothing is locked, which may
   not be the enemy the player meant.
 - In the controls menu, Escape cannot be bound, and the pause key in the
@@ -338,7 +420,8 @@ The class picker and HUD read `CLASSES` and need no changes.
 5. Gamepad support.
 6. A harsher surface area or city zone, if the owner wants to leave the caves.
 7. Split the work into lanes for parallel agents: combat and camera, enemies,
-   world generation, loot and progression, rendering and effects, HUD, tests.
+   world generation, loot and progression, rendering and effects, HUD, touch
+   layout, touch input, tests.
    Agree shared data shapes (`CLASSES`, `MOVES`, `EDEF`) before fanning out.
 
 ## Decisions already made, with reasons
