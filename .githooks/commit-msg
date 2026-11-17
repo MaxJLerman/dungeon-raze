@@ -4,5 +4,5 @@
 # the message. See project CLAUDE.md: no Co-Authored-By trailers allowed.
 MSG_FILE="$1"
 TMP="$(mktemp)"
-grep -ivE '^(Co-Authored-By:|🤖 Generated with|Generated with \[?Claude)' "$MSG_FILE" > "$TMP" || true
+grep -ivE '^(Co-Authored-By:|🤖 Generated with|Generated with \[?Claude|Claude-Session:)' "$MSG_FILE" > "$TMP" || true
 mv "$TMP" "$MSG_FILE"

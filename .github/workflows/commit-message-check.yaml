@@ -27,7 +27,7 @@ jobs:
             git log -1 --format='%B' "$sha" | grep -iqE '^(Co-Authored-By:|🤖 Generated with|Generated with \[?Claude|Claude-Session:)' && echo "$sha $(git log -1 --format='%s' "$sha")"
           done || true)
           if [ -n "$bad" ]; then
-            echo "::error::Commits with AI attribution trailers found. Strip them with the prepare-commit-msg hook or amend the commit."
+            echo "::error::Commits with AI attribution trailers found. Strip them with the commit-msg hook or amend the commit."
             echo "$bad"
             exit 1
           fi
