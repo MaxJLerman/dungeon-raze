@@ -75,6 +75,31 @@ export default [
   return { pass: Object.values(c).every(Boolean), c, out }; `),
   },
   {
+    name: "grapple keeps a stagger",
+    eval: cls("enforcer", `
+  // a staggered enemy grappled to, or yanked in, stays open to an execution
+  const out = {};
+  for (const type of ['husk', 'brute']) {
+    const e = tp((e) => e.type === type, 9); e.state = 'stagger'; e.t = 0; e.dur = 3; p.state = 'free'; p.focus = 100; p.lock = e;
+    K('special'); DF.sim(0.8); out[type] = e.state;
+  }
+  return { pass: out.husk === 'stagger' && out.brute === 'stagger', out }; `),
+  },
+  {
+    name: "grapple leaves time to follow up",
+    eval: cls("enforcer", `
+  // after the pull, the enemy is still reeling for a while
+  const out = {};
+  for (const type of ['husk', 'brute']) {
+    const e = tp((e) => e.type === type, 9); e.state = 'idle'; p.state = 'free'; p.focus = 100; p.lock = e;
+    K('special'); let t = 0, began = false, done = -1, freed = -1;
+    DF.sim(2, () => { t += 1 / 60; if (e.yank || p.state === 'grapple') began = true;
+      if (began && done < 0 && !e.yank && p.state === 'free') done = t; if (done >= 0 && freed < 0 && e.state !== 'hit') freed = t; return freed < 0; });
+    out[type] = +(freed - done).toFixed(2);
+  }
+  return { pass: out.husk >= 0.4 && out.brute >= 0.4, out }; `),
+  },
+  {
     name: "grapple with no target spends nothing",
     eval: cls("enforcer", `
   for (const e of G.enemies) e.dead = true; p.focus = 100; p.lock = null; K('special'); DF.sim(0.3);

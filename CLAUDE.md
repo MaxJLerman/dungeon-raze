@@ -400,7 +400,11 @@ is what you need to change the code without breaking it.
   blows after `STICKY.t`, hurting the player for `STICKY.self` of its damage
   in range and in sight. The grapple (ability) yanks a light enemy (poise 0,
   not boss or dummy) with `e.yank`, or pulls the player to a heavier one in
-  the `grapple` state. With no target it costs nothing.
+  the `grapple` state. With no target it costs nothing. Either way the enemy
+  reels in `hit` for `e.hitT` seconds (a flinch is 0.32), and a staggered
+  enemy stays staggered.
+- `G.insp` is set only while the player is in `inspect`. Anything that moves
+  them out of it closes the plaque on the next update.
 
 ### Enemies
 

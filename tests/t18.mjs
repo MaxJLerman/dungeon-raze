@@ -89,6 +89,12 @@ export default [
   }
   DF.respawn(); DF.show("play");
   return { pass: Object.values(out).every(Boolean), out };`),
+  step("a hit while inspecting closes it", `
+  // a bomb still ticking, or anything else that hurts without killing
+  DF.enterHub(); ${stand} K("interact"); DF.sim(0.6); const open = p.state === "inspect";
+  DF.hurtPlayer(10, null, { px: p.x, pz: p.z - 1 }); DF.sim(0.5);
+  const shut = G.insp === null && p.state !== "inspect";
+  return { pass: open && shut, open, shut, insp: !!G.insp, state: p.state };`),
   step("pad A opens, right stick does not turn the camera", `
   DF.enterHub(); ${stand} const pads = [{ index: 0, connected: true, mapping: "standard", id: "fake",
     buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })), axes: [0, 0, 0, 0] }];

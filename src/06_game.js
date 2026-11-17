@@ -1752,6 +1752,7 @@ function hitEnemy(e, dmg, post, o = {}) {
   if (flinch && e.state !== "act") {
     e.state = "hit";
     e.t = 0;
+    e.hitT = 0;
     e.token = false;
   }
 }
@@ -2274,10 +2275,11 @@ function startGrapple() {
     p.gz = e.z - Math.cos(a) * gap;
     p.buf = null;
     p.gLine = 0.35;
-    if (!e.def.dummy && !e.def.boss) {
+    if (!e.def.dummy && !e.def.boss && e.state !== "stagger") {
       e.state = "hit";
       e.t = 0;
-      e.dur = 0.85;
+      e.hitT = 0.85;
+      e.token = false;
     }
   }
   return true;
@@ -2466,6 +2468,9 @@ function playerUpdate(dt) {
     inspectUpdate(dt);
     return;
   }
+  // a close-up lasts only while the player is in it: whatever moved them out
+  // (a hit, a bomb going off) puts the camera back at once
+  if (G.insp) closePlaque(true);
   p.iframe = Math.max(0, p.iframe - dt);
   if (p.buff) {
     p.buffT -= dt;
@@ -3132,9 +3137,13 @@ function enemyUpdate(e, dt) {
     w.resolve(e, e.r);
     y.t -= dt;
     if (y.t <= 0) e.yank = null;
-    e.state = "hit";
-    e.t = 0;
-    e.dur = 0.5;
+    // a staggered enemy stays open to an execution; any other reels a moment
+    if (e.state !== "stagger") {
+      e.state = "hit";
+      e.t = 0;
+      e.hitT = 0.5;
+      e.token = false;
+    }
     return;
   }
   const dx = p.x - e.x,
@@ -3542,7 +3551,9 @@ function enemyUpdate(e, dt) {
     }
     case "hit":
       e.t += dt;
-      if (e.t > 0.32) {
+      // a flinch is short; the grapple sets a longer one in hitT
+      if (e.t > (e.hitT || 0.32)) {
+        e.hitT = 0;
         e.state = "chase";
         e.cd = Math.max(e.cd, 0.25);
       }
