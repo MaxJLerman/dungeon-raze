@@ -36,6 +36,15 @@ function posePlayer(p) {
   } else if (id === "mage") A[0] = -0.75 - mv * 0.1;
   else if (id === "ranger") B[0] = -0.5;
   else if (id === "fighter") A[0] = -0.4;
+  else if (id === "enforcer") {
+    // pistols held low and ready; the long guns only while used
+    A[0] = B[0] = -0.35;
+    const heavy = p.state === "attack" && p.move === "eshot",
+      exec = p.state === "execute";
+    f.shotgun.vis = heavy;
+    f.rifle.vis = exec;
+    f.pistols[0].vis = !heavy && !exec;
+  }
   if (p.throwT > 0) {
     A[0] = -1.6;
     ch[1] = 0.4;
@@ -125,6 +134,23 @@ function posePlayer(p) {
       } else if (an === "castup") {
         A[0] = B[0] = lerp(-2.8, -1.3, u);
         ch[0] = lerp(-0.3, 0.35, u);
+      } else if (an === "pistol" || an === "pistolL" || an === "pistol2") {
+        // one arm up and firing, the other at the ready; both for the last
+        const kick = t > m.wind ? 0.25 * (1 - u) : 0;
+        if (an !== "pistolL") A[0] = -1.5 - kick;
+        if (an !== "pistol") B[0] = -1.5 - kick;
+        ch[1] = an === "pistol" ? 0.25 : an === "pistolL" ? -0.25 : 0;
+      } else if (an === "shotgun") {
+        A[0] = -1.45 - 0.35 * (t > m.wind ? 1 - u : 0);
+        B[0] = -1.3;
+        B[1] = 0.55;
+        ch[1] = -0.2;
+      } else if (an === "slide") {
+        f.hips.p[1] = o.leg - 0.45;
+        f.legR.r[0] = -1.3;
+        f.legL.r[0] = 0.2;
+        ch[0] = -0.35;
+        A[0] = -1.5;
       } else if (an === "bow") {
         ch[1] = -0.6;
         B[0] = -1.5;
@@ -162,6 +188,11 @@ function posePlayer(p) {
         A[1] = 0.9;
         B[0] = -1.4;
         B[2] = -0.5;
+      } else if (id === "enforcer") {
+        // forearms crossed in front of the face, guns up
+        A[0] = B[0] = -1.75;
+        A[2] = 0.75;
+        B[2] = -0.75;
       } else if (id === "ranger") {
         B[0] = -1.6;
         B[1] = 0.9;
@@ -200,6 +231,15 @@ function posePlayer(p) {
       const u = sat((p.t - 0.14) / 0.12);
       A[0] = lerp(0.8, -1.6, u);
       if (id === "assassin" || id === "fighter") B[0] = A[0];
+      if (id === "enforcer") {
+        // the rifle shouldered and aimed
+        A[0] = B[0] = -1.55;
+        B[1] = 0.6;
+        ch[1] = -0.3;
+        ch[0] = 0;
+        f.headN.r[0] = 0.1;
+        break;
+      }
       ch[0] = lerp(-0.3, 0.65, u);
       f.legR.r[0] = -0.9 * u;
       f.legL.r[0] = 0.6 * u;
@@ -705,6 +745,26 @@ function render() {
           c[2],
           1.5 - i * 0.12,
         );
+      continue;
+    }
+    if (k === "bullet") {
+      // a thin bright streak
+      for (let i = 0; i < 5; i++)
+        R.sprite(
+          pr.x - pr.vx * 0.003 * i,
+          pr.y,
+          pr.z - pr.vz * 0.003 * i,
+          (pr.heavy ? 0.13 : 0.09) * (1 - i / 7),
+          c[0],
+          c[1],
+          c[2],
+          1.6 - i * 0.2,
+        );
+      continue;
+    }
+    if (k === "pellet") {
+      R.sprite(pr.x, pr.y, pr.z, 0.1, 1, 0.8, 0.5, 1.6);
+      R.sprite(pr.x - pr.vx * 0.006, pr.y, pr.z - pr.vz * 0.006, 0.07, c[0], c[1], c[2], 0.9);
       continue;
     }
     if (k === "wave") {

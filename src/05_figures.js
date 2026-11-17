@@ -167,6 +167,51 @@ function makePlayerFig(id) {
       );
     f.rim = [0.18, 0.36, 0.16];
     f.tips = [[f.handL, 0.66]];
+  } else if (id === "enforcer") {
+    // a gunman in a long dark coat and a flat-brimmed hat; no emblem
+    f = makeFigure({
+      body: C_(0x23232a),
+      trim: C_(0x7a1f24),
+      skin: SKIN,
+      limb: C_(0x2a2a31),
+      legc: C_(0x18181d),
+      w: 0.54,
+      d: 0.3,
+    });
+    f.headN.add(part("cyl", C_(0x16161a), 0.52, 0.03, 0.52, 0, 0.15, 0));
+    f.headN.add(part("cyl", C_(0x16161a), 0.3, 0.16, 0.3, 0, 0.24, 0));
+    cape(C_(0x1c1c22), 0.5, 1.05);
+    // coat skirts over the hips, split at the front
+    for (const sx of [-1, 1])
+      f.hips.add(
+        part("box", C_(0x1f1f26), 0.25, 0.62, 0.05, sx * 0.13, -0.3, 0.16),
+      );
+    // a hand's -Y runs along the arm, so a raised arm points the barrel
+    // forward and +Z is up
+    const gun = (h) => {
+      const g = h.add(new Nd());
+      g.add(part("box", C_(0x2b2b30), 0.05, 0.07, 0.13, 0, -0.02, -0.07));
+      const b = g.add(
+        part("box", C_(0x8e939c), 0.05, 0.26, 0.06, 0, -0.14, 0),
+      );
+      b.em = [0.12, 0.03, 0.04];
+      return g;
+    };
+    f.pistols = [gun(f.handR), gun(f.handL)];
+    // shown only while used: the shotgun for the heavy, the rifle to execute
+    f.shotgun = f.handR.add(new Nd());
+    f.shotgun.add(part("box", C_(0x5a3f28), 0.07, 0.36, 0.1, 0, 0.12, -0.03));
+    f.shotgun.add(part("box", C_(0x6d727c), 0.08, 0.62, 0.08, 0, -0.38, 0));
+    f.rifle = f.handR.add(new Nd());
+    f.rifle.add(part("box", C_(0x3b2c22), 0.07, 0.42, 0.12, 0, 0.14, -0.03));
+    f.rifle.add(part("box", C_(0x2b2b30), 0.05, 1.05, 0.05, 0, -0.5, 0));
+    f.rifle.add(part("cyl", C_(0x16161a), 0.06, 0.2, 0.06, 0, -0.12, 0.09));
+    f.shotgun.vis = f.rifle.vis = false;
+    f.rim = [0.4, 0.1, 0.12];
+    f.tips = [
+      [f.handR, 0.3],
+      [f.handL, 0.3],
+    ];
   } else {
     f = makeFigure({
       body: C_(0x1d2733),

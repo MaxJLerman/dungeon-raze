@@ -257,7 +257,8 @@ const WHITE = [1, 0.95, 0.8],
   VIOLET = [0.7, 0.45, 1],
   GREEN = [0.55, 1, 0.45],
   ORANGE = [1, 0.5, 0.18],
-  GOLD = [1, 0.85, 0.45];
+  GOLD = [1, 0.85, 0.45],
+  CRIMSON = [1, 0.28, 0.32];
 
 // ---- classes ----
 const CLASSES = {
@@ -414,6 +415,46 @@ const CLASSES = {
       [
         "Trait",
         "Fastest on foot. Double damage on enemies that have not noticed you",
+      ],
+    ],
+  },
+  // hidden: only in the picker once unlocked at its plaque in the hall
+  enforcer: {
+    name: "Enforcer",
+    tag: "Pistols and shotgun",
+    hidden: true,
+    hp: 100,
+    stam: 105,
+    walk: 5.5,
+    run: 8.4,
+    chain: "e1",
+    heavy: "eshot",
+    dash: "eslide",
+    ambush: 1.5,
+    back: 1,
+    parry: 0.2,
+    blockMul: 1.15,
+    chip: 0.15,
+    guardArc: 1.9,
+    col: CRIMSON,
+    ranged: true,
+    dodge: { dist: 5.0, dur: 0.4, ifr: 0.3, cost: 20 },
+    tool: { id: "sticky", name: "Sticky bomb", max: 3, ch: "◆" },
+    special: { id: "grapple", name: "Grapple", cost: 35 },
+    kit: [
+      ["Attack", "Pistol shots, fired where the camera points"],
+      ["Heavy", "Shotgun: devastating up close, useless at range"],
+      [
+        "Tool",
+        "Sticky bomb: sticks to what it hits and blows after 3 seconds. Mind the blast",
+      ],
+      [
+        "Ability",
+        "Grapple: yank light enemies to you, or pull yourself to heavy ones",
+      ],
+      [
+        "Trait",
+        "Executions are a sniper shot from range and give back a sticky bomb",
       ],
     ],
   },
@@ -762,6 +803,64 @@ const MOVES = {
       heavy: true,
       big: true,
     },
+  },
+  // enforcer
+  e1: {
+    anim: "pistol",
+    wind: 0.08,
+    act: 0.04,
+    rec: 0.18,
+    stam: 6,
+    next: "e2",
+    proj: { speed: 60, dmg: 9, post: 6, kind: "bullet" },
+  },
+  e2: {
+    anim: "pistolL",
+    wind: 0.08,
+    act: 0.04,
+    rec: 0.18,
+    stam: 6,
+    next: "e3",
+    proj: { speed: 60, dmg: 9, post: 6, kind: "bullet" },
+  },
+  e3: {
+    anim: "pistol2",
+    wind: 0.14,
+    act: 0.04,
+    rec: 0.3,
+    stam: 9,
+    next: null,
+    proj: { speed: 60, dmg: 16, post: 14, kind: "bullet", heavy: true },
+  },
+  // a spread of pellets, each fired `spread` radians from the next
+  eshot: {
+    anim: "shotgun",
+    wind: 0.3,
+    act: 0.06,
+    rec: 0.45,
+    stam: 20,
+    next: null,
+    heavy: true,
+    proj: {
+      speed: 40,
+      dmg: 7,
+      post: 7,
+      kind: "pellet",
+      life: 0.25,
+      pellets: 7,
+      spread: 0.09,
+    },
+  },
+  // a proj move with a lunge slides forward while it fires
+  eslide: {
+    anim: "slide",
+    wind: 0.12,
+    act: 0.18,
+    rec: 0.3,
+    stam: 10,
+    next: null,
+    lunge: 4,
+    proj: { speed: 60, dmg: 14, post: 10, kind: "bullet" },
   },
 };
 const EDEF = {
@@ -1887,8 +1986,10 @@ function startExecute(e) {
   p.t = 0;
   p.exT = e;
   p.exDone = false;
-  p.exX = e.x + Math.sin(a) * (e.r + 1.0);
-  p.exZ = e.z + Math.cos(a) * (e.r + 1.0);
+  // the Enforcer steps back and finishes with a sniper shot
+  const back = e.r + (p.clsId === "enforcer" ? 4.5 : 1.0);
+  p.exX = e.x + Math.sin(a) * back;
+  p.exZ = e.z + Math.cos(a) * back;
   p.iframe = 0.9;
   p.buf = null;
   e.dur = Math.max(e.dur, e.t + 1.0);
@@ -2302,7 +2403,13 @@ function playerUpdate(dt) {
         if (t < m.wind) p.aim = aimRanged();
       } else if (p.lock) p.aim = lockYaw;
       if (t < m.wind + m.act * 0.5) p.yaw = dampAng(p.yaw, p.aim, 24, dt);
-      if (m.proj) {
+      if (m.proj && m.lunge && t < m.wind + m.act) {
+        const v = m.lunge / (m.wind + m.act);
+        p.vx = Math.sin(p.yaw) * v;
+        p.vz = Math.cos(p.yaw) * v;
+        mvx = p.vx;
+        mvz = p.vz;
+      } else if (m.proj) {
         p.vx = damp(p.vx, ix * c.walk * 0.55, 12, dt);
         p.vz = damp(p.vz, iz * c.walk * 0.55, 12, dt);
         mvx = p.vx;
@@ -2336,8 +2443,12 @@ function playerUpdate(dt) {
         SFX.whoosh(m.heavy);
         if (m.proj) {
           p.yaw = p.aim;
-          fire(m.proj, p.aim);
+          const n = m.proj.pellets || 1;
+          for (let i = 0; i < n; i++)
+            fire(m.proj, p.aim + (i - (n - 1) / 2) * (m.proj.spread || 0));
           if (m.proj.kind === "arrow") SFX.knife();
+          else if (m.proj.kind === "pellet") SFX.shotgun();
+          else if (m.proj.kind === "bullet") SFX.gun(m.proj.heavy);
           else SFX.shot();
         } else if (m.lance)
           G.arcs.push({
@@ -2499,16 +2610,23 @@ function playerUpdate(dt) {
         G.flashWhite = 0.6;
         p.hp = Math.min(p.maxHp, p.hp + 10);
         p.focus = Math.min(100, p.focus + 12);
+        const sniper = p.clsId === "enforcer";
+        if (sniper) {
+          // a tracer all the way to the target, and a sticky bomb back
+          SFX.gun(true);
+          p.tool = Math.min(c.tool.max, p.tool + 1);
+        }
         G.arcs.push({
           lance: true,
           x: p.x,
-          y: 1.2,
+          y: sniper ? 1.45 : 1.2,
           z: p.z,
           yaw: p.yaw,
-          len: 3.5,
+          len: sniper ? Math.hypot(e.x - p.x, e.z - p.z) : 3.5,
           t: 0,
           dur: 0.3,
-          c: AMBER,
+          c: sniper ? c.col : AMBER,
+          wd: sniper ? 0.1 : undefined,
         });
         sparks(e.x, 1.2 * e.fig.o.sc, e.z, 30, AMBER, 10, 0.6, 0.15);
         if (e.def.boss) {

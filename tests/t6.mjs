@@ -17,6 +17,16 @@ export default [
   { name: "tanker", eval: fight("tanker", 2.4) },
   { name: "mage", eval: fight("mage", 9) },
   { name: "ranger", eval: fight("ranger", 10) },
+  { name: "enforcer", eval: fight("enforcer", 8) },
+  {
+    name: "enforcer shotgun and execution",
+    eval: cls("enforcer", `
+  const e = tp((e) => e.type === 'brute', 3); K('heavy'); let most = 0;
+  DF.sim(0.6, () => { most = Math.max(most, G.projs.filter((q) => q.kind === 'pellet').length); });
+  p.state = 'free'; p.tool = 0; e.state = 'stagger'; e.t = 0; e.dur = 3; DF.startExecute(e); DF.sim(0.2);
+  const back = Math.hypot(p.x - e.x, p.z - e.z); DF.sim(1);
+  return { pass: most === 7 && back > e.r + 3.5 && p.tool === 1, most, back, tool: p.tool }; `),
+  },
   {
     name: "fortress parry",
     eval: cls(

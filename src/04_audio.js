@@ -176,6 +176,15 @@ const SFX = (() => {
       tone(1.2, 495, 495, 0.2, "sine", 0.12);
       tone(1.4, 660, 660, 0.16, "sine", 0.24);
     },
+    gun(big) {
+      noise(big ? 0.22 : 0.12, 2400, 300, big ? 0.7 : 0.45, "bandpass", 0.7);
+      tone(big ? 0.2 : 0.1, big ? 160 : 220, 50, big ? 0.6 : 0.35, "square");
+    },
+    shotgun() {
+      noise(0.35, 1800, 120, 1.0, "lowpass", 0.5);
+      tone(0.3, 120, 35, 0.8, "sine");
+      noise(0.08, 4000, 2000, 0.3, "highpass", 0.7, 0.02);
+    },
     shot() {
       tone(0.25, 520, 180, 0.3, "sawtooth");
       noise(0.2, 800, 2500, 0.2, "bandpass", 2);
