@@ -37,6 +37,9 @@ const PAD = {
   last: null,
   prev: {},
   famSeen: false,
+  // axes of a non-standard pad that have read inside the dead zone, by
+  // "index:axis"
+  axOk: {},
   // left stick: x right, y forward, mag 0..1 past the dead zone
   move: { x: 0, y: 0, mag: 0 },
   // right stick, squared response: x right, y down
@@ -116,10 +119,23 @@ const PAD = {
     if (!b) return false;
     return i === 6 || i === 7 ? b.value > 0.5 : !!b.pressed;
   },
+  // one axis. On a pad that does not report the standard mapping an axis may
+  // rest off-centre (older Firefox puts the triggers on axes at -1), so each
+  // is read as 0 until it has once been seen inside the dead zone.
+  ax(p, i) {
+    const v = p.axes[i] || 0;
+    if (p.mapping === "standard") return v;
+    const k = p.index + ":" + i;
+    if (!PAD.axOk[k]) {
+      if (Math.abs(v) >= 0.2) return 0;
+      PAD.axOk[k] = true;
+    }
+    return v;
+  },
   // the stick, past a radial dead zone of 0.2 and rescaled to 0..1
   stick(p, ax) {
-    const x = p.axes[ax] || 0,
-      y = p.axes[ax + 1] || 0,
+    const x = PAD.ax(p, ax),
+      y = PAD.ax(p, ax + 1),
       len = Math.hypot(x, y);
     return len < 0.2 ? 0 : Math.min(1, (len - 0.2) / 0.8);
   },
@@ -131,8 +147,8 @@ const PAD = {
     for (const p of list) {
       const mag = PAD.stick(p, ax);
       if (mag <= best.mag) continue;
-      const x = p.axes[ax] || 0,
-        y = p.axes[ax + 1] || 0,
+      const x = PAD.ax(p, ax),
+        y = PAD.ax(p, ax + 1),
         len = Math.hypot(x, y);
       best = { x: (x / len) * mag, y: (y / len) * mag, mag };
     }
@@ -151,7 +167,8 @@ const PAD = {
   // rebind flow.
   focusables() {
     const s = document.querySelector(".scr.show");
-    if (!s) return [];
+    // under the rotate overlay nothing can be pressed
+    if (!s || document.body.classList.contains("portrait")) return [];
     return [
       ...s.querySelectorAll(
         'button, .card, input[type="range"], input[type="checkbox"]',
@@ -295,6 +312,9 @@ const PAD = {
     const wasConnected = PAD.connected,
       wasStd = PAD.std;
     PAD.connected = list.length > 0;
+    // a pad that is gone forgets which of its axes were centred
+    for (const k in PAD.axOk)
+      if (!list.some((p) => p.index === +k.split(":")[0])) delete PAD.axOk[k];
     PAD.std = list.every((p) => p.mapping === "standard");
     document.body.classList.toggle("padc", PAD.connected);
     // the Controls menu says so when a pad may be read wrongly
@@ -365,6 +385,7 @@ const PAD = {
       for (const k in keys) if (k.startsWith("P:")) keys[k] = false;
       for (const k in taps) if (k.startsWith("P:")) delete taps[k];
       PAD.sprint = false;
+      PAD.setActive(false);
       if (G.state === "play") show("pause");
     }
     // a pad only takes over the prompts by a press or a real stick push
@@ -400,6 +421,11 @@ const PAD = {
     PAD.look = { x: rv.x * rv.mag, y: rv.y * rv.mag };
     if (!inPlay && !PAD.rebind) PAD.menu(dt, lv, screenChanged);
     else if (PAD.focus) PAD.setFocus(null);
+    // the sound button has no pad meaning of its own, so a pad press is taken here
+    if (inPlay && PAD_BIND.mute && taps[PAD_BIND.mute]) {
+      delete taps[PAD_BIND.mute];
+      SFX.toggle();
+    }
     // the latch reads the tap without consuming it
     if (inPlay && PAD_BIND.sprint && taps[PAD_BIND.sprint]) PAD.sprint = !PAD.sprint;
     if (PAD.move.mag === 0 || !inPlay || (p && p.stam <= 0)) PAD.sprint = false;
@@ -435,7 +461,8 @@ const PAD = {
     addEventListener(
       "pointerdown",
       (e) => {
-        if (e.pointerType === "touch") off();
+        // while a pad hides the buttons, a touch is only a camera drag
+        if (e.pointerType === "touch" && !document.body.classList.contains("padhide")) off();
       },
       true,
     );

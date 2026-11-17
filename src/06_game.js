@@ -117,7 +117,8 @@ const DEFAULT_PAD = {
   mute: null,
 };
 const PAD_BIND = Object.assign({}, DEFAULT_PAD);
-// P:9 pauses and the D-pad moves menu focus, so those are not bindable
+// P:9 pauses and is not bindable. The D-pad is bindable in play, and moves
+// menu focus on a menu.
 const PAD_CODES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 17].map(
   (i) => "P:" + i,
 );

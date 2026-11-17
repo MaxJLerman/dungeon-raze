@@ -249,8 +249,15 @@ is what you need to change the code without breaking it.
   defaults. It is saved under `p` in `dungeon-raze.v2`. A saved code that
   is not in `PAD_CODES` falls back to the default. `PAD_CODES` is every
   bindable code: 0 to 8, 10 to 15 and 17. `P:9` (Menu or Options) pauses in
-  play and resumes from pause. The D-pad moves menu focus. Those are
-  fixed. `setPadBind` swaps with the action that held the code.
+  play and resumes from pause, and is fixed. The D-pad is bindable in play and
+  moves menu focus on a menu. `mute` is bindable too: `poll` consumes its
+  tap in play and calls `SFX.toggle`. `setPadBind` swaps with the action that
+  held the code.
+- Axes. A pad whose `mapping` is not `"standard"` may rest an axis off-centre
+  (older Firefox puts the triggers on axes at -1). `PAD.ax(p, i)` reads such an
+  axis as 0 until it has once been inside the dead zone (`PAD.axOk`, by pad
+  index and axis, forgotten when the pad is gone). Standard pads are read at
+  once. Every stick read goes through `PAD.ax`.
 - Sticks. `PAD.vec` takes, from whichever pad pushes a stick furthest, a
   direction scaled by its magnitude past a radial dead zone of 0.2, so an idle
   second pad (Steam adds a duplicate) cannot cancel the other. `PAD.move` is the
@@ -269,7 +276,10 @@ is what you need to change the code without breaking it.
   input, because `playerUpdate` captures `wasSprint` before it clears
   `p.sprint`. Before this branch that dash was unreachable.
 - Mode. `PAD.active` is set by a button press or a stick pushed past 0.5, not
-  by drift. A key, a mouse move or a touch clears it (`PAD.init`). It
+  by drift. A key, a mouse move or a touch clears it (`PAD.init`), except that
+  a touch is ignored while `body.padhide` is set, since it is then only a
+  camera drag and the buttons it would name are hidden. Unplugging the last
+  pad clears it too. It
   toggles `body.pad`, which shows `.padonly` and `.lk-pad` text and hides
   `.kbonly` and `.touchonly`. `body.padc` means a pad is listed at all.
   `body.ps` or `body.xb` is the button family. `PAD.fam` comes from
@@ -297,7 +307,11 @@ is what you need to change the code without breaking it.
 - Starting play. `play()` calls `PAD.enterPlay` only when touch mode is off and
   a pad is the active input. It asks for fullscreen and catches a refusal,
   since a pad has no pointer to lock. Under touch, `TOUCH.enterPlay` runs
-  instead. A pad press also calls `SFX.init`.
+  instead. A pad press, a key press in play and a click on the canvas also
+  call `SFX.init`, so audio is retried until it runs. `play()` does nothing
+  while touch is on and the device is upright (`innerHeight > innerWidth`),
+  because the rotate overlay covers the page, and `PAD.focusables` is empty
+  under `body.portrait`, so no pad button can resume play there.
 - Pausing. `P:9` pauses a pad player. So does unplugging the pad during play,
   which also clears every held `P:` key and the latch. On a desktop, play also
   pauses when pointer lock is lost and when fullscreen that the page entered
@@ -308,8 +322,8 @@ is what you need to change the code without breaking it.
   because no button shows them. `classify` stops treating those areas as
   controls so a finger there turns the camera. The buttons come back when the
   pad is unplugged, when `OPT.padHideTouch` (on by default) is turned off or
-  when touch mode ends. `PAD.active` plays no part, so a touch alone does not
-  bring them back.
+  when touch mode ends. A touch alone does not bring them back. The hint line
+  (`#hint`) shows under touch only while `body.padhide` is set.
 - Rumble. `PAD.rumble(kind)` plays a `dual-rumble` effect from `PAD_RUMBLE` on
   the pad last pressed, only while a pad is the active input and `OPT.rumble`
   is on. `hurtPlayer` plays hurt, parry and guard break, `hitEnemy` plays

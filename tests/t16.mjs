@@ -765,6 +765,58 @@ export default [
   }
   e.x += 1000; p.hp = p.maxHp; p.state = "free"; DF.show("title"); reset();
   return { pass: Object.values(c).every((v) => v === true), c };`),
+  step("unplugging hands the prompts back", `
+  stage(); pads(mk({ b: { 0: 1 } })); tick(); pads(mk()); tick(2);
+  const c = { was: DF.PAD.active === true };
+  pads(); tick(1);
+  c.off = DF.PAD.active === false && !document.body.classList.contains("pad");
+  return { pass: Object.values(c).every(Boolean), c };`),
+  step("the sound button works from a pad once bound", `
+  stage(); let n = 0; const orig = DF.SFX.toggle; DF.SFX.toggle = () => { n++; };
+  const c = {};
+  try {
+    pads(mk({ b: { 8: 1 } })); tick(2); pads(mk()); tick(2);
+    c.unbound = n === 0;
+    DF.PAD_BIND.mute = "P:8";
+    pads(mk({ b: { 8: 1 } })); tick(2); c.tapGone = taps["P:8"] !== true; pads(mk()); tick(2);
+    c.once = n === 1;
+    pads(mk({ b: { 8: 1 } })); tick(2); pads(mk()); tick(2);
+    c.twice = n === 2;
+  } finally { DF.SFX.toggle = orig; }
+  DF.show("title"); reset();
+  return { pass: Object.values(c).every(Boolean), c, n };`),
+  step("a non-standard pad with an axis at rest off-centre is ignored until it centres", `
+  const p = stage(); const pitch = cam.pitch;
+  const odd = (ax) => mk({ mapping: "", id: "Wireless Controller (Vendor: 054c Product: 0ce6)", axes: ax });
+  pads(odd([0, 0, 0, -1])); tick(30);
+  const c = { still: cam.pitch === pitch, inactive: DF.PAD.active === false, noLook: DF.PAD.look.y === 0 && DF.PAD.look.x === 0 };
+  pads(odd([0, 0, 0, 0])); tick(1);
+  pads(odd([0, 0, 0, 1])); tick(10);
+  c.moves = cam.pitch > pitch && DF.PAD.active === true;
+  // an unplugged pad forgets what it has read
+  pads(); tick(2); DF.show("play"); cam.pitch = pitch;
+  pads(odd([0, 0, 0, -1])); tick(10);
+  c.forgot = cam.pitch === pitch;
+  // a standard pad is read at once
+  DF.show("play"); cam.pitch = pitch; pads(mk({ axes: [0, 0, 0, 1] })); tick(10);
+  c.standard = cam.pitch > pitch;
+  pads(); tick(2); DF.show("title"); reset();
+  return { pass: Object.values(c).every(Boolean), c };`),
+  step("a key press or a click in play retries audio", `
+  stage(); let n = 0; const orig = DF.SFX.init; DF.SFX.init = () => { n++; };
+  const c = {};
+  try {
+    window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyW", key: "w" }));
+    window.dispatchEvent(new KeyboardEvent("keyup", { code: "KeyW", key: "w" }));
+    c.key = n >= 1;
+    n = 0;
+    document.querySelector("canvas").dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true, cancelable: true }));
+    window.dispatchEvent(new MouseEvent("mouseup", { button: 0 }));
+    c.click = n >= 1;
+  } finally { DF.SFX.init = orig; }
+  for (const k in taps) taps[k] = false;
+  DF.show("title"); reset();
+  return { pass: Object.values(c).every(Boolean), c, n };`),
   step("pad fight shot", `
   const PS = "DualSense Wireless Controller (STANDARD GAMEPAD Vendor: 054c Product: 0ce6)";
   const p = stage(), e = G.enemies.find((q) => q.type === "husk") || G.enemies[0];

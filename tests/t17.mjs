@@ -122,6 +122,44 @@ export default [
     const c = { before: !none.binds, binds: shown("#binds"), noKeyButtons: acts.length === 0, padRows: binds.querySelectorAll("[data-pact]").length > 0 };
     reset(); DF.show("title");
     return { pass: Object.values(c).every((v) => v === true), c, n: acts.length };`),
+  step("a pad cannot resume play behind the rotate overlay", `
+    if (document.fullscreenElement) { try { await document.exitFullscreen(); } catch (e) {} await new Promise((r) => setTimeout(r, 150)); }
+    play(); pads(mk()); tick(); await draw();
+    const W = innerWidth, H = innerHeight;
+    const press = (b) => { let s = null; pads(mk({ b: { [b]: 1 } })); DF.sim(1 / 60, () => { DF.PAD.poll(1 / 60); s = G.state; }); pads(mk()); tick(2); return s; };
+    press(9); await draw();
+    const c = { paused: G.state === "pause", focus: !!DF.PAD.focus };
+    try { await __viewport(H, W); } catch (e) { return { pass: false, c, e: String(e) }; } await draw(); await draw(); TOUCH.checkPortrait();
+    c.portrait = document.body.classList.contains("portrait");
+    c.noFocusables = DF.PAD.focusables().length === 0;
+    c.menu = press(9) === "pause";
+    c.back = press(1) === "pause";
+    c.a = press(0) === "pause";
+    if (document.fullscreenElement) { try { await document.exitFullscreen(); } catch (e) {} await new Promise((r) => setTimeout(r, 300)); }
+    try { await __viewport(W, H); } catch (e) { c.restore = String(e); } await draw(); await draw(); TOUCH.checkPortrait();
+    c.landscape = !document.body.classList.contains("portrait");
+    DF.show("title"); reset();
+    return { pass: Object.values(c).every((v) => v === true), c };`),
+  step("a touch keeps the pad prompts while the buttons are hidden", `
+    play(); pads(mk()); tick(2); pads(mk({ b: { 0: 1 } })); tick(); pads(mk()); tick(2); await draw(); await draw();
+    const c = { active: DF.PAD.active === true, padhide: document.body.classList.contains("padhide"), hint: shown("#hint") };
+    const a = btn("light");
+    await __touch("touchStart", [{ id: 1, x: a.x, y: a.y }]);
+    await draw();
+    c.stillActive = DF.PAD.active === true && document.body.classList.contains("pad");
+    await __touch("touchEnd", [{ id: 1, x: a.x, y: a.y }]);
+    await draw();
+    // the buttons showing: the hint line stays out of their way, and a touch hands the prompts to touch
+    DF.OPT.padHideTouch = false; await draw(); await draw();
+    c.visible = !document.body.classList.contains("padhide") && shown("#touch .btns");
+    c.noHint = !shown("#hint");
+    await __touch("touchStart", [{ id: 1, x: a.x, y: a.y }]);
+    await draw();
+    c.handedBack = DF.PAD.active === false;
+    await __touch("touchEnd", [{ id: 1, x: a.x, y: a.y }]);
+    await draw();
+    DF.OPT.padHideTouch = true; reset(); DF.show("title");
+    return { pass: Object.values(c).every((v) => v === true), c };`),
   step("pad touch fight shot", `
     play(); const p = G.player, n = G.world.nodes.find((q) => q.kind === "room");
     const e = G.enemies.find((q) => q.type === "husk") || G.enemies[0];

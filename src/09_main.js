@@ -69,6 +69,9 @@ function lockPointer() {
   }
 }
 function play() {
+  // upright on a touch device the rotate overlay covers the page, and play
+  // waits for the device to be turned
+  if (TOUCH.on && innerHeight > innerWidth) return;
   SFX.init();
   show("play");
   TOUCH.release();
@@ -395,6 +398,10 @@ function boot() {
   );
   addEventListener("keydown", (e) => {
     if (G.state === "play") {
+      // a key press may be what lets the browser start audio
+      try {
+        SFX.init();
+      } catch (err) {}
       if (!e.repeat) taps[e.code] = true;
       keys[e.code] = true;
       if (!e.ctrlKey && !e.metaKey && !/^F\d+$/.test(e.code))
@@ -431,6 +438,9 @@ function boot() {
   canvas.addEventListener("mousedown", (e) => {
     if (G.state !== "play") return;
     e.preventDefault();
+    try {
+      SFX.init();
+    } catch (err) {}
     if (document.pointerLockElement !== canvas && !G.noLock) lockPointer();
     taps["Mouse" + e.button] = true;
     keys["Mouse" + e.button] = true;
