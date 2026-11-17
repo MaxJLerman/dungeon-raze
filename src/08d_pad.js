@@ -13,6 +13,14 @@ const PAD = {
   fam: "xbox",
   prev: {},
   famSeen: false,
+  // left stick: x right, y forward, mag 0..1 past the dead zone
+  move: { x: 0, y: 0, mag: 0 },
+  // right stick, squared response: x right, y down
+  look: { x: 0, y: 0 },
+  // the sprint latch: a tap of the sprint button turns it on or off
+  sprint: false,
+  // the lock flick fires once per push, and the stick must rest in between
+  flickArm: true,
   pads() {
     try {
       const l = navigator.getGamepads ? navigator.getGamepads() : null;
@@ -36,6 +44,21 @@ const PAD = {
       y = p.axes[ax + 1] || 0,
       len = Math.hypot(x, y);
     return len < 0.2 ? 0 : Math.min(1, (len - 0.2) / 0.8);
+  },
+  // the stick (ax is its x axis) of whichever pad pushes it furthest, as a
+  // direction scaled by its dead-zone magnitude, so an idle pad cannot cancel
+  // another's push. y is the raw axis, positive for down.
+  vec(list, ax) {
+    let best = { x: 0, y: 0, mag: 0 };
+    for (const p of list) {
+      const mag = PAD.stick(p, ax);
+      if (mag <= best.mag) continue;
+      const x = p.axes[ax] || 0,
+        y = p.axes[ax + 1] || 0,
+        len = Math.hypot(x, y);
+      best = { x: (x / len) * mag, y: (y / len) * mag, mag };
+    }
+    return best;
   },
   // "Xbox Wireless Controller" also contains "wireless controller", so a
   // bare match on that is taken for PlayStation only when it names no Xbox
@@ -76,6 +99,31 @@ const PAD = {
       PAD.famSeen = true;
       PAD.setActive(true);
     } else if (!PAD.famSeen && list.length) PAD.fam = PAD.famOf(list[0]);
+    // sticks
+    const lv = PAD.vec(list, 0),
+      rv = PAD.vec(list, 2),
+      play = G.state === "play",
+      p = G.player;
+    PAD.move = { x: lv.x, y: -lv.y, mag: lv.mag };
+    PAD.look = { x: rv.x * rv.mag, y: rv.y * rv.mag };
+    // the latch reads the tap without consuming it
+    if (play && PAD_BIND.sprint && taps[PAD_BIND.sprint]) PAD.sprint = !PAD.sprint;
+    if (PAD.move.mag === 0 || !play || (p && p.stam <= 0)) PAD.sprint = false;
+    if (play && !(p && p.lock)) {
+      const sn = OPT.psens * dt;
+      cam.yaw -= PAD.look.x * 3.0 * sn;
+      cam.pitch = clamp(
+        cam.pitch + PAD.look.y * 1.8 * sn * (OPT.invY ? -1 : 1),
+        -0.3,
+        1.15,
+      );
+    }
+    // a flick of the right stick while locked switches target
+    if (rv.mag === 0) PAD.flickArm = true;
+    else if (play && p && p.lock && PAD.flickArm && Math.abs(rv.x) > 0.7) {
+      PAD.flickArm = false;
+      mouse.wheel = Math.sign(rv.x);
+    }
   },
   init() {
     // the last input decides: a key, a mouse or a touch hands back to them

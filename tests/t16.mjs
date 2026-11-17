@@ -99,7 +99,7 @@ export default [
   return { pass: held && gone, held, gone };`),
   step("an idle drifting pad changes nothing", `
   const p = stage(); const yaw0 = cam.yaw, py = p.yaw, x0 = p.x, z0 = p.z;
-  pads(mk({ axes: [0.15, -0.12, 0.18, 0.1] }));
+  pads(mk({ axes: [0.15, -0.12, 0.14, 0.1] }));
   DF.keys[DF.BIND.fwd] = true;
   tick(60);
   DF.keys[DF.BIND.fwd] = false;
@@ -142,4 +142,77 @@ export default [
   const b = keys["P:5"] === true;
   pads(); tick();
   return { pass: a && b && padc && !document.body.classList.contains("padc") && keys["P:5"] === false, a, b, padc };`),
+  step("dead zone and walk speed", `
+  const p = stage();
+  pads(mk({ axes: [0, -0.15, 0, 0] })); tick(); const z = DF.PAD.move.mag;
+  pads(mk({ axes: [0, -0.6, 0, 0] })); tick(); const m = DF.PAD.move.mag;
+  const dist = (ax) => { const q = stage(); pads(mk({ axes: [0, ax, 0, 0] })); const x0 = q.x, z0 = q.z; tick(60); const d = Math.hypot(q.x - x0, q.z - z0); pads(); tick(); return d; };
+  const half = dist(-0.6), full = dist(-1.0), ratio = half / full;
+  return { pass: z === 0 && Math.abs(m - 0.5) <= 0.01 && ratio > 0.4 && ratio < 0.6, z, m, half, full, ratio };`),
+  step("right stick turns the camera", `
+  const p = stage(); const r = {};
+  pads(mk({ axes: [0, 0, 1, 0] })); const y0 = cam.yaw; tick(60); r.dyaw = cam.yaw - y0;
+  DF.OPT.psens = 2; stage(); pads(mk({ axes: [0, 0, 1, 0] })); const y1 = cam.yaw; tick(60); r.dyaw2 = cam.yaw - y1;
+  DF.OPT.psens = 1;
+  stage(); cam.pitch = 0.3; pads(mk({ axes: [0, 0, 0, 1] })); tick(10); r.up = cam.pitch;
+  DF.OPT.invY = true; stage(); cam.pitch = 0.3; tick(10); r.inv = cam.pitch; DF.OPT.invY = false;
+  stage(); cam.pitch = 0.3; pads(mk({ axes: [0, 0, 0, -1] })); tick(120); r.low = cam.pitch;
+  pads(mk({ axes: [0, 0, 0, 1] })); tick(240); r.high = cam.pitch;
+  pads(); tick();
+  const c = { yaw: Math.abs(r.dyaw + 3.0) <= 0.1, sens: Math.abs(r.dyaw2 - 2 * r.dyaw) <= 0.1, up: r.up > 0.3, inv: r.inv < 0.3, low: r.low >= -0.3 - 1e-9, high: r.high <= 1.15 + 1e-9 && r.high > 1.1 };
+  return { pass: Object.values(c).every(Boolean), c, r };`),
+  step("sprint latch", `
+  const p = stage(); pads(mk({ axes: [0, -1, 0, 0] })); tick(5);
+  const tapBtn = () => { pads(mk({ axes: [0, -1, 0, 0], b: { 10: 1 } })); tick(1); pads(mk({ axes: [0, -1, 0, 0] })); };
+  const r = {};
+  tapBtn(); tick(30); r.on = p.sprint === true && DF.PAD.sprint === true;
+  pads(mk()); tick(); r.centre = DF.PAD.sprint === false;
+  pads(mk({ axes: [0, -1, 0, 0] })); tick(5); tapBtn(); tick(30); r.again = DF.PAD.sprint === true;
+  tapBtn(); tick(3); r.off = DF.PAD.sprint === false && p.sprint === false;
+  tapBtn(); tick(5); r.back = DF.PAD.sprint === true; p.stam = 0; tick(); r.stam = DF.PAD.sprint === false;
+  pads(); tick(120);
+  return { pass: Object.values(r).every(Boolean), r };`),
+  step("a half push walks while latched", `
+  const p = stage(); pads(mk({ axes: [0, -1, 0, 0] })); tick(3);
+  pads(mk({ axes: [0, -1, 0, 0], b: { 10: 1 } })); tick(1); pads(mk({ axes: [0, -1, 0, 0] })); tick(5);
+  const on = DF.PAD.sprint === true;
+  pads(mk({ axes: [0, -0.5, 0, 0] })); tick(10);
+  return { pass: on && p.sprint === false && DF.PAD.sprint === true, on, sprint: p.sprint, latch: DF.PAD.sprint, mag: DF.PAD.move.mag };`),
+  step("dash attack from the latch", `
+  const p = stage(); p.stam = 100; pads(mk({ axes: [0, -1, 0, 0] })); tick(3);
+  pads(mk({ axes: [0, -1, 0, 0], b: { 10: 1 } })); tick(1); pads(mk({ axes: [0, -1, 0, 0] })); tick(40);
+  pads(mk({ axes: [0, -1, 0, 0], b: { 5: 1 } })); tick(2);
+  const want = DF.CLASSES[DF.OPT.cls].dash;
+  return { pass: p.move === want, move: p.move, want };`),
+  step("flick switches lock target", `
+  const p = stage();
+  const [a, b] = G.enemies; a.x = p.x - 2; a.z = p.z + 6; b.x = p.x + 2; b.z = p.z + 6; a.dead = b.dead = false;
+  pads(mk({ b: { 11: 1 } })); tick(1); pads(); tick(1);
+  const first = p.lock;
+  // count lock changes tick by tick
+  let changes = 0, wheel = 0, last = p.lock;
+  pads(mk({ axes: [0, 0, 0.9, 0] }));
+  for (let i = 0; i < 10; i++) { DF.sim(1 / 60, () => { DF.PAD.poll(1 / 60); if (DF.mouse.wheel) wheel++; }); if (p.lock !== last) { changes++; last = p.lock; } }
+  const afterFirst = p.lock;
+  pads(); tick(3);
+  let changes2 = 0, wheel2 = 0;
+  pads(mk({ axes: [0, 0, -0.9, 0] }));
+  for (let i = 0; i < 10; i++) { DF.sim(1 / 60, () => { DF.PAD.poll(1 / 60); if (DF.mouse.wheel) wheel2++; }); if (p.lock !== last) { changes2++; last = p.lock; } }
+  const c = { hadFirst: !!first, changes: changes === 1, wheel: wheel === 1, moved: afterFirst !== first && !!afterFirst, changes2: changes2 === 1, wheel2: wheel2 === 1, back: p.lock === first };
+  return { pass: Object.values(c).every(Boolean), c, changes, wheel, changes2, wheel2 };`),
+  step("an idle second pad does not cancel movement", `
+  stage(); pads(mk({ index: 0 }), mk({ index: 1, axes: [0, -1, 0, 0] })); tick(2);
+  const a = DF.PAD.move.mag;
+  pads(mk({ index: 0, axes: [0, -1, 0, 0] }), mk({ index: 1 })); tick(2);
+  const b = DF.PAD.move.mag;
+  pads(mk({ index: 0 }), mk({ index: 1, axes: [0, 0, 1, 0] })); const y0 = cam.yaw; tick(10);
+  const turned = cam.yaw < y0 - 0.3;
+  return { pass: Math.abs(a - 1) < 0.01 && Math.abs(b - 1) < 0.01 && turned, a, b, turned };`),
+  step("touch stick wins", `
+  // right of the camera at yaw 0 is -X
+  const p = stage(); const x0 = p.x, z0 = p.z;
+  pads(mk({ axes: [0, -1, 0, 0] })); DF.TOUCH.move = { x: 1, y: 0, mag: 1 };
+  tick(30); DF.TOUCH.move = { x: 0, y: 0, mag: 0 };
+  const dx = p.x - x0, dz = p.z - z0;
+  return { pass: dx < -1 && Math.abs(dz) < Math.abs(dx) * 0.3, dx, dz };`),
 ];

@@ -458,6 +458,7 @@ function boot() {
     Object.assign(BIND, DEFAULT_BINDS);
     OPT.sens = 1;
     OPT.invY = false;
+    OPT.psens = 1;
     OPT.tsize = 1;
     OPT.topac = 0.6;
     OPT.tnotch = true;

@@ -127,6 +127,7 @@ const OPT = {
   cls: "assassin",
   sens: 1,
   invY: false,
+  psens: 1,
   tsize: 1,
   topac: 0.6,
   tnotch: true,
@@ -202,6 +203,7 @@ function loadOpt() {
       if (d.o.sens > 0.1 && d.o.sens < 5) OPT.sens = d.o.sens;
       OPT.invY = !!d.o.invY;
       const num = (v, lo, hi) => typeof v === "number" && v >= lo && v <= hi;
+      if (num(d.o.psens, 0.2, 3)) OPT.psens = d.o.psens;
       if (num(d.o.tsize, 0.8, 1.2)) OPT.tsize = d.o.tsize;
       if (num(d.o.topac, 0.2, 1)) OPT.topac = d.o.topac;
       if (typeof d.o.tnotch === "boolean") OPT.tnotch = d.o.tnotch;
@@ -2109,6 +2111,10 @@ function playerUpdate(dt) {
     f = TOUCH.move.y;
     s = TOUCH.move.x;
     im = TOUCH.move.mag;
+  } else if (PAD.move.mag > 0) {
+    f = PAD.move.y;
+    s = PAD.move.x;
+    im = PAD.move.mag;
   }
   const fx = Math.sin(cam.yaw),
     fz = Math.cos(cam.yaw);
@@ -2153,6 +2159,9 @@ function playerUpdate(dt) {
   }
   const lockYaw = p.lock ? Math.atan2(p.lock.x - p.x, p.lock.z - p.z) : null;
   const inYaw = () => (il > 0 ? Math.atan2(ix, iz) : p.yaw);
+  // p.sprint is cleared each update before a buffered attack is read, so a
+  // running start is judged from the update before
+  const wasSprint = p.sprint;
   const doAct = (a) => {
     if (a === "light") {
       const e = nearestStaggered();
@@ -2161,7 +2170,7 @@ function playerUpdate(dt) {
         return true;
       }
       return startMove(
-        p.sprint && p.speed > c.run * 0.8 ? c.dash : c.chain,
+        wasSprint && p.speed > c.run * 0.8 ? c.dash : c.chain,
         inYaw(),
       );
     }
@@ -2203,7 +2212,10 @@ function playerUpdate(dt) {
         break;
       }
       if (p.buf && doAct(p.buf)) break;
-      p.sprint = held("sprint") && il > 0 && p.stam > 0;
+      // a pad stick sprints from the latch, and only at a hard push
+      const padMove = TOUCH.move.mag === 0 && PAD.move.mag > 0,
+        run = padMove ? PAD.sprint && PAD.move.mag >= 0.6 : held("sprint");
+      p.sprint = run && il > 0 && p.stam > 0;
       const sp = p.sprint ? c.run : (p.lock ? c.walk * 0.88 : c.walk) * im;
       p.vx = damp(p.vx, ix * sp, 14, dt);
       p.vz = damp(p.vz, iz * sp, 14, dt);
