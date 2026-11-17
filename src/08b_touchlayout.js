@@ -10,10 +10,10 @@ const TOUCH_BTNS = [
   ["dodge", "mid"],
   ["guard", "mid"],
   ["heavy", "mid"],
-  ["lock", "mid"],
+  ["special", "mid"],
+  ["lock", "lock"],
   ["heal", "small"],
   ["tool", "small"],
-  ["special", "small"],
 ];
 
 // A flat-topped hexagon with centre x, y and corner-to-corner width d
@@ -97,8 +97,11 @@ function layoutAt(W, H, ins, scale) {
   const s = Math.min(W, H);
   // size scales the clamped value; its floor applies after
   const sz = (k, lo, hi, floor) => Math.max(floor, clamp(s * k, lo, hi) * scale);
-  const P = sz(0.2, 66, 104, 66),
-    u = sz(0.135, 56, 74, 56),
+  // attack is about 30% over its old size, the mid buttons 12% over lock's,
+  // and on the smallest screens both fall back to the floors
+  const P = sz(0.26, 66, 135, 66),
+    u = sz(0.17, 56, clamp(s * 0.135, 56, 74) * 1.12, 56),
+    k = sz(0.135, 56, 74, 56),
     S = sz(0.1, 54, 56, 54),
     g = clamp(s * 0.022, 6, 14),
     m = clamp(s * 0.04, 12, 32),
@@ -109,15 +112,21 @@ function layoutAt(W, H, ins, scale) {
     D = u * 0.866 + g,
     s3 = Math.sqrt(3),
     s7 = Math.sqrt(7);
+  const top = m + ins.t,
+    mapPref = clamp(k * 1.5, 70, 130);
+  // lock sits in the column left of ability, as high as it can go below the
+  // map at its preferred size, between half a cell and a cell and a half
+  // above ability
+  const lockUp = clamp(ay - (top + mapPref + g + k * 0.433), 2.5 * D, 3.5 * D);
   const spots = {
     light: [0, 0],
     dodge: [s3 * D, 180],
     guard: [2 * D, 150],
     heavy: [s3 * D, 120],
-    lock: [2 * D, 90],
+    special: [2 * D, 90],
+    lock: [Math.hypot(0.866 * D, lockUp), (Math.atan2(lockUp, -0.866 * D) * 180) / Math.PI],
     heal: [s7 * D, 169.1],
     tool: [s7 * D, 130.9],
-    special: [s7 * D, 109.1],
   };
   const btns = TOUCH_BTNS.map(([act, cls]) => {
     const [r, deg] = spots[act],
@@ -126,13 +135,12 @@ function layoutAt(W, H, ins, scale) {
       act,
       x: ax + r * Math.cos(a),
       y: ay - r * Math.sin(a),
-      d: cls === "atk" ? P : cls === "mid" ? u : S,
+      d: cls === "atk" ? P : cls === "mid" ? u : cls === "lock" ? k : S,
     };
   });
-  const top = m + ins.t,
-    clusterTop = Math.min(...btns.map((b) => b.y - b.d * 0.433));
+  const clusterTop = Math.min(...btns.map((b) => b.y - b.d * 0.433));
   const vitals = { x: m + ins.l, y: top, w: clamp(W * 0.26, 150, 300), h: VITALS_H };
-  const ms = Math.min(clamp(u * 1.5, 70, 130), clusterTop - top - g);
+  const ms = Math.min(mapPref, clusterTop - top - g);
   const map = { x: W - m - ins.r - ms, y: top, w: ms, h: ms };
   const ps = S * 0.866;
   const pause = { x: map.x - g - ps, y: top, w: ps, h: ps };
@@ -144,7 +152,7 @@ function layoutAt(W, H, ins, scale) {
     y0 = Math.max(vitals.y + vitals.h, boss.y + boss.h) + g;
   const move = { x0, y0, x1: W * 0.42, y1: H - ins.b };
   const rest = { x: x0 + ring + 4, y: move.y1 - m - ring };
-  return { W, H, scale, ins, P, u, S, g, m, R, ring, btns, move, rest, vitals, map, pause, boss };
+  return { W, H, scale, ins, P, u, k, S, g, m, R, ring, btns, move, rest, vitals, map, pause, boss };
 }
 
 // the largest size at or below o.size, down to 0.8, that passes
