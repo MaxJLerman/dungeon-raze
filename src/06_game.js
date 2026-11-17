@@ -78,12 +78,13 @@ const DEFAULT_BINDS = {
   light: "Mouse0",
   heavy: "KeyF",
   guard: "Mouse2",
-  dodge: "Space",
+  dodge: "KeyB",
   lock: "KeyQ",
   special: "KeyV",
   tool: "KeyR",
   heal: "KeyE",
   mute: "KeyM",
+  interact: "Space",
 };
 const ACTIONS = [
   ["fwd", "Move forward"],
@@ -95,6 +96,7 @@ const ACTIONS = [
   ["heavy", "Heavy attack"],
   ["guard", "Guard and parry"],
   ["dodge", "Dodge"],
+  ["interact", "Interact"],
   ["lock", "Lock on"],
   ["special", "Class ability"],
   ["tool", "Class tool"],
@@ -115,6 +117,7 @@ const DEFAULT_PAD = {
   heal: "P:2",
   tool: "P:3",
   mute: null,
+  interact: "P:0",
 };
 const PAD_BIND = Object.assign({}, DEFAULT_PAD);
 // P:9 pauses and is not bindable. The D-pad is bindable in play, and moves
@@ -207,6 +210,10 @@ function loadOpt() {
     if (!d) return;
     for (const k in DEFAULT_BINDS)
       if (d.b && typeof d.b[k] === "string") BIND[k] = d.b[k];
+    // dodge used to default to Space, which Interact now has: an old save
+    // moves it to B unless something else already holds B
+    if (d.b && d.b.dodge === "Space" && !Object.values(d.b).includes("KeyB"))
+      BIND.dodge = "KeyB";
     // a pad code that is not bindable, or no longer exists, is the default
     if (d.p && typeof d.p === "object")
       for (const k in DEFAULT_PAD)

@@ -41,7 +41,7 @@ const step = (name, body, shot) => ({
 });
 const EXPECT = {
   light: "P:5", heavy: "P:7", guard: "P:4", special: "P:6", dodge: "P:1",
-  sprint: "P:10", lock: "P:11", heal: "P:2", tool: "P:3", mute: null,
+  sprint: "P:10", lock: "P:11", heal: "P:2", tool: "P:3", mute: null, interact: "P:0",
 };
 export default [
   step("default bindings", `
@@ -494,7 +494,7 @@ export default [
   reset(); DF.show("controls"); pads(mk()); tick(2);
   const btn = (a) => document.querySelector('#binds [data-pact="' + a + '"]');
   const rows = DF.G && [...document.querySelectorAll("#binds .bind")];
-  const c = { rows: rows.length === 14 && rows.every((r) => r.querySelector("[data-pact]") && r.querySelector("[data-act]")) };
+  const c = { rows: rows.length === 15 && rows.every((r) => r.querySelector("[data-pact]") && r.querySelector("[data-act]")) };
   c.light = btn("light").textContent === "RB";
   c.mute = btn("mute").textContent === "Unbound";
   c.moves = ["fwd", "back", "left", "right"].every((a) => btn(a).disabled && btn(a).textContent === "Left stick");

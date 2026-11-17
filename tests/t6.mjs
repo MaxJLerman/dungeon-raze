@@ -33,7 +33,7 @@ export default [
   },
   {
     name: "rebind",
-    eval: `(() => { const b0 = Object.assign({}, DF.BIND); DF.setBind('dodge', 'KeyF'); const r = { dodge: DF.BIND.dodge, heavy: DF.BIND.heavy }; DF.setBind('dodge', 'Space'); return { r, restored: DF.BIND.dodge === b0.dodge && DF.BIND.heavy === b0.heavy, saved: !!localStorage.getItem('dungeon-raze.v2') }; })()`,
+    eval: `(() => { const b0 = Object.assign({}, DF.BIND); DF.setBind('dodge', 'KeyF'); const r = { dodge: DF.BIND.dodge, heavy: DF.BIND.heavy }; DF.setBind('dodge', 'KeyB'); return { r, restored: DF.BIND.dodge === b0.dodge && DF.BIND.heavy === b0.heavy, saved: !!localStorage.getItem('dungeon-raze.v2') }; })()`,
   },
   {
     name: "bot soak all classes",
