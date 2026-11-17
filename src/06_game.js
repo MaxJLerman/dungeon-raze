@@ -102,6 +102,25 @@ const ACTIONS = [
   ["mute", "Sound on or off"],
 ];
 const BIND = Object.assign({}, DEFAULT_BINDS);
+// controller buttons, as "P:" and the standard-mapping index. Movement has no
+// entry: it is the left stick. null is unbound.
+const DEFAULT_PAD = {
+  light: "P:5",
+  heavy: "P:7",
+  guard: "P:4",
+  special: "P:6",
+  dodge: "P:1",
+  sprint: "P:10",
+  lock: "P:11",
+  heal: "P:2",
+  tool: "P:3",
+  mute: null,
+};
+const PAD_BIND = Object.assign({}, DEFAULT_PAD);
+// P:9 pauses and the D-pad moves menu focus, so those are not bindable
+const PAD_CODES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 17].map(
+  (i) => "P:" + i,
+);
 // tsize scales the touch buttons, topac is their idle opacity and tnotch keeps
 // them clear of the notch and rounded corners
 const OPT = {
@@ -112,13 +131,18 @@ const OPT = {
   topac: 0.6,
   tnotch: true,
 };
-// a touch button sets "T:action" and is read here beside the bound key
-const held = (a) => !!keys[BIND[a]] || !!keys["T:" + a],
+// a touch button sets "T:action" and a pad button "P:i"; both are read here
+// beside the bound key
+const held = (a) =>
+    !!keys[BIND[a]] ||
+    !!keys["T:" + a] ||
+    (!!PAD_BIND[a] && !!keys[PAD_BIND[a]]),
   hit = (a) => {
-    // both taps are read, so that both are consumed
+    // all three taps are read, so that all are consumed
     const k = tap(BIND[a]),
-      t = tap("T:" + a);
-    return k || t;
+      t = tap("T:" + a),
+      d = PAD_BIND[a] ? tap(PAD_BIND[a]) : false;
+    return k || t || d;
   };
 function keyName(c) {
   if (!c) return "Unbound";

@@ -255,6 +255,8 @@ function frame(now) {
   let dt = Math.min((now - last) / 1000, 0.05);
   last = now;
   if (!(dt > 0)) dt = 0.016;
+  // tests set G.manual and poll the pads themselves
+  if (!G.manual) PAD.poll(dt);
   if (!G.manual && (G.state === "play" || G.state === "dead")) {
     let sim = dt;
     if (G.hitstop > 0) {
@@ -291,6 +293,7 @@ function boot() {
   loadOpt();
   HUD.init();
   TOUCH.init();
+  PAD.init();
   enterHub();
   renderPicker();
   renderControls();
@@ -483,6 +486,9 @@ window.DF = {
   startTrans,
   genHub,
   TOUCH,
+  PAD,
+  PAD_BIND,
+  DEFAULT_PAD,
   touchLayout,
   layoutProblems,
   hexContains,
