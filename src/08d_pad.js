@@ -2,6 +2,19 @@
 // Pads are polled once a frame. Each button of the standard mapping is merged
 // across every listed pad into keys["P:i"], with taps["P:i"] on its press
 // edge, and held() and hit() read those through PAD_BIND.
+// the name of a pad code, such as "P:5", for a pad family ("xbox" or "ps")
+function padName(code, fam) {
+  if (!code) return "Unbound";
+  const i = +code.slice(2),
+    ps = fam === "ps",
+    dpad = { 12: "D-pad up", 13: "D-pad down", 14: "D-pad left", 15: "D-pad right" };
+  if (dpad[i]) return dpad[i];
+  if (i === 17) return ps ? "Touchpad" : "Share";
+  const names = ps
+    ? ["✕", "○", "□", "△", "L1", "R1", "L2", "R2", "Create", "Options", "L3", "R3"]
+    : ["A", "B", "X", "Y", "LB", "RB", "LT", "RT", "View", "Menu", "LS", "RS"];
+  return names[i] || code;
+}
 const PAD = {
   // true when a pad was the last input, which shows pad prompts
   active: false,
@@ -32,6 +45,21 @@ const PAD = {
   focusIdx: 0,
   rep: null,
   stickMute: false,
+  // rebinding: the action waiting for a pad button, and whether every button
+  // has been let go since it began. The family the Controls list last showed.
+  rebind: null,
+  armed: false,
+  famShown: null,
+  startRebind(a) {
+    rebind = null;
+    PAD.rebind = a;
+    PAD.armed = false;
+    renderControls();
+  },
+  endRebind() {
+    PAD.rebind = null;
+    PAD.armed = false;
+  },
   pads() {
     try {
       const l = navigator.getGamepads ? navigator.getGamepads() : null;
@@ -229,15 +257,19 @@ const PAD = {
     PAD.connected = list.length > 0;
     PAD.std = list.every((p) => p.mapping === "standard");
     document.body.classList.toggle("padc", PAD.connected);
+    // the Controls menu says so when a pad may be read wrongly
+    $("pnote").hidden = !(PAD.connected && !PAD.std);
     // buttons: down on any pad counts, and the press edge is against the last
     // poll's merged state, so the first press of a new pad is not lost
     const now = {},
       screenChanged = PAD.screen !== G.state;
     PAD.screen = G.state;
-    let pressed = null;
+    let pressed = null,
+      anyDown = false;
     for (let i = 0; i < 18; i++) {
       const c = "P:" + i,
         down = list.find((p) => PAD.down(p.buttons[i], i));
+      if (down) anyDown = true;
       // a screen change mutes what is held now, until it is let go
       if (down && screenChanged) PAD.mute.add(c);
       if (!down) PAD.mute.delete(c);
@@ -255,6 +287,32 @@ const PAD = {
       }
     }
     PAD.prev = now;
+    // any pad press cancels a key wait that began with the mouse
+    if (rebind && pressed) {
+      finishRebind(null);
+      for (const k in taps) if (k.startsWith("P:")) delete taps[k];
+    }
+    // a pad button wait takes every pad button: it ends on the next press
+    // after all were let go, and Menu/Options cancels
+    if (PAD.rebind) {
+      if (G.state !== "controls" || !PAD.connected) {
+        PAD.endRebind();
+        if (G.state === "controls") renderControls();
+      } else {
+        if (!PAD.armed) {
+          if (!anyDown) PAD.armed = true;
+        } else {
+          const c = taps["P:9"] ? "P:9" : PAD_CODES.find((k) => taps[k]);
+          if (c) {
+            PAD.mute.add(c);
+            keys[c] = false;
+            finishPadRebind(c === "P:9" ? null : c);
+          }
+        }
+        for (const k in taps) if (k.startsWith("P:")) delete taps[k];
+        if (PAD.rebind) for (const k in keys) if (k.startsWith("P:")) keys[k] = false;
+      }
+    }
     // a press may be what lets the browser start audio
     if (pressed) {
       try {
@@ -277,6 +335,7 @@ const PAD = {
       PAD.fam = PAD.famOf(act);
       PAD.famSeen = true;
       PAD.setActive(true);
+      if (G.state === "controls" && PAD.fam !== PAD.famShown) renderControls();
     } else if (!PAD.famSeen && list.length) PAD.fam = PAD.famOf(list[0]);
     // the pause button, and the back button of the pause screen, are fixed
     if (taps["P:9"] && (G.state === "play" || G.state === "pause")) {
@@ -294,7 +353,7 @@ const PAD = {
       p = G.player;
     PAD.move = { x: lv.x, y: -lv.y, mag: lv.mag };
     PAD.look = { x: rv.x * rv.mag, y: rv.y * rv.mag };
-    if (!inPlay) PAD.menu(dt, lv, screenChanged);
+    if (!inPlay && !PAD.rebind) PAD.menu(dt, lv, screenChanged);
     else if (PAD.focus) PAD.setFocus(null);
     // the latch reads the tap without consuming it
     if (inPlay && PAD_BIND.sprint && taps[PAD_BIND.sprint]) PAD.sprint = !PAD.sprint;

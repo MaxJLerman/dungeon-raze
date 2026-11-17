@@ -29,7 +29,9 @@ const step = (name, body) => ({
   const seen = (code) => { let r = null; DF.sim(1 / 60, () => { DF.PAD.poll(1 / 60); r = { key: keys[code] === true, tap: taps[code] === true }; }); return r; };
   const draw = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   const reset = () => {
-    Object.assign(DF.PAD_BIND, DF.DEFAULT_PAD); window.__rumble = [];
+    Object.assign(DF.PAD_BIND, DF.DEFAULT_PAD); Object.assign(DF.BIND, DF.DEFAULT_BINDS);
+    Object.assign(DF.OPT, { psens: 1, padHideTouch: true, rumble: true });
+    window.__rumble = []; DF.PAD.endRebind();
     pads(); tick(); DF.PAD.setActive(false);
   };
   const stage = () => { DF.newRun(99); DF.show("play"); const p = G.player, n = G.world.nodes.find((q) => q.kind === "room"); for (const o of G.enemies) o.x += 1000; p.x = n.x; p.z = n.z; p.yaw = 0; cam.yaw = 0; p.lock = null; DF.PAD.poll(0); return p; };
@@ -453,7 +455,7 @@ export default [
   DF.show("controls"); pads(mk()); tick(2);
   const tap = (b) => { pads(mk({ b: { [b]: 1 } })); tick(1); pads(mk()); tick(1); };
   const list = DF.PAD.focusables(), last = list[list.length - 1];
-  for (let i = 0; i < 12 && DF.PAD.focus !== last; i++) { tap(13); if (DF.PAD.focus !== last) tap(15); }
+  for (let i = 0; i < 40; i++) tap(13);
   const r = DF.PAD.focus.getBoundingClientRect(), s = scr.getBoundingClientRect();
   const c = { atLast: DF.PAD.focus === last, scrolled: scr.scrollTop > 0, inside: r.top >= s.top - 1 && r.bottom <= s.bottom + 1 };
   scr.style.height = ""; DF.show("title");
@@ -471,5 +473,187 @@ export default [
   pads(mk({ b: { 0: 1 } })); tick(2);
   c.again = keys["P:0"] === true && p.state === "attack";
   pads(mk()); tick(3);
+  reset();
+  c.restored = DF.PAD_BIND.light === "P:5";
   return { pass: Object.values(c).every(Boolean), c, state: p.state };`),
+  step("Menu on title and class does nothing", `
+  reset(); const c = {}; let clicks = 0;
+  const spy = () => { clicks++; }; document.addEventListener("click", spy, true);
+  for (const scr of ["title", "class"]) {
+    DF.show(scr); pads(mk()); tick(3);
+    const before = G.state, f = DF.PAD.focus;
+    pads(mk({ b: { 9: 1 } })); tick(3); pads(mk()); tick(3);
+    c[scr] = G.state === before && DF.PAD.focus === f;
+  }
+  document.removeEventListener("click", spy, true);
+  c.noClick = clicks === 0;
+  DF.show("title");
+  return { pass: Object.values(c).every(Boolean), c, clicks };`),
+  step("the Controller column", `
+  reset(); DF.show("controls"); pads(mk()); tick(2);
+  const btn = (a) => document.querySelector('#binds [data-pact="' + a + '"]');
+  const rows = DF.G && [...document.querySelectorAll("#binds .bind")];
+  const c = { rows: rows.length === 14 && rows.every((r) => r.querySelector("[data-pact]") && r.querySelector("[data-act]")) };
+  c.light = btn("light").textContent === "RB";
+  c.mute = btn("mute").textContent === "Unbound";
+  c.moves = ["fwd", "back", "left", "right"].every((a) => btn(a).disabled && btn(a).textContent === "Left stick");
+  c.rest = btn("sprint").textContent === "LS" && btn("heavy").textContent === "RT" && btn("dodge").textContent === "B";
+  pads(mk({ id: "054c-0ce6-DualSense Wireless Controller", b: { 2: 1 } })); tick(2);
+  c.ps = btn("light").textContent === "R1" && btn("dodge").textContent === "○" && btn("heavy").textContent === "R2";
+  pads(); tick(); pads(mk({ b: { 2: 1 } })); tick(2);
+  c.back = btn("light").textContent === "RB";
+  pads(mk()); tick(2);
+  c.names = [DF.padName("P:17", "xbox"), DF.padName("P:17", "ps"), DF.padName("P:12", "ps"), DF.padName("P:9", "ps"), DF.padName(null, "ps")].join("|") === "Share|Touchpad|D-pad up|Options|Unbound";
+  c.keyName = DF.PAD.fam === "xbox";
+  DF.show("title");
+  return { pass: Object.values(c).every(Boolean), c };`),
+  step("rebinding a pad button", `
+  reset(); DF.show("controls"); pads(mk()); tick(2);
+  const btn = (a) => document.querySelector('#binds [data-pact="' + a + '"]');
+  const c = {};
+  DF.PAD.setFocus(btn("light"));
+  pads(mk({ b: { 0: 1 } })); tick(2);
+  c.waiting = DF.PAD.rebind === "light" && btn("light").textContent === "Press a controller button" && btn("light").classList.contains("wait");
+  tick(4); c.heldNotBound = DF.PAD_BIND.light === "P:5" && DF.PAD.rebind === "light";
+  pads(mk()); tick(3); c.stillWaiting = DF.PAD.rebind === "light";
+  pads(mk({ b: { 3: 1 } })); tick(2);
+  c.bound = DF.PAD_BIND.light === "P:3" && DF.PAD_BIND.tool === "P:5";
+  c.done = DF.PAD.rebind === null && btn("light").textContent === "Y" && btn("tool").textContent === "RB";
+  c.focus = DF.PAD.focus === btn("light") && DF.PAD.focus.isConnected;
+  pads(mk()); tick(3);
+  c.saved = JSON.parse(localStorage.getItem("dungeon-raze.v2")).p.light === "P:3";
+  c.menuStill = G.state === "controls";
+  // a button held through the wait is not read again as a menu press afterwards
+  DF.PAD.setFocus(btn("heal"));
+  pads(mk({ b: { 0: 1 } })); tick(2); pads(mk()); tick(2);
+  pads(mk({ b: { 13: 1 } })); tick(2);
+  c.dpad = DF.PAD_BIND.heal === "P:13" && DF.PAD.focus === btn("heal");
+  pads(mk()); tick(3);
+  DF.show("title"); reset();
+  return { pass: Object.values(c).every(Boolean), c };`),
+  step("cancelling a pad wait", `
+  reset(); DF.show("controls"); pads(mk()); tick(2);
+  const btn = (a) => document.querySelector('#binds [data-pact="' + a + '"]');
+  const c = {}, before = JSON.stringify(DF.PAD_BIND);
+  DF.PAD.setFocus(btn("light"));
+  pads(mk({ b: { 0: 1 } })); tick(2); pads(mk()); tick(3);
+  c.started = DF.PAD.rebind === "light";
+  pads(mk({ b: { 9: 1 } })); tick(2); pads(mk()); tick(3);
+  c.menu = DF.PAD.rebind === null && JSON.stringify(DF.PAD_BIND) === before && btn("light").textContent === "RB" && G.state === "controls";
+  // a click starts it, and a key cancels it
+  btn("light").click(); tick(2);
+  c.clicked = DF.PAD.rebind === "light";
+  window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyW", key: "w" }));
+  c.key = DF.PAD.rebind === null && JSON.stringify(DF.PAD_BIND) === before && btn("light").textContent === "RB" && DF.BIND.fwd === "KeyW";
+  // a wait ends when the screen does
+  btn("light").click(); tick(2); DF.show("title"); tick(2);
+  c.left = DF.PAD.rebind === null;
+  reset();
+  return { pass: Object.values(c).every(Boolean), c };`),
+  step("a pad press cancels a key wait", `
+  reset(); DF.show("controls"); pads(mk()); tick(2);
+  const c = {}, kb = document.querySelector('#binds [data-act="light"]');
+  kb.click();
+  c.waiting = document.querySelector('#binds [data-act="light"]').textContent === "Press a key or mouse button";
+  pads(mk({ b: { 2: 1 } })); tick(2); pads(mk()); tick(2);
+  c.gone = document.querySelector('#binds [data-act="light"]').textContent === "Left click" && DF.BIND.light === "Mouse0";
+  c.noPad = DF.PAD.rebind === null && DF.PAD_BIND.light === "P:5";
+  // and a key wait started by a click cancels a pad wait
+  document.querySelector('#binds [data-pact="light"]').click(); tick(2);
+  document.querySelector('#binds [data-act="light"]').click();
+  c.swapped = DF.PAD.rebind === null;
+  window.dispatchEvent(new KeyboardEvent("keydown", { code: "Escape", key: "Escape" }));
+  DF.show("title"); reset();
+  return { pass: Object.values(c).every(Boolean), c };`),
+  step("menu buttons keep working after rebinding", `
+  reset(); const p = stage();
+  DF.setPadBind("light", "P:0"); DF.setPadBind("dodge", "P:2");
+  const c = { bound: DF.PAD_BIND.light === "P:0" && DF.PAD_BIND.dodge === "P:2" };
+  pads(mk()); tick(2); DF.show("pause"); tick(2);
+  pads(mk({ b: { 0: 1 } })); tick(2);
+  c.resumed = G.state === "play";
+  pads(mk()); tick(3);
+  pads(mk({ b: { 0: 1 } })); tick(2);
+  c.attack = p.state === "attack";
+  pads(mk()); tick(3);
+  DF.show("title"); DF.openMenu("controls"); pads(mk()); tick(2);
+  pads(mk({ b: { 1: 1 } })); tick(2);
+  c.back = G.state === "title";
+  pads(mk()); tick(2);
+  reset();
+  return { pass: Object.values(c).every(Boolean), c, state: p.state };`),
+  step("saving", `
+  reset();
+  DF.setPadBind("light", "P:3"); DF.OPT.psens = 1.5; DF.OPT.padHideTouch = false; DF.OPT.rumble = false;
+  DF.saveOpt();
+  Object.assign(DF.PAD_BIND, DF.DEFAULT_PAD); Object.assign(DF.OPT, { psens: 1, padHideTouch: true, rumble: true });
+  DF.loadOpt();
+  const c = { bind: DF.PAD_BIND.light === "P:3" && DF.PAD_BIND.tool === "P:5", psens: DF.OPT.psens === 1.5, hide: DF.OPT.padHideTouch === false, rumble: DF.OPT.rumble === false };
+  const bad = {};
+  for (const v of ["P:9", "P:16", "bogus", 4]) {
+    localStorage.setItem("dungeon-raze.v2", JSON.stringify({ b: DF.BIND, p: { light: v, heavy: null }, o: { ...DF.OPT, psens: 9 } }));
+    Object.assign(DF.PAD_BIND, DF.DEFAULT_PAD); DF.OPT.psens = 2;
+    DF.loadOpt();
+    bad[String(v)] = DF.PAD_BIND.light === "P:5" && DF.PAD_BIND.heavy === null && DF.OPT.psens === 1;
+  }
+  c.bad = Object.values(bad).every(Boolean);
+  localStorage.setItem("dungeon-raze.v2", JSON.stringify({ b: DF.BIND, o: { ...DF.OPT, padHideTouch: "yes", rumble: 3 } }));
+  DF.loadOpt(); c.flags = DF.OPT.padHideTouch === true && DF.OPT.rumble === true;
+  reset(); DF.saveOpt();
+  return { pass: Object.values(c).every(Boolean), c, bad };`),
+  step("Defaults resets the pad", `
+  reset(); DF.setPadBind("light", "P:3"); DF.setPadBind("mute", "P:8");
+  Object.assign(DF.OPT, { psens: 2.5, padHideTouch: false, rumble: false });
+  DF.show("controls"); tick(2);
+  document.getElementById("btnDefaults").click();
+  const c = { bind: JSON.stringify(DF.PAD_BIND) === JSON.stringify(DF.DEFAULT_PAD), opts: DF.OPT.psens === 1 && DF.OPT.padHideTouch === true && DF.OPT.rumble === true };
+  c.shown = document.getElementById("psens").value === "1" && document.getElementById("rumble").checked && document.getElementById("padHideTouch").checked;
+  c.saved = JSON.parse(localStorage.getItem("dungeon-raze.v2")).p.light === "P:5";
+  c.text = document.querySelector('#binds [data-pact="light"]').textContent === "RB";
+  DF.show("title");
+  return { pass: Object.values(c).every(Boolean), c };`),
+  step("settings controls", `
+  reset(); DF.show("controls"); tick(2);
+  const c = {}, $ = (id) => document.getElementById(id);
+  const txt = (e) => e.textContent.replace(/\\s+/g, " ").trim();
+  $("psens").value = "1.5"; $("psens").dispatchEvent(new Event("input", { bubbles: true }));
+  c.psens = DF.OPT.psens === 1.5 && $("psensV").textContent === "1.50×";
+  $("padHideTouch").checked = false; $("padHideTouch").dispatchEvent(new Event("change", { bubbles: true }));
+  c.hide = DF.OPT.padHideTouch === false;
+  $("rumble").checked = false; $("rumble").dispatchEvent(new Event("change", { bubbles: true }));
+  c.rumble = DF.OPT.rumble === false;
+  c.saved = JSON.parse(localStorage.getItem("dungeon-raze.v2")).o.psens === 1.5;
+  const scr = txt($("scr-controls"));
+  c.copy = ["Controller", "Camera speed (stick)", "Hide touch buttons while a controller is connected", "Vibration"].every((t) => scr.includes(t)) && txt(document.querySelector("#pset h2")) === "Controller" && txt(document.querySelector("#pset")).includes("Vibration");
+  c.visible = ["psens", "padHideTouch", "rumble"].every((id) => $(id).getClientRects().length > 0);
+  c.padonly = txt(document.querySelector(".padonly")) === "Choose a controller binding with ✕ or A, then press the button you want. Options or Menu cancels.";
+  c.padonlyHidden = document.querySelector(".padonly").getClientRects().length === 0;
+  pads(mk({ b: { 2: 1 } })); tick(2); pads(mk()); tick(2);
+  c.padonlyShown = document.querySelector(".padonly").getClientRects().length > 0 && document.querySelector(".kbonly").getClientRects().length === 0;
+  reset(); DF.saveOpt(); DF.show("title");
+  return { pass: Object.values(c).every(Boolean), c };`),
+  step("the unrecognised pad note", `
+  reset(); DF.show("controls"); pads(mk({ mapping: "" })); tick(2);
+  const n = document.getElementById("pnote"), c = {};
+  c.shown = n.getClientRects().length > 0 && !n.hidden;
+  c.text = n.textContent.replace(/\\s+/g, " ").trim() === "This browser doesn't fully recognise your controller, so buttons may be mixed up. Rebind them below. Chrome and Edge recognise the most controllers.";
+  pads(mk()); tick(2);
+  c.hidden = n.getClientRects().length === 0;
+  pads(mk({ mapping: "" })); tick(2); pads(); tick(2);
+  c.none = n.getClientRects().length === 0;
+  DF.show("title"); reset();
+  return { pass: Object.values(c).every(Boolean), c };`),
+  step("every Controls control can be reached by the D-pad", `
+  reset(); DF.show("controls"); pads(mk()); tick(2);
+  const list = DF.PAD.focusables(), reach = new Set([DF.PAD.focus]), todo = [DF.PAD.focus];
+  while (todo.length) {
+    const e = todo.pop();
+    for (const d of ["up", "down", "left", "right"]) {
+      DF.PAD.setFocus(e); DF.PAD.nav(d);
+      if (!reach.has(DF.PAD.focus)) { reach.add(DF.PAD.focus); todo.push(DF.PAD.focus); }
+    }
+  }
+  const missed = list.filter((e) => !reach.has(e)).map((e) => e.id || e.dataset.pact || e.textContent);
+  DF.show("title");
+  return { pass: missed.length === 0 && list.length >= 17, missed, n: list.length };`),
 ];

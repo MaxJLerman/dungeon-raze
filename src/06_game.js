@@ -128,6 +128,8 @@ const OPT = {
   sens: 1,
   invY: false,
   psens: 1,
+  padHideTouch: true,
+  rumble: true,
   tsize: 1,
   topac: 0.6,
   tnotch: true,
@@ -147,6 +149,7 @@ const held = (a) =>
   };
 function keyName(c) {
   if (!c) return "Unbound";
+  if (c.startsWith("P:")) return padName(c, PAD.fam);
   const M = {
     Mouse0: "Left click",
     Mouse1: "Middle click",
@@ -186,7 +189,7 @@ function saveOpt() {
   try {
     localStorage.setItem(
       "dungeon-raze.v2",
-      JSON.stringify({ b: BIND, o: OPT }),
+      JSON.stringify({ b: BIND, p: PAD_BIND, o: OPT }),
     );
   } catch (e) {
     /* storage may be unavailable */
@@ -198,12 +201,20 @@ function loadOpt() {
     if (!d) return;
     for (const k in DEFAULT_BINDS)
       if (d.b && typeof d.b[k] === "string") BIND[k] = d.b[k];
+    // a pad code that is not bindable, or no longer exists, is the default
+    if (d.p && typeof d.p === "object")
+      for (const k in DEFAULT_PAD)
+        PAD_BIND[k] =
+          d.p[k] === null || PAD_CODES.includes(d.p[k]) ? d.p[k] : DEFAULT_PAD[k];
     if (d.o) {
       if (CLASSES[d.o.cls]) OPT.cls = d.o.cls;
       if (d.o.sens > 0.1 && d.o.sens < 5) OPT.sens = d.o.sens;
       OPT.invY = !!d.o.invY;
       const num = (v, lo, hi) => typeof v === "number" && v >= lo && v <= hi;
-      if (num(d.o.psens, 0.2, 3)) OPT.psens = d.o.psens;
+      OPT.psens = num(d.o.psens, 0.2, 3) ? d.o.psens : 1;
+      OPT.padHideTouch =
+        typeof d.o.padHideTouch === "boolean" ? d.o.padHideTouch : true;
+      OPT.rumble = typeof d.o.rumble === "boolean" ? d.o.rumble : true;
       if (num(d.o.tsize, 0.8, 1.2)) OPT.tsize = d.o.tsize;
       if (num(d.o.topac, 0.2, 1)) OPT.topac = d.o.topac;
       if (typeof d.o.tnotch === "boolean") OPT.tnotch = d.o.tnotch;
@@ -216,6 +227,13 @@ function setBind(a, code) {
   const old = BIND[a];
   for (const k in BIND) if (k !== a && BIND[k] === code) BIND[k] = old;
   BIND[a] = code;
+  saveOpt();
+}
+// the same swap rule for a controller button
+function setPadBind(a, code) {
+  const old = PAD_BIND[a];
+  for (const k in PAD_BIND) if (k !== a && PAD_BIND[k] === code) PAD_BIND[k] = old;
+  PAD_BIND[a] = code;
   saveOpt();
 }
 

@@ -149,27 +149,56 @@ function renderPicker() {
 }
 // ---- controls menu ----
 function renderControls() {
-  $("binds").innerHTML = ACTIONS.map(
-    ([a, label]) =>
-      '<div class="bind"><span>' +
-      label +
-      '</span><button type="button" data-act="' +
-      a +
-      '"' +
-      (rebind === a ? ' class="wait"' : "") +
-      ">" +
-      (rebind === a ? "Press a key or mouse button" : keyName(BIND[a])) +
-      "</button></div>",
-  ).join("");
+  // a rebuilt list keeps the pad's place in it
+  const fk =
+    PAD.focus && $("binds").contains(PAD.focus) ? PAD.focus.dataset.pact : null;
+  PAD.famShown = PAD.fam;
+  $("binds").innerHTML =
+    ACTIONS.map(([a, label]) => {
+      const moves = !(a in DEFAULT_PAD);
+      return (
+        '<div class="bind"><span>' +
+        label +
+        '</span><button type="button" data-act="' +
+        a +
+        '"' +
+        (rebind === a ? ' class="wait"' : "") +
+        ">" +
+        (rebind === a ? "Press a key or mouse button" : keyName(BIND[a])) +
+        '</button><button type="button" data-pact="' +
+        a +
+        '"' +
+        (PAD.rebind === a ? ' class="wait"' : "") +
+        (moves ? " disabled" : "") +
+        ">" +
+        (moves
+          ? "Left stick"
+          : PAD.rebind === a
+            ? "Press a controller button"
+            : padName(PAD_BIND[a], PAD.fam)) +
+        "</button></div>"
+      );
+    }).join("");
+  if (fk) PAD.setFocus($("binds").querySelector('[data-pact="' + fk + '"]'));
   $("sens").value = OPT.sens;
   $("sensV").textContent = OPT.sens.toFixed(2) + "×";
   $("invY").checked = OPT.invY;
+  $("psens").value = OPT.psens;
+  $("psensV").textContent = OPT.psens.toFixed(2) + "×";
+  $("padHideTouch").checked = OPT.padHideTouch;
+  $("rumble").checked = OPT.rumble;
   $("tsize").value = OPT.tsize;
   $("tsizeV").textContent = OPT.tsize.toFixed(2) + "×";
   $("topac").value = OPT.topac;
   $("topacV").textContent = Math.round(OPT.topac * 100) + "%";
   $("tnotch").checked = OPT.tnotch;
   HUD.hint();
+}
+function finishPadRebind(code) {
+  if (code) setPadBind(PAD.rebind, code);
+  PAD.endRebind();
+  renderControls();
+  renderPicker();
 }
 function finishRebind(code) {
   if (code) setBind(rebind, code);
@@ -303,6 +332,14 @@ function boot() {
   addEventListener(
     "keydown",
     (e) => {
+      // a key cancels a wait for a pad button
+      if (PAD.rebind) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        PAD.endRebind();
+        renderControls();
+        return;
+      }
       if (!rebind) return;
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -436,8 +473,14 @@ function boot() {
       if (again) again.focus();
       return;
     }
-    const bb = e.target.closest && e.target.closest("#binds button");
+    const pb = e.target.closest && e.target.closest("#binds button[data-pact]");
+    if (pb) {
+      PAD.startRebind(pb.dataset.pact);
+      return;
+    }
+    const bb = e.target.closest && e.target.closest("#binds button[data-act]");
     if (bb) {
+      PAD.endRebind();
       rebind = bb.dataset.act;
       renderControls();
     }
@@ -449,6 +492,19 @@ function boot() {
   });
   $("invY").addEventListener("change", (e) => {
     OPT.invY = e.target.checked;
+    saveOpt();
+  });
+  $("psens").addEventListener("input", (e) => {
+    OPT.psens = clamp(parseFloat(e.target.value) || 1, 0.2, 3);
+    $("psensV").textContent = OPT.psens.toFixed(2) + "×";
+    saveOpt();
+  });
+  $("padHideTouch").addEventListener("change", (e) => {
+    OPT.padHideTouch = e.target.checked;
+    saveOpt();
+  });
+  $("rumble").addEventListener("change", (e) => {
+    OPT.rumble = e.target.checked;
     saveOpt();
   });
   // touch settings: each one saves and lays the buttons out again
@@ -471,9 +527,13 @@ function boot() {
   });
   $("btnDefaults").addEventListener("click", () => {
     Object.assign(BIND, DEFAULT_BINDS);
+    Object.assign(PAD_BIND, DEFAULT_PAD);
+    PAD.endRebind();
     OPT.sens = 1;
     OPT.invY = false;
     OPT.psens = 1;
+    OPT.padHideTouch = true;
+    OPT.rumble = true;
     OPT.tsize = 1;
     OPT.topac = 0.6;
     OPT.tnotch = true;
@@ -505,6 +565,9 @@ window.DF = {
   PAD,
   PAD_BIND,
   DEFAULT_PAD,
+  DEFAULT_BINDS,
+  setPadBind,
+  padName,
   SFX,
   touchLayout,
   layoutProblems,
