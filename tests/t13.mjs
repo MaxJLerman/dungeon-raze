@@ -90,12 +90,17 @@ export default [
     // layout: the prompt clear of the buttons and HUD, the D-pad inside the
     // stick area, the close area clear of the D-pad
     const out = {};
-    for (const [W, H, ins] of [[905, 412, Z], [448, 280, Z], [667, 375, { l: 47, r: 47, t: 0, b: 21 }], [1180, 820, Z]]) {
+    const over = (a, b) => a.x < b.x + b.d / 2 && b.x - b.d / 2 < a.x + a.w && a.y < b.y + b.d * 0.433 && b.y - b.d * 0.433 < a.y + a.h;
+    for (const [W, H, ins] of [[905, 412, Z], [448, 280, Z], [667, 375, Z], [640, 360, Z], [667, 375, { l: 47, r: 47, t: 0, b: 21 }], [1180, 820, Z]]) {
       const L = touchLayout(W, H, ins, { size: 1, notch: true });
       const has = !!(L.prompt && L.close && L.dpad), m = L.move, d = L.dpad || {};
+      // the card never covers a code button, and on the real devices (640
+      // wide and up) it covers none at all, so a tap on it always closes it
+      const under = has ? L.btns.filter((b) => over(L.close, b)).map((b) => b.act) : [];
+      if (under.some((a) => ["dodge", "heal", "tool"].includes(a)) || (W >= 640 && under.length)) { out[W + "x" + H] = "card over " + under; continue; }
       const inside = has && d.x - d.d / 2 >= m.x0 && d.x + d.d / 2 <= m.x1 && d.y - d.d / 2 >= m.y0 && d.y + d.d / 2 <= m.y1;
       const arm = has && d.d / 3 >= 40;
-      out[W + "x" + H] = has && inside && arm && layoutProblems(L).length === 0;
+      out[W + "x" + H + (ins.l ? "n" : "")] = has && inside && arm && layoutProblems(L).length === 0;
     }
     return { pass: all(out), ...out };`),
   step("sweep", `

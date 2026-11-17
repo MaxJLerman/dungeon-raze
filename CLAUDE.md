@@ -490,8 +490,11 @@ Edit `MOVES` in `06_game.js`. Fields: `wind`, `act`, `rec` (seconds), `dmg`,
 `post` (posture damage), `range`, `arc` (radians, `TAU` for all round), `lunge`
 (distance moved), `stam`, `next` (the chained move), `anim`, `tilt` and `dir`
 (slash arc shape), `heavy`, `lance` (straight thrust effect). A ranged move has
-`proj` instead of the melee fields. If you use a new `anim` name, add its pose
-to the `attack` case of `posePlayer` in `07_render.js`.
+`proj` instead of the melee fields: `speed`, `dmg`, `post` and `kind`, with
+`life`, `big` and `heavy` optional. `pellets` fires that many shots at once,
+`spread` radians apart. A `proj` move with a `lunge` slides the player
+forward while it fires. If you use a new `anim` name, add its pose to the
+`attack` case of `posePlayer` in `07_render.js`.
 
 ### Add a class
 

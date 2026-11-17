@@ -121,6 +121,40 @@ export default [
   press(0); DF.sim(0.6, () => DF.PAD.poll(1 / 60)); for (const ch of "LRLRYYXB") press(btn[ch]);
   const ok = DF.UNLOCKED.has("enforcer"); DF.closePlaque(true); navigator.getGamepads = () => []; DF.PAD.poll(1 / 60);
   DF.UNLOCKED.clear(); DF.saveOpt(); DF.resetPlaqueCodes(); return { pass: ok };`),
+  step("a D-pad bound to an action still enters its direction", `
+  DF.UNLOCKED.clear(); DF.setPlaqueCode("enforcer", "UUDD"); DF.enterHub(); ${stand}
+  DF.setPadBind("tool", "P:12"); DF.setPadBind("heal", "P:13"); const pads = [{ index: 0, connected: true, mapping: "standard", id: "fake",
+    buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })), axes: [0, 0, 0, 0] }];
+  navigator.getGamepads = () => pads;
+  const press = (i) => { pads[0].buttons[i] = { pressed: true, value: 1 }; DF.sim(0.05, () => DF.PAD.poll(1 / 60));
+    pads[0].buttons[i] = { pressed: false, value: 0 }; DF.sim(0.05, () => DF.PAD.poll(1 / 60)); };
+  const done = () => { DF.closePlaque(true); navigator.getGamepads = () => []; DF.PAD.poll(1 / 60);
+    Object.assign(DF.PAD_BIND, DF.DEFAULT_PAD); Object.assign(DF.BIND, DF.DEFAULT_BINDS); DF.UNLOCKED.clear(); DF.saveOpt(); DF.resetPlaqueCodes(); };
+  press(0); DF.sim(0.6, () => DF.PAD.poll(1 / 60)); for (const i of [12, 12, 13, 13]) press(i);
+  const ok = DF.UNLOCKED.has("enforcer"), syms = G.insp ? G.insp.syms.join("") : "-"; done();
+  return { pass: ok, syms };`),
+  step("Interact on a D-pad button still closes", `
+  DF.enterHub(); ${stand} DF.setPadBind("interact", "P:13"); const pads = [{ index: 0, connected: true, mapping: "standard", id: "fake",
+    buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })), axes: [0, 0, 0, 0] }];
+  navigator.getGamepads = () => pads;
+  const press = (i) => { pads[0].buttons[i] = { pressed: true, value: 1 }; DF.sim(0.05, () => DF.PAD.poll(1 / 60));
+    pads[0].buttons[i] = { pressed: false, value: 0 }; DF.sim(0.05, () => DF.PAD.poll(1 / 60)); };
+  const done = () => { DF.closePlaque(true); navigator.getGamepads = () => []; DF.PAD.poll(1 / 60);
+    Object.assign(DF.PAD_BIND, DF.DEFAULT_PAD); Object.assign(DF.BIND, DF.DEFAULT_BINDS); DF.UNLOCKED.clear(); DF.saveOpt(); DF.resetPlaqueCodes(); };
+  press(13); DF.sim(0.6, () => DF.PAD.poll(1 / 60)); const open = p.state === "inspect";
+  press(13); DF.sim(0.6, () => DF.PAD.poll(1 / 60)); const shut = G.insp === null && p.state === "free"; done();
+  return { pass: open && shut, open, shut };`),
+  step("Interact sharing a movement key names pause to close", `
+  DF.enterHub(); ${stand} DF.BIND.interact = "KeyW"; DF.taps.KeyW = true; DF.sim(0.6);
+  const open = p.state === "inspect";
+  return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => {
+    const txt = document.getElementById("plaqueClose").textContent; DF.closePlaque(true);
+    Object.assign(DF.BIND, DF.DEFAULT_BINDS); DF.saveOpt();
+    r({ pass: open && /Esc|P/.test(txt) && !/W/.test(txt), open, txt }); })));`),
+  step("a running player walks into the close-up", `
+  DF.enterHub(); ${stand} p.sprint = true; K("interact"); DF.sim(0.6);
+  const ok = p.state === "inspect" && !p.sprint; DF.closePlaque(true);
+  return { pass: ok, sprint: p.sprint };`),
   step("left stick enters directions once per push", `
   DF.UNLOCKED.clear(); DF.setPlaqueCode("enforcer", "UDLRUDLR"); DF.enterHub(); ${stand}
   const pads = [{ index: 0, connected: true, mapping: "standard", id: "fake",

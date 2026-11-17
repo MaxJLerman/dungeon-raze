@@ -313,7 +313,18 @@ function camUpdate(dt) {
       k = smooth(G.insp.k),
       f = plaqueFront(q, 1.6),
       to = [f.x, PLAQUE_Y, f.z],
-      at = [q.x, PLAQUE_Y, q.z];
+      at = [q.x, PLAQUE_Y, q.z],
+      L = TOUCH.on && TOUCH.layout;
+    if (L) {
+      // under touch the card may sit off centre, clear of the buttons: turn
+      // the view so the plaque itself sits behind the card
+      const off = L.close.x + L.close.w / 2 - L.W / 2,
+        focal = L.H / 2 / Math.tan(cam.fov / 2),
+        yaw = Math.atan2(at[0] - to[0], at[2] - to[2]),
+        sh = (-off * 1.6) / focal;
+      at[0] += -Math.cos(yaw) * sh;
+      at[2] += Math.sin(yaw) * sh;
+    }
     for (let i = 0; i < 3; i++) {
       eye[i] = lerp(eye[i], to[i], k);
       look[i] = lerp(look[i], at[i], k);
@@ -652,6 +663,7 @@ window.DF = {
   startExecute,
   openPlaque,
   closePlaque,
+  posePlayer,
   setPlaqueCode,
   resetPlaqueCodes,
   openMenu,

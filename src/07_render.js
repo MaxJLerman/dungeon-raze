@@ -247,6 +247,14 @@ function posePlayer(p) {
       f.legL.r[0] = 0.6 * u;
       break;
     }
+    case "grapple":
+      // reeled in on the line: hook arm out ahead, leaning in, legs trailing
+      A[0] = -1.6;
+      B[0] = -0.5;
+      ch[0] = 0.4;
+      f.legR.r[0] = 0.5;
+      f.legL.r[0] = 0.35;
+      break;
     case "blink": {
       const u = sat((p.t - 0.14) / 0.08);
       A[0] = B[0] = lerp(0.7, -1.55, u);

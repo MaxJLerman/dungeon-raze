@@ -40,4 +40,19 @@ export default [
     const idle = TOUCH.move.mag === 0; await __touch("touchEnd", [{ id: 99, x: d.x + d.d / 2 + 90, y: d.y }]); await draw();
     DF.closePlaque(true); await draw(); const after = !vis();
     return { pass: before && during && idle && after, before, during, idle, after };`),
+  step("touch: on a cramped screen a tap on a button under the card closes it", `
+    // a fullscreen window cannot be resized; leaving it pauses, and stand() plays again
+    if (document.fullscreenElement) await document.exitFullscreen().catch(() => {}); await draw();
+    const w0 = innerWidth, h0 = innerHeight; await __viewport(460, 280); await draw(); await draw(); TOUCH.relayout(); await draw();
+    DF.enterHub(); const p = stand(); DF.openPlaque(G.world.plaques[0]); DF.sim(0.6); await draw();
+    const c = L().close, inC = (x, y) => x > c.x + 2 && x < c.x + c.w - 2 && y > c.y + 2 && y < c.y + c.h - 2;
+    // a point inside the card and inside a button that does nothing at a plaque
+    let at = null;
+    for (const b of L().btns) if (!["dodge", "heal", "tool"].includes(b.act))
+      for (let dx = -b.d / 3; dx <= b.d / 3 && !at; dx += 2) for (let dy = -b.d / 3; dy <= b.d / 3 && !at; dy += 2)
+        if (DF.hexContains(b, b.x + dx, b.y + dy) && inC(b.x + dx, b.y + dy)) at = [b.x + dx, b.y + dy, b.act];
+    if (at) await tapAt(at); DF.sim(0.6);
+    const shut = G.insp === null; DF.closePlaque(true);
+    await __viewport(w0, h0); await draw(); await draw(); TOUCH.relayout(); await draw();
+    return { pass: !!at && shut, at, shut };`),
 ];

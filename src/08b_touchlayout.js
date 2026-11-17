@@ -16,6 +16,9 @@ const TOUCH_BTNS = [
   ["tool", "small"],
 ];
 
+// the buttons that enter a plaque's code; the card never covers them
+const CODE_BTNS = ["dodge", "heal", "tool"];
+
 // A flat-topped hexagon with centre x, y and corner-to-corner width d
 function hexContains(b, x, y) {
   const dx = x - b.x,
@@ -143,6 +146,7 @@ function layoutProblems(L) {
       out.push("dpad outside move area");
     if (d.d / 3 < 40) out.push("dpad arm " + (d.d / 3).toFixed(1));
     if (hit(dq, L.close)) out.push("plaque over dpad");
+    for (const b of btns) if (CODE_BTNS.includes(b.act) && hit(L.close, box(b))) out.push("plaque over " + b.act);
     if (L.close.w < 150) out.push("plaque " + L.close.w.toFixed(1));
   }
   if (
@@ -234,9 +238,26 @@ function layoutAt(W, H, ins, scale) {
       y: clamp(rest.y, move.y0 + dd / 2, move.y1 - dd / 2),
       d: dd,
     };
-  const cw = Math.min(s * 0.62, 420, W - 2 * (dpad.x + dd / 2 + g)),
-    chh = Math.min(s * 0.8, 540),
-    close = { x: W / 2 - cw / 2, y: H / 2 - chh / 2, w: cw, h: chh };
+  // A tap on the card closes it, so it sits between the D-pad and the buttons
+  // beside it: centred if it fits, else moved left of them. Where that leaves
+  // too little room it need only clear the buttons that enter a code, and
+  // takes the taps on the others it covers.
+  const chh = Math.min(s * 0.8, 540),
+    cy = H / 2 - chh / 2,
+    lo = dpad.x + dd / 2 + g,
+    edge = (bs) =>
+      Math.min(
+        W - ins.r - m,
+        ...bs
+          .map(hexBox)
+          .filter((q) => q.y < cy + chh && cy < q.y + q.h)
+          .map((q) => q.x - g),
+      ),
+    hiAll = edge(btns),
+    hi = hiAll - lo >= 150 ? hiAll : edge(btns.filter((b) => CODE_BTNS.includes(b.act))),
+    cw = Math.min(s * 0.62, 420, hi - lo),
+    cx = clamp(W / 2, lo + cw / 2, hi - cw / 2),
+    close = { x: cx - cw / 2, y: cy, w: cw, h: chh };
   return { W, H, scale, ins, P, u, k, S, g, m, R, ring, btns, move, rest, vitals, map, pause, boss, prompt, dpad, close };
 }
 

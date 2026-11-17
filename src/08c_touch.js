@@ -339,9 +339,13 @@ const TOUCH = {
       if (!hid && Math.max(Math.abs(dx), Math.abs(dy)) <= d.d / 2 && Math.min(Math.abs(dx), Math.abs(dy)) <= a)
         if (Math.max(Math.abs(dx), Math.abs(dy)) > a)
           return { kind: "btn", act: Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "right" : "left") : dy > 0 ? "back" : "fwd" };
-      if (!hid) for (const b of L.btns) if (hexContains(b, x, y)) return { kind: "btn", act: b.act };
+      // the code buttons first; the card takes taps on any other it covers
+      if (!hid)
+        for (const b of L.btns)
+          if (CODE_BTNS.includes(b.act) && hexContains(b, x, y)) return { kind: "btn", act: b.act };
       if (inBox(L.pause, x, y)) return { kind: "pause" };
       if (inBox(L.close, x, y)) return { kind: "btn", act: "interact" };
+      if (!hid) for (const b of L.btns) if (hexContains(b, x, y)) return { kind: "btn", act: b.act };
       return { kind: "none" };
     }
     if (promptUp() && inBox(L.prompt, x, y)) return { kind: "btn", act: "interact" };

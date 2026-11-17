@@ -100,6 +100,15 @@ export default [
   return { pass: out.husk >= 0.4 && out.brute >= 0.4, out }; `),
   },
   {
+    name: "grapple has its own pose",
+    eval: cls("enforcer", `
+  // reeled in: the hook arm out ahead, leaning in, legs trailing
+  const e = tp((e) => e.type === 'brute', 9); e.state = 'idle'; p.state = 'free'; p.focus = 100; p.lock = e;
+  K('special'); DF.sim(0.1); const f = p.fig, inG = p.state === 'grapple'; DF.posePlayer(p);
+  const c = { inG, arm: f.armR.r[0] < -1.3, lean: f.chest.r[0] > 0.25, legs: f.legL.r[0] > 0.3 || f.legR.r[0] > 0.3 };
+  return { pass: Object.values(c).every(Boolean), c }; `),
+  },
+  {
     name: "grapple with no target spends nothing",
     eval: cls("enforcer", `
   for (const e of G.enemies) e.dead = true; p.focus = 100; p.lock = null; K('special'); DF.sim(0.3);

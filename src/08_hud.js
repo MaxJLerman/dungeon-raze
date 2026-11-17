@@ -358,8 +358,12 @@ const HUD = (() => {
       W = canvas.clientWidth,
       H = canvas.clientHeight,
       s = R.toScreen(q.x, PLAQUE_Y, q.z) || [W / 2, H / 2],
-      x = lerp(s[0], W / 2, k),
-      y = lerp(s[1], H / 2, k);
+      // under touch the layout gives the card its box, clear of the buttons
+      L = TOUCH.on && TOUCH.layout,
+      cx = L ? L.close.x + L.close.w / 2 : W / 2,
+      cy = L ? L.close.y + L.close.h / 2 : H / 2,
+      x = lerp(s[0], cx, k),
+      y = lerp(s[1], cy, k);
     if (i.flare) {
       // restart the flare on a fresh unlock
       i.flare = false;
@@ -379,7 +383,8 @@ const HUD = (() => {
     if (TOUCH.on && !PAD.active) return "Tap the plaque to close";
     const a = PAD.active ? PAD_BIND : BIND,
       ik = a.interact,
-      shared = ["dodge", "heal", "tool"].some((x) => a[x] && a[x] === ik);
+      // those presses enter a symbol first, so Interact never sees them
+      shared = ["dodge", "heal", "tool", "fwd", "back", "left", "right"].some((x) => a[x] && a[x] === ik);
     if (!shared) return "<kbd>" + actKey("interact") + "</kbd> Close";
     return "<kbd>" + (PAD.active ? padName("P:9", PAD.fam) : G.noLock ? "P" : "Esc") + "</kbd> Close";
   }

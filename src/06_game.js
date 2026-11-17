@@ -2138,6 +2138,15 @@ function codeHash(str) {
 function readSyms() {
   const out = [],
     i = G.insp;
+  // the D-pad first and raw, so an action bound to it still enters its
+  // direction; Interact's own button is left to close the plaque
+  for (const [c, sy] of [
+    ["P:12", "U"],
+    ["P:13", "D"],
+    ["P:14", "L"],
+    ["P:15", "R"],
+  ])
+    if (c !== PAD_BIND.interact && tap(c)) out.push(sy);
   if (hit("dodge")) out.push("B");
   if (hit("heal")) out.push("X");
   if (hit("tool")) out.push("Y");
@@ -2148,13 +2157,6 @@ function readSyms() {
     ["right", "R"],
   ])
     if (hit(a)) out.push(sy);
-  for (const [c, sy] of [
-    ["P:12", "U"],
-    ["P:13", "D"],
-    ["P:14", "L"],
-    ["P:15", "R"],
-  ])
-    if (tap(c)) out.push(sy);
   const m = PAD.move;
   if (i && m.mag < 0.2) i.stick = false;
   else if (i && !i.stick && m.mag > 0.5) {
@@ -2169,6 +2171,7 @@ function openPlaque(q) {
   const p = G.player;
   p.state = "inspect";
   p.vx = p.vz = 0;
+  p.sprint = false;
   p.buf = null;
   p.lock = null;
   // a stick already pushed must come back to rest before it counts
