@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>DungeonRaze</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link
@@ -37,8 +37,11 @@
         overflow: hidden;
         user-select: none;
         -webkit-user-select: none;
+        -webkit-touch-callout: none;
+        overscroll-behavior: none;
       }
       #c {
+        touch-action: none;
         position: absolute;
         inset: 0;
         width: 100%;
@@ -50,6 +53,7 @@
       #hud {
         position: absolute;
         inset: 0;
+        overflow: hidden;
         pointer-events: none;
         display: none;
       }
@@ -341,6 +345,9 @@
         display: none;
         pointer-events: none;
         z-index: 3;
+        touch-action: none;
+        /* a drawing from before a turn must not widen the page */
+        overflow: hidden;
       }
       body.touch #touch.show {
         display: block;
@@ -430,7 +437,10 @@
         justify-content: center;
         align-items: flex-start;
         gap: 18px;
-        padding: 24px clamp(20px, 7vw, 110px);
+        padding: max(24px, env(safe-area-inset-top))
+          max(clamp(20px, 7vw, 110px), env(safe-area-inset-right))
+          max(24px, env(safe-area-inset-bottom))
+          max(clamp(20px, 7vw, 110px), env(safe-area-inset-left));
         background: linear-gradient(
           90deg,
           rgba(5, 7, 12, 0.94) 0%,
@@ -438,6 +448,8 @@
           rgba(5, 7, 12, 0.05) 78%
         );
         overflow-y: auto;
+        touch-action: pan-y;
+        overscroll-behavior: contain;
       }
       .scr.show {
         display: flex;
@@ -470,6 +482,9 @@
         border: 1px solid var(--bone);
         padding: 12px 30px;
         cursor: pointer;
+      }
+      body.touch .scr button {
+        min-height: 44px;
       }
       .scr button:hover {
         background: var(--bone);
@@ -754,6 +769,66 @@
           display: block;
         }
       }
+      .lk-touch {
+        display: none;
+      }
+      body.touch .lk-touch {
+        display: inline;
+      }
+      body.touch .lk-mouse {
+        display: none;
+      }
+      #rotate {
+        position: fixed;
+        inset: 0;
+        z-index: 10;
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 22px;
+        padding: 24px;
+        text-align: center;
+        background: var(--abyss);
+        touch-action: none;
+      }
+      body.touch.portrait #rotate {
+        display: flex;
+      }
+      #rotate p {
+        margin: 0;
+        font-family: var(--display);
+        font-size: clamp(22px, 6vw, 34px);
+        letter-spacing: 0.06em;
+        max-width: 18ch;
+        text-wrap: balance;
+      }
+      #rotate svg {
+        width: 84px;
+        height: 84px;
+        fill: none;
+        stroke: var(--ember);
+        stroke-width: 2.5;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        animation: turn 2.6s ease-in-out infinite;
+      }
+      @keyframes turn {
+        0%,
+        25% {
+          transform: rotate(0);
+        }
+        65%,
+        100% {
+          transform: rotate(-90deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #rotate svg {
+          animation: none;
+          transform: rotate(-90deg);
+        }
+      }
       @media (max-width: 720px) {
         .cards {
           grid-template-columns: repeat(2, 1fr);
@@ -771,6 +846,78 @@
         }
         #hint {
           display: none;
+        }
+      }
+      /* short landscape screens: phones on their side */
+      @media (max-height: 420px) {
+        .scr {
+          gap: 8px;
+          padding-top: max(10px, env(safe-area-inset-top));
+          padding-bottom: max(10px, env(safe-area-inset-bottom));
+        }
+        .scr h1,
+        .scr h1.sm {
+          font-size: clamp(26px, 6vw, 40px);
+        }
+        .scr .sub {
+          font-size: 16px;
+          line-height: 1.25;
+        }
+        .scr h2 {
+          font-size: 20px;
+          margin: 2px 0 -4px;
+        }
+        .scr button {
+          font-size: 18px;
+          padding: 6px 20px;
+        }
+        .row {
+          gap: 8px;
+        }
+        .picker {
+          gap: 8px;
+        }
+        .cards {
+          grid-template-columns: repeat(5, 1fr);
+          gap: 6px;
+        }
+        .scr button.card {
+          padding: 6px 8px;
+          font-size: 13px;
+        }
+        .scr button.card b {
+          font-size: 17px;
+        }
+        /* the title keeps its buttons in view; the class screen has the kit */
+        #scr-title .kit {
+          display: none;
+        }
+        .kit {
+          font-size: 14px;
+          padding: 8px 10px;
+          gap: 3px;
+        }
+        .kit > div {
+          grid-template-columns: 90px 1fr;
+          gap: 6px;
+        }
+        .tips,
+        .key,
+        .ctl {
+          font-size: 14px;
+        }
+        .key {
+          gap: 6px 14px;
+        }
+        #tset label {
+          margin-bottom: 6px;
+        }
+        #tnotchNote {
+          margin: -2px 0 6px 28px;
+          font-size: 13px;
+        }
+        .opts {
+          gap: 12px;
         }
       }
     </style>
@@ -805,6 +952,13 @@
     </div>
     <div id="touch"><svg></svg></div>
     <div id="treadout"></div>
+    <div id="rotate">
+      <svg viewBox="0 0 48 48" aria-hidden="true">
+        <rect x="15" y="6" width="18" height="36" rx="3" />
+        <path d="M22 37h4" />
+      </svg>
+      <p>Turn your device sideways to play.</p>
+    </div>
     <div id="fade" class="vig"></div>
 
     <div id="scr-title" class="scr wide">
@@ -813,7 +967,10 @@
         Six gates stand in the hall, graded E to S. Only the first is open.
         Pick a class, step through it, and come back alive.
       </p>
-      <p class="touch-note">This needs a keyboard and a mouse.</p>
+      <p class="touch-note">
+        On a phone or tablet, turn it sideways. The controls appear when you
+        start.
+      </p>
       <div class="picker"></div>
       <div class="row">
         <button id="btnPlay" type="button">Enter the hall</button
@@ -881,7 +1038,10 @@
       </div>
       <div class="opts">
         <label for="sens"
-          >Mouse sensitivity
+          ><span
+            ><span class="lk-mouse">Mouse</span
+            ><span class="lk-touch">Look</span> sensitivity</span
+          >
           <input
             id="sens"
             type="range"

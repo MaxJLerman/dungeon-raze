@@ -65,7 +65,9 @@ const shot = (n) =>
   p.screenshot({ path: `${ROOT}shots/${dev ? dev.id + "-" : ""}${n}.png` });
 await shot("title");
 if (mode !== "title") {
-  await p.click("#btnPlay");
+  // a phone taps; a mouse click would count as a mouse and turn touch mode off
+  if (dev) await p.tap("#btnPlay");
+  else await p.click("#btnPlay");
   await p.waitForTimeout(600);
   if (mode === "smoke")
     await p.evaluate(() => {

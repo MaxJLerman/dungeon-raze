@@ -14,6 +14,10 @@ const step = (name, body) => ({
     up: async (id) => { const p = pts.get(id); pts.delete(id); await __touch("touchEnd", [{ id, x: p.x, y: p.y }]); },
     cancel: async () => { pts.clear(); await __touch("touchCancel", []); },
   };
+  const leaveFs = async () => {
+    if (document.fullscreenElement) { try { await document.exitFullscreen(); } catch (e) {} }
+    await new Promise((r) => setTimeout(r, 150)); await draw();
+  };
   const L = () => TOUCH.layout;
   const btn = (act) => L().btns.find((b) => b.act === act);
   const play = () => { DF.newRun(99); DF.show("play"); TOUCH.release(); for (const k in DF.taps) DF.taps[k] = false; };
@@ -142,12 +146,19 @@ export default [
     await T.up(1);
     return { pass: early === "play" && G.state === "pause", early, state: G.state };`),
   step("a tap is not also a click", `
-    play(); await draw();
+    // through the real play(), so the lockPointer guard in it is what is tested
+    const cv = document.getElementById("c");
+    let locks = 0; const realLock = cv.requestPointerLock;
+    cv.requestPointerLock = function () { locks++; return realLock.apply(this, arguments); };
+    G.noLock = false;
+    DF.newRun(99); DF.play(); TOUCH.release(); await draw();
+    await leaveFs();
     for (const k in DF.taps) DF.taps[k] = false;
     const b = btn("light");
     await T.down(1, b.x, b.y); await T.up(1);
     await new Promise((r) => setTimeout(r, 400));
-    const c = { tap: !DF.taps.Mouse0, key: !DF.keys.Mouse0, lock: document.pointerLockElement === null };
+    const c = { tap: !DF.taps.Mouse0, key: !DF.keys.Mouse0, lock: document.pointerLockElement === null, noReq: locks === 0, noFlag: G.noLock === false };
+    delete cv.requestPointerLock;
     DF.sim(0.05);
     const p = G.player;
     c.attack = p.state === "attack";
@@ -453,4 +464,179 @@ export default [
       stored: JSON.parse(localStorage["dungeon-raze.v2"]).o.tsize === 1 };
     const c = { saved, back, bad: bad.every((v) => v), ...d };
     return { pass: Object.values(c).every((v) => v === true), ...c, badRes: bad };`),
+
+  // ---- platform: modes, portrait, Back, fullscreen, gestures, menus ----
+  step("keyboard hides, touch shows", `
+    play(); await draw();
+    const el = document.getElementById("touch");
+    const was = TOUCH.on === true && getComputedStyle(el).display !== "none";
+    const g = btn("guard");
+    await T.down(2, g.x, g.y);
+    const pressed = !!DF.keys["T:guard"];
+    dispatchEvent(new KeyboardEvent("keydown", { code: "KeyW" }));
+    dispatchEvent(new KeyboardEvent("keyup", { code: "KeyW" }));
+    await draw();
+    const off = {
+      off: TOUCH.on === false,
+      hidden: getComputedStyle(el).display === "none",
+      body: !document.body.classList.contains("touch"),
+      released: !DF.keys["T:guard"] && TOUCH.owners.size === 0 && TOUCH.move.mag === 0,
+      vitals: document.getElementById("vitals").style.left === "",
+    };
+    await T.up(2);
+    await T.down(1, innerWidth / 2, innerHeight / 2); await T.up(1); await draw();
+    const c = { was, pressed, ...off, on: TOUCH.on === true, shown: getComputedStyle(el).display !== "none", bodyOn: document.body.classList.contains("touch") };
+    return { pass: Object.values(c).every((v) => v === true), ...c };`),
+  step("mouse play after a stray touch", `
+    play(); TOUCH.setOn(true); await draw();
+    const g = btn("guard");
+    await T.down(1, g.x, g.y);
+    const pressed = !!DF.keys["T:guard"];
+    window.dispatchEvent(new PointerEvent("pointermove", { pointerType: "mouse", bubbles: true }));
+    await draw();
+    const a = {
+      pressed,
+      off: TOUCH.on === false,
+      vitals: document.getElementById("vitals").style.left === "",
+      released: !DF.keys["T:guard"] && TOUCH.owners.size === 0,
+    };
+    for (const k in DF.taps) DF.taps[k] = false;
+    const cv = document.getElementById("c");
+    cv.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true, cancelable: true }));
+    a.click = DF.taps.Mouse0 === true && DF.keys.Mouse0 === true;
+    window.dispatchEvent(new MouseEvent("mouseup", { button: 0, bubbles: true }));
+    a.up = !DF.keys.Mouse0;
+    await T.up(1);
+    for (const k in DF.taps) DF.taps[k] = false;
+    TOUCH.setOn(true); await draw();
+    a.back = TOUCH.on === true;
+    return { pass: Object.values(a).every((v) => v === true), ...a };`),
+  step("forced mode ignores mouse", `
+    play(); TOUCH.forced = true; TOUCH.setOn(true); await draw();
+    window.dispatchEvent(new PointerEvent("pointermove", { pointerType: "mouse", bubbles: true }));
+    await draw();
+    const kept = TOUCH.on === true;
+    TOUCH.forced = false; TOUCH.setOn(true); await draw();
+    return { pass: kept && !TOUCH.forced, kept };`),
+  step("portrait pauses and asks to rotate", `
+    play(); await draw();
+    const W = innerWidth, H = innerHeight;
+    await __viewport(H, W); await draw(); await draw();
+    const r = document.getElementById("rotate");
+    const cx = innerWidth / 2, cy = innerHeight / 2;
+    const top = document.elementFromPoint(cx, cy);
+    const c = {
+      exists: !!r,
+      shown: !!r && getComputedStyle(r).display !== "none",
+      text: !!r && r.textContent.trim() === "Turn your device sideways to play.",
+      paused: G.state === "pause",
+      cls: document.body.classList.contains("portrait"),
+      covers: !!top && !!r && r.contains(top),
+      // the page must not zoom out to fit a drawing left over from landscape
+      noZoom: innerWidth === H && visualViewport.scale === 1,
+    };
+    await __viewport(W, H); await draw(); await draw();
+    c.hidden = !!r && getComputedStyle(r).display === "none";
+    c.clsOff = !document.body.classList.contains("portrait");
+    c.layout = L() && L().W === W;
+    c.stillPaused = G.state === "pause";
+    c.backWide = innerWidth === W && visualViewport.scale === 1;
+    return { pass: Object.values(c).every((v) => v === true), ...c, W, H };`),
+  step("Back opens pause", `
+    DF.newRun(99); DF.play(); await draw();
+    const href = location.href;
+    history.back();
+    await new Promise((r) => setTimeout(r, 150));
+    const c = { paused: G.state === "pause", same: location.href === href };
+    // after resuming, the next Back is caught again
+    DF.play(); await draw();
+    history.back();
+    await new Promise((r) => setTimeout(r, 150));
+    c.again = G.state === "pause";
+    c.sameAgain = location.href === href;
+    await leaveFs();
+    return { pass: Object.values(c).every((v) => v === true), ...c };`),
+  step("gestures are blocked", `
+    const cs = (e) => getComputedStyle(e);
+    const css = [...document.querySelectorAll("style")].map((s) => s.textContent).join("");
+    const meta = document.querySelector('meta[name="viewport"]').content;
+    const callout = (typeof CSS !== "undefined" && CSS.supports("-webkit-touch-callout", "none"))
+      ? cs(document.body).getPropertyValue("-webkit-touch-callout") === "none"
+      : /body[^{}]*\\{[^}]*-webkit-touch-callout:\\s*none/.test(css);
+    const c = {
+      touchAction: cs(document.getElementById("touch")).touchAction === "none",
+      canvasAction: cs(document.getElementById("c")).touchAction === "none",
+      overscroll: cs(document.documentElement).overscrollBehaviorX === "none" && cs(document.documentElement).overscrollBehaviorY === "none",
+      userSelect: cs(document.body).userSelect === "none",
+      callout,
+      meta: meta.includes("viewport-fit=cover") && meta.includes("width=device-width") && meta.includes("initial-scale=1"),
+    };
+    return { pass: Object.values(c).every((v) => v === true), ...c, meta };`),
+  step("play survives refused fullscreen", `
+    await leaveFs();
+    const de = document.documentElement;
+    const out = {};
+    const tryIt = async (name, fn) => {
+      let called = 0;
+      de.requestFullscreen = function () { called++; return fn(); };
+      DF.show("pause");
+      DF.newRun(99); DF.play();
+      await new Promise((r) => setTimeout(r, 120));
+      out[name] = G.state === "play" && called === 1;
+    };
+    await tryIt("rejects", () => Promise.reject(new Error("no")));
+    await tryIt("throws", () => { throw new Error("no"); });
+    await tryIt("undefined", () => undefined);
+    de.requestFullscreen = undefined; de.webkitRequestFullscreen = undefined;
+    DF.show("pause"); DF.play();
+    await new Promise((r) => setTimeout(r, 120));
+    out.absent = G.state === "play";
+    delete de.requestFullscreen; delete de.webkitRequestFullscreen;
+    // a refused orientation lock is caught too
+    const so = screen.orientation;
+    if (so) so.lock = () => Promise.reject(new Error("no"));
+    DF.show("pause"); DF.play();
+    await new Promise((r) => setTimeout(r, 120));
+    out.lockRefused = G.state === "play";
+    if (so) delete so.lock;
+    await leaveFs();
+    return { pass: Object.values(out).every((v) => v === true), ...out };`),
+  step("controls screen says look, not mouse", `
+    DF.openMenu("controls"); await draw();
+    const lab = document.querySelector('label[for="sens"]');
+    const t = lab.innerText.replace(/\\s+/g, " ").trim();
+    DF.show("title");
+    return { pass: /^Look sensitivity/.test(t) && !/Mouse/.test(t), t };`),
+  step("menus fit 640x360", `
+    if (innerWidth !== 640) return { pass: true, skipped: true };
+    const bad = [], seen = {};
+    const check = (tag) => {
+      const bs = [...document.querySelectorAll(".scr.show button")].filter((b) => b.offsetParent !== null);
+      seen[tag] = bs.length;
+      if (!bs.length) bad.push(tag + " no buttons");
+      for (const b of bs) {
+        b.scrollIntoView();
+        const r = b.getBoundingClientRect();
+        const inside = r.left >= -0.5 && r.top >= -0.5 && r.right <= innerWidth + 0.5 && r.bottom <= innerHeight + 0.5;
+        if (!inside || r.height < 43.99)
+          bad.push(tag + " " + (b.id || b.dataset.open || b.dataset.cls || b.textContent.trim()) + " " + [r.left, r.top, r.right, r.bottom, r.height].map((v) => Math.round(v)).join(","));
+      }
+    };
+    for (const s of ["title", "pause", "dead", "win"]) { DF.show(s); await draw(); check(s); }
+    // each menu opened from the title and from pause: Back returns to where it came from
+    for (const from of ["title", "pause"]) {
+      for (const m of ["class", "controls", "howto"]) {
+        DF.show(from); DF.openMenu(m); await draw();
+        check(from + ">" + m);
+        const back = document.querySelector(".scr.show [data-back]");
+        back.scrollIntoView();
+        const r = back.getBoundingClientRect(), x = r.x + r.width / 2, y = r.y + r.height / 2;
+        const hit = document.elementFromPoint(x, y);
+        if (hit !== back && !back.contains(hit)) bad.push(from + ">" + m + " back covered");
+        await T.down(1, x, y); await T.up(1); await draw();
+        if (G.state !== from) bad.push(from + ">" + m + " back went to " + G.state);
+      }
+    }
+    DF.show("title");
+    return { pass: bad.length === 0, bad, seen };`),
 ];

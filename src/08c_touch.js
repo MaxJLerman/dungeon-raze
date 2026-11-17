@@ -18,6 +18,8 @@ const TOUCH = {
   update: null,
   setOn: null,
   relayout: null,
+  checkPortrait: null,
+  enterPlay: null,
   release() {},
 };
 (() => {
@@ -181,10 +183,23 @@ const TOUCH = {
       }
     }
   }
+  // a touch device held upright shows only a request to turn it; playing stops
+  function checkPortrait() {
+    const p = TOUCH.on && innerHeight > innerWidth;
+    document.body.classList.toggle("portrait", p);
+    if (p && G.state === "play") show("pause");
+    return p;
+  }
+  TOUCH.checkPortrait = checkPortrait;
   function relayout() {
     if (!TOUCH.on) return;
     // a finger that was on a control that moves is no longer on it
     release();
+    // the layout is for landscape; upright there is nothing to lay out
+    if (checkPortrait()) {
+      lastKey = key();
+      return;
+    }
     const ins = insets();
     TOUCH.layout = touchLayout(innerWidth, innerHeight, ins, {
       size: clamp(Number(OPT.tsize) || 1, 0.8, 1.2),
@@ -205,14 +220,26 @@ const TOUCH = {
     return [innerWidth, innerHeight, i.l, i.r, i.t, i.b, OPT.tsize, OPT.tnotch, OPT.topac].join("|");
   };
   function setOn(v) {
-    TOUCH.on = !!v;
-    document.body.classList.toggle("touch", TOUCH.on);
-    if (TOUCH.on) relayout();
-    else {
+    v = !!v;
+    // no finger or T: key may stay held when the controls go away
+    if (TOUCH.on && !v) release();
+    TOUCH.on = v;
+    document.body.classList.toggle("touch", v);
+    if (v) {
+      relayout();
+      // show the buttons now, not at the next frame, so the next touch lands on them
+      shown = G.state === "play";
+      host.classList.toggle("show", shown);
+    } else {
       TOUCH.layout = null;
       place(false);
       svg.replaceChildren();
+      btnEls = {};
+      stickEls = null;
       readout.style.display = "none";
+      shown = false;
+      host.classList.remove("show");
+      checkPortrait();
     }
   }
   // ---- fingers ----
@@ -365,11 +392,70 @@ const TOUCH = {
     TOUCH.forced = /[?&]touch=1(&|$)/.test(location.search);
     for (const t of ["pointerdown", "pointermove", "pointerup", "pointercancel"])
       host.addEventListener(t, t === "pointerdown" ? onDown : t === "pointermove" ? onMove : onUp);
+    // the last input decides the mode: a key or a mouse brings back the desktop
+    // controls, a touch brings back the buttons. A forced page stays as it is.
+    addEventListener("keydown", () => {
+      if (TOUCH.on && !TOUCH.forced) setOn(false);
+    });
+    addEventListener("pointermove", (e) => {
+      if (TOUCH.on && !TOUCH.forced && e.pointerType === "mouse") setOn(false);
+    });
+    document.addEventListener(
+      "pointerdown",
+      (e) => {
+        if (!TOUCH.on && e.pointerType === "touch") setOn(true);
+      },
+      true,
+    );
+    // the Back gesture pauses the game instead of leaving the page
+    addEventListener("popstate", () => {
+      armed = false;
+      if (TOUCH.on && G.state === "play") {
+        show("pause");
+        arm();
+      }
+    });
     const re = () => relayout();
     addEventListener("resize", re);
     addEventListener("orientationchange", re);
     if (window.visualViewport) visualViewport.addEventListener("resize", re);
     setOn(detect());
+  };
+  // one history entry for Back to use up; put back whenever it has been used
+  let armed = false;
+  function arm() {
+    if (armed) return;
+    try {
+      history.pushState({ dungeonRaze: 1 }, "");
+      armed = true;
+    } catch (e) {}
+  }
+  // From the tap that starts play: fullscreen, then a landscape lock, then the
+  // Back catcher. A browser may refuse or lack any of them (iPhone has no
+  // fullscreen for pages), and none of that may stop the game.
+  TOUCH.enterPlay = () => {
+    arm();
+    const quiet = () => {};
+    const lock = () => {
+      try {
+        const so = screen.orientation;
+        if (so && so.lock) {
+          const r = so.lock("landscape");
+          if (r && r.catch) r.catch(quiet);
+        }
+      } catch (e) {}
+    };
+    try {
+      const de = document.documentElement,
+        fs = de.requestFullscreen || de.webkitRequestFullscreen;
+      if (fs && !document.fullscreenElement) {
+        const r = fs.call(de, { navigationUI: "hide" });
+        if (r && r.then) r.then(lock, () => lock()).catch(quiet);
+        else lock();
+      } else lock();
+    } catch (e) {
+      lock();
+    }
   };
   TOUCH.setOn = setOn;
   TOUCH.relayout = relayout;
