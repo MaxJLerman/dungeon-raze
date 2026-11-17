@@ -417,7 +417,7 @@ export default [
       fits: probs.length === 0,
       largest: up > 1.2 + 1e-9 || next < up - 1e-9,
     };
-    if (W === 1376 && H === 1032) c.ipad = Math.abs(btn("light").d - 1.2 * 104) < 0.01;
+    if (W === 1376 && H === 1032) c.ipad = Math.abs(btn("light").d - 1.2 * 135) < 0.01;
     if (W === 756 && H === 308) c.pixel = sc < 1.2 - 1e-9 && sc >= 1 - 1e-9;
     await set(1);
     c.reset = L().scale === 1;
@@ -441,12 +441,15 @@ export default [
   step("notch toggle moves controls by the insets", `
     DF.openMenu("controls"); await draw();
     TOUCH.fakeInsets = { l: 47, r: 47, t: 0, b: 21 }; TOUCH.relayout(); await draw();
-    const a0 = { x: btn("light").x, y: btn("light").y };
+    // the attack button's right and bottom edges sit a margin from the safe
+    // area, so they move by the insets even where the two layouts differ in scale
+    const edge = () => { const b = btn("light"); return { x: b.x + b.d / 2, y: b.y + b.d * 0.433 }; };
+    const a0 = edge();
     const cb = document.getElementById("tnotch");
     cb.checked = false; cb.dispatchEvent(new Event("change", { bubbles: true })); await draw();
-    const a1 = { x: btn("light").x, y: btn("light").y };
+    const a1 = edge();
     cb.checked = true; cb.dispatchEvent(new Event("change", { bubbles: true })); await draw();
-    const a2 = { x: btn("light").x, y: btn("light").y };
+    const a2 = edge();
     TOUCH.fakeInsets = null; TOUCH.relayout();
     const c = {
       dx: Math.abs(a1.x - a0.x - 47) < 0.01,
