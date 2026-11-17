@@ -14,7 +14,7 @@ a finished game, and nothing in it is balanced by hand yet.
 
 Run `node build.mjs`, then open `dist/index.html` in a recent desktop Chrome,
 Edge, Firefox or Safari. It runs straight from disk with no server. On a
-desktop it needs a keyboard and a mouse.
+desktop it needs a keyboard and a mouse, or a controller.
 
 Phones and tablets play in landscape by touch. The file runs on Android and on
 desktop. iPhones cannot open it from disk, so they play at
@@ -51,6 +51,36 @@ The Controls menu has three settings for touch: button size (0.8 to 1.2 times,
 cut down on small screens so everything fits), button opacity (20% to 100%),
 and "Keep controls clear of the notch and rounded corners", on by default.
 
+### Controller
+
+Any controller the browser reports as a standard gamepad works. A PlayStation
+pad is shown with its own button names. Pressing a pad button switches the
+prompts to the pad. A key, the mouse or a touch switches them back. The
+Controls menu rebinds every button, sets the camera speed of the stick and turns
+vibration off. Chrome and Edge recognise the most controllers. When a pad is
+connected on a touch device the on-screen buttons are hidden, unless that setting
+is turned off.
+
+| Control (Xbox / PlayStation)           | What it does                                                    |
+| -------------------------------------- | --------------------------------------------------------------- |
+| Left stick                             | Walk. A small push walks slowly                                 |
+| Right stick                            | Turn the camera. While locked on, flick it sideways to switch target |
+| RB / R1                                | Light attack chain                                              |
+| RT / R2                                | Heavy attack                                                    |
+| LB / L1                                | Hold to guard. Guarding just as a hit lands parries             |
+| LT / L2                                | Class ability                                                   |
+| B / Circle                             | Dodge                                                           |
+| X / Square                             | Drink a flask                                                   |
+| Y / Triangle                           | Use the class tool                                              |
+| Left stick click (LS / L3)             | Sprint on or off. Push the stick well over to run               |
+| Right stick click (RS / R3)            | Lock on to the nearest enemy, or let go                         |
+| Menu / Options                         | Pause and resume                                                 |
+| D-pad or left stick, A / Cross, B / Circle | In menus: move, press, go back                              |
+
+Sound on or off has no pad button by default. A sprint attack starts the
+class dash. Playing with a pad goes fullscreen, because a pad has no pointer to
+lock. Leaving fullscreen pauses the game.
+
 ## Technology
 
 | Area           | What is used                                                                |
@@ -59,7 +89,7 @@ and "Keep controls clear of the notch and rounded corners", on by default.
 | Rendering      | WebGL 2, through a small renderer written for this project (`src/02_gl.js`) |
 | Sound          | Web Audio API, every effect synthesized in code (`src/04_audio.js`)         |
 | HUD and menus  | Ordinary HTML and CSS laid over the canvas                                  |
-| Saved settings | `localStorage`, key `dungeon-raze.v2` (bindings, sensitivity, class, touch settings) |
+| Saved settings | `localStorage`, key `dungeon-raze.v2` (bindings, sensitivity, class, touch and controller settings) |
 | Build          | One Node script that concatenates the source into a single HTML file        |
 | Tests          | Playwright driving headless Chromium with software WebGL                    |
 | Fonts          | Two Google Fonts, with system fallbacks when offline                        |
@@ -97,6 +127,7 @@ earlier ones.
 | `src/08_hud.js`      | `HUD`: bars, enemy name tags and bars, lock-on reticle, messages, minimap                   |
 | `src/08b_touchlayout.js` | `touchLayout()`: where every touch button, the stick area and the HUD boxes go, and `layoutProblems()` |
 | `src/08c_touch.js`   | `TOUCH`: draws the buttons, tracks fingers, switches touch mode, fullscreen and Back        |
+| `src/08d_pad.js`     | `PAD`: reads controllers, sticks, camera, sprint latch, menu focus, rebinding, rumble       |
 | `src/09_main.js`     | Input events, menus, camera, main loop, test hook `window.DF`                               |
 | `build.mjs`          | The build script                                                                            |
 | `test.mjs`, `tests/` | Headless test runner and scenario scripts                                                   |
@@ -170,6 +201,8 @@ Screenshots go to `shots/`.
 | `tests/t13.mjs` | Touch layout geometry, hit shapes and a size sweep. Run in `title` mode                 |
 | `tests/t14.mjs` | Touch play with real touches under device emulation: buttons, stick, look, settings, portrait, Back |
 | `tests/t15.mjs` | Screenshots of the hall and a fight with touch controls on every device                 |
+| `tests/t16.mjs` | Controller input with a faked Gamepad API: buttons, sticks, camera, menus, rebinding, rumble |
+| `tests/t17.mjs` | A controller with touch on a phone: the buttons hide and return, with screenshots. Run with `DEVICE=oneplus-13` |
 
 The touch scripts `t14` and `t15` run under emulated phones and tablets. Run
 one device with `DEVICE=pixel-9 SCRIPT=$PWD/tests/t14.mjs node test.mjs smoke`,
