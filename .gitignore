@@ -1,5 +1,6 @@
 shots/
 vendor/
 node_modules/
+dist/
 .vscode/
 .superpowers

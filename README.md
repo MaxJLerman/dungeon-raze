@@ -17,8 +17,8 @@ Edge, Firefox or Safari. It runs straight from disk with no server. On a
 desktop it needs a keyboard and a mouse.
 
 Phones and tablets play in landscape by touch. The file runs on Android and on
-desktop. iPhones cannot open it from disk, so they need the GitHub Pages
-address, once that is set up. Adding `?touch=1` to the address forces the touch
+desktop. iPhones cannot open it from disk, so they play at
+https://maxjlerman.github.io/dungeon-raze/. Adding `?touch=1` to the address forces the touch
 controls on a desktop, with a readout of the screen size, so the layout can be
 checked with a mouse.
 
