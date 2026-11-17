@@ -53,7 +53,9 @@ and "Keep controls clear of the notch and rounded corners", on by default.
 
 ### Controller
 
-Any controller the browser reports as a standard gamepad works. A PlayStation
+Any controller the browser reports as a standard gamepad works. One that is not
+reported as standard also works, and the Controls menu then warns that buttons
+may be mixed up. A PlayStation
 pad is shown with its own button names. Pressing a pad button switches the
 prompts to the pad. A key, the mouse or a touch switches them back. The
 Controls menu rebinds every button, sets the camera speed of the stick and turns

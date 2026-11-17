@@ -289,23 +289,27 @@ is what you need to change the code without breaking it.
   A screen opens on its first control, or the one with `data-padfirst`
   (`#btnPlay`, because class cards come first). The focus is drawn by
   `.padfocus`, styled under `body.pad`. A range takes left and right.
+  `PAD.menu` does not run while `PAD.rebind` is set.
 - Rebinding. `PAD.startRebind(a)` waits for a pad button, which the Controls
   menu shows as "Press a controller button". It arms once every button is
   let go and takes the next press. `P:9` cancels. A key wait started with the
   mouse is cancelled by any pad press.
-- Starting play. `play()` calls `PAD.enterPlay` when a pad is the active input,
-  which asks for fullscreen and catches a refusal, since a pad has no pointer
-  to lock. A pad press also calls `SFX.init`.
+- Starting play. `play()` calls `PAD.enterPlay` only when touch mode is off and
+  a pad is the active input. It asks for fullscreen and catches a refusal,
+  since a pad has no pointer to lock. Under touch, `TOUCH.enterPlay` runs
+  instead. A pad press also calls `SFX.init`.
 - Pausing. `P:9` pauses a pad player. So does unplugging the pad during play,
   which also clears every held `P:` key and the latch. On a desktop, play also
   pauses when pointer lock is lost and when fullscreen that the page entered
   ends. Esc or P also pause whenever the pointer is not locked, which is always
   so for a pad player. Under touch the rules of the Touch section apply.
 - With touch on and a pad connected, `TOUCH.update` sets `body.padhide`, which
-  hides the buttons, the stick and the flask and tool counts. `classify`
-  stops treating those areas as controls so a finger there turns the camera.
-  `OPT.padHideTouch` (on by default) turns this off. A touch brings the buttons
-  back, because it turns `PAD.active` off.
+  hides the buttons and the stick. The flask and tool counts are shown again,
+  because no button shows them. `classify` stops treating those areas as
+  controls so a finger there turns the camera. The buttons come back when the
+  pad is unplugged, when `OPT.padHideTouch` (on by default) is turned off or
+  when touch mode ends. `PAD.active` plays no part, so a touch alone does not
+  bring them back.
 - Rumble. `PAD.rumble(kind)` plays a `dual-rumble` effect from `PAD_RUMBLE` on
   the pad last pressed, only while a pad is the active input and `OPT.rumble`
   is on. `hurtPlayer` plays hurt, parry and guard break, `hitEnemy` plays
@@ -520,7 +524,7 @@ The class picker and HUD read `CLASSES` and need no changes.
 - Controllers are checked only with a faked Gamepad API. No real pad has been
   tried.
 - Whether a pad press may start audio and fullscreen differs by browser.
-- `tests/t8.mjs` step "pause hides the fade, checked" fails, and it failed
+- `tests/t8.mjs` step "pause hides the fade, checked" fails. It failed
   before the controller branch too (seen on commit d3d1666). Every other step
   of t8 passes.
 - The DualSense mapping in Firefox may be wrong. A pad that does not report
