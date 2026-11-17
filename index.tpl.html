@@ -830,6 +830,17 @@
       body.touch #binds button[data-act] {
         display: none;
       }
+      /* the buttons and stick are hidden while a pad is connected, so the
+         pause square and the camera area are what touch keeps. The flask and
+         tool counts come back, since no button shows them. */
+      body.touch.padhide #touch .btns,
+      body.touch.padhide #touch .stick {
+        display: none;
+      }
+      body.touch.padhide #flasks,
+      body.touch.padhide #knives {
+        display: inline;
+      }
       .padonly {
         display: none;
       }

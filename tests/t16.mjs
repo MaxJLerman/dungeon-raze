@@ -7,8 +7,9 @@
 // polling, so each step polls the pads itself, once per simulated tick. An empty
 // pad list is an unplugged pad, which pauses play, so a step that stays in play
 // lets go of a button with pads(mk()).
-const step = (name, body) => ({
+const step = (name, body, shot) => ({
   name,
+  shot,
   eval: `(async () => { const { G, cam, keys, taps } = DF; G.manual = true;
   const mk = (o = {}) => ({
     id: o.id || "Xbox Wireless Controller (STANDARD GAMEPAD Vendor: 045e Product: 0b13)",
@@ -710,4 +711,75 @@ export default [
   const missed = list.filter((e) => !reach.has(e)).map((e) => e.id || e.dataset.pact || e.textContent);
   DF.show("title");
   return { pass: missed.length === 0 && list.length >= 17, missed, n: list.length };`),
+  step("rumble on combat beats", `
+  const p = stage(), e = G.enemies[0], c = {};
+  pads(mk()); tick(); DF.PAD.setActive(true);
+  e.x = p.x; e.z = p.z + 2; e.dead = false; e.aware = true; e.hp = e.def.hp = 1e6; e.state = "idle";
+  const last = () => { const r = window.__rumble, a = r[r.length - 1]; return a ? [a[0], a[1].duration, a[1].strongMagnitude, a[1].weakMagnitude] : null; };
+  const is = (d, s, w) => { const a = last(); return !!a && a[0] === "dual-rumble" && a[1] === d && a[2] === s && a[3] === w; };
+  const fresh = () => { p.state = "free"; p.hp = p.maxHp = 1e6; p.stam = p.maxStam; p.iframe = 0; p.t = 0; window.__rumble = []; };
+  fresh(); DF.hurtPlayer(10, e, {});
+  c.hurt = window.__rumble.length === 1 && is(160, 0.7, 0.4);
+  fresh(); p.state = "guard"; p.guardT = 0; p.yaw = 0; const r = DF.hurtPlayer(10, e, {});
+  c.parry = r === "parry" && window.__rumble.length === 1 && is(90, 0, 0.9);
+  fresh(); p.state = "guard"; p.guardT = 5; p.yaw = 0; p.stam = 1; const r2 = DF.hurtPlayer(10, e, {});
+  c.gbreak = r2 === "block" && p.state === "gbreak" && window.__rumble.length === 1 && is(260, 1, 0.6);
+  fresh(); DF.hitEnemy(e, 5, 0, { heavy: true, src: "melee" });
+  c.heavy = window.__rumble.length === 1 && is(90, 0.5, 0.3);
+  fresh(); DF.hitEnemy(e, 5, 0, { src: "melee" }); DF.hitEnemy(e, 5, 0, { heavy: true, src: "aoe" });
+  c.lightQuiet = window.__rumble.length === 0;
+  fresh(); DF.startExecute(e);
+  c.execute = window.__rumble.length === 1 && is(220, 0.8, 0.5);
+  fresh(); p.hp = 1; DF.hurtPlayer(50, e, {});
+  c.death = p.state === "dead" && window.__rumble.length === 1 && is(500, 1, 1);
+  e.hp = e.def.hp = 100; e.x += 1000; p.hp = p.maxHp; p.state = "free";
+  DF.show("title"); reset();
+  return { pass: Object.values(c).every(Boolean), c, rumble: window.__rumble };`),
+  step("no rumble when off or inactive", `
+  const p = stage(), e = G.enemies[0], c = {};
+  e.x = p.x; e.z = p.z + 2; e.dead = false; e.aware = true;
+  pads(mk()); tick();
+  const hurt = () => { p.state = "free"; p.hp = p.maxHp; p.iframe = 0; DF.hurtPlayer(10, e, {}); };
+  DF.PAD.setActive(true); DF.OPT.rumble = false; window.__rumble = []; hurt();
+  c.off = window.__rumble.length === 0;
+  DF.OPT.rumble = true; DF.PAD.setActive(false); hurt();
+  c.inactive = window.__rumble.length === 0;
+  DF.PAD.setActive(true); hurt();
+  c.control = window.__rumble.length === 1;
+  e.x += 1000; p.hp = p.maxHp; p.state = "free"; DF.show("title"); reset();
+  return { pass: Object.values(c).every(Boolean), c };`),
+  step("a missing or failing actuator", `
+  const p = stage(), e = G.enemies[0], c = {};
+  e.x = p.x; e.z = p.z + 2; e.dead = false; e.aware = true;
+  const hurt = () => { p.state = "free"; p.hp = p.maxHp; p.iframe = 0; return DF.hurtPlayer(10, e, {}); };
+  const A = [
+    ["missing", undefined],
+    ["throws", { playEffect() { throw new Error("no motor"); } }],
+    ["rejects", { playEffect() { return Promise.reject(new Error("refused")); } }],
+  ];
+  for (const [name, act] of A) {
+    const pad = mk(); pad.vibrationActuator = act;
+    pads(pad); tick(); DF.PAD.setActive(true);
+    try { c[name] = hurt() === "hit"; } catch (err) { c[name] = "threw " + err.message; }
+    await draw();
+  }
+  e.x += 1000; p.hp = p.maxHp; p.state = "free"; DF.show("title"); reset();
+  return { pass: Object.values(c).every((v) => v === true), c };`),
+  step("pad fight shot", `
+  const PS = "DualSense Wireless Controller (STANDARD GAMEPAD Vendor: 054c Product: 0ce6)";
+  const p = stage(), e = G.enemies.find((q) => q.type === "husk") || G.enemies[0];
+  e.x = p.x; e.z = p.z + 4; e.dead = false; e.aware = true; e.state = "idle"; e.hp = e.def.hp;
+  p.yaw = 0; cam.yaw = 0; cam.pitch = 0.2; cam.px = p.x; cam.pz = p.z; cam.cd = 5.6;
+  pads(mk({ id: PS, axes: [0, 0, 0.9, 0] })); tick(); pads(mk({ id: PS })); tick(); cam.yaw = 0;
+  await draw(); await draw();
+  const hint = document.getElementById("hint");
+  const c = { active: DF.PAD.active === true, ps: DF.PAD.fam === "ps", hint: hint.getClientRects().length > 0 && hint.textContent.startsWith("R1 attack") };
+  return { pass: Object.values(c).every(Boolean), c, h: hint.textContent };`, "pad-fight"),
+  step("pad controls shot", `
+  const PS = "DualSense Wireless Controller (STANDARD GAMEPAD Vendor: 054c Product: 0ce6)";
+  DF.show("controls"); pads(mk({ id: PS })); tick(); pads(mk({ id: PS, b: { 2: 1 } })); tick(2); pads(mk({ id: PS })); tick(2);
+  await draw(); await draw();
+  const c = { active: DF.PAD.active === true, focus: !!DF.PAD.focus && DF.PAD.focus.classList.contains("padfocus"), col: getComputedStyle(document.getElementById("binds")).display !== "none" };
+  return { pass: Object.values(c).every(Boolean), c };`, "pad-controls"),
+  { name: "leave the pad shots", eval: `(async () => { DF.PAD.setActive(false); window.__pads = []; DF.PAD.poll(0); DF.show("title"); return { pass: true }; })()` },
 ];

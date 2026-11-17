@@ -1582,6 +1582,7 @@ function hitEnemy(e, dmg, post, o = {}) {
     p.focus = Math.min(100, p.focus + (o.src === "aoe" ? 2 : 3));
   }
   SFX.hit(o.heavy);
+  if (o.heavy && o.src === "melee") PAD.rumble("heavy");
   if (e.hp <= 0) {
     kill(e);
     return;
@@ -1656,6 +1657,7 @@ function hurtPlayer(dmg, e, atk) {
       p.focus = Math.min(100, p.focus + (fort ? 3 : 10));
       p.stam = Math.min(p.maxStam, p.stam + 10);
       say("PARRY", "good", 0.7);
+      PAD.rumble("parry");
       if (e && !e.dead) {
         e.posture += atk.pp || (e.def.boss ? 30 : 42);
         e.postT = 0;
@@ -1682,6 +1684,7 @@ function hurtPlayer(dmg, e, atk) {
       p.state = "gbreak";
       p.t = 0;
       say("GUARD BROKEN", "bad", 1);
+      PAD.rumble("gbreak");
     }
     if (p.hp <= 0) playerDie();
     return "block";
@@ -1702,6 +1705,7 @@ function hurtPlayer(dmg, e, atk) {
     playerDie();
     return "hit";
   }
+  PAD.rumble("hurt");
   if (!armored) {
     p.state = "hit";
     p.t = 0;
@@ -1719,6 +1723,7 @@ function playerDie() {
   G.deaths++;
   G.slowT = 0.8;
   SFX.die();
+  PAD.rumble("death");
   for (const e of G.enemies) e.token = false;
 }
 
@@ -1870,6 +1875,7 @@ function startExecute(e) {
   const p = G.player,
     a = Math.atan2(p.x - e.x, p.z - e.z);
   p.state = "execute";
+  PAD.rumble("execute");
   p.t = 0;
   p.exT = e;
   p.exDone = false;

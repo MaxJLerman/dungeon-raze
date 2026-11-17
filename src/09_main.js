@@ -617,6 +617,7 @@ window.DF = {
   hitEnemy,
   alertE,
   hurtPlayer,
+  startExecute,
   openMenu,
   loadOpt,
   saveOpt,

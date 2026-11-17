@@ -15,6 +15,15 @@ function padName(code, fam) {
     : ["A", "B", "X", "Y", "LB", "RB", "LT", "RT", "View", "Menu", "LS", "RS"];
   return names[i] || code;
 }
+// rumble per beat: duration in ms, strong and weak motor
+const PAD_RUMBLE = {
+  hurt: [160, 0.7, 0.4],
+  gbreak: [260, 1.0, 0.6],
+  parry: [90, 0, 0.9],
+  heavy: [90, 0.5, 0.3],
+  execute: [220, 0.8, 0.5],
+  death: [500, 1.0, 1.0],
+};
 const PAD = {
   // true when a pad was the last input, which shows pad prompts
   active: false,
@@ -24,6 +33,8 @@ const PAD = {
   std: true,
   // "xbox" or "ps", from the last pad pressed
   fam: "xbox",
+  // the index of the pad last pressed, which is the one that rumbles
+  last: null,
   prev: {},
   famSeen: false,
   // left stick: x right, y forward, mag 0..1 past the dead zone
@@ -80,6 +91,25 @@ const PAD = {
     document.body.classList.toggle("xb", PAD.fam !== "ps");
     HUD.hint();
     renderPicker();
+  },
+  // plays a beat on the pad last pressed, while a pad is the active input.
+  // A missing actuator, a throw or a rejected promise changes nothing.
+  rumble(kind) {
+    const r = PAD_RUMBLE[kind];
+    if (!r || !PAD.active || !OPT.rumble) return;
+    try {
+      const list = PAD.pads(),
+        p = list.find((q) => q.index === PAD.last) || list[0],
+        a = p && p.vibrationActuator;
+      if (!a || !a.playEffect) return;
+      const res = a.playEffect("dual-rumble", {
+        startDelay: 0,
+        duration: r[0],
+        strongMagnitude: r[1],
+        weakMagnitude: r[2],
+      });
+      if (res && res.catch) res.catch(() => {});
+    } catch (e) {}
   },
   // a button counts as down at half travel on a trigger, else when pressed
   down(b, i) {
@@ -344,6 +374,7 @@ const PAD = {
         if (PAD.stick(p, 0) > 0.5 || PAD.stick(p, 2) > 0.5) act = p;
     if (act) {
       const fam = PAD.fam;
+      PAD.last = act.index;
       PAD.fam = PAD.famOf(act);
       PAD.famSeen = true;
       const wasActive = PAD.active;
