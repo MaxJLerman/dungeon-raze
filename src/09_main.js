@@ -18,6 +18,8 @@ let menuBack = "title",
   rebind = null,
   swallowClick = false;
 function show(state) {
+  // a plaque closes at once when play stops
+  if (state !== "play") closePlaque(true);
   G.state = state;
   for (const s of SCREENS) {
     const e = $("scr-" + s);
@@ -237,7 +239,9 @@ function finishRebind(code) {
 function camUpdate(dt) {
   const p = G.player,
     w = G.world;
-  if (G.state === "play") {
+  if (G.state === "play" && G.insp) {
+    // looking at a plaque: the view is fixed on it
+  } else if (G.state === "play") {
     const sn = cam.sens * OPT.sens;
     cam.yaw -= mouse.dx * sn;
     cam.pitch = clamp(
@@ -297,15 +301,25 @@ function camUpdate(dt) {
     sy = (Math.random() - 0.5) * sh,
     sz = (Math.random() - 0.5) * sh;
   cam.fov = damp(cam.fov, p.sprint ? 1.16 : 1.08, 5, dt);
-  R.setCam(
-    cam.x + sx,
-    cam.y + sy,
-    cam.z + sz,
-    cam.x + fx * cp * 10 + sx,
-    cam.y - sp * 10 + sy,
-    cam.z + fz * cp * 10 + sz,
-    cam.fov,
-  );
+  const eye = [cam.x + sx, cam.y + sy, cam.z + sz],
+    look = [
+      cam.x + fx * cp * 10 + sx,
+      cam.y - sp * 10 + sy,
+      cam.z + fz * cp * 10 + sz,
+    ];
+  if (G.insp) {
+    // glide to face the plaque from in front of it
+    const q = G.insp.q,
+      k = smooth(G.insp.k),
+      f = plaqueFront(q, 1.6),
+      to = [f.x, PLAQUE_Y, f.z],
+      at = [q.x, PLAQUE_Y, q.z];
+    for (let i = 0; i < 3; i++) {
+      eye[i] = lerp(eye[i], to[i], k);
+      look[i] = lerp(look[i], at[i], k);
+    }
+  }
+  R.setCam(eye[0], eye[1], eye[2], look[0], look[1], look[2], cam.fov);
 }
 let last = 0;
 function frame(now) {
@@ -636,6 +650,8 @@ window.DF = {
   alertE,
   hurtPlayer,
   startExecute,
+  openPlaque,
+  closePlaque,
   openMenu,
   loadOpt,
   saveOpt,

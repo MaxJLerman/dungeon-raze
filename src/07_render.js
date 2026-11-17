@@ -15,7 +15,9 @@ function posePlayer(p) {
   f.root.p[0] = p.x;
   f.root.p[2] = p.z;
   f.root.r[1] = p.yaw;
+  // hidden while the camera is up close to a plaque
   f.root.vis =
+    !(G.insp && G.insp.k > 0.4) &&
     !(p.state === "blink" && p.t < 0.12) &&
     !(p.state === "dodge" && p.cls.dodge.warp);
   f.cape.r[0] = 0.12 + mv * 0.95 + Math.sin(G.t * 7) * 0.06 * mv;

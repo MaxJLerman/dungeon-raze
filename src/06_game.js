@@ -1290,6 +1290,7 @@ function setEnv(e) {
 }
 // Clears everything that must not carry from one world into the next.
 function resetRun() {
+  G.insp = null;
   G.bossDead = false;
   G.bossSeen = false;
   G.gate = null;
@@ -1846,6 +1847,7 @@ function playerDie() {
   const p = G.player;
   p.hp = 0;
   p.state = "dead";
+  G.insp = null;
   p.t = 0;
   p.lock = null;
   p.buff = null;
@@ -2086,6 +2088,53 @@ function plaqueAt() {
       return q;
   }
   return null;
+}
+// Inspecting a plaque. G.insp is { q, k, dir, syms, stick } or null: k runs
+// 0 to 1 over 0.5 s while opening (dir 1) and back while closing (dir -1),
+// and drives the camera and the card.
+const INSPECT_T = 0.5;
+// what a locked plaque says instead of the class name
+const PLAQUE_TEXT = {
+  enforcer: "The one who settles accounts",
+  sapper: "Sealed",
+  riftwalker: "Sealed",
+};
+// the code each live plaque takes, as a hash and a length. Filled in with
+// the codes themselves; see codeHash.
+const PLAQUE_CODES = {};
+function openPlaque(q) {
+  const p = G.player;
+  p.state = "inspect";
+  p.vx = p.vz = 0;
+  p.buf = null;
+  p.lock = null;
+  G.insp = { q, k: 0, dir: 1, syms: [], stick: false };
+  SFX.whoosh(false);
+}
+// now skips the ease, for leaving play
+function closePlaque(now) {
+  const p = G.player;
+  if (!G.insp) return;
+  if (now) {
+    G.insp = null;
+    if (p && p.state === "inspect") p.state = "free";
+  } else G.insp.dir = -1;
+}
+function inspectUpdate(dt) {
+  const p = G.player,
+    i = G.insp;
+  p.vx = p.vz = 0;
+  p.speed = 0;
+  if (!i) {
+    p.state = "free";
+    return;
+  }
+  i.k = clamp(i.k + (i.dir * dt) / INSPECT_T, 0, 1);
+  if (i.dir < 0) {
+    if (i.k <= 0) closePlaque(true);
+    return;
+  }
+  if (hit("interact")) i.dir = -1;
 }
 // The grapple's target: the locked enemy, or the one the camera points at,
 // within 14 m and in sight.
@@ -2331,6 +2380,10 @@ function playerUpdate(dt) {
     p.t += dt;
     return;
   }
+  if (p.state === "inspect") {
+    inspectUpdate(dt);
+    return;
+  }
   p.iframe = Math.max(0, p.iframe - dt);
   if (p.buff) {
     p.buffT -= dt;
@@ -2369,6 +2422,15 @@ function playerUpdate(dt) {
   if (il > 0) {
     ix /= il;
     iz /= il;
+  }
+  // at a plaque, Interact opens it and takes the press, even from an action
+  // that shares the key
+  if (p.state === "free" && G.zone === "hub") {
+    const q = plaqueAt();
+    if (q && hit("interact")) {
+      openPlaque(q);
+      return;
+    }
   }
   let act = null;
   if (hit("light")) act = "light";

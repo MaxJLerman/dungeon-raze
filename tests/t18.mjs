@@ -5,6 +5,9 @@ const step = (name, body) => ({
   name,
   eval: `(() => { const { G, cam } = DF; G.manual = true; const K = (a) => { DF.taps[DF.BIND[a]] = true; }; ${body} })()`,
 });
+// stand facing the first plaque, close enough to inspect it
+const stand = `const p = G.player, q = G.world.plaques[0], f = DF.plaqueFront(q, 1.6);
+  p.x = f.x; p.z = f.z; p.yaw = cam.yaw = q.yaw + Math.PI; p.state = "free"; DF.sim(0.05);`;
 export default [
   step("default binds", `
   const c = { key: DF.DEFAULT_BINDS.interact === "Space", dodge: DF.DEFAULT_BINDS.dodge === "KeyB",
@@ -52,4 +55,36 @@ export default [
   at(0, -10, 0); const far = DF.plaqueAt() === null;
   at(f.x, f.z, q.yaw + Math.PI);
   return pr().then((el) => { const t = el.textContent; return { pass: near && away && far && /Inspect/.test(t) && /Space/.test(t), near, away, far, t }; });`),
+  step("inspect opens and closes", `
+  DF.enterHub(); ${stand} const cy = cam.yaw; K("interact"); DF.sim(0.6);
+  const open = p.state === "inspect" && G.insp && G.insp.k === 1;
+  DF.mouse.dx = 300; DF.keys[DF.BIND.fwd] = true; DF.sim(0.3); DF.keys[DF.BIND.fwd] = false;
+  const still = Math.hypot(p.x - f.x, p.z - f.z) < 0.01 && Math.abs(cam.yaw - cy) < 1e-6;
+  K("interact"); DF.sim(0.6); const shut = p.state === "free" && G.insp === null;
+  p.x = 0; p.z = -10; DF.sim(0.05); K("interact"); DF.sim(0.2); const nothing = p.state === "free";
+  return { pass: open && still && shut && nothing, open, still, shut, nothing };`),
+  step("inspect only from free", `
+  DF.enterHub(); ${stand} K("light"); DF.sim(0.05); K("interact"); DF.sim(0.3);
+  const busy = p.state !== "inspect"; DF.sim(1); const unbuffered = p.state !== "inspect";
+  return { pass: busy && unbuffered, state: p.state };`),
+  step("leaving play closes it", `
+  const out = {};
+  for (const how of ["pause", "base", "dead"]) {
+    DF.enterHub(); ${stand} K("interact"); DF.sim(0.6);
+    if (how === "pause") { DF.show("pause"); DF.show("play"); }
+    if (how === "base") DF.toBase();
+    if (how === "dead") DF.hurtPlayer(9999, null, { px: p.x, pz: p.z - 1 });
+    out[how] = G.insp === null && G.player.state !== "inspect";
+  }
+  DF.respawn(); DF.show("play");
+  return { pass: Object.values(out).every(Boolean), out };`),
+  step("pad A opens, right stick does not turn the camera", `
+  DF.enterHub(); ${stand} const pads = [{ index: 0, connected: true, mapping: "standard", id: "fake",
+    buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })), axes: [0, 0, 0, 0] }];
+  navigator.getGamepads = () => pads; DF.PAD.poll(1 / 60);
+  pads[0].buttons[0] = { pressed: true, value: 1 }; DF.sim(0.05, () => DF.PAD.poll(1 / 60));
+  pads[0].buttons[0] = { pressed: false, value: 0 }; DF.sim(0.6, () => DF.PAD.poll(1 / 60));
+  const open = p.state === "inspect", cy = cam.yaw; pads[0].axes[2] = 1; DF.sim(0.3, () => DF.PAD.poll(1 / 60));
+  pads[0].axes[2] = 0; const still = Math.abs(cam.yaw - cy) < 1e-6; DF.closePlaque(true); navigator.getGamepads = () => [];
+  DF.PAD.poll(1 / 60); return { pass: open && still, open, still };`),
 ];
