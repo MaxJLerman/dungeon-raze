@@ -417,8 +417,9 @@ export default [
       fits: probs.length === 0,
       largest: up > 1.2 + 1e-9 || next < up - 1e-9,
     };
-    if (W === 1376 && H === 1032) c.ipad = Math.abs(btn("light").d - 1.2 * 135) < 0.01;
-    if (W === 756 && H === 308) c.pixel = sc < 1.2 - 1e-9 && sc >= 1 - 1e-9;
+    if (W === 1376 && H === 1032) c.ipad = Math.abs(btn("light").d - 1.2 * 74 * 1.22 * 1.4) < 0.01;
+    // the shortest phone cannot take the full size
+    if (W === 802 && H === 293) c.pixel = sc < 1.2 - 1e-9 && sc >= 1 - 1e-9;
     await set(1);
     c.reset = L().scale === 1;
     return { pass: Object.values(c).every((v) => v === true), ...c, sc, probs, W, H };`),
