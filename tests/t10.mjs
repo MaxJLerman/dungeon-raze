@@ -131,4 +131,18 @@ export default [
   const text = (document.getElementById("scr-howto") || document.createElement("p")).textContent.replace(/\\s+/g, " ");
   const c = { title: document.querySelector("#scr-title .tips") === null, parry: text.includes("Pale flash"), posture: text.includes("Orange bar full"), shrines: text.includes("Shrines") };
   return { pass: Object.values(c).every(Boolean), c };`),
+  // the health fill once sat above the menu screens, so it did not dim
+  step("menus cover the health bar", `
+  DF.newRun(99); DF.show("play"); await draw();
+  const vit = document.getElementById("vitals"), hud = document.getElementById("hud");
+  // the HUD ignores the pointer, which elementFromPoint honours; let it in
+  // for the check
+  hud.style.pointerEvents = "auto";
+  const onTop = () => { const r = document.getElementById("hpF").getBoundingClientRect(); const e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!e && vit.contains(e); };
+  const c = { play: onTop() };
+  DF.show("pause"); await draw(); c.pause = !onTop();
+  DF.openMenu("controls"); await draw(); c.controls = !onTop();
+  DF.show("play"); await draw(); c.back = onTop();
+  hud.style.pointerEvents = "";
+  return { pass: Object.values(c).every(Boolean), c };`),
 ];
