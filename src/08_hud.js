@@ -171,7 +171,7 @@ const HUD = (() => {
     const ex =
       p.state !== "dead" && p.state !== "execute" ? nearestStaggered() : null;
     let pr = "";
-    if (ex) pr = "<kbd>" + (TOUCH.on ? "ATTACK" : keyName(BIND.light)) + "</kbd> Execute";
+    if (ex) pr = "<kbd>" + (PAD.active ? actKey("light") : TOUCH.on ? "ATTACK" : keyName(BIND.light)) + "</kbd> Execute";
     if (el.pr !== pr) {
       el.pr = pr;
       el.prompt.innerHTML = pr;
@@ -305,7 +305,7 @@ const HUD = (() => {
   function hint() {
     if (!el || !G.player) return;
     const c = G.player.cls,
-      k = (a) => keyName(BIND[a]);
+      k = actKey;
     el.hint.textContent =
       k("light") +
       " attack · " +

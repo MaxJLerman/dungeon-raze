@@ -870,6 +870,26 @@
       body.touch .lk-mouse {
         display: none;
       }
+      /* a pad that was the last input wins over touch and the keyboard */
+      .lk-pad,
+      .lk-pad .ps,
+      .lk-pad .xb {
+        display: none;
+      }
+      body.pad .lk-pad {
+        display: inline;
+      }
+      body.pad.ps .lk-pad .ps,
+      body.pad.xb .lk-pad .xb {
+        display: inline;
+      }
+      body.pad .lk-mouse,
+      body.pad .lk-touch {
+        display: none;
+      }
+      body.touch.pad #hint {
+        display: block;
+      }
       #rotate {
         position: fixed;
         inset: 0;
@@ -1226,7 +1246,10 @@
         </li>
         <li>
           <b>Shrines</b> are checkpoints and refill everything.
-          <b class="lk-mouse">Esc</b><b class="lk-touch">The pause button</b>
+          <b class="lk-mouse">Esc</b><b class="lk-touch">The pause button</b
+          ><b class="lk-pad"
+            ><span class="ps">Options</span><span class="xb">Menu</span></b
+          >
           pauses.
         </li>
       </ul>

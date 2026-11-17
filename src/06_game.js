@@ -185,6 +185,11 @@ function keyName(c) {
   if (c.startsWith("Numpad")) return "Num " + c.slice(6);
   return c;
 }
+// the name of the button for an action on the input in use: the pad's
+// binding while a pad was the last input, else the keyboard or mouse one
+function actKey(a) {
+  return PAD.active ? padName(PAD_BIND[a], PAD.fam) : keyName(BIND[a]);
+}
 function saveOpt() {
   try {
     localStorage.setItem(

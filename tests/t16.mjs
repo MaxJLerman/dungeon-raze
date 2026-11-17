@@ -364,7 +364,7 @@ export default [
   step("focus moves by direction", `
   const tap = (b) => { pads(mk({ b: { [b]: 1 } })); tick(1); pads(mk()); tick(2); };
   const ctr = (e) => { const r = e.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; };
-  DF.show("class"); pads(mk()); tick(2);
+  DF.show("class"); DF.PAD.setActive(true); pads(mk()); tick(2);
   const c = {};
   const a = DF.PAD.focus, [ax, ay] = ctr(a);
   tap(15);
@@ -643,6 +643,59 @@ export default [
   c.none = n.getClientRects().length === 0;
   DF.show("title"); reset();
   return { pass: Object.values(c).every(Boolean), c };`),
+  step("names", `
+  const pn = DF.padName, kn = DF.keyName;
+  const c = { a: pn("P:0", "xbox") === "A", cross: pn("P:0", "ps") === "✕", down: pn("P:13", "ps") === "D-pad down", none: pn(null) === "Unbound", rb: pn("P:5", "xbox") === "RB", options: pn("P:9", "ps") === "Options", share: pn("P:17", "xbox") === "Share", touchpad: pn("P:17", "ps") === "Touchpad" };
+  pads(mk()); tick(); pads(mk({ b: { 2: 1 } })); tick(2); c.keyXbox = kn("P:5") === "RB";
+  pads(mk()); tick(); pads(mk({ id: "DualSense Wireless Controller (STANDARD GAMEPAD Vendor: 054c Product: 0ce6)", b: { 2: 1 } })); tick(2); c.keyPs = kn("P:5") === "R1";
+  c.keyboard = kn("Mouse0") === "Left click" && kn(null) === "Unbound";
+  pads(mk()); tick();
+  return { pass: Object.values(c).every(Boolean), c };`),
+  step("the hint line follows the last input", `
+  stage(); const hint = () => document.getElementById("hint").textContent;
+  const PS = "DualSense Wireless Controller (STANDARD GAMEPAD Vendor: 054c Product: 0ce6)", c = {};
+  pads(mk()); tick(); pads(mk({ b: { 2: 1 } })); tick(2); await draw(); c.xbox = hint().startsWith("RB attack · RT heavy · LB guard");
+  pads(mk()); tick(); pads(mk({ id: PS, b: { 2: 1 } })); tick(2); await draw(); c.ps = hint().startsWith("R1 attack · R2 heavy · L1 guard");
+  window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyW", key: "w" })); await draw();
+  c.key = hint().startsWith("Left click attack");
+  pads(mk()); tick(); pads(mk({ b: { 2: 1 } })); tick(2); await draw(); c.back = hint().startsWith("RB attack");
+  c.shown = document.getElementById("hint").getClientRects().length > 0;
+  DF.TOUCH.setOn(true); await draw(); c.touchPad = DF.PAD.active && document.getElementById("hint").getClientRects().length > 0;
+  DF.PAD.setActive(false); await draw(); c.touchHidden = document.getElementById("hint").getClientRects().length === 0;
+  DF.TOUCH.setOn(false); pads(mk()); tick(); pads(mk({ b: { 2: 1 } })); tick(2); await draw();
+  DF.setPadBind("light", "P:3"); DF.openMenu("controls"); DF.show("play"); await draw();
+  c.rebind = hint().startsWith("Y attack");
+  pads(mk()); tick(); reset(); DF.show("title");
+  return { pass: Object.values(c).every(Boolean), c, h: hint() };`),
+  step("the Execute prompt", `
+  const p = stage(), e = G.enemies[0], c = {};
+  e.x = p.x; e.z = p.z + 1.5; e.dead = false; e.state = "stagger"; e.t = 0; e.dur = 600; e.aware = true;
+  const pr = () => document.getElementById("prompt").textContent.trim();
+  pads(mk()); tick(); pads(mk({ b: { 2: 1 } })); tick(2); await draw(); c.xbox = pr() === "RB Execute";
+  window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyW", key: "w" })); await draw();
+  c.key = pr() === "Left click Execute";
+  DF.TOUCH.setOn(true); await draw(); c.touch = pr() === "ATTACK Execute";
+  pads(mk()); tick(); pads(mk({ b: { 2: 1 } })); tick(2); await draw(); c.padOverTouch = pr() === "RB Execute";
+  DF.TOUCH.setOn(false); pads(mk()); tick(); reset(); e.x += 1000; e.state = "idle"; DF.show("title");
+  return { pass: Object.values(c).every(Boolean), c, pr: pr() };`),
+  step("the class kit", `
+  const kit = () => { const b = [...document.querySelectorAll("#scr-class .kit b")].find((x) => x.textContent.startsWith("Tool")); return b ? b.querySelector("kbd").innerText.trim() : null; };
+  const PS = "DualSense Wireless Controller (STANDARD GAMEPAD Vendor: 054c Product: 0ce6)", c = {};
+  DF.openMenu("class"); await draw(); c.key = kit() === DF.keyName(DF.BIND.tool);
+  pads(mk()); tick(); pads(mk({ b: { 2: 1 } })); tick(2); await draw(); c.xbox = kit() === "Y";
+  pads(mk()); tick(); pads(mk({ id: PS, b: { 2: 1 } })); tick(2); await draw(); c.ps = kit() === "△";
+  window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyW", key: "w" })); await draw(); c.back = kit() === c.key ? true : kit() === DF.keyName(DF.BIND.tool);
+  pads(mk()); tick(); reset(); DF.show("title");
+  return { pass: Object.values(c).every(Boolean), c };`),
+  step("How to play names the pause button", `
+  const line = () => [...document.querySelectorAll("#scr-howto li")].find((l) => l.textContent.includes("pauses")).innerText.replace(/\\s+/g, " ").trim();
+  const PS = "DualSense Wireless Controller (STANDARD GAMEPAD Vendor: 054c Product: 0ce6)", c = {};
+  DF.show("howto"); await draw(); c.key = line().includes("Esc pauses");
+  pads(mk()); tick(); pads(mk({ id: PS, b: { 2: 1 } })); tick(2); await draw(); c.ps = line().includes("Options pauses") && !line().includes("Menu");
+  pads(mk()); tick(); pads(mk({ b: { 2: 1 } })); tick(2); await draw(); c.xbox = line().includes("Menu pauses") && !line().includes("Options");
+  window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyW", key: "w" })); await draw(); c.back = line().includes("Esc pauses");
+  pads(mk()); tick(); reset(); DF.show("title");
+  return { pass: Object.values(c).every(Boolean), c, l: line() };`),
   step("every Controls control can be reached by the D-pad", `
   reset(); DF.show("controls"); pads(mk()); tick(2);
   const list = DF.PAD.focusables(), reach = new Set([DF.PAD.focus]), todo = [DF.PAD.focus];

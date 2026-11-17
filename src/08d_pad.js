@@ -69,8 +69,17 @@ const PAD = {
     }
   },
   setActive(v) {
+    const was = PAD.active;
     PAD.active = !!v;
     document.body.classList.toggle("pad", PAD.active);
+    if (PAD.active !== was) PAD.prompts();
+  },
+  // the prompts that name buttons are drawn again for the input and family
+  prompts() {
+    document.body.classList.toggle("ps", PAD.fam === "ps");
+    document.body.classList.toggle("xb", PAD.fam !== "ps");
+    HUD.hint();
+    renderPicker();
   },
   // a button counts as down at half travel on a trigger, else when pressed
   down(b, i) {
@@ -253,12 +262,14 @@ const PAD = {
   },
   poll(dt) {
     const list = PAD.pads();
-    const wasConnected = PAD.connected;
+    const wasConnected = PAD.connected,
+      wasStd = PAD.std;
     PAD.connected = list.length > 0;
     PAD.std = list.every((p) => p.mapping === "standard");
     document.body.classList.toggle("padc", PAD.connected);
     // the Controls menu says so when a pad may be read wrongly
-    $("pnote").hidden = !(PAD.connected && !PAD.std);
+    if ((PAD.connected !== wasConnected || PAD.std !== wasStd) && G.state === "controls")
+      renderControls();
     // buttons: down on any pad counts, and the press edge is against the last
     // poll's merged state, so the first press of a new pad is not lost
     const now = {},
@@ -332,9 +343,12 @@ const PAD = {
       for (const p of list)
         if (PAD.stick(p, 0) > 0.5 || PAD.stick(p, 2) > 0.5) act = p;
     if (act) {
+      const fam = PAD.fam;
       PAD.fam = PAD.famOf(act);
       PAD.famSeen = true;
+      const wasActive = PAD.active;
       PAD.setActive(true);
+      if (wasActive && PAD.fam !== fam) PAD.prompts();
       if (G.state === "controls" && PAD.fam !== PAD.famShown) renderControls();
     } else if (!PAD.famSeen && list.length) PAD.fam = PAD.famOf(list[0]);
     // the pause button, and the back button of the pause screen, are fixed

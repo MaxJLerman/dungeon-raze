@@ -101,11 +101,24 @@ const KIT_KEYS = {
   Ability: ["special", "ABILITY"],
   Heavy: ["heavy", "HEAVY"],
 };
-// text for a mouse and keyboard, and for a touch screen; the CSS shows one
-const both = (kb, touch) =>
-  '<span class="lk-mouse">' + kb + '</span><span class="lk-touch">' + touch + "</span>";
+// text for a mouse and keyboard, for a touch screen and for a pad (the
+// keyboard's when none is given); the CSS shows one
+const both = (kb, touch, pad = kb) =>
+  '<span class="lk-mouse">' +
+  kb +
+  '</span><span class="lk-touch">' +
+  touch +
+  '</span><span class="lk-pad">' +
+  pad +
+  "</span>";
 function renderPicker() {
-  for (const host of document.querySelectorAll(".picker")) {
+  // a rebuilt picker keeps the focused card, the pad's and the keyboard's
+  const hosts = [...document.querySelectorAll(".picker")],
+    keep = [PAD.focus, document.activeElement].map((f) => {
+      const h = f && f.closest && f.closest(".picker");
+      return h && f.dataset.cls ? [hosts.indexOf(h), f.dataset.cls] : null;
+    });
+  for (const host of hosts) {
     const cur = CLASSES[OPT.cls];
     host.innerHTML =
       '<div class="cards">' +
@@ -137,7 +150,13 @@ function renderPicker() {
             "<div><b>" +
             k[0] +
             (KIT_KEYS[k[0]]
-              ? " <kbd>" + both(keyName(BIND[KIT_KEYS[k[0]][0]]), KIT_KEYS[k[0]][1]) + "</kbd>"
+              ? " <kbd>" +
+                both(
+                  keyName(BIND[KIT_KEYS[k[0]][0]]),
+                  KIT_KEYS[k[0]][1],
+                  padName(PAD_BIND[KIT_KEYS[k[0]][0]], PAD.fam),
+                ) +
+                "</kbd>"
               : "") +
             "</b><span>" +
             k[1] +
@@ -146,6 +165,10 @@ function renderPicker() {
         .join("") +
       "</div>";
   }
+  const card = (k) =>
+    k && hosts[k[0]].querySelector('.card[data-cls="' + k[1] + '"]');
+  if (keep[0] && card(keep[0])) PAD.setFocus(card(keep[0]));
+  if (keep[1] && card(keep[1])) card(keep[1]).focus();
 }
 // ---- controls menu ----
 function renderControls() {
@@ -192,6 +215,7 @@ function renderControls() {
   $("topac").value = OPT.topac;
   $("topacV").textContent = Math.round(OPT.topac * 100) + "%";
   $("tnotch").checked = OPT.tnotch;
+  $("pnote").hidden = !(PAD.connected && !PAD.std);
   HUD.hint();
 }
 function finishPadRebind(code) {
@@ -568,6 +592,7 @@ window.DF = {
   DEFAULT_BINDS,
   setPadBind,
   padName,
+  keyName,
   SFX,
   touchLayout,
   layoutProblems,
