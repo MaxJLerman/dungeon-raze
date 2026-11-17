@@ -69,11 +69,16 @@ function lockPointer() {
   }
 }
 function play() {
+  // upright on a touch device the rotate overlay covers the page, and play
+  // waits for the device to be turned
+  if (TOUCH.on && innerHeight > innerWidth) return;
   SFX.init();
   show("play");
   TOUCH.release();
-  // a touch screen has no pointer to lock, and goes fullscreen instead
+  // a touch screen has no pointer to lock, and goes fullscreen instead, and
+  // so does a pad
   if (TOUCH.on) TOUCH.enterPlay();
+  else if (PAD.active) PAD.enterPlay();
   else lockPointer();
   canvas.focus();
   for (const k in taps) taps[k] = false;
@@ -99,11 +104,24 @@ const KIT_KEYS = {
   Ability: ["special", "ABILITY"],
   Heavy: ["heavy", "HEAVY"],
 };
-// text for a mouse and keyboard, and for a touch screen; the CSS shows one
-const both = (kb, touch) =>
-  '<span class="lk-mouse">' + kb + '</span><span class="lk-touch">' + touch + "</span>";
+// text for a mouse and keyboard, for a touch screen and for a pad (the
+// keyboard's when none is given); the CSS shows one
+const both = (kb, touch, pad = kb) =>
+  '<span class="lk-mouse">' +
+  kb +
+  '</span><span class="lk-touch">' +
+  touch +
+  '</span><span class="lk-pad">' +
+  pad +
+  "</span>";
 function renderPicker() {
-  for (const host of document.querySelectorAll(".picker")) {
+  // a rebuilt picker keeps the focused card, the pad's and the keyboard's
+  const hosts = [...document.querySelectorAll(".picker")],
+    keep = [PAD.focus, document.activeElement].map((f) => {
+      const h = f && f.closest && f.closest(".picker");
+      return h && f.dataset.cls ? [hosts.indexOf(h), f.dataset.cls] : null;
+    });
+  for (const host of hosts) {
     const cur = CLASSES[OPT.cls];
     host.innerHTML =
       '<div class="cards">' +
@@ -135,7 +153,13 @@ function renderPicker() {
             "<div><b>" +
             k[0] +
             (KIT_KEYS[k[0]]
-              ? " <kbd>" + both(keyName(BIND[KIT_KEYS[k[0]][0]]), KIT_KEYS[k[0]][1]) + "</kbd>"
+              ? " <kbd>" +
+                both(
+                  keyName(BIND[KIT_KEYS[k[0]][0]]),
+                  KIT_KEYS[k[0]][1],
+                  padName(PAD_BIND[KIT_KEYS[k[0]][0]], PAD.fam),
+                ) +
+                "</kbd>"
               : "") +
             "</b><span>" +
             k[1] +
@@ -144,30 +168,64 @@ function renderPicker() {
         .join("") +
       "</div>";
   }
+  const card = (k) =>
+    k && hosts[k[0]].querySelector('.card[data-cls="' + k[1] + '"]');
+  if (keep[0] && card(keep[0])) PAD.setFocus(card(keep[0]));
+  if (keep[1] && card(keep[1])) card(keep[1]).focus();
 }
 // ---- controls menu ----
 function renderControls() {
-  $("binds").innerHTML = ACTIONS.map(
-    ([a, label]) =>
-      '<div class="bind"><span>' +
-      label +
-      '</span><button type="button" data-act="' +
-      a +
-      '"' +
-      (rebind === a ? ' class="wait"' : "") +
-      ">" +
-      (rebind === a ? "Press a key or mouse button" : keyName(BIND[a])) +
-      "</button></div>",
-  ).join("");
+  // a rebuilt list keeps the pad's place in it
+  const fk =
+    PAD.focus && $("binds").contains(PAD.focus) ? PAD.focus.dataset.pact : null;
+  PAD.famShown = PAD.fam;
+  $("binds").innerHTML =
+    ACTIONS.map(([a, label]) => {
+      const moves = !(a in DEFAULT_PAD);
+      return (
+        '<div class="bind"><span>' +
+        label +
+        '</span><button type="button" data-act="' +
+        a +
+        '"' +
+        (rebind === a ? ' class="wait"' : "") +
+        ">" +
+        (rebind === a ? "Press a key or mouse button" : keyName(BIND[a])) +
+        '</button><button type="button" data-pact="' +
+        a +
+        '"' +
+        (PAD.rebind === a ? ' class="wait"' : "") +
+        (moves ? " disabled" : "") +
+        ">" +
+        (moves
+          ? "Left stick"
+          : PAD.rebind === a
+            ? "Press a controller button"
+            : padName(PAD_BIND[a], PAD.fam)) +
+        "</button></div>"
+      );
+    }).join("");
+  if (fk) PAD.setFocus($("binds").querySelector('[data-pact="' + fk + '"]'));
   $("sens").value = OPT.sens;
   $("sensV").textContent = OPT.sens.toFixed(2) + "×";
   $("invY").checked = OPT.invY;
+  $("psens").value = OPT.psens;
+  $("psensV").textContent = OPT.psens.toFixed(2) + "×";
+  $("padHideTouch").checked = OPT.padHideTouch;
+  $("rumble").checked = OPT.rumble;
   $("tsize").value = OPT.tsize;
   $("tsizeV").textContent = OPT.tsize.toFixed(2) + "×";
   $("topac").value = OPT.topac;
   $("topacV").textContent = Math.round(OPT.topac * 100) + "%";
   $("tnotch").checked = OPT.tnotch;
+  $("pnote").hidden = !(PAD.connected && !PAD.std);
   HUD.hint();
+}
+function finishPadRebind(code) {
+  if (code) setPadBind(PAD.rebind, code);
+  PAD.endRebind();
+  renderControls();
+  renderPicker();
 }
 function finishRebind(code) {
   if (code) setBind(rebind, code);
@@ -255,6 +313,8 @@ function frame(now) {
   let dt = Math.min((now - last) / 1000, 0.05);
   last = now;
   if (!(dt > 0)) dt = 0.016;
+  // tests set G.manual and poll the pads themselves
+  if (!G.manual) PAD.poll(dt);
   if (!G.manual && (G.state === "play" || G.state === "dead")) {
     let sim = dt;
     if (G.hitstop > 0) {
@@ -291,6 +351,7 @@ function boot() {
   loadOpt();
   HUD.init();
   TOUCH.init();
+  PAD.init();
   enterHub();
   renderPicker();
   renderControls();
@@ -298,6 +359,14 @@ function boot() {
   addEventListener(
     "keydown",
     (e) => {
+      // a key cancels a wait for a pad button
+      if (PAD.rebind) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        PAD.endRebind();
+        renderControls();
+        return;
+      }
       if (!rebind) return;
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -329,11 +398,20 @@ function boot() {
   );
   addEventListener("keydown", (e) => {
     if (G.state === "play") {
+      // a key press may be what lets the browser start audio
+      try {
+        SFX.init();
+      } catch (err) {}
       if (!e.repeat) taps[e.code] = true;
       keys[e.code] = true;
       if (!e.ctrlKey && !e.metaKey && !/^F\d+$/.test(e.code))
         e.preventDefault();
-      if (e.code === "KeyP" && G.noLock) show("pause");
+      // with no pointer lock, the browser sends no Esc to leave, so pause here
+      if (
+        (e.code === "Escape" || e.code === "KeyP") &&
+        document.pointerLockElement !== canvas
+      )
+        show("pause");
       if (e.code === BIND.mute && !e.repeat) SFX.toggle();
       return;
     }
@@ -360,6 +438,9 @@ function boot() {
   canvas.addEventListener("mousedown", (e) => {
     if (G.state !== "play") return;
     e.preventDefault();
+    try {
+      SFX.init();
+    } catch (err) {}
     if (document.pointerLockElement !== canvas && !G.noLock) lockPointer();
     taps["Mouse" + e.button] = true;
     keys["Mouse" + e.button] = true;
@@ -392,6 +473,14 @@ function boot() {
     )
       show("pause");
   });
+  // leaving fullscreen pauses on a desktop, which touch does for itself. Only
+  // a change out of fullscreen counts, not an event with nothing left to leave.
+  let wasFull = false;
+  document.addEventListener("fullscreenchange", () => {
+    const full = !!document.fullscreenElement;
+    if (!TOUCH.on && G.state === "play" && wasFull && !full) show("pause");
+    wasFull = full;
+  });
   document.addEventListener("pointerlockerror", () => {
     G.noLock = true;
   });
@@ -418,8 +507,14 @@ function boot() {
       if (again) again.focus();
       return;
     }
-    const bb = e.target.closest && e.target.closest("#binds button");
+    const pb = e.target.closest && e.target.closest("#binds button[data-pact]");
+    if (pb) {
+      PAD.startRebind(pb.dataset.pact);
+      return;
+    }
+    const bb = e.target.closest && e.target.closest("#binds button[data-act]");
     if (bb) {
+      PAD.endRebind();
       rebind = bb.dataset.act;
       renderControls();
     }
@@ -431,6 +526,19 @@ function boot() {
   });
   $("invY").addEventListener("change", (e) => {
     OPT.invY = e.target.checked;
+    saveOpt();
+  });
+  $("psens").addEventListener("input", (e) => {
+    OPT.psens = clamp(parseFloat(e.target.value) || 1, 0.2, 3);
+    $("psensV").textContent = OPT.psens.toFixed(2) + "×";
+    saveOpt();
+  });
+  $("padHideTouch").addEventListener("change", (e) => {
+    OPT.padHideTouch = e.target.checked;
+    saveOpt();
+  });
+  $("rumble").addEventListener("change", (e) => {
+    OPT.rumble = e.target.checked;
     saveOpt();
   });
   // touch settings: each one saves and lays the buttons out again
@@ -453,8 +561,13 @@ function boot() {
   });
   $("btnDefaults").addEventListener("click", () => {
     Object.assign(BIND, DEFAULT_BINDS);
+    Object.assign(PAD_BIND, DEFAULT_PAD);
+    PAD.endRebind();
     OPT.sens = 1;
     OPT.invY = false;
+    OPT.psens = 1;
+    OPT.padHideTouch = true;
+    OPT.rumble = true;
     OPT.tsize = 1;
     OPT.topac = 0.6;
     OPT.tnotch = true;
@@ -483,6 +596,14 @@ window.DF = {
   startTrans,
   genHub,
   TOUCH,
+  PAD,
+  PAD_BIND,
+  DEFAULT_PAD,
+  DEFAULT_BINDS,
+  setPadBind,
+  padName,
+  keyName,
+  SFX,
   touchLayout,
   layoutProblems,
   hexContains,
@@ -506,6 +627,7 @@ window.DF = {
   hitEnemy,
   alertE,
   hurtPlayer,
+  startExecute,
   openMenu,
   loadOpt,
   saveOpt,

@@ -289,13 +289,16 @@ const TOUCH = {
   const accepts = (e) =>
     e.pointerType === "touch" || e.pointerType === "pen" || (TOUCH.forced && e.pointerType === "mouse");
   function classify(x, y) {
-    const L = TOUCH.layout;
-    for (const b of L.btns) if (hexContains(b, x, y)) return { kind: "btn", act: b.act };
+    const L = TOUCH.layout,
+      // with a pad connected the buttons and stick are gone, so a finger there turns the camera
+      hid = document.body.classList.contains("padhide");
+    if (!hid) for (const b of L.btns) if (hexContains(b, x, y)) return { kind: "btn", act: b.act };
     const q = L.pause;
     if (x >= q.x && x <= q.x + q.w && y >= q.y && y <= q.y + q.h) return { kind: "pause" };
     const m = L.move;
     // one stick: a second finger in its area turns the camera instead
-    if (x >= m.x0 && x <= m.x1 && y >= m.y0 && y <= m.y1 && !hasKind("move")) return { kind: "move" };
+    if (!hid && x >= m.x0 && x <= m.x1 && y >= m.y0 && y <= m.y1 && !hasKind("move"))
+      return { kind: "move" };
     return { kind: "look" };
   }
   const hasKind = (k) => {
@@ -519,6 +522,12 @@ const TOUCH = {
   // runs every frame: the buttons show only while playing, and a change in
   // size, insets or settings that no event reported is picked up here
   TOUCH.update = (dt) => {
+    // the buttons and stick give way to a connected pad, if the setting says so
+    const hide = TOUCH.on && OPT.padHideTouch && PAD.connected;
+    if (hide !== document.body.classList.contains("padhide")) {
+      document.body.classList.toggle("padhide", hide);
+      if (hide) release();
+    }
     if (!TOUCH.on) return;
     const s = G.state === "play";
     if (s !== shown) {

@@ -522,6 +522,11 @@
         outline: 2px solid var(--vein);
         outline-offset: 3px;
       }
+      /* where a controller is: only while a pad was the last input */
+      body.pad .padfocus {
+        outline: 2px solid var(--ember);
+        outline-offset: 3px;
+      }
       .scr button:disabled {
         opacity: 0.4;
         cursor: default;
@@ -683,13 +688,12 @@
         display: grid;
         grid-template-columns: repeat(2, minmax(240px, 1fr));
         gap: 6px 26px;
-        width: min(760px, 100%);
+        width: min(1000px, 100%);
       }
       .bind {
         display: flex;
-        justify-content: space-between;
         align-items: center;
-        gap: 12px;
+        gap: 8px;
         font-size: 17px;
         border-bottom: 1px solid rgba(232, 226, 212, 0.12);
         padding: 3px 0;
@@ -699,11 +703,16 @@
         font-size: 16px;
         font-weight: 600;
         letter-spacing: 0.04em;
-        padding: 5px 12px;
-        min-width: 132px;
+        padding: 5px 6px;
+        flex: 0 0 118px;
         border-color: rgba(232, 226, 212, 0.4);
       }
+      .bind > span {
+        flex: 1;
+      }
       .scr .bind button.wait {
+        font-size: 13px;
+        line-height: 1.15;
         border-color: var(--ember);
         color: var(--ember);
         background: rgba(255, 179, 71, 0.1);
@@ -773,10 +782,74 @@
       body.touch .touchonly {
         display: block;
       }
-      #sensV {
+      #sensV,
+      #psensV {
         font-variant-numeric: tabular-nums;
         color: var(--vein);
         min-width: 48px;
+      }
+      #pset {
+        width: min(600px, 100%);
+        margin-top: 16px;
+      }
+      /* the three controls share a column, so that the D-pad finds the next
+         one straight below */
+      #pset h2 {
+        margin: 0 0 12px;
+      }
+      #pset label {
+        display: grid;
+        grid-template-columns: 1fr 180px 56px;
+        align-items: center;
+        gap: 10px;
+        font-size: 17px;
+        margin-bottom: 12px;
+      }
+      #pset input[type="range"] {
+        width: 180px;
+        accent-color: var(--vein);
+      }
+      #pset input[type="checkbox"] {
+        grid-column: 2;
+        grid-row: 1;
+        justify-self: center;
+        width: 18px;
+        height: 18px;
+        accent-color: var(--vein);
+      }
+      #pnote {
+        margin: 0 0 12px;
+        font-size: 14px;
+        color: var(--ember);
+      }
+      /* a controller: its column shows on a touch device while a pad is
+         connected, and its prompts replace the key and touch ones */
+      body.touch.padc #binds {
+        display: grid;
+      }
+      body.touch #binds button[data-act] {
+        display: none;
+      }
+      /* the buttons and stick are hidden while a pad is connected, so the
+         pause square and the camera area are what touch keeps. The flask and
+         tool counts come back, since no button shows them. */
+      body.touch.padhide #touch .btns,
+      body.touch.padhide #touch .stick {
+        display: none;
+      }
+      body.touch.padhide #flasks,
+      body.touch.padhide #knives {
+        display: inline;
+      }
+      .padonly {
+        display: none;
+      }
+      body.pad .padonly {
+        display: block;
+      }
+      body.pad .kbonly,
+      body.pad .touchonly {
+        display: none;
       }
       #cross {
         position: absolute;
@@ -807,6 +880,26 @@
       }
       body.touch .lk-mouse {
         display: none;
+      }
+      /* a pad that was the last input wins over touch and the keyboard */
+      .lk-pad,
+      .lk-pad .ps,
+      .lk-pad .xb {
+        display: none;
+      }
+      body.pad .lk-pad {
+        display: inline;
+      }
+      body.pad.ps .lk-pad .ps,
+      body.pad.xb .lk-pad .xb {
+        display: inline;
+      }
+      body.pad .lk-mouse,
+      body.pad .lk-touch {
+        display: none;
+      }
+      body.touch.pad.padhide #hint {
+        display: block;
       }
       #rotate {
         position: fixed;
@@ -1010,7 +1103,7 @@
       </p>
       <div class="picker"></div>
       <div class="row">
-        <button id="btnPlay" type="button">Enter the hall</button
+        <button id="btnPlay" type="button" data-padfirst>Enter the hall</button
         ><button type="button" data-open="howto">How to play</button
         ><button type="button" data-open="controls">Controls</button>
       </div>
@@ -1038,6 +1131,15 @@
       <p class="sub kbonly">
         Click a binding, then press the key or mouse button you want. Esc
         cancels. A key already in use swaps places.
+      </p>
+      <p class="sub padonly">
+        Choose a controller binding with ✕ or A, then press the button you
+        want. Options or Menu cancels.
+      </p>
+      <p id="pnote" hidden>
+        This browser doesn't fully recognise your controller, so buttons may be
+        mixed up. Rebind them below. Chrome and Edge recognise the most
+        controllers.
       </p>
       <div id="binds"></div>
       <div id="tset">
@@ -1075,7 +1177,8 @@
         <label for="sens"
           ><span
             ><span class="lk-mouse">Mouse</span
-            ><span class="lk-touch">Look</span> sensitivity</span
+            ><span class="lk-touch">Look</span
+            ><span class="lk-pad">Mouse</span> sensitivity</span
           >
           <input
             id="sens"
@@ -1089,6 +1192,28 @@
         >
         <label for="invY"
           ><input id="invY" type="checkbox" /> Invert vertical look</label
+        >
+      </div>
+      <div id="pset">
+        <h2>Controller</h2>
+        <label for="psens"
+          >Camera speed (stick)
+          <input
+            id="psens"
+            type="range"
+            min="0.2"
+            max="3"
+            step="0.05"
+            value="1"
+          />
+          <span id="psensV">1.00×</span></label
+        >
+        <label for="padHideTouch"
+          ><input id="padHideTouch" type="checkbox" checked />
+          Hide touch buttons while a controller is connected</label
+        >
+        <label for="rumble"
+          ><input id="rumble" type="checkbox" checked /> Vibration</label
         >
       </div>
       <div class="row">
@@ -1133,7 +1258,10 @@
         </li>
         <li>
           <b>Shrines</b> are checkpoints and refill everything.
-          <b class="lk-mouse">Esc</b><b class="lk-touch">The pause button</b>
+          <b class="lk-mouse">Esc</b><b class="lk-touch">The pause button</b
+          ><b class="lk-pad"
+            ><span class="ps">Options</span><span class="xb">Menu</span></b
+          >
           pauses.
         </li>
       </ul>

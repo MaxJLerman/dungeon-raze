@@ -102,26 +102,55 @@ const ACTIONS = [
   ["mute", "Sound on or off"],
 ];
 const BIND = Object.assign({}, DEFAULT_BINDS);
+// controller buttons, as "P:" and the standard-mapping index. Movement has no
+// entry: it is the left stick. null is unbound.
+const DEFAULT_PAD = {
+  light: "P:5",
+  heavy: "P:7",
+  guard: "P:4",
+  special: "P:6",
+  dodge: "P:1",
+  sprint: "P:10",
+  lock: "P:11",
+  heal: "P:2",
+  tool: "P:3",
+  mute: null,
+};
+const PAD_BIND = Object.assign({}, DEFAULT_PAD);
+// P:9 pauses and is not bindable. The D-pad is bindable in play, and moves
+// menu focus on a menu.
+const PAD_CODES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 17].map(
+  (i) => "P:" + i,
+);
 // tsize scales the touch buttons, topac is their idle opacity and tnotch keeps
 // them clear of the notch and rounded corners
 const OPT = {
   cls: "assassin",
   sens: 1,
   invY: false,
+  psens: 1,
+  padHideTouch: true,
+  rumble: true,
   tsize: 1,
   topac: 0.6,
   tnotch: true,
 };
-// a touch button sets "T:action" and is read here beside the bound key
-const held = (a) => !!keys[BIND[a]] || !!keys["T:" + a],
+// a touch button sets "T:action" and a pad button "P:i"; both are read here
+// beside the bound key
+const held = (a) =>
+    !!keys[BIND[a]] ||
+    !!keys["T:" + a] ||
+    (!!PAD_BIND[a] && !!keys[PAD_BIND[a]]),
   hit = (a) => {
-    // both taps are read, so that both are consumed
+    // all three taps are read, so that all are consumed
     const k = tap(BIND[a]),
-      t = tap("T:" + a);
-    return k || t;
+      t = tap("T:" + a),
+      d = PAD_BIND[a] ? tap(PAD_BIND[a]) : false;
+    return k || t || d;
   };
 function keyName(c) {
   if (!c) return "Unbound";
+  if (c.startsWith("P:")) return padName(c, PAD.fam);
   const M = {
     Mouse0: "Left click",
     Mouse1: "Middle click",
@@ -157,11 +186,16 @@ function keyName(c) {
   if (c.startsWith("Numpad")) return "Num " + c.slice(6);
   return c;
 }
+// the name of the button for an action on the input in use: the pad's
+// binding while a pad was the last input, else the keyboard or mouse one
+function actKey(a) {
+  return PAD.active ? padName(PAD_BIND[a], PAD.fam) : keyName(BIND[a]);
+}
 function saveOpt() {
   try {
     localStorage.setItem(
       "dungeon-raze.v2",
-      JSON.stringify({ b: BIND, o: OPT }),
+      JSON.stringify({ b: BIND, p: PAD_BIND, o: OPT }),
     );
   } catch (e) {
     /* storage may be unavailable */
@@ -173,11 +207,20 @@ function loadOpt() {
     if (!d) return;
     for (const k in DEFAULT_BINDS)
       if (d.b && typeof d.b[k] === "string") BIND[k] = d.b[k];
+    // a pad code that is not bindable, or no longer exists, is the default
+    if (d.p && typeof d.p === "object")
+      for (const k in DEFAULT_PAD)
+        PAD_BIND[k] =
+          d.p[k] === null || PAD_CODES.includes(d.p[k]) ? d.p[k] : DEFAULT_PAD[k];
     if (d.o) {
       if (CLASSES[d.o.cls]) OPT.cls = d.o.cls;
       if (d.o.sens > 0.1 && d.o.sens < 5) OPT.sens = d.o.sens;
       OPT.invY = !!d.o.invY;
       const num = (v, lo, hi) => typeof v === "number" && v >= lo && v <= hi;
+      OPT.psens = num(d.o.psens, 0.2, 3) ? d.o.psens : 1;
+      OPT.padHideTouch =
+        typeof d.o.padHideTouch === "boolean" ? d.o.padHideTouch : true;
+      OPT.rumble = typeof d.o.rumble === "boolean" ? d.o.rumble : true;
       if (num(d.o.tsize, 0.8, 1.2)) OPT.tsize = d.o.tsize;
       if (num(d.o.topac, 0.2, 1)) OPT.topac = d.o.topac;
       if (typeof d.o.tnotch === "boolean") OPT.tnotch = d.o.tnotch;
@@ -190,6 +233,13 @@ function setBind(a, code) {
   const old = BIND[a];
   for (const k in BIND) if (k !== a && BIND[k] === code) BIND[k] = old;
   BIND[a] = code;
+  saveOpt();
+}
+// the same swap rule for a controller button
+function setPadBind(a, code) {
+  const old = PAD_BIND[a];
+  for (const k in PAD_BIND) if (k !== a && PAD_BIND[k] === code) PAD_BIND[k] = old;
+  PAD_BIND[a] = code;
   saveOpt();
 }
 
@@ -1533,6 +1583,7 @@ function hitEnemy(e, dmg, post, o = {}) {
     p.focus = Math.min(100, p.focus + (o.src === "aoe" ? 2 : 3));
   }
   SFX.hit(o.heavy);
+  if (o.heavy && o.src === "melee") PAD.rumble("heavy");
   if (e.hp <= 0) {
     kill(e);
     return;
@@ -1607,6 +1658,7 @@ function hurtPlayer(dmg, e, atk) {
       p.focus = Math.min(100, p.focus + (fort ? 3 : 10));
       p.stam = Math.min(p.maxStam, p.stam + 10);
       say("PARRY", "good", 0.7);
+      PAD.rumble("parry");
       if (e && !e.dead) {
         e.posture += atk.pp || (e.def.boss ? 30 : 42);
         e.postT = 0;
@@ -1633,6 +1685,7 @@ function hurtPlayer(dmg, e, atk) {
       p.state = "gbreak";
       p.t = 0;
       say("GUARD BROKEN", "bad", 1);
+      PAD.rumble("gbreak");
     }
     if (p.hp <= 0) playerDie();
     return "block";
@@ -1653,6 +1706,7 @@ function hurtPlayer(dmg, e, atk) {
     playerDie();
     return "hit";
   }
+  PAD.rumble("hurt");
   if (!armored) {
     p.state = "hit";
     p.t = 0;
@@ -1670,6 +1724,7 @@ function playerDie() {
   G.deaths++;
   G.slowT = 0.8;
   SFX.die();
+  PAD.rumble("death");
   for (const e of G.enemies) e.token = false;
 }
 
@@ -1821,6 +1876,7 @@ function startExecute(e) {
   const p = G.player,
     a = Math.atan2(p.x - e.x, p.z - e.z);
   p.state = "execute";
+  PAD.rumble("execute");
   p.t = 0;
   p.exT = e;
   p.exDone = false;
@@ -2085,6 +2141,10 @@ function playerUpdate(dt) {
     f = TOUCH.move.y;
     s = TOUCH.move.x;
     im = TOUCH.move.mag;
+  } else if (PAD.move.mag > 0) {
+    f = PAD.move.y;
+    s = PAD.move.x;
+    im = PAD.move.mag;
   }
   const fx = Math.sin(cam.yaw),
     fz = Math.cos(cam.yaw);
@@ -2129,6 +2189,9 @@ function playerUpdate(dt) {
   }
   const lockYaw = p.lock ? Math.atan2(p.lock.x - p.x, p.lock.z - p.z) : null;
   const inYaw = () => (il > 0 ? Math.atan2(ix, iz) : p.yaw);
+  // p.sprint is cleared each update before a buffered attack is read, so a
+  // running start is judged from the update before
+  const wasSprint = p.sprint;
   const doAct = (a) => {
     if (a === "light") {
       const e = nearestStaggered();
@@ -2137,7 +2200,7 @@ function playerUpdate(dt) {
         return true;
       }
       return startMove(
-        p.sprint && p.speed > c.run * 0.8 ? c.dash : c.chain,
+        wasSprint && p.speed > c.run * 0.8 ? c.dash : c.chain,
         inYaw(),
       );
     }
@@ -2179,7 +2242,10 @@ function playerUpdate(dt) {
         break;
       }
       if (p.buf && doAct(p.buf)) break;
-      p.sprint = held("sprint") && il > 0 && p.stam > 0;
+      // a pad stick sprints from the latch, and only at a hard push
+      const padMove = TOUCH.move.mag === 0 && PAD.move.mag > 0,
+        run = padMove ? PAD.sprint && PAD.move.mag >= 0.6 : held("sprint");
+      p.sprint = run && il > 0 && p.stam > 0;
       const sp = p.sprint ? c.run : (p.lock ? c.walk * 0.88 : c.walk) * im;
       p.vx = damp(p.vx, ix * sp, 14, dt);
       p.vz = damp(p.vz, iz * sp, 14, dt);
