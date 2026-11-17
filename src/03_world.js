@@ -840,6 +840,7 @@ function genWorld(seed) {
     shrines,
     spawns,
     spawn: sp,
+    plaques: [],
     spawnYaw: Math.atan2(
       nodes[path[1]].x - start.x,
       nodes[path[1]].z - start.z,

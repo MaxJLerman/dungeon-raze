@@ -30,6 +30,11 @@ const HUD = (() => {
       cross: $("cross"),
       hint: $("hint"),
       fade: $("fade"),
+      plaque: $("plaque"),
+      plTitle: $("plaqueTitle"),
+      plBody: $("plaqueBody"),
+      plMarks: $("plaqueMarks"),
+      plClose: $("plaqueClose"),
     };
     const host = $("ebars");
     for (let i = 0; i < 10; i++) {
@@ -172,11 +177,14 @@ const HUD = (() => {
       p.state !== "dead" && p.state !== "execute" ? nearestStaggered() : null;
     let pr = "";
     if (ex) pr = "<kbd>" + (PAD.active ? actKey("light") : TOUCH.on ? "ATTACK" : keyName(BIND.light)) + "</kbd> Execute";
+    else if (p.state === "free" && plaqueAt())
+      pr = "<kbd>" + (PAD.active ? actKey("interact") : TOUCH.on ? "TAP" : keyName(BIND.interact)) + "</kbd> Inspect";
     if (el.pr !== pr) {
       el.pr = pr;
       el.prompt.innerHTML = pr;
       el.prompt.style.display = pr ? "block" : "none";
     }
+    plaqueCard();
     // messages
     for (const m of G.msgs) m.t -= dt;
     G.msgs = G.msgs.filter((m) => m.t > 0);
@@ -301,6 +309,84 @@ const HUD = (() => {
     g.lineTo(q[0], q[1]);
     g.closePath();
     g.fill();
+  }
+  // the plaque card: content when it changes, then its place and size, from
+  // the plaque on screen at k 0 to the middle of the screen at k 1
+  let plKey = "";
+  function plaqueCard() {
+    const i = G.insp,
+      d = el.plaque;
+    if (!i || G.state !== "play") {
+      d.style.display = "none";
+      d.classList.remove("flare");
+      plKey = "";
+      return;
+    }
+    const q = i.q,
+      open = q.cls && classOpen(q.cls),
+      code = q.cls && PLAQUE_CODES[q.cls],
+      n = code && !open ? code.len : 0,
+      got = Math.min(n, i.syms.length),
+      close = closeName(),
+      key = [q.id, open, got, close].join("|");
+    if (key !== plKey) {
+      plKey = key;
+      d.classList.toggle("sealed", !q.cls);
+      d.classList.toggle("locked", !!q.cls && !open);
+      d.classList.toggle("open", !!open);
+      const col = q.cls ? CLASSES[q.cls].col : [0.7, 0.72, 0.78];
+      d.style.setProperty(
+        "--pc",
+        "rgb(" + col.map((v) => Math.round(Math.sqrt(sat(v)) * 255)).join(",") + ")",
+      );
+      if (open) {
+        const c = CLASSES[q.cls];
+        el.plTitle.textContent = c.name;
+        el.plBody.innerHTML =
+          "<div><i>" + c.tag + "</i></div>" +
+          c.kit.map((k) => "<div><b>" + k[0] + "</b>" + k[1] + "</div>").join("");
+      } else {
+        el.plTitle.textContent = PLAQUE_TEXT[q.id] || "Sealed";
+        el.plBody.textContent = "";
+      }
+      let m = "";
+      for (let j = 0; j < n; j++) m += '<u class="' + (j < got ? "on" : "") + '"></u>';
+      el.plMarks.innerHTML = m;
+      el.plClose.innerHTML = close;
+    }
+    const k = smooth(i.k),
+      W = canvas.clientWidth,
+      H = canvas.clientHeight,
+      s = R.toScreen(q.x, PLAQUE_Y, q.z) || [W / 2, H / 2],
+      // under touch the layout gives the card its box, clear of the buttons
+      L = TOUCH.on && TOUCH.layout,
+      cx = L ? L.close.x + L.close.w / 2 : W / 2,
+      cy = L ? L.close.y + L.close.h / 2 : H / 2,
+      x = lerp(s[0], cx, k),
+      y = lerp(s[1], cy, k);
+    if (i.flare) {
+      // restart the flare on a fresh unlock
+      i.flare = false;
+      d.classList.remove("flare");
+      void d.offsetWidth;
+      d.classList.add("flare");
+    }
+    d.style.display = "flex";
+    d.style.opacity = k.toFixed(3);
+    d.style.transform =
+      "translate(" + (x - d.offsetWidth / 2).toFixed(1) + "px," +
+      (y - d.offsetHeight / 2).toFixed(1) + "px) scale(" + lerp(0.1, 1, k).toFixed(3) + ")";
+  }
+  // what closes the plaque: Interact, or pausing when Interact's key is also
+  // a code key and so enters the code instead
+  function closeName() {
+    if (TOUCH.on && !PAD.active) return "Tap the plaque to close";
+    const a = PAD.active ? PAD_BIND : BIND,
+      ik = a.interact,
+      // those presses enter a symbol first, so Interact never sees them
+      shared = ["dodge", "heal", "tool", "fwd", "back", "left", "right"].some((x) => a[x] && a[x] === ik);
+    if (!shared) return "<kbd>" + actKey("interact") + "</kbd> Close";
+    return "<kbd>" + (PAD.active ? padName("P:9", PAD.fam) : G.noLock ? "P" : "Esc") + "</kbd> Close";
   }
   function hint() {
     if (!el || !G.player) return;

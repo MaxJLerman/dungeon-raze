@@ -33,6 +33,22 @@ function hubPortals() {
     open: i === 0,
   }));
 }
+// Plaques on the hall's +X wall, the player's left at the start, one per
+// hidden class, between the pillars. A plaque is { id, cls, x, z, yaw }: x, z
+// is the middle of its face and yaw faces into the hall. cls null is sealed.
+// They sit in the gaps between the pillars (z -9, -1) and braziers (z -5).
+const PLAQUE_Y = 1.7;
+function hubPlaques() {
+  return [
+    ["enforcer", "enforcer", -11],
+    ["sapper", null, -7],
+    ["riftwalker", null, -3],
+  ].map(([id, cls, z]) => ({ id, cls, x: 14.85, z, yaw: -PI / 2 }));
+}
+// The point d metres in front of a plaque.
+function plaqueFront(q, d) {
+  return portalFront(q, d);
+}
 // The point d metres in front of a portal, along the way it faces.
 function portalFront(q, d) {
   return { x: q.x + Math.sin(q.yaw) * d, z: q.z + Math.cos(q.yaw) * d };
@@ -289,6 +305,28 @@ function genHub(layout = hubPortals()) {
       );
     }
   });
+  // plaques: a stone slab with a trim and a dark face for the emblem. The
+  // glow of an unlocked class is drawn each frame, not baked in here.
+  const plaques = hubPlaques();
+  for (const q of plaques) {
+    const L = frameOf(q).local,
+      slab = (u0, y0, u1, y1, w0, col) => {
+        const w1 = 0.2;
+        quad(L(u0, y1, w0), L(u1, y1, w0), L(u1, y1, w1), L(u0, y1, w1), col);
+        quad(L(u0, y0, w0), L(u1, y0, w0), L(u1, y1, w0), L(u0, y1, w0), sh(col, 0.82));
+        quad(L(u0, y0, w0), L(u0, y0, w1), L(u0, y1, w1), L(u0, y1, w0), sh(col, 0.7));
+        quad(L(u1, y0, w0), L(u1, y0, w1), L(u1, y1, w1), L(u1, y1, w0), sh(col, 0.7));
+      };
+    slab(-0.62, PLAQUE_Y - 0.78, 0.62, PLAQUE_Y + 0.78, -0.06, STONE_TRIM);
+    slab(-0.5, PLAQUE_Y - 0.66, 0.5, PLAQUE_Y + 0.66, -0.1, sh(STONE, 0.75));
+    quad(
+      L(-0.32, PLAQUE_Y - 0.4, -0.11),
+      L(0.32, PLAQUE_Y - 0.4, -0.11),
+      L(0.32, PLAQUE_Y + 0.4, -0.11),
+      L(-0.32, PLAQUE_Y + 0.4, -0.11),
+      STONE_DARK,
+    );
+  }
   // the training dummy's floor mark
   floorRing(dummySpot.x, dummySpot.z, 1.35, 1.6, 16, STONE_TRIM);
 
@@ -347,6 +385,7 @@ function genHub(layout = hubPortals()) {
     spawn,
     spawnYaw: 0,
     portals,
+    plaques,
     dummySpot,
   };
 }

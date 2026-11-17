@@ -15,7 +15,9 @@ function posePlayer(p) {
   f.root.p[0] = p.x;
   f.root.p[2] = p.z;
   f.root.r[1] = p.yaw;
+  // hidden while the camera is up close to a plaque
   f.root.vis =
+    !(G.insp && G.insp.k > 0.4) &&
     !(p.state === "blink" && p.t < 0.12) &&
     !(p.state === "dodge" && p.cls.dodge.warp);
   f.cape.r[0] = 0.12 + mv * 0.95 + Math.sin(G.t * 7) * 0.06 * mv;
@@ -36,6 +38,15 @@ function posePlayer(p) {
   } else if (id === "mage") A[0] = -0.75 - mv * 0.1;
   else if (id === "ranger") B[0] = -0.5;
   else if (id === "fighter") A[0] = -0.4;
+  else if (id === "enforcer") {
+    // pistols held low and ready; the long guns only while used
+    A[0] = B[0] = -0.35;
+    const heavy = p.state === "attack" && p.move === "eshot",
+      exec = p.state === "execute";
+    f.shotgun.vis = heavy;
+    f.rifle.vis = exec;
+    f.pistols[0].vis = !heavy && !exec;
+  }
   if (p.throwT > 0) {
     A[0] = -1.6;
     ch[1] = 0.4;
@@ -125,6 +136,23 @@ function posePlayer(p) {
       } else if (an === "castup") {
         A[0] = B[0] = lerp(-2.8, -1.3, u);
         ch[0] = lerp(-0.3, 0.35, u);
+      } else if (an === "pistol" || an === "pistolL" || an === "pistol2") {
+        // one arm up and firing, the other at the ready; both for the last
+        const kick = t > m.wind ? 0.25 * (1 - u) : 0;
+        if (an !== "pistolL") A[0] = -1.5 - kick;
+        if (an !== "pistol") B[0] = -1.5 - kick;
+        ch[1] = an === "pistol" ? 0.25 : an === "pistolL" ? -0.25 : 0;
+      } else if (an === "shotgun") {
+        A[0] = -1.45 - 0.35 * (t > m.wind ? 1 - u : 0);
+        B[0] = -1.3;
+        B[1] = 0.55;
+        ch[1] = -0.2;
+      } else if (an === "slide") {
+        f.hips.p[1] = o.leg - 0.45;
+        f.legR.r[0] = -1.3;
+        f.legL.r[0] = 0.2;
+        ch[0] = -0.35;
+        A[0] = -1.5;
       } else if (an === "bow") {
         ch[1] = -0.6;
         B[0] = -1.5;
@@ -162,6 +190,11 @@ function posePlayer(p) {
         A[1] = 0.9;
         B[0] = -1.4;
         B[2] = -0.5;
+      } else if (id === "enforcer") {
+        // forearms crossed in front of the face, guns up
+        A[0] = B[0] = -1.75;
+        A[2] = 0.75;
+        B[2] = -0.75;
       } else if (id === "ranger") {
         B[0] = -1.6;
         B[1] = 0.9;
@@ -200,11 +233,28 @@ function posePlayer(p) {
       const u = sat((p.t - 0.14) / 0.12);
       A[0] = lerp(0.8, -1.6, u);
       if (id === "assassin" || id === "fighter") B[0] = A[0];
+      if (id === "enforcer") {
+        // the rifle shouldered and aimed
+        A[0] = B[0] = -1.55;
+        B[1] = 0.6;
+        ch[1] = -0.3;
+        ch[0] = 0;
+        f.headN.r[0] = 0.1;
+        break;
+      }
       ch[0] = lerp(-0.3, 0.65, u);
       f.legR.r[0] = -0.9 * u;
       f.legL.r[0] = 0.6 * u;
       break;
     }
+    case "grapple":
+      // reeled in on the line: hook arm out ahead, leaning in, legs trailing
+      A[0] = -1.6;
+      B[0] = -0.5;
+      ch[0] = 0.4;
+      f.legR.r[0] = 0.5;
+      f.legL.r[0] = 0.35;
+      break;
     case "blink": {
       const u = sat((p.t - 0.14) / 0.08);
       A[0] = B[0] = lerp(0.7, -1.55, u);
@@ -539,6 +589,25 @@ function render() {
     R.ring(e.x, 0.14, e.z, e.r + 0.25, e.r + 0.5, 0.9, 0.95, 1, 0.7);
   }
   // weapon glints + buff auras
+  // the grapple's line, from the hand to its target
+  if (p.gLine > 0 && p.gT && p.fig.handR) {
+    const h = R.nodePos(p.fig.handR, 0, -0.3, 0),
+      tg = p.gT,
+      ty = 1.1 * tg.fig.o.sc,
+      a = Math.min(1, p.gLine * 6);
+    R.ribbon(
+      8,
+      (u, side) => [
+        lerp(h[0], tg.x, u),
+        lerp(h[1], ty, u) + (side ? 0.025 : -0.025),
+        lerp(h[2], tg.z, u),
+      ],
+      0.75,
+      0.75,
+      0.8,
+      () => a,
+    );
+  }
   if (p.fig.root.vis && p.state !== "dead") {
     const cc = p.cls.col;
     for (const [h, z] of p.fig.tips) {
@@ -689,6 +758,23 @@ function render() {
     for (const y of [0.45, 1.0, 1.55])
       R.sprite(g.x, y, g.z, 0.55, c[0], c[1], c[2], a);
   }
+  // plaques: an unlocked class glows in its colour, a live locked one faintly
+  for (const q of G.world.plaques || []) {
+    if (!q.cls) continue;
+    const open = classOpen(q.cls),
+      c = open ? CLASSES[q.cls].col : [0.7, 0.75, 0.85],
+      k = open ? 0.55 + 0.1 * Math.sin(G.t * 2) : 0.18,
+      f = portalFront(q, 0.14);
+    R.sprite(f.x, PLAQUE_Y, f.z, 0.55, c[0], c[1], c[2], k);
+    R.sprite(f.x, PLAQUE_Y, f.z, 1.4, c[0], c[1], c[2], k * 0.3);
+  }
+  for (const b of G.bombs) {
+    // a blinking light, faster as it runs out
+    const per = b.t > 1 ? 0.5 : 0.2,
+      on = b.t % per < per * 0.5;
+    R.sprite(b.x, b.y, b.z, 0.14, 0.3, 0.3, 0.32, 1);
+    if (on) R.sprite(b.x, b.y + 0.05, b.z, 0.32, CRIMSON[0], CRIMSON[1], CRIMSON[2], 1.8);
+  }
   for (const pr of G.projs) {
     const c = pr.c,
       k = pr.kind;
@@ -705,6 +791,30 @@ function render() {
           c[2],
           1.5 - i * 0.12,
         );
+      continue;
+    }
+    if (k === "sticky") {
+      R.sprite(pr.x, pr.y, pr.z, 0.16, c[0], c[1], c[2], 1.4);
+      continue;
+    }
+    if (k === "bullet") {
+      // a thin bright streak
+      for (let i = 0; i < 5; i++)
+        R.sprite(
+          pr.x - pr.vx * 0.003 * i,
+          pr.y,
+          pr.z - pr.vz * 0.003 * i,
+          (pr.heavy ? 0.13 : 0.09) * (1 - i / 7),
+          c[0],
+          c[1],
+          c[2],
+          1.6 - i * 0.2,
+        );
+      continue;
+    }
+    if (k === "pellet") {
+      R.sprite(pr.x, pr.y, pr.z, 0.1, 1, 0.8, 0.5, 1.6);
+      R.sprite(pr.x - pr.vx * 0.006, pr.y, pr.z - pr.vz * 0.006, 0.07, c[0], c[1], c[2], 0.9);
       continue;
     }
     if (k === "wave") {

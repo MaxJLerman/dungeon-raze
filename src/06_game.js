@@ -78,12 +78,13 @@ const DEFAULT_BINDS = {
   light: "Mouse0",
   heavy: "KeyF",
   guard: "Mouse2",
-  dodge: "Space",
+  dodge: "KeyB",
   lock: "KeyQ",
   special: "KeyV",
   tool: "KeyR",
   heal: "KeyE",
   mute: "KeyM",
+  interact: "Space",
 };
 const ACTIONS = [
   ["fwd", "Move forward"],
@@ -95,6 +96,7 @@ const ACTIONS = [
   ["heavy", "Heavy attack"],
   ["guard", "Guard and parry"],
   ["dodge", "Dodge"],
+  ["interact", "Interact"],
   ["lock", "Lock on"],
   ["special", "Class ability"],
   ["tool", "Class tool"],
@@ -115,6 +117,7 @@ const DEFAULT_PAD = {
   heal: "P:2",
   tool: "P:3",
   mute: null,
+  interact: "P:0",
 };
 const PAD_BIND = Object.assign({}, DEFAULT_PAD);
 // P:9 pauses and is not bindable. The D-pad is bindable in play, and moves
@@ -191,11 +194,27 @@ function keyName(c) {
 function actKey(a) {
   return PAD.active ? padName(PAD_BIND[a], PAD.fam) : keyName(BIND[a]);
 }
+// Hidden classes unlocked at their plaques, saved under "u". A class without
+// `hidden` is always open.
+const UNLOCKED = new Set();
+function classOpen(id) {
+  return !!CLASSES[id] && (!CLASSES[id].hidden || UNLOCKED.has(id));
+}
+function pickable() {
+  return CLASS_IDS.filter(classOpen);
+}
+// true when the class was locked until now
+function unlockClass(id) {
+  if (!CLASSES[id] || UNLOCKED.has(id)) return false;
+  UNLOCKED.add(id);
+  saveOpt();
+  return true;
+}
 function saveOpt() {
   try {
     localStorage.setItem(
       "dungeon-raze.v2",
-      JSON.stringify({ b: BIND, p: PAD_BIND, o: OPT }),
+      JSON.stringify({ b: BIND, p: PAD_BIND, o: OPT, u: [...UNLOCKED] }),
     );
   } catch (e) {
     /* storage may be unavailable */
@@ -207,13 +226,20 @@ function loadOpt() {
     if (!d) return;
     for (const k in DEFAULT_BINDS)
       if (d.b && typeof d.b[k] === "string") BIND[k] = d.b[k];
+    // dodge used to default to Space, which Interact now has: an old save
+    // moves it to B unless something else already holds B
+    if (d.b && d.b.dodge === "Space" && !Object.values(d.b).includes("KeyB"))
+      BIND.dodge = "KeyB";
     // a pad code that is not bindable, or no longer exists, is the default
     if (d.p && typeof d.p === "object")
       for (const k in DEFAULT_PAD)
         PAD_BIND[k] =
           d.p[k] === null || PAD_CODES.includes(d.p[k]) ? d.p[k] : DEFAULT_PAD[k];
+    if (Array.isArray(d.u))
+      for (const id of d.u) if (CLASSES[id]) UNLOCKED.add(id);
     if (d.o) {
-      if (CLASSES[d.o.cls]) OPT.cls = d.o.cls;
+      // a hidden class that is not unlocked falls back to the first open one
+      if (CLASSES[d.o.cls]) OPT.cls = classOpen(d.o.cls) ? d.o.cls : pickable()[0];
       if (d.o.sens > 0.1 && d.o.sens < 5) OPT.sens = d.o.sens;
       OPT.invY = !!d.o.invY;
       const num = (v, lo, hi) => typeof v === "number" && v >= lo && v <= hi;
@@ -250,7 +276,8 @@ const WHITE = [1, 0.95, 0.8],
   VIOLET = [0.7, 0.45, 1],
   GREEN = [0.55, 1, 0.45],
   ORANGE = [1, 0.5, 0.18],
-  GOLD = [1, 0.85, 0.45];
+  GOLD = [1, 0.85, 0.45],
+  CRIMSON = [1, 0.28, 0.32];
 
 // ---- classes ----
 const CLASSES = {
@@ -407,6 +434,46 @@ const CLASSES = {
       [
         "Trait",
         "Fastest on foot. Double damage on enemies that have not noticed you",
+      ],
+    ],
+  },
+  // hidden: only in the picker once unlocked at its plaque in the hall
+  enforcer: {
+    name: "Enforcer",
+    tag: "Pistols and shotgun",
+    hidden: true,
+    hp: 100,
+    stam: 105,
+    walk: 5.5,
+    run: 8.4,
+    chain: "e1",
+    heavy: "eshot",
+    dash: "eslide",
+    ambush: 1.5,
+    back: 1,
+    parry: 0.2,
+    blockMul: 1.15,
+    chip: 0.15,
+    guardArc: 1.9,
+    col: CRIMSON,
+    ranged: true,
+    dodge: { dist: 5.0, dur: 0.4, ifr: 0.3, cost: 20 },
+    tool: { id: "sticky", name: "Sticky bomb", max: 3, ch: "◆" },
+    special: { id: "grapple", name: "Grapple", cost: 35 },
+    kit: [
+      ["Attack", "Pistol shots, fired where the camera points"],
+      ["Heavy", "Shotgun: devastating up close, useless at range"],
+      [
+        "Tool",
+        "Sticky bomb: sticks to what it hits and blows after 3 seconds. Mind the blast",
+      ],
+      [
+        "Ability",
+        "Grapple: yank light enemies to you, or pull yourself to heavy ones",
+      ],
+      [
+        "Trait",
+        "Executions are a sniper shot from range and give back a sticky bomb",
       ],
     ],
   },
@@ -756,6 +823,64 @@ const MOVES = {
       big: true,
     },
   },
+  // enforcer
+  e1: {
+    anim: "pistol",
+    wind: 0.08,
+    act: 0.04,
+    rec: 0.18,
+    stam: 6,
+    next: "e2",
+    proj: { speed: 60, dmg: 9, post: 6, kind: "bullet" },
+  },
+  e2: {
+    anim: "pistolL",
+    wind: 0.08,
+    act: 0.04,
+    rec: 0.18,
+    stam: 6,
+    next: "e3",
+    proj: { speed: 60, dmg: 9, post: 6, kind: "bullet" },
+  },
+  e3: {
+    anim: "pistol2",
+    wind: 0.14,
+    act: 0.04,
+    rec: 0.3,
+    stam: 9,
+    next: null,
+    proj: { speed: 60, dmg: 16, post: 14, kind: "bullet", heavy: true },
+  },
+  // a spread of pellets, each fired `spread` radians from the next
+  eshot: {
+    anim: "shotgun",
+    wind: 0.3,
+    act: 0.06,
+    rec: 0.45,
+    stam: 20,
+    next: null,
+    heavy: true,
+    proj: {
+      speed: 40,
+      dmg: 7,
+      post: 7,
+      kind: "pellet",
+      life: 0.25,
+      pellets: 7,
+      spread: 0.09,
+    },
+  },
+  // a proj move with a lunge slides forward while it fires
+  eslide: {
+    anim: "slide",
+    wind: 0.12,
+    act: 0.18,
+    rec: 0.3,
+    stam: 10,
+    next: null,
+    lunge: 4,
+    proj: { speed: 60, dmg: 14, post: 10, kind: "bullet" },
+  },
 };
 const EDEF = {
   husk: {
@@ -1040,6 +1165,7 @@ function makePlayer(id) {
     buff: null,
     buffT: 0,
     throwT: 0,
+    gLine: 0,
     ddur: 0.42,
   };
 }
@@ -1164,6 +1290,7 @@ function setEnv(e) {
 }
 // Clears everything that must not carry from one world into the next.
 function resetRun() {
+  G.insp = null;
   G.bossDead = false;
   G.bossSeen = false;
   G.gate = null;
@@ -1171,6 +1298,7 @@ function resetRun() {
   G.deaths = 0;
   G.runT = 0;
   G.projs = [];
+  G.bombs = [];
   G.parts = [];
   G.arcs = [];
   G.rings = [];
@@ -1288,6 +1416,7 @@ function respawn() {
   });
   G.world.resolve(p, 0.6);
   G.projs = [];
+  G.bombs = [];
   G.rings = [];
   G.pending = [];
   G.bossSeen = false;
@@ -1623,6 +1752,7 @@ function hitEnemy(e, dmg, post, o = {}) {
   if (flinch && e.state !== "act") {
     e.state = "hit";
     e.t = 0;
+    e.hitT = 0;
     e.token = false;
   }
 }
@@ -1718,6 +1848,7 @@ function playerDie() {
   const p = G.player;
   p.hp = 0;
   p.state = "dead";
+  G.insp = null;
   p.t = 0;
   p.lock = null;
   p.buff = null;
@@ -1880,8 +2011,10 @@ function startExecute(e) {
   p.t = 0;
   p.exT = e;
   p.exDone = false;
-  p.exX = e.x + Math.sin(a) * (e.r + 1.0);
-  p.exZ = e.z + Math.cos(a) * (e.r + 1.0);
+  // the Enforcer steps back and finishes with a sniper shot
+  const back = e.r + (p.clsId === "enforcer" ? 4.5 : 1.0);
+  p.exX = e.x + Math.sin(a) * back;
+  p.exZ = e.z + Math.cos(a) * back;
   p.iframe = 0.9;
   p.buf = null;
   e.dur = Math.max(e.dur, e.t + 1.0);
@@ -1943,6 +2076,215 @@ function startBlink(ix, iz, il) {
   SFX.blink();
   ghost(p);
   sparks(p.x, 1.1, p.z, 14, CYAN, 4, 0.5);
+  return true;
+}
+// The hall plaque the player is at: within 2.6 m of its face and roughly in
+// the camera's view, or null.
+function plaqueAt() {
+  const p = G.player;
+  if (G.zone !== "hub" || !p) return null;
+  for (const q of G.world.plaques) {
+    if (Math.hypot(q.x - p.x, q.z - p.z) > 2.6) continue;
+    if (Math.abs(angDiff(cam.yaw, Math.atan2(q.x - p.x, q.z - p.z))) < 1.2)
+      return q;
+  }
+  return null;
+}
+// Inspecting a plaque. G.insp is { q, k, dir, syms, stick } or null: k runs
+// 0 to 1 over 0.5 s while opening (dir 1) and back while closing (dir -1),
+// and drives the camera and the card.
+const INSPECT_T = 0.5;
+// what a locked plaque says instead of the class name
+const PLAQUE_TEXT = {
+  enforcer: "The one who settles accounts",
+  sapper: "Sealed",
+  riftwalker: "Sealed",
+};
+// A code is a string of symbols: U D L R for directions, and B, X, Y for the
+// dodge, flask and tool actions, whatever they are bound to. Only its hash
+// ships; the codes themselves are kept out of the repo.
+const SHIPPED_CODES = {
+  enforcer: { hash: "e94039d11b7db", len: 10 },
+};
+const PLAQUE_CODES = {};
+function resetPlaqueCodes() {
+  for (const k in PLAQUE_CODES) delete PLAQUE_CODES[k];
+  for (const k in SHIPPED_CODES) PLAQUE_CODES[k] = { ...SHIPPED_CODES[k] };
+}
+resetPlaqueCodes();
+// for tests: give a plaque a code of their own
+function setPlaqueCode(id, syms) {
+  PLAQUE_CODES[id] = { hash: codeHash(syms), len: syms.length };
+}
+// a 53-bit string hash (cyrb53), as hex
+function codeHash(str) {
+  let h1 = 0xdeadbeef,
+    h2 = 0x41c6ce57;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507);
+  h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507);
+  h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
+}
+// This update's new code symbols, in order. The actions are read first, so a
+// key that Interact shares with one of them enters the symbol. Only presses
+// count, so a key held as the plaque opened adds nothing, and the left stick
+// counts once per push.
+function readSyms() {
+  const out = [],
+    i = G.insp;
+  // the D-pad first and raw, so an action bound to it still enters its
+  // direction; Interact's own button is left to close the plaque
+  for (const [c, sy] of [
+    ["P:12", "U"],
+    ["P:13", "D"],
+    ["P:14", "L"],
+    ["P:15", "R"],
+  ])
+    if (c !== PAD_BIND.interact && tap(c)) out.push(sy);
+  if (hit("dodge")) out.push("B");
+  if (hit("heal")) out.push("X");
+  if (hit("tool")) out.push("Y");
+  for (const [a, sy] of [
+    ["fwd", "U"],
+    ["back", "D"],
+    ["left", "L"],
+    ["right", "R"],
+  ])
+    if (hit(a)) out.push(sy);
+  const m = PAD.move;
+  if (i && m.mag < 0.2) i.stick = false;
+  else if (i && !i.stick && m.mag > 0.5) {
+    i.stick = true;
+    out.push(
+      Math.abs(m.x) > Math.abs(m.y) ? (m.x > 0 ? "R" : "L") : m.y > 0 ? "U" : "D",
+    );
+  }
+  return out;
+}
+function openPlaque(q) {
+  const p = G.player;
+  p.state = "inspect";
+  p.vx = p.vz = 0;
+  p.sprint = false;
+  p.buf = null;
+  p.lock = null;
+  // a stick already pushed must come back to rest before it counts
+  G.insp = { q, k: 0, dir: 1, syms: [], stick: PAD.move.mag >= 0.2 };
+  SFX.whoosh(false);
+}
+// now skips the ease, for leaving play
+function closePlaque(now) {
+  const p = G.player;
+  if (!G.insp) return;
+  if (now) {
+    G.insp = null;
+    if (p && p.state === "inspect") p.state = "free";
+  } else G.insp.dir = -1;
+}
+function inspectUpdate(dt) {
+  const p = G.player,
+    i = G.insp;
+  p.vx = p.vz = 0;
+  p.speed = 0;
+  if (!i) {
+    p.state = "free";
+    return;
+  }
+  i.k = clamp(i.k + (i.dir * dt) / INSPECT_T, 0, 1);
+  if (i.dir < 0) {
+    if (i.k <= 0) closePlaque(true);
+    return;
+  }
+  // a live plaque whose class is still locked takes its code
+  const id = i.q.cls,
+    code = id && !classOpen(id) && PLAQUE_CODES[id];
+  for (const sy of readSyms()) {
+    if (!code) continue;
+    i.syms.push(sy);
+    if (i.syms.length > 10) i.syms.shift();
+    if (
+      i.syms.length >= code.len &&
+      codeHash(i.syms.slice(-code.len).join("")) === code.hash
+    ) {
+      unlockClass(id);
+      i.flare = true;
+      SFX.unlock();
+      say(CLASSES[id].name.toUpperCase() + " UNLOCKED", "crit", 2.5);
+      say("Choose it from the class picker", "good", 2.5);
+      break;
+    }
+  }
+  if (hit("interact")) i.dir = -1;
+}
+// The grapple's target: the locked enemy, or the one the camera points at,
+// within 14 m and in sight.
+function grappleTarget() {
+  const p = G.player,
+    w = G.world,
+    ok = (e) =>
+      e &&
+      !e.dead &&
+      Math.hypot(e.x - p.x, e.z - p.z) <= 14 &&
+      w.los(p.x, p.z, e.x, e.z);
+  if (p.lock) return ok(p.lock) ? p.lock : null;
+  const a = aimRanged();
+  let best = null,
+    bd = 0.3;
+  for (const e of G.enemies) {
+    if (!ok(e)) continue;
+    const d = Math.abs(angDiff(a, Math.atan2(e.x - p.x, e.z - p.z)));
+    if (d <= bd) {
+      bd = d;
+      best = e;
+    }
+  }
+  return best;
+}
+// light enemies come to the Enforcer; heavy ones, the boss and the pinned
+// dummy pull the Enforcer to them
+function grappleLight(e) {
+  return !e.def.boss && !e.def.dummy && e.def.poise === 0;
+}
+function startGrapple() {
+  const p = G.player,
+    e = grappleTarget();
+  if (!e) {
+    say("No target", "bad", 0.8);
+    return false;
+  }
+  const a = Math.atan2(e.x - p.x, e.z - p.z),
+    gap = e.r + 1.2;
+  p.yaw = a;
+  p.gT = e;
+  SFX.hook();
+  if (grappleLight(e)) {
+    e.yank = {
+      tx: p.x + Math.sin(a) * gap,
+      tz: p.z + Math.cos(a) * gap,
+      t: 0.25,
+    };
+    p.throwT = 0.3;
+    p.gLine = 0.3;
+  } else {
+    p.state = "grapple";
+    p.t = 0;
+    p.gx = e.x - Math.sin(a) * gap;
+    p.gz = e.z - Math.cos(a) * gap;
+    p.buf = null;
+    p.gLine = 0.35;
+    if (!e.def.dummy && !e.def.boss && e.state !== "stagger") {
+      e.state = "hit";
+      e.t = 0;
+      e.hitT = 0.85;
+      e.token = false;
+    }
+  }
   return true;
 }
 function useSpecial(ix, iz, il) {
@@ -2027,6 +2369,8 @@ function useSpecial(ix, iz, il) {
     SFX.tele(true);
     p.throwT = 0.5;
     say("STARFALL", "good", 1);
+  } else if (sp.id === "grapple") {
+    if (!startGrapple()) return false;
   } else if (sp.id === "volley") {
     const a = aimRanged();
     p.yaw = a;
@@ -2082,6 +2426,12 @@ function useTool(ix, iz, il) {
     p.throwT = 0.35;
     p.iframe = Math.max(p.iframe, 0.25);
     explode(p.x, p.z, 5, 12, 32, VIOLET);
+  } else if (id === "sticky") {
+    const a = p.lock ? Math.atan2(p.lock.x - p.x, p.lock.z - p.z) : aimRanged();
+    p.yaw = a;
+    p.throwT = 0.25;
+    fire({ speed: 22, dmg: 0, post: 0, kind: "sticky", life: 0.9 }, a);
+    SFX.knife();
   } else if (id === "leap") {
     const a = aimRanged();
     p.yaw = a;
@@ -2112,10 +2462,18 @@ function playerUpdate(dt) {
     }
   }
   if (p.throwT > 0) p.throwT -= dt;
+  if (p.gLine > 0) p.gLine -= dt;
   if (p.state === "dead") {
     p.t += dt;
     return;
   }
+  if (p.state === "inspect") {
+    inspectUpdate(dt);
+    return;
+  }
+  // a close-up lasts only while the player is in it: whatever moved them out
+  // (a hit, a bomb going off) puts the camera back at once
+  if (G.insp) closePlaque(true);
   p.iframe = Math.max(0, p.iframe - dt);
   if (p.buff) {
     p.buffT -= dt;
@@ -2154,6 +2512,15 @@ function playerUpdate(dt) {
   if (il > 0) {
     ix /= il;
     iz /= il;
+  }
+  // at a plaque, Interact opens it and takes the press, even from an action
+  // that shares the key
+  if (p.state === "free" && G.zone === "hub") {
+    const q = plaqueAt();
+    if (q && hit("interact")) {
+      openPlaque(q);
+      return;
+    }
   }
   let act = null;
   if (hit("light")) act = "light";
@@ -2295,7 +2662,13 @@ function playerUpdate(dt) {
         if (t < m.wind) p.aim = aimRanged();
       } else if (p.lock) p.aim = lockYaw;
       if (t < m.wind + m.act * 0.5) p.yaw = dampAng(p.yaw, p.aim, 24, dt);
-      if (m.proj) {
+      if (m.proj && m.lunge && t < m.wind + m.act) {
+        const v = m.lunge / (m.wind + m.act);
+        p.vx = Math.sin(p.yaw) * v;
+        p.vz = Math.cos(p.yaw) * v;
+        mvx = p.vx;
+        mvz = p.vz;
+      } else if (m.proj) {
         p.vx = damp(p.vx, ix * c.walk * 0.55, 12, dt);
         p.vz = damp(p.vz, iz * c.walk * 0.55, 12, dt);
         mvx = p.vx;
@@ -2329,8 +2702,12 @@ function playerUpdate(dt) {
         SFX.whoosh(m.heavy);
         if (m.proj) {
           p.yaw = p.aim;
-          fire(m.proj, p.aim);
+          const n = m.proj.pellets || 1;
+          for (let i = 0; i < n; i++)
+            fire(m.proj, p.aim + (i - (n - 1) / 2) * (m.proj.spread || 0));
           if (m.proj.kind === "arrow") SFX.knife();
+          else if (m.proj.kind === "pellet") SFX.shotgun();
+          else if (m.proj.kind === "bullet") SFX.gun(m.proj.heavy);
           else SFX.shot();
         } else if (m.lance)
           G.arcs.push({
@@ -2492,16 +2869,23 @@ function playerUpdate(dt) {
         G.flashWhite = 0.6;
         p.hp = Math.min(p.maxHp, p.hp + 10);
         p.focus = Math.min(100, p.focus + 12);
+        const sniper = p.clsId === "enforcer";
+        if (sniper) {
+          // a tracer all the way to the target, and a sticky bomb back
+          SFX.gun(true);
+          p.tool = Math.min(c.tool.max, p.tool + 1);
+        }
         G.arcs.push({
           lance: true,
           x: p.x,
-          y: 1.2,
+          y: sniper ? 1.45 : 1.2,
           z: p.z,
           yaw: p.yaw,
-          len: 3.5,
+          len: sniper ? Math.hypot(e.x - p.x, e.z - p.z) : 3.5,
           t: 0,
           dur: 0.3,
-          c: AMBER,
+          c: sniper ? c.col : AMBER,
+          wd: sniper ? 0.1 : undefined,
         });
         sparks(e.x, 1.2 * e.fig.o.sc, e.z, 30, AMBER, 10, 0.6, 0.15);
         if (e.def.boss) {
@@ -2529,6 +2913,19 @@ function playerUpdate(dt) {
         say("EXECUTION", "crit", 0.9);
       }
       if (p.t > 0.62) p.state = "free";
+      break;
+    }
+    case "grapple": {
+      // reeled to a heavy target, untouchable on the way
+      p.t += dt;
+      p.vx = p.vz = 0;
+      p.iframe = Math.max(p.iframe, 0.1);
+      const k = Math.min(1, dt / Math.max(dt, 0.3 - p.t + dt));
+      p.x += (p.gx - p.x) * k;
+      p.z += (p.gz - p.z) * k;
+      w.resolve(p, p.r);
+      if (p.gT && !p.gT.dead) p.yaw = Math.atan2(p.gT.x - p.x, p.gT.z - p.z);
+      if (p.t >= 0.3) p.state = "free";
       break;
     }
     case "blink": {
@@ -2732,6 +3129,24 @@ function enemyUpdate(e, dt) {
   if (e.state === "dead") {
     e.t += dt;
     if (e.t > 2.4) e.gone = true;
+    return;
+  }
+  if (e.yank) {
+    // reeled in by the Enforcer's grapple, then reeling from it
+    const y = e.yank,
+      k = Math.min(1, dt / Math.max(dt, y.t));
+    e.x += (y.tx - e.x) * k;
+    e.z += (y.tz - e.z) * k;
+    w.resolve(e, e.r);
+    y.t -= dt;
+    if (y.t <= 0) e.yank = null;
+    // a staggered enemy stays open to an execution; any other reels a moment
+    if (e.state !== "stagger") {
+      e.state = "hit";
+      e.t = 0;
+      e.hitT = 0.5;
+      e.token = false;
+    }
     return;
   }
   const dx = p.x - e.x,
@@ -3139,7 +3554,9 @@ function enemyUpdate(e, dt) {
     }
     case "hit":
       e.t += dt;
-      if (e.t > 0.32) {
+      // a flinch is short; the grapple sets a longer one in hitT
+      if (e.t > (e.hitT || 0.32)) {
+        e.hitT = 0;
         e.state = "chase";
         e.cd = Math.max(e.cd, 0.25);
       }
@@ -3168,6 +3585,50 @@ function enemyUpdate(e, dt) {
       break;
   }
 }
+// The Enforcer's sticky bomb: stuck to an enemy (moving with it) or to a
+// spot, it goes off after STICKY.t seconds and hurts the thrower too, at
+// STICKY.self of the damage, through hurtPlayer.
+const STICKY = { t: 3, r: 3.5, dmg: 45, post: 40, self: 0.5 };
+function plantBomb(x, z, e) {
+  G.bombs.push({
+    x,
+    y: e ? 1.1 : 0.4,
+    z,
+    e,
+    ox: e ? x - e.x : 0,
+    oz: e ? z - e.z : 0,
+    t: STICKY.t,
+  });
+  SFX.beep();
+}
+function bombsUpdate(dt) {
+  const p = G.player,
+    w = G.world;
+  for (const b of G.bombs) {
+    if (b.e && b.e.dead) {
+      b.e = null;
+      b.y = 0.4;
+    }
+    if (b.e) {
+      b.x = b.e.x + b.ox;
+      b.z = b.e.z + b.oz;
+    }
+    // beeps quicken as it runs out
+    const per = b.t > 1 ? 0.5 : 0.2,
+      was = Math.floor(b.t / per);
+    b.t -= dt;
+    if (b.t > 0 && Math.floor(b.t / per) !== was) SFX.beep();
+    if (b.t <= 0) {
+      explode(b.x, b.z, STICKY.r, STICKY.dmg, STICKY.post, CRIMSON);
+      if (
+        Math.hypot(p.x - b.x, p.z - b.z) < STICKY.r + 0.5 &&
+        w.los(b.x, b.z, p.x, p.z)
+      )
+        hurtPlayer(STICKY.dmg * STICKY.self, null, { px: b.x, pz: b.z });
+    }
+  }
+  G.bombs = G.bombs.filter((b) => b.t > 0);
+}
 function projUpdate(dt) {
   const p = G.player,
     w = G.world;
@@ -3176,6 +3637,12 @@ function projUpdate(dt) {
     pr.x += pr.vx * dt;
     pr.z += pr.vz * dt;
     const wall = w.fieldAt(pr.x, pr.z) < 0.12;
+    if (pr.kind === "sticky" && (wall || pr.life <= 0)) {
+      // it sticks where it stopped, a step back from a wall
+      plantBomb(pr.x - pr.vx * dt, pr.z - pr.vz * dt, null);
+      pr.life = -1;
+      continue;
+    }
     if (wall || pr.life <= 0) {
       if (pr.aoe)
         explode(
@@ -3216,6 +3683,11 @@ function projUpdate(dt) {
       for (const e of G.enemies) {
         if (e.dead || (pr.hitSet && pr.hitSet.has(e))) continue;
         if (Math.hypot(pr.x - e.x, pr.z - e.z) < e.r + 0.45 + (pr.rad || 0)) {
+          if (pr.kind === "sticky") {
+            plantBomb(pr.x, pr.z, e);
+            pr.life = -1;
+            break;
+          }
           if (pr.aoe) {
             explode(pr.x, pr.z, pr.aoe, pr.dmg, pr.post, pr.c);
             pr.life = -1;
@@ -3301,6 +3773,7 @@ function update(dt) {
   playerUpdate(dt);
   for (const e of G.enemies) enemyUpdate(e, dt);
   projUpdate(dt);
+  bombsUpdate(dt);
   for (const q of G.pending) {
     q.t -= dt;
     if (q.t <= 0) {

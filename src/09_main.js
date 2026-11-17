@@ -18,6 +18,8 @@ let menuBack = "title",
   rebind = null,
   swallowClick = false;
 function show(state) {
+  // a plaque closes at once when play stops
+  if (state !== "play") closePlaque(true);
   G.state = state;
   for (const s of SCREENS) {
     const e = $("scr-" + s);
@@ -125,7 +127,7 @@ function renderPicker() {
     const cur = CLASSES[OPT.cls];
     host.innerHTML =
       '<div class="cards">' +
-      CLASS_IDS.map((id) => {
+      pickable().map((id) => {
         const c = CLASSES[id];
         return (
           '<button type="button" class="card' +
@@ -237,7 +239,9 @@ function finishRebind(code) {
 function camUpdate(dt) {
   const p = G.player,
     w = G.world;
-  if (G.state === "play") {
+  if (G.state === "play" && G.insp) {
+    // looking at a plaque: the view is fixed on it
+  } else if (G.state === "play") {
     const sn = cam.sens * OPT.sens;
     cam.yaw -= mouse.dx * sn;
     cam.pitch = clamp(
@@ -297,15 +301,36 @@ function camUpdate(dt) {
     sy = (Math.random() - 0.5) * sh,
     sz = (Math.random() - 0.5) * sh;
   cam.fov = damp(cam.fov, p.sprint ? 1.16 : 1.08, 5, dt);
-  R.setCam(
-    cam.x + sx,
-    cam.y + sy,
-    cam.z + sz,
-    cam.x + fx * cp * 10 + sx,
-    cam.y - sp * 10 + sy,
-    cam.z + fz * cp * 10 + sz,
-    cam.fov,
-  );
+  const eye = [cam.x + sx, cam.y + sy, cam.z + sz],
+    look = [
+      cam.x + fx * cp * 10 + sx,
+      cam.y - sp * 10 + sy,
+      cam.z + fz * cp * 10 + sz,
+    ];
+  if (G.insp) {
+    // glide to face the plaque from in front of it
+    const q = G.insp.q,
+      k = smooth(G.insp.k),
+      f = plaqueFront(q, 1.6),
+      to = [f.x, PLAQUE_Y, f.z],
+      at = [q.x, PLAQUE_Y, q.z],
+      L = TOUCH.on && TOUCH.layout;
+    if (L) {
+      // under touch the card may sit off centre, clear of the buttons: turn
+      // the view so the plaque itself sits behind the card
+      const off = L.close.x + L.close.w / 2 - L.W / 2,
+        focal = L.H / 2 / Math.tan(cam.fov / 2),
+        yaw = Math.atan2(at[0] - to[0], at[2] - to[2]),
+        sh = (-off * 1.6) / focal;
+      at[0] += -Math.cos(yaw) * sh;
+      at[2] += Math.sin(yaw) * sh;
+    }
+    for (let i = 0; i < 3; i++) {
+      eye[i] = lerp(eye[i], to[i], k);
+      look[i] = lerp(look[i], at[i], k);
+    }
+  }
+  R.setCam(eye[0], eye[1], eye[2], look[0], look[1], look[2], cam.fov);
 }
 let last = 0;
 function frame(now) {
@@ -610,6 +635,9 @@ window.DF = {
   hexGap,
   fieldFns,
   portalFront,
+  hubPlaques,
+  plaqueFront,
+  plaqueAt,
   GRADES,
   respawn,
   show,
@@ -619,6 +647,11 @@ window.DF = {
   threatOf,
   PURSUIT,
   CLASSES,
+  UNLOCKED,
+  classOpen,
+  pickable,
+  unlockClass,
+  renderPicker,
   BIND,
   OPT,
   setClass,
@@ -628,6 +661,11 @@ window.DF = {
   alertE,
   hurtPlayer,
   startExecute,
+  openPlaque,
+  closePlaque,
+  posePlayer,
+  setPlaqueCode,
+  resetPlaqueCodes,
   openMenu,
   loadOpt,
   saveOpt,

@@ -429,7 +429,7 @@ const PAD = {
     // the latch reads the tap without consuming it
     if (inPlay && PAD_BIND.sprint && taps[PAD_BIND.sprint]) PAD.sprint = !PAD.sprint;
     if (PAD.move.mag === 0 || !inPlay || (p && p.stam <= 0)) PAD.sprint = false;
-    if (inPlay && !(p && p.lock)) {
+    if (inPlay && !(p && p.lock) && !G.insp) {
       const sn = OPT.psens * dt;
       cam.yaw -= PAD.look.x * 3.0 * sn;
       cam.pitch = clamp(

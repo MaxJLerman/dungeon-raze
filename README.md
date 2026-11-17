@@ -14,7 +14,9 @@ a finished game, and nothing in it is balanced by hand yet.
 
 Run `node build.mjs`, then open `dist/index.html` in a recent desktop Chrome,
 Edge, Firefox or Safari. It runs straight from disk with no server. On a
-desktop it needs a keyboard and a mouse, or a controller.
+desktop it needs a keyboard and a mouse, or a controller. The keys are listed
+under Controls in the game and can be rebound there. Dodge is B and Interact
+is Space.
 
 Phones and tablets play in landscape by touch. The file runs on Android and on
 desktop. iPhones cannot open it from disk, so they play at
@@ -40,6 +42,7 @@ starts and the keyboard hint is hidden.
 | Lock                            | Lock on to the nearest enemy, or let go                                |
 | Flask, Tool, Ability            | Heal, use the class tool, use the class ability. Flask and Tool show how many are left |
 | Pause (top right)               | Opens the pause menu                                                   |
+| Inspect (at a plaque)           | Tap it to look at the plaque. Tap the plaque to put it down            |
 
 A finger belongs to the control it first touched, so sliding off a button
 keeps it held. The Back gesture pauses the game instead of leaving the page.
@@ -76,6 +79,7 @@ is turned off.
 | Y / Triangle                           | Use the class tool                                              |
 | Left stick click (LS / L3)             | Sprint on or off. Push the stick well over to run               |
 | Right stick click (RS / R3)            | Lock on to the nearest enemy, or let go                         |
+| A / Cross                              | Inspect a plaque in the hall, and close it again                |
 | Menu / Options                         | Pause and resume                                                 |
 | D-pad or left stick, A / Cross, B / Circle | In menus: move, press, go back                              |
 
@@ -161,7 +165,8 @@ earlier ones.
   frames stand along the far wall in rank order, E to S. Only E is open; the
   rest are sealed until grades are given difficulty and rewards. Walking into
   the open portal starts a new cave. The pause, death and win screens return
-  you to the hall.
+  you to the hall. Three plaques hang on the left-hand wall; walk up to one and
+  press Interact (Space, or A / Cross) to look at it.
 - **Training dummy:** stands in the hall, takes every attack and ability, can
   be staggered and executed, and never dies. Focus and tool charges refill on
   their own in the hall.
@@ -205,6 +210,8 @@ Screenshots go to `shots/`.
 | `tests/t15.mjs` | Screenshots of the hall and a fight with touch controls on every device                 |
 | `tests/t16.mjs` | Controller input with a faked Gamepad API: buttons, sticks, camera, menus, rebinding, rumble |
 | `tests/t17.mjs` | A controller with touch on a phone: the buttons hide and return, with screenshots. Run with `DEVICE=oneplus-13` |
+| `tests/t18.mjs` | Interact and dodge bindings, the plaques, the close-up view, saved unlocks. Run in `hub` mode |
+| `tests/t19.mjs` | The plaques by touch on every device. Run in `hub` mode with `touch-all.mjs` |
 
 The touch scripts `t14` and `t15` run under emulated phones and tablets. Run
 one device with `DEVICE=pixel-9 SCRIPT=$PWD/tests/t14.mjs node test.mjs smoke`,

@@ -17,7 +17,7 @@ export default [
   const front = P.map((q) => DF.portalFront(q, 3.5));
   const pillars = [-12, 12].flatMap((x) => [-9, -1, 7].map((z) => ({ x, z })));
   const c = {
-    arrays: ["nodes","edges","path","shrines","halos","lights","spawns","portals"].every((k) => Array.isArray(w[k])),
+    arrays: ["nodes","edges","path","shrines","halos","lights","spawns","portals","plaques"].every((k) => Array.isArray(w[k])),
     fns: ["fieldAt","ceilAt","resolve","los"].every((k) => typeof w[k] === "function"),
     hub: w.hub === true && w.nodes.length === 0 && w.shrines.length === 0,
     mesh: w.pos.length > 0 && w.pos.length % 9 === 0 && w.col.length === (w.pos.length / 3) * 4,

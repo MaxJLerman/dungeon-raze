@@ -25,6 +25,9 @@ is what you need to change the code without breaking it.
   enemy difficulty and kill rewards to scale by grade, with S the hardest.
 - Controller support was added on branch `feat/controller-support`, tested
   with a faked Gamepad API only. No real pad has been played yet.
+- Branch `feat/plaques-enforcer` added three plaques on the hall's left wall,
+  an Inspect close-up, input codes that unlock hidden classes, and the first
+  hidden class, the Enforcer. The Sapper and Riftwalker plaques are sealed.
 
 ## Rules of the build
 
@@ -124,6 +127,13 @@ is what you need to change the code without breaking it.
 - `R.env` (ambient and fog) is set per zone from `ENV_HUB` and `ENV_CAVE`.
 - In the hall, focus and tool charges refill on their own, the minimap is
   hidden and the run timer does not advance.
+- Plaques. `hubPlaques()` lists `{ id, cls, x, z, yaw }` for the three plaques
+  on the left wall (x = 14.85), and `genHub` returns them as `plaques` (the
+  cave returns `[]`). `cls` is the class a plaque unlocks, `null` while sealed.
+  `plaqueFront(q, d)` is a point `d` in front of one, `PLAQUE_Y` its height,
+  and `plaqueAt()` the plaque the player is near and facing, or `null`. The
+  glow is drawn as sprites each frame, because the hall mesh is built once
+  and the glow brightens on unlock.
 
 ### Game state and time (`06_game.js`, `09_main.js`)
 
@@ -146,6 +156,11 @@ is what you need to change the code without breaking it.
   `hit('action')`, which look the code up in `BIND`.
 - To add an action: add it to `DEFAULT_BINDS` and `ACTIONS`, then read it with
   `held` or `hit`. The controls menu picks it up automatically.
+- `interact` is Space and pad A or Cross (`P:0`). Dodge is B on the keyboard.
+  `loadOpt` moves an old save's dodge off Space to B, unless B is taken.
+  In the hall, a free player at a plaque opens it with `interact` before
+  any other action is read. The jump planned for the same button must keep
+  that priority.
 - A touch button does not go through `BIND`. It sets `keys["T:" + action]`
   and `taps["T:" + action]`, and `held(a)` and `hit(a)` read that key beside
   the bound one. `hit` reads both taps so that both are consumed. The stick
@@ -222,6 +237,13 @@ is what you need to change the code without breaking it.
   and when the window loses focus. Resume asks for fullscreen again. Desktop
   keeps its own rule, pausing when pointer lock is lost. A test that calls
   `exitFullscreen` in play therefore ends up paused.
+- Plaques by touch. The layout gives `prompt` (the Inspect prompt, tapped to
+  open; the first of four spots clear of buttons and HUD), `dpad` (in the
+  stick area) and `close` (the card's box; a tap on the card closes it).
+  `layoutProblems` checks all three. While a plaque is open, `classify`
+  sends the D-pad arms as `T:fwd`, `T:back`, `T:left`, `T:right`, the buttons
+  as usual, the card as `T:interact`, and nothing else. The D-pad replaces
+  the stick in the SVG only then. `place()` sizes the prompt and the card.
 - Settings are `OPT.tsize` (0.8 to 1.2), `OPT.topac` (0.2 to 1) and
   `OPT.tnotch`, saved under `o` in `dungeon-raze.v2` and set in the Controls
   menu. Menu text that differs by input uses `.kbonly` and `.touchonly`, or
@@ -336,7 +358,13 @@ is what you need to change the code without breaking it.
 ### Player
 
 - State machine in `playerUpdate`: `free`, `guard`, `attack`, `dodge`, `hit`,
-  `gbreak`, `heal`, `execute`, `blink`, `dead`.
+  `gbreak`, `heal`, `execute`, `blink`, `grapple`, `inspect`, `dead`.
+- `inspect` is a plaque close-up. `openPlaque(q)` sets it and `G.insp`
+  (`{ q, k, dir, syms, stick }`, `k` running 0 to 1 over `INSPECT_T`), and
+  `closePlaque(now)` ends it. `inspectUpdate` runs instead of the rest of
+  `playerUpdate`. `camUpdate` blends to the plaque and ignores the mouse,
+  and the pad does not turn the camera. `show()` closes it when the state
+  leaves play, and `resetRun` and death clear it.
 - Presses are buffered for 0.3 seconds in `p.buf` so chained inputs feel
   responsive.
 - Melee attacks aim with `aimYaw`, which snaps to the lock target or a nearby
@@ -345,6 +373,38 @@ is what you need to change the code without breaking it.
 - All damage to enemies goes through `hitEnemy`. All damage to the player goes
   through `hurtPlayer`, which handles invulnerability, perfect dodge, parry,
   block, guard break and class armour.
+
+### Hidden classes and codes
+
+- A class with `hidden: true` is left out of the picker until unlocked.
+  `UNLOCKED` is a Set of class ids, saved as `u` in `dungeon-raze.v2`.
+  `classOpen(id)`, `pickable()` and `unlockClass(id)` (true when new) are the
+  only ways to read or change it. A saved class that is locked falls back to
+  the first pickable one.
+- While a live plaque is open, `readSyms` turns presses into symbols:
+  dodge `B`, heal `X`, tool `Y`, movement `U` `D` `L` `R`, the D-pad and the
+  left stick once per push. The last symbols are hashed with `codeHash`
+  (cyrb53, hex) and compared with `PLAQUE_CODES`, which `SHIPPED_CODES`
+  fills with `{ hash, len }`. A sealed plaque, a held key and an already
+  unlocked class take nothing.
+- **Never commit a plain code.** Not in source, tests, comments, commits or
+  docs. The codes live only in `tests/codes.local.json`, which is ignored by
+  git; the test that enters the real code skips without it. Tests set their
+  own code with `DF.setPlaqueCode(id, syms)` and undo it with
+  `DF.resetPlaqueCodes()`. To change a code, put the new hash and length in
+  `SHIPPED_CODES` and the plain one in the local file.
+- The Enforcer. Pistol chain (`e1` to `e3`), shotgun heavy (`eshot`, pellets),
+  a slide dash, a sniper execution from `e.r + 4.5` that gives back a tool
+  charge. The sticky bomb (tool) is a projectile that becomes an entry in
+  `G.bombs`; it rides its enemy, falls to the floor if the enemy dies and
+  blows after `STICKY.t`, hurting the player for `STICKY.self` of its damage
+  in range and in sight. The grapple (ability) yanks a light enemy (poise 0,
+  not boss or dummy) with `e.yank`, or pulls the player to a heavier one in
+  the `grapple` state. With no target it costs nothing. Either way the enemy
+  reels in `hit` for `e.hitT` seconds (a flinch is 0.32), and a staggered
+  enemy stays staggered.
+- `G.insp` is set only while the player is in `inspect`. Anything that moves
+  them out of it closes the plaque on the next update.
 
 ### Enemies
 
@@ -430,12 +490,16 @@ Edit `MOVES` in `06_game.js`. Fields: `wind`, `act`, `rec` (seconds), `dmg`,
 `post` (posture damage), `range`, `arc` (radians, `TAU` for all round), `lunge`
 (distance moved), `stam`, `next` (the chained move), `anim`, `tilt` and `dir`
 (slash arc shape), `heavy`, `lance` (straight thrust effect). A ranged move has
-`proj` instead of the melee fields. If you use a new `anim` name, add its pose
-to the `attack` case of `posePlayer` in `07_render.js`.
+`proj` instead of the melee fields: `speed`, `dmg`, `post` and `kind`, with
+`life`, `big` and `heavy` optional. `pellets` fires that many shots at once,
+`spread` radians apart. A `proj` move with a `lunge` slides the player
+forward while it fires. If you use a new `anim` name, add its pose to the
+`attack` case of `posePlayer` in `07_render.js`.
 
 ### Add a class
 
-1. Add an entry to `CLASSES` in `06_game.js`, copying an existing one. `chain`,
+1. Add an entry to `CLASSES` in `06_game.js`, copying an existing one. Give it
+   `hidden: true` if a plaque code unlocks it. `chain`,
    `heavy` and `dash` name moves; `tool.id` and `special.id` name behaviours.
 2. Add its moves to `MOVES`.
 3. If the tool or ability is new, add a branch to `useTool` or `useSpecial`.
@@ -501,6 +565,14 @@ The class picker and HUD read `CLASSES` and need no changes.
   menus. It runs on the desktop page and fakes the Gamepad API with
   `navigator.getGamepads`: `SCRIPT=$PWD/tests/t16.mjs node test.mjs smoke`.
   Set `DF.G.manual` and call `DF.PAD.poll` yourself, as the steps do.
+- Run `tests/t18.mjs` after any change to plaques, Inspect, codes, unlocks or
+  the interact and dodge bindings: `SCRIPT=$PWD/tests/t18.mjs node test.mjs hub`.
+  Its last step enters the real Enforcer code from `tests/codes.local.json`
+  and skips when that file is missing.
+- Run `tests/t19.mjs` on every device after any change to plaques by touch:
+  `node tests/touch-all.mjs tests/t19.mjs hub`.
+- The Enforcer's steps (bombs, grapple, shotgun, sniper execution) are in
+  `tests/t6.mjs`.
 - Run `tests/t17.mjs` after any change to how a pad and touch share the screen.
   It uses a phone with a fake pad. Shots of the fight and the Controls menu go
   to `shots/`:
@@ -540,6 +612,8 @@ The class picker and HUD read `CLASSES` and need no changes.
 - Whether a pad press may start audio and fullscreen differs by browser.
 - The DualSense mapping in Firefox may be wrong. A pad that does not report
   the standard mapping gets a note in the Controls menu.
+- The Enforcer, the plaques and the codes are untested by hand. The sticky
+  bomb's self damage and the grapple's reach were set without a playtest.
 - iPhones cannot run the file directly; they play at
   https://maxjlerman.github.io/dungeon-raze/.
 - Touch was checked only in Chromium device emulation. Fullscreen, the
@@ -568,6 +642,16 @@ The class picker and HUD read `CLASSES` and need no changes.
    world generation, loot and progression, rendering and effects, HUD, touch
    layout, touch input, tests.
    Agree shared data shapes (`CLASSES`, `MOVES`, `EDEF`) before fanning out.
+7. A jump. The owner asked for it on Space and A or Cross, with dodge moving
+   to B on keyboard (not Ctrl: Ctrl+W closes the tab). Near a plaque the same
+   button inspects instead. What the jump is for in a fight (movement,
+   clearing slam shockwaves, jump attacks, invulnerability) is undecided; ask
+   the owner before building it. The floor is flat, so there is nothing to
+   jump onto. A touch Jump button must fit the owner's honeycomb layout.
+8. Hidden classes and joke classes. See `docs/ideas/joke-classes.md`. Still
+   to come after the first piece: the Sapper and Riftwalker kits, quests on
+   the plaques that open portals D to S to a class, and the in-game hunt that
+   leads players to the hidden list of codes.
 
 ## Decisions already made, with reasons
 
