@@ -27,7 +27,8 @@ is what you need to change the code without breaking it.
 ## Rules of the build
 
 - `node build.mjs` after every source change. The page that runs is
-  `dist/index.html`, and it is not committed.
+  `dist/index.html`, and it is not committed. A push to `main` builds it
+  and publishes it to GitHub Pages (`.github/workflows/pages.yml`).
 - All `src/*.js` files are concatenated into one function scope. There are no
   imports or exports. Declare a name once across the whole of `src/`.
 - No dependencies, no network requests at run time except Google Fonts. The
@@ -419,7 +420,8 @@ The class picker and HUD read `CLASSES` and need no changes.
   steer straight, so a wide enemy can catch on a corner the line of sight
   just clears.
 - There is no gamepad support.
-- iPhones cannot run the file directly; they need the GitHub Pages address.
+- iPhones cannot run the file directly; they play at
+  https://maxjlerman.github.io/dungeon-raze/.
 - Touch was checked only in Chromium device emulation. Fullscreen, the
   orientation lock and the Back gesture in particular have not run on a real
   phone or on Safari.
