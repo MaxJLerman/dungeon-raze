@@ -26,6 +26,12 @@ const PAD = {
   mute: new Set(),
   // the screen the last poll saw
   screen: null,
+  // menus: the focused element, where it sat in the list, the direction held
+  // and the time to its next repeat, and a left stick held across a screen change
+  focus: null,
+  focusIdx: 0,
+  rep: null,
+  stickMute: false,
   pads() {
     try {
       const l = navigator.getGamepads ? navigator.getGamepads() : null;
@@ -73,6 +79,142 @@ const PAD = {
       (/wireless controller/i.test(id) && !/xbox|045e/i.test(id))
       ? "ps"
       : "xbox";
+  },
+  // what a pad can reach on the open screen. Key bindings are left to the
+  // rebind flow.
+  focusables() {
+    const s = document.querySelector(".scr.show");
+    if (!s) return [];
+    return [
+      ...s.querySelectorAll(
+        'button, .card, input[type="range"], input[type="checkbox"]',
+      ),
+    ].filter(
+      (e) =>
+        !e.disabled &&
+        !e.matches("#binds button[data-act]") &&
+        e.getClientRects().length > 0,
+    );
+  },
+  setFocus(el, list) {
+    if (PAD.focus) PAD.focus.classList.remove("padfocus");
+    PAD.focus = el;
+    if (!el) return;
+    PAD.focusIdx = Math.max(0, (list || PAD.focusables()).indexOf(el));
+    el.classList.add("padfocus");
+    try {
+      el.scrollIntoView({ block: "nearest" });
+    } catch (e) {}
+  },
+  // the nearest control ahead along dir, by distance along plus twice across
+  nav(dir) {
+    const list = PAD.focusables(),
+      cur = PAD.focus;
+    if (!cur || !list.includes(cur)) {
+      PAD.setFocus(list[0] || null, list);
+      return;
+    }
+    const v = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[dir];
+    const centre = (e) => {
+      const r = e.getBoundingClientRect();
+      return [r.left + r.width / 2, r.top + r.height / 2];
+    };
+    const [cx, cy] = centre(cur);
+    let best = null,
+      bestScore = Infinity;
+    for (const e of list) {
+      if (e === cur) continue;
+      const [x, y] = centre(e),
+        dx = x - cx,
+        dy = y - cy,
+        along = dx * v[0] + dy * v[1];
+      if (along <= 1) continue;
+      const score = along + 2 * Math.abs(dx * v[1] - dy * v[0]);
+      if (score < bestScore) {
+        best = e;
+        bestScore = score;
+      }
+    }
+    if (best) PAD.setFocus(best, list);
+  },
+  // one step in a direction: a range takes left and right, else focus moves
+  step(dir) {
+    const f = PAD.focus;
+    if (f && f.matches('input[type="range"]') && (dir === "left" || dir === "right")) {
+      if (dir === "right") f.stepUp();
+      else f.stepDown();
+      f.dispatchEvent(new Event("input", { bubbles: true }));
+    } else PAD.nav(dir);
+  },
+  // A on the focused control
+  press() {
+    const f = PAD.focus;
+    if (!f) return;
+    if (f.matches('input[type="checkbox"]')) {
+      f.checked = !f.checked;
+      f.dispatchEvent(new Event("change", { bubbles: true }));
+    } else f.click();
+  },
+  // menus: focus follows the screen, the D-pad and the left stick move it,
+  // A presses and B goes back
+  menu(dt, lv, screenChanged) {
+    let dir = null;
+    for (const [c, d] of [["P:12", "up"], ["P:13", "down"], ["P:14", "left"], ["P:15", "right"]])
+      if (keys[c]) {
+        dir = d;
+        break;
+      }
+    let sd = null;
+    if (lv.mag > 0.5)
+      sd = Math.abs(lv.x) > Math.abs(lv.y) ? (lv.x > 0 ? "right" : "left") : lv.y > 0 ? "down" : "up";
+    // a stick held across a screen change says nothing until it rests
+    if (!sd) PAD.stickMute = false;
+    else if (screenChanged) PAD.stickMute = true;
+    if (!dir && !PAD.stickMute) dir = sd;
+    const f = PAD.focus;
+    if (
+      screenChanged ||
+      !f ||
+      !f.isConnected ||
+      f.getClientRects().length === 0 ||
+      !f.closest(".scr.show")
+    ) {
+      const list = PAD.focusables();
+      // a screen opens on its first control, or the one marked data-padfirst
+      // where class cards come before the button
+      const first = list.find((e) => e.hasAttribute("data-padfirst")) || list[0];
+      PAD.setFocus(
+        (screenChanged ? first : list[Math.min(PAD.focusIdx, list.length - 1)]) || null,
+        list,
+      );
+    }
+    if (!dir) PAD.rep = null;
+    else if (!PAD.rep || PAD.rep.dir !== dir) {
+      PAD.rep = { dir, t: 0.35 };
+      PAD.step(dir);
+    } else if ((PAD.rep.t -= dt) <= 0) {
+      PAD.rep.t += 0.12;
+      PAD.step(dir);
+    }
+    const s = G.state;
+    if (taps["P:0"]) {
+      delete taps["P:0"];
+      PAD.press();
+    } else if (taps["P:1"]) {
+      delete taps["P:1"];
+      if (MENUS.includes(s)) {
+        const b = $("scr-" + s).querySelector("[data-back]");
+        if (b) b.click();
+      }
+    }
+    // an action that changed the screen takes what is held with it
+    if (G.state !== s)
+      for (let i = 0; i < 18; i++)
+        if (keys["P:" + i]) {
+          PAD.mute.add("P:" + i);
+          keys["P:" + i] = false;
+          delete taps["P:" + i];
+        }
   },
   // from a pad press: a pad has no pointer to lock, so play goes fullscreen
   enterPlay() {
@@ -152,6 +294,8 @@ const PAD = {
       p = G.player;
     PAD.move = { x: lv.x, y: -lv.y, mag: lv.mag };
     PAD.look = { x: rv.x * rv.mag, y: rv.y * rv.mag };
+    if (!inPlay) PAD.menu(dt, lv, screenChanged);
+    else if (PAD.focus) PAD.setFocus(null);
     // the latch reads the tap without consuming it
     if (inPlay && PAD_BIND.sprint && taps[PAD_BIND.sprint]) PAD.sprint = !PAD.sprint;
     if (PAD.move.mag === 0 || !inPlay || (p && p.stam <= 0)) PAD.sprint = false;

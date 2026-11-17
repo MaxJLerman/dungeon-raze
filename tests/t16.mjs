@@ -124,11 +124,12 @@ export default [
   window.__pads = []; pads(); tick();
   return { pass: err === null && Object.values(throws).every(Boolean) && Object.values(missing).every(Boolean), err, throws, missing };`),
   step("family", `
-  pads(mk({ id: "054c-0ce6-DualSense Wireless Controller", b: { 0: 1 } })); tick(); const ps = DF.PAD.fam;
+  // X, not A: the step may start on a menu, where A presses a control
+  pads(mk({ id: "054c-0ce6-DualSense Wireless Controller", b: { 2: 1 } })); tick(); const ps = DF.PAD.fam;
   pads(); tick();
-  pads(mk({ b: { 0: 1 } })); tick(); const xb = DF.PAD.fam;
+  pads(mk({ b: { 2: 1 } })); tick(); const xb = DF.PAD.fam;
   pads(); tick();
-  pads(mk({ id: "Wireless Controller (STANDARD GAMEPAD)", b: { 0: 1 } })); tick(); const ps2 = DF.PAD.fam;
+  pads(mk({ id: "Wireless Controller (STANDARD GAMEPAD)", b: { 2: 1 } })); tick(); const ps2 = DF.PAD.fam;
   pads(mk()); tick(); const idle = DF.PAD.fam;
   return { pass: ps === "ps" && xb === "xbox" && ps2 === "ps" && idle === "ps", ps, xb, ps2, idle };`),
   step("standard mapping", `
@@ -338,4 +339,137 @@ export default [
   pads(mk({ axes: [0, 0, 0.9, 0] })); tick(3);
   const after = p.lock;
   return { pass: !!first && !changed && !!after && after !== first, hadFirst: !!first, changed, flicked: after !== first };`),
+  step("a screen opens with its first control focused", `
+  const c = {};
+  for (const [scr, want] of [["pause", "btnResume"], ["dead", "btnRise"], ["title", "btnPlay"]]) {
+    DF.show(scr); tick(1);
+    c[scr] = !!DF.PAD.focus && DF.PAD.focus.id === want && DF.PAD.focus.classList.contains("padfocus");
+  }
+  DF.show("class"); tick(1);
+  const first = document.querySelector("#scr-class .card");
+  c.class = DF.PAD.focus === first && !!first;
+  // only one control carries the mark, and play clears it
+  c.one = document.querySelectorAll(".padfocus").length === 1;
+  DF.show("play"); tick(1);
+  c.cleared = DF.PAD.focus === null && document.querySelectorAll(".padfocus").length === 0;
+  // a focused control that is no longer shown does not keep focus
+  DF.show("title"); tick(1);
+  const was = DF.PAD.focus;
+  DF.show("pause"); tick(1);
+  c.moved = DF.PAD.focus !== was && DF.PAD.focus.closest(".scr").classList.contains("show");
+  DF.show("title");
+  return { pass: Object.values(c).every(Boolean), c };`),
+  step("focus moves by direction", `
+  const tap = (b) => { pads(mk({ b: { [b]: 1 } })); tick(1); pads(mk()); tick(2); };
+  const ctr = (e) => { const r = e.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; };
+  DF.show("class"); pads(mk()); tick(2);
+  const c = {};
+  const a = DF.PAD.focus, [ax, ay] = ctr(a);
+  tap(15);
+  const [bx] = ctr(DF.PAD.focus);
+  c.right = DF.PAD.focus !== a && bx > ax;
+  tap(14);
+  c.left = DF.PAD.focus === a;
+  tap(12);
+  c.nothingUp = DF.PAD.focus === a;
+  tap(13);
+  const [, dy] = ctr(DF.PAD.focus);
+  c.down = DF.PAD.focus !== a && dy > ay;
+  tap(12);
+  c.up = DF.PAD.focus === a;
+  // the left stick moves it too
+  pads(mk({ axes: [0.9, 0, 0, 0] })); tick(1); pads(mk()); tick(2);
+  c.stick = DF.PAD.focus !== a && ctr(DF.PAD.focus)[0] > ax;
+  DF.show("title");
+  return { pass: Object.values(c).every(Boolean), c };`),
+  step("holding repeats", `
+  DF.show("controls"); pads(mk()); tick(2);
+  let n = 0; const o = DF.PAD.step; DF.PAD.step = function (d) { n++; return o.call(this, d); };
+  const hold = (ticks) => { n = 0; pads(mk({ b: { 13: 1 } })); tick(ticks); const r = n; pads(mk()); tick(3); return r; };
+  const r = { a: hold(21), b: hold(23), c: hold(44) };
+  DF.PAD.step = o;
+  DF.show("title");
+  return { pass: r.a === 1 && r.b === 2 && r.c === 5, r };`),
+  step("A presses and B goes back", `
+  const tap = (b) => { pads(mk({ b: { [b]: 1 } })); tick(1); pads(mk()); tick(2); };
+  const c = {};
+  DF.show("title"); pads(mk()); tick(2);
+  document.querySelector('#scr-title [data-open="howto"]').click(); tick(2);
+  c.opened = G.state === "howto";
+  tap(1);
+  c.back = G.state === "title";
+  // A on a button in a menu opens it
+  DF.PAD.setFocus(document.querySelector('#scr-title [data-open="controls"]'));
+  tap(0);
+  c.press = G.state === "controls";
+  tap(1);
+  c.back2 = G.state === "title";
+  // B does nothing on the title screen
+  tap(1); c.title = G.state === "title";
+  // from pause, B resumes (Task 3) and Back returns to pause
+  DF.show("pause"); tick(2);
+  DF.PAD.setFocus(document.querySelector('#scr-pause [data-open="howto"]'));
+  tap(0); c.fromPause = G.state === "howto";
+  tap(1); c.backPause = G.state === "pause";
+  // the class screen: A on a card chooses it
+  DF.show("class"); tick(2);
+  const was = DF.OPT.cls;
+  const card = [...document.querySelectorAll("#scr-class .card")].find((e) => e.dataset.cls !== was);
+  DF.PAD.setFocus(card);
+  tap(0);
+  c.class = DF.OPT.cls === card.dataset.cls;
+  c.stillFocused = DF.PAD.focus && DF.PAD.focus.dataset.cls === card.dataset.cls && DF.PAD.focus.isConnected;
+  DF.setClass(was); DF.show("title");
+  return { pass: Object.values(c).every(Boolean), c };`),
+  step("ranges and checkboxes", `
+  const tap = (b) => { pads(mk({ b: { [b]: 1 } })); tick(1); pads(mk()); tick(2); };
+  DF.show("controls"); pads(mk()); tick(2);
+  const c = {}; const sens = document.getElementById("sens"), inv = document.getElementById("invY");
+  DF.OPT.sens = 1; sens.value = 1; DF.OPT.invY = false; inv.checked = false;
+  DF.PAD.setFocus(sens);
+  tap(15);
+  c.up = Math.abs(DF.OPT.sens - 1.05) < 1e-9 && DF.PAD.focus === sens;
+  tap(14); tap(14);
+  c.down = Math.abs(DF.OPT.sens - 0.95) < 1e-9;
+  DF.PAD.setFocus(inv);
+  tap(0); c.on = DF.OPT.invY === true && inv.checked;
+  tap(0); c.off = DF.OPT.invY === false && !inv.checked;
+  DF.OPT.sens = 1; sens.value = 1; DF.show("title");
+  return { pass: Object.values(c).every(Boolean), c, sens: DF.OPT.sens };`),
+  step("focus never lands on a keyboard binding", `
+  const tap = (b) => { pads(mk({ b: { [b]: 1 } })); tick(1); pads(mk()); tick(1); };
+  DF.show("controls"); pads(mk()); tick(2);
+  const seenOn = []; let bad = 0;
+  const chk = () => { if (DF.PAD.focus.matches("#binds button[data-act]")) bad++; };
+  const n = document.querySelectorAll("#binds button[data-act]").length;
+  for (let i = 0; i < 40; i++) { tap(13); chk(); }
+  for (let i = 0; i < 40; i++) { tap(12); chk(); }
+  for (const b of [14, 15, 13, 15, 12, 14]) { tap(b); chk(); }
+  DF.show("title");
+  return { pass: bad === 0 && n > 0, bad, n };`),
+  step("focus scrolls into view", `
+  const scr = document.getElementById("scr-controls");
+  scr.style.height = "300px";
+  DF.show("controls"); pads(mk()); tick(2);
+  const tap = (b) => { pads(mk({ b: { [b]: 1 } })); tick(1); pads(mk()); tick(1); };
+  const list = DF.PAD.focusables(), last = list[list.length - 1];
+  for (let i = 0; i < 12 && DF.PAD.focus !== last; i++) { tap(13); if (DF.PAD.focus !== last) tap(15); }
+  const r = DF.PAD.focus.getBoundingClientRect(), s = scr.getBoundingClientRect();
+  const c = { atLast: DF.PAD.focus === last, scrolled: scr.scrollTop > 0, inside: r.top >= s.top - 1 && r.bottom <= s.bottom + 1 };
+  scr.style.height = ""; DF.show("title");
+  return { pass: Object.values(c).every(Boolean), c, r: [r.top, r.bottom], s: [s.top, s.bottom] };`),
+  step("A held on Resume does not attack", `
+  const p = stage(); DF.PAD_BIND.light = "P:0"; pads(mk()); tick(2);
+  DF.show("pause"); tick(2);
+  const c = { onResume: DF.PAD.focus && DF.PAD.focus.id === "btnResume" };
+  pads(mk({ b: { 0: 1 } })); tick(1);
+  c.resumed = G.state === "play";
+  let key = false, tapped = false;
+  for (let i = 0; i < 5; i++) DF.sim(1 / 60, () => { DF.PAD.poll(1 / 60); if (keys["P:0"]) key = true; if (taps["P:0"]) tapped = true; });
+  c.muted = !key && !tapped && p.state !== "attack";
+  pads(mk()); tick(3);
+  pads(mk({ b: { 0: 1 } })); tick(2);
+  c.again = keys["P:0"] === true && p.state === "attack";
+  pads(mk()); tick(3);
+  return { pass: Object.values(c).every(Boolean), c, state: p.state };`),
 ];

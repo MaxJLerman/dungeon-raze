@@ -522,6 +522,11 @@
         outline: 2px solid var(--vein);
         outline-offset: 3px;
       }
+      /* where a controller is: only while a pad was the last input */
+      body.pad .padfocus {
+        outline: 2px solid var(--ember);
+        outline-offset: 3px;
+      }
       .scr button:disabled {
         opacity: 0.4;
         cursor: default;
@@ -1010,7 +1015,7 @@
       </p>
       <div class="picker"></div>
       <div class="row">
-        <button id="btnPlay" type="button">Enter the hall</button
+        <button id="btnPlay" type="button" data-padfirst>Enter the hall</button
         ><button type="button" data-open="howto">How to play</button
         ><button type="button" data-open="controls">Controls</button>
       </div>
