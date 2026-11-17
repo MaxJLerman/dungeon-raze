@@ -85,6 +85,8 @@
       }
       .bar.hp {
         height: 12px;
+        /* keeps the fill's z-index inside the bar, so menus and the fade cover it */
+        isolation: isolate;
       }
       .bar.hp i {
         background: var(--blood);
@@ -450,7 +452,6 @@
       }
       #fade {
         background: #000;
-        /* above the health fill, which has z-index 1, so it covers the HUD */
         z-index: 2;
       }
       .scr {
