@@ -381,18 +381,29 @@ is what you need to change the code without breaking it.
   `classOpen(id)`, `pickable()` and `unlockClass(id)` (true when new) are the
   only ways to read or change it. A saved class that is locked falls back to
   the first pickable one.
-- While a live plaque is open, `readSyms` turns presses into symbols:
-  dodge `B`, heal `X`, tool `Y`, movement `U` `D` `L` `R`, the D-pad and the
-  left stick once per push. The last symbols are hashed with `codeHash`
+- While a live plaque is open, `readSyms` turns presses into symbols, which
+  are the action names `dodge`, `heal`, `tool`, `fwd`, `back`, `left` and
+  `right`. The D-pad and the left stick enter directions, the stick once per
+  push. The last symbols, joined by spaces, are hashed with `codeHash`
   (cyrb53, hex) and compared with `PLAQUE_CODES`, which `SHIPPED_CODES`
   fills with `{ hash, len }`. A sealed plaque, a held key and an already
   unlocked class take nothing.
+- Notation. `inputMode()` is `kb`, `touch`, `xbox` or `ps`, for the input in
+  use. `codeText(syms, mode)` writes symbols in that input's notation: the
+  bound keys on a keyboard, arrows and the touch button names by touch, arrows
+  and the bound face buttons on a pad. The card's marks show each symbol
+  entered that way, so they follow rebinding and change with the input.
 - **Never commit a plain code.** Not in source, tests, comments, commits or
-  docs. The codes live only in `tests/codes.local.json`, which is ignored by
-  git; the test that enters the real code skips without it. Tests set their
-  own code with `DF.setPlaqueCode(id, syms)` and undo it with
-  `DF.resetPlaqueCodes()`. To change a code, put the new hash and length in
-  `SHIPPED_CODES` and the plain one in the local file.
+  docs. The codes live only in `tests/codes.local.json` (action names, space
+  separated), which is ignored by git with everything else matching
+  `tests/codes.local.*`; the test that enters the real code skips without
+  it. Tests set their own code with `DF.setPlaqueCode(id, syms)` (an array or
+  a space-separated string) and undo it with `DF.resetPlaqueCodes()`. To
+  change a code, put the new hash and length in `SHIPPED_CODES` and the plain
+  one in the local file. `SCRIPT=$PWD/tests/codes-print.mjs node test.mjs title`
+  writes every local code in all four notations, with the default binds, to
+  `tests/codes.local.md`. A test step may have an `after(result)` function,
+  which `test.mjs` calls in node in place of printing the result.
 - The Enforcer. Pistol chain (`e1` to `e3`), shotgun heavy (`eshot`, pellets),
   a slide dash, a sniper execution from `e.r + 4.5` that gives back a tool
   charge. The sticky bomb (tool) is a projectile that becomes an entry in

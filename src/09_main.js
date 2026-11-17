@@ -665,6 +665,8 @@ window.DF = {
   closePlaque,
   posePlayer,
   setPlaqueCode,
+  codeText,
+  inputMode,
   resetPlaqueCodes,
   openMenu,
   loadOpt,

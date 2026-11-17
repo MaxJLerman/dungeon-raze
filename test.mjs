@@ -101,7 +101,9 @@ if (process.env.SCRIPT) {
       } catch (e) {
         r = { pass: false, threw: e.message.split("\n")[0] };
       }
-      if (r !== undefined) console.log(s.name || "eval", JSON.stringify(r));
+      if (r !== undefined && !s.after) console.log(s.name || "eval", JSON.stringify(r));
+      // a step may hand its result to node, to print or save it
+      if (s.after) await s.after(r);
       // a step that reports a pass at all must report true
       if (r && typeof r === "object" && "pass" in r && r.pass !== true) {
         console.log("FAIL " + (s.name || "eval"));

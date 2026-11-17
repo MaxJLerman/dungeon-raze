@@ -313,6 +313,10 @@ const HUD = (() => {
   // the plaque card: content when it changes, then its place and size, from
   // the plaque on screen at k 0 to the middle of the screen at k 1
   let plKey = "";
+  // text for innerHTML
+  function esc(t) {
+    return String(t).replace(/[&<>"]/g, (c) => "&#" + c.charCodeAt(0) + ";");
+  }
   function plaqueCard() {
     const i = G.insp,
       d = el.plaque;
@@ -327,8 +331,10 @@ const HUD = (() => {
       code = q.cls && PLAQUE_CODES[q.cls],
       n = code && !open ? code.len : 0,
       got = Math.min(n, i.syms.length),
+      // what was pressed, in the notation of the input in use
+      shown = codeText(i.syms.slice(i.syms.length - got)),
       close = closeName(),
-      key = [q.id, open, got, close].join("|");
+      key = [q.id, open, got, close, shown.join(" ")].join("|");
     if (key !== plKey) {
       plKey = key;
       d.classList.toggle("sealed", !q.cls);
@@ -350,7 +356,8 @@ const HUD = (() => {
         el.plBody.textContent = "";
       }
       let m = "";
-      for (let j = 0; j < n; j++) m += '<u class="' + (j < got ? "on" : "") + '"></u>';
+      for (let j = 0; j < n; j++)
+        m += j < got ? '<b class="on">' + esc(shown[j]) + "</b>" : "<u></u>";
       el.plMarks.innerHTML = m;
       el.plClose.innerHTML = close;
     }

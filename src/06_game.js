@@ -2100,11 +2100,12 @@ const PLAQUE_TEXT = {
   sapper: "Sealed",
   riftwalker: "Sealed",
 };
-// A code is a string of symbols: U D L R for directions, and B, X, Y for the
-// dodge, flask and tool actions, whatever they are bound to. Only its hash
-// ships; the codes themselves are kept out of the repo.
+// A code is a list of action names: fwd, back, left, right, dodge, heal and
+// tool, entered with whatever they are bound to. Its hash is taken over the
+// names joined by spaces. Only the hash ships; the codes themselves are kept
+// out of the repo. codeText writes a code in an input's own notation.
 const SHIPPED_CODES = {
-  enforcer: { hash: "e94039d11b7db", len: 10 },
+  enforcer: { hash: "14ac1f9c18e2c", len: 10 },
 };
 const PLAQUE_CODES = {};
 function resetPlaqueCodes() {
@@ -2114,7 +2115,26 @@ function resetPlaqueCodes() {
 resetPlaqueCodes();
 // for tests: give a plaque a code of their own
 function setPlaqueCode(id, syms) {
-  PLAQUE_CODES[id] = { hash: codeHash(syms), len: syms.length };
+  const a = Array.isArray(syms) ? syms : syms.trim().split(/\s+/);
+  PLAQUE_CODES[id] = { hash: codeHash(a.join(" ")), len: a.length };
+}
+// the input in use: "kb", "touch", or the pad family "xbox" or "ps"
+function inputMode() {
+  return PAD.active ? PAD.fam : TOUCH.on ? "touch" : "kb";
+}
+// One code symbol in an input's notation. Directions are the D-pad's arrows
+// on a pad and by touch, the movement keys on a keyboard; the actions are
+// their bound key, pad button or touch button.
+const SYM_ARROW = { fwd: "↑", back: "↓", left: "←", right: "→" };
+const SYM_TOUCH = { dodge: "DODGE", heal: "FLASK", tool: "TOOL" };
+function symText(sym, mode) {
+  if (mode === "kb") return keyName(BIND[sym]);
+  if (SYM_ARROW[sym]) return SYM_ARROW[sym];
+  if (mode === "touch") return SYM_TOUCH[sym] || sym;
+  return padName(PAD_BIND[sym], mode);
+}
+function codeText(syms, mode = inputMode()) {
+  return syms.map((s) => symText(s, mode));
 }
 // a 53-bit string hash (cyrb53), as hex
 function codeHash(str) {
@@ -2141,28 +2161,20 @@ function readSyms() {
   // the D-pad first and raw, so an action bound to it still enters its
   // direction; Interact's own button is left to close the plaque
   for (const [c, sy] of [
-    ["P:12", "U"],
-    ["P:13", "D"],
-    ["P:14", "L"],
-    ["P:15", "R"],
+    ["P:12", "fwd"],
+    ["P:13", "back"],
+    ["P:14", "left"],
+    ["P:15", "right"],
   ])
     if (c !== PAD_BIND.interact && tap(c)) out.push(sy);
-  if (hit("dodge")) out.push("B");
-  if (hit("heal")) out.push("X");
-  if (hit("tool")) out.push("Y");
-  for (const [a, sy] of [
-    ["fwd", "U"],
-    ["back", "D"],
-    ["left", "L"],
-    ["right", "R"],
-  ])
-    if (hit(a)) out.push(sy);
+  for (const a of ["dodge", "heal", "tool"]) if (hit(a)) out.push(a);
+  for (const a of ["fwd", "back", "left", "right"]) if (hit(a)) out.push(a);
   const m = PAD.move;
   if (i && m.mag < 0.2) i.stick = false;
   else if (i && !i.stick && m.mag > 0.5) {
     i.stick = true;
     out.push(
-      Math.abs(m.x) > Math.abs(m.y) ? (m.x > 0 ? "R" : "L") : m.y > 0 ? "U" : "D",
+      Math.abs(m.x) > Math.abs(m.y) ? (m.x > 0 ? "right" : "left") : m.y > 0 ? "fwd" : "back",
     );
   }
   return out;
@@ -2210,7 +2222,7 @@ function inspectUpdate(dt) {
     if (i.syms.length > 10) i.syms.shift();
     if (
       i.syms.length >= code.len &&
-      codeHash(i.syms.slice(-code.len).join("")) === code.hash
+      codeHash(i.syms.slice(-code.len).join(" ")) === code.hash
     ) {
       unlockClass(id);
       i.flare = true;

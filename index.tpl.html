@@ -390,6 +390,8 @@
       #plaqueMarks {
         flex: none;
         display: flex;
+        flex-wrap: wrap;
+        align-items: center;
         gap: 1.2vmin;
         margin-top: auto;
       }
@@ -399,10 +401,21 @@
         transform: rotate(45deg);
         border: 2px solid rgba(232, 226, 212, 0.45);
       }
-      #plaqueMarks u.on {
-        background: var(--pc);
-        border-color: var(--pc);
+      /* a symbol entered, named for the input in use */
+      #plaqueMarks b {
+        min-width: 3vmin;
+        height: 3vmin;
+        padding: 0 0.6vmin;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 2px solid var(--pc);
+        border-radius: 0.6vmin;
+        background: color-mix(in srgb, var(--pc) 35%, transparent);
         box-shadow: 0 0 1.4vmin var(--pc);
+        color: #fff;
+        font: 700 clamp(9px, 1.9vmin, 14px) / 1 system-ui, sans-serif;
+        white-space: nowrap;
       }
       #plaqueClose {
         flex: none;

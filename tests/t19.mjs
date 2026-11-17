@@ -19,7 +19,7 @@ const step = (name, body) => ({
 
 export default [
   step("touch: prompt opens, D-pad and buttons enter, the plaque closes", `
-    DF.UNLOCKED.clear(); DF.setPlaqueCode("enforcer", "UDLRBXYB"); DF.enterHub(); const p = stand(); await draw();
+    DF.UNLOCKED.clear(); DF.setPlaqueCode("enforcer", "fwd back left right dodge heal tool dodge"); DF.enterHub(); const p = stand(); await draw();
     const prompt = document.getElementById("prompt"), shown = getComputedStyle(prompt).display !== "none" && /Inspect/.test(prompt.textContent);
     await tapAt(mid(L().prompt)); DF.sim(0.6); await draw(); const open = p.state === "inspect";
     const dp = L().dpad, r = dp.d / 3;
@@ -30,6 +30,13 @@ export default [
     await tapAt(mid(L().close)); DF.sim(0.6); const shut = G.insp === null && p.state === "free";
     DF.UNLOCKED.clear(); DF.saveOpt(); DF.resetPlaqueCodes();
     return { pass: shown && open && unlocked && still && shut, shown, open, unlocked, still, shut };`),
+  step("touch: the plaque marks name the D-pad and buttons", `
+    DF.UNLOCKED.clear(); DF.setPlaqueCode("enforcer", "tool tool tool tool"); DF.enterHub(); const p = stand(); await draw();
+    await tapAt(mid(L().prompt)); DF.sim(0.6); await draw();
+    const dp = L().dpad, r = dp.d / 3; await tapAt([dp.x + r, dp.y]); await tapAt([btn("heal").x, btn("heal").y]); await draw();
+    const marks = [...document.querySelectorAll("#plaqueMarks .on")].map((e) => e.textContent).join(" ");
+    DF.closePlaque(true); DF.resetPlaqueCodes();
+    return { pass: marks === "→ FLASK", marks };`),
   step("touch: the D-pad shows only while inspecting, and the stick is idle", `
     DF.enterHub(); const p = stand(); await draw();
     const dp = () => document.querySelector("#touch .dpad"), vis = () => !!dp() && getComputedStyle(dp()).display !== "none";
