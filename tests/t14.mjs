@@ -62,7 +62,9 @@ export default [
         Math.abs(r.width - B.w) <= 1 && Math.abs(r.height - B.h) <= 1;
     };
     // the content must fit in the box too, not just the box be placed
-    const fits = (id) => { const e = document.getElementById(id); return e.scrollHeight <= e.clientHeight + 1; };
+    // and sideways too: a readout that wraps or runs past the box fails
+    const fits = (id) => { const e = document.getElementById(id); return e.scrollHeight <= e.clientHeight + 1 && e.scrollWidth <= e.clientWidth + 1; };
+    G.player.focus = G.player.cls.special.cost; await draw();
     const c = {
       vitals: within("vitals", L().vitals),
       map: within("map", L().map),
@@ -71,7 +73,7 @@ export default [
       bossFit: fits("boss"),
       hint: getComputedStyle(document.getElementById("hint")).display === "none",
     };
-    const m = { vitalsH: document.getElementById("vitals").scrollHeight, bossH: boss.scrollHeight };
+    const m = { vitalsH: document.getElementById("vitals").scrollHeight, vitalsW: document.getElementById("vitals").scrollWidth, bossH: boss.scrollHeight, readout: document.getElementById("blinkR").textContent };
     boss.style.display = prev;
     return { pass: Object.values(c).every((v) => v === true), ...c, ...m };`),
   step("layout passes on this device", `
@@ -502,6 +504,8 @@ export default [
     };
     for (const k in DF.taps) DF.taps[k] = false;
     const cv = document.getElementById("c");
+    // a real click lands on whatever is on top, so nothing may cover the canvas
+    a.top = document.elementFromPoint(innerWidth / 2, innerHeight / 2) === cv;
     cv.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true, cancelable: true }));
     a.click = DF.taps.Mouse0 === true && DF.keys.Mouse0 === true;
     window.dispatchEvent(new MouseEvent("mouseup", { button: 0, bubbles: true }));
@@ -562,7 +566,7 @@ export default [
     const meta = document.querySelector('meta[name="viewport"]').content;
     const callout = (typeof CSS !== "undefined" && CSS.supports("-webkit-touch-callout", "none"))
       ? cs(document.body).getPropertyValue("-webkit-touch-callout") === "none"
-      : /body[^{}]*\\{[^}]*-webkit-touch-callout:\\s*none/.test(css);
+      : /html,\\s*body\\s*\\{[^}]*-webkit-touch-callout:\\s*none/.test(css);
     const c = {
       touchAction: cs(document.getElementById("touch")).touchAction === "none",
       canvasAction: cs(document.getElementById("c")).touchAction === "none",
@@ -607,6 +611,17 @@ export default [
     const t = lab.innerText.replace(/\\s+/g, " ").trim();
     DF.show("title");
     return { pass: /^Look sensitivity/.test(t) && !/Mouse/.test(t), t };`),
+  step("pause copy fits the input", `
+    DF.show("pause"); await draw();
+    const sub = document.querySelector("#scr-pause .sub");
+    const vis = () => sub.innerText.replace(/\\s+/g, " ").trim();
+    const touch = vis();
+    TOUCH.setOn(false); await draw();
+    const desk = vis();
+    TOUCH.setOn(true); await draw();
+    DF.show("title");
+    const c = { touch: touch === "Tap Resume to carry on.", desk: desk === "Resume takes the mouse back.", back: TOUCH.on === true };
+    return { pass: Object.values(c).every((v) => v === true), ...c, touch, desk };`),
   step("menus fit 640x360", `
     if (innerWidth !== 640) return { pass: true, skipped: true };
     const bad = [], seen = {};

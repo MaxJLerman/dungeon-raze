@@ -399,6 +399,15 @@
       body.touch #hint {
         display: none;
       }
+      /* the Flask and Tool buttons show these counts; only the readout stays,
+         on one line, so it cannot wrap out of the vitals box */
+      body.touch #flasks,
+      body.touch #knives {
+        display: none;
+      }
+      body.touch #blinkR {
+        white-space: nowrap;
+      }
       body.touch #vitals,
       body.touch #map,
       body.touch #boss {
@@ -980,7 +989,10 @@
     </div>
     <div id="scr-pause" class="scr">
       <h1>Paused</h1>
-      <p class="sub">Resume takes the mouse back.</p>
+      <p class="sub">
+        <span class="lk-mouse">Resume takes the mouse back.</span
+        ><span class="lk-touch">Tap Resume to carry on.</span>
+      </p>
       <div class="row">
         <button id="btnResume" type="button">Resume</button
         ><button type="button" data-open="class">Change class</button
