@@ -125,7 +125,7 @@ function renderPicker() {
     const cur = CLASSES[OPT.cls];
     host.innerHTML =
       '<div class="cards">' +
-      CLASS_IDS.map((id) => {
+      pickable().map((id) => {
         const c = CLASSES[id];
         return (
           '<button type="button" class="card' +
@@ -619,6 +619,11 @@ window.DF = {
   threatOf,
   PURSUIT,
   CLASSES,
+  UNLOCKED,
+  classOpen,
+  pickable,
+  unlockClass,
+  renderPicker,
   BIND,
   OPT,
   setClass,

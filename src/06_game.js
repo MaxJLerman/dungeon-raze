@@ -194,11 +194,27 @@ function keyName(c) {
 function actKey(a) {
   return PAD.active ? padName(PAD_BIND[a], PAD.fam) : keyName(BIND[a]);
 }
+// Hidden classes unlocked at their plaques, saved under "u". A class without
+// `hidden` is always open.
+const UNLOCKED = new Set();
+function classOpen(id) {
+  return !!CLASSES[id] && (!CLASSES[id].hidden || UNLOCKED.has(id));
+}
+function pickable() {
+  return CLASS_IDS.filter(classOpen);
+}
+// true when the class was locked until now
+function unlockClass(id) {
+  if (!CLASSES[id] || UNLOCKED.has(id)) return false;
+  UNLOCKED.add(id);
+  saveOpt();
+  return true;
+}
 function saveOpt() {
   try {
     localStorage.setItem(
       "dungeon-raze.v2",
-      JSON.stringify({ b: BIND, p: PAD_BIND, o: OPT }),
+      JSON.stringify({ b: BIND, p: PAD_BIND, o: OPT, u: [...UNLOCKED] }),
     );
   } catch (e) {
     /* storage may be unavailable */
@@ -219,8 +235,11 @@ function loadOpt() {
       for (const k in DEFAULT_PAD)
         PAD_BIND[k] =
           d.p[k] === null || PAD_CODES.includes(d.p[k]) ? d.p[k] : DEFAULT_PAD[k];
+    if (Array.isArray(d.u))
+      for (const id of d.u) if (CLASSES[id]) UNLOCKED.add(id);
     if (d.o) {
-      if (CLASSES[d.o.cls]) OPT.cls = d.o.cls;
+      // a hidden class that is not unlocked falls back to the first open one
+      if (CLASSES[d.o.cls]) OPT.cls = classOpen(d.o.cls) ? d.o.cls : pickable()[0];
       if (d.o.sens > 0.1 && d.o.sens < 5) OPT.sens = d.o.sens;
       OPT.invY = !!d.o.invY;
       const num = (v, lo, hi) => typeof v === "number" && v >= lo && v <= hi;

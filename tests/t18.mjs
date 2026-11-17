@@ -20,4 +20,19 @@ export default [
   DF.loadOpt(); const kept = DF.BIND.dodge === "Space" && DF.BIND.heavy === "KeyB";
   Object.assign(DF.BIND, DF.DEFAULT_BINDS); DF.saveOpt();
   return { pass: moved && kept, moved, kept };`),
+  step("hidden until unlocked", `
+  DF.UNLOCKED.clear(); DF.saveOpt(); DF.renderPicker();
+  const cards = () => [...document.querySelectorAll(".picker .card")].map((b) => b.dataset.cls);
+  const before = !DF.pickable().includes("enforcer") && !cards().includes("enforcer");
+  const fresh = DF.unlockClass("enforcer"), again = DF.unlockClass("enforcer"); DF.renderPicker();
+  const after = DF.pickable().includes("enforcer") && cards().includes("enforcer");
+  DF.UNLOCKED.clear(); DF.loadOpt(); const kept = DF.UNLOCKED.has("enforcer");
+  return { pass: before && fresh && !again && after && kept, before, fresh, again, after, kept };`),
+  step("locked class in a save falls back", `
+  DF.UNLOCKED.clear(); DF.OPT.cls = "enforcer"; DF.saveOpt(); DF.OPT.cls = "fighter"; DF.loadOpt();
+  const fell = DF.OPT.cls === DF.pickable()[0];
+  const real = Storage.prototype.setItem; Storage.prototype.setItem = () => { throw new Error("full"); };
+  let ok = true; try { ok = DF.unlockClass("enforcer") && DF.classOpen("enforcer"); } catch (e) { ok = false; }
+  Storage.prototype.setItem = real; DF.UNLOCKED.clear(); DF.saveOpt();
+  return { pass: fell && ok, fell, ok };`),
 ];
