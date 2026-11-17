@@ -185,6 +185,12 @@ const SFX = (() => {
       tone(0.3, 120, 35, 0.8, "sine");
       noise(0.08, 4000, 2000, 0.3, "highpass", 0.7, 0.02);
     },
+    unlock() {
+      [523, 659, 784, 1047].forEach((f, i) =>
+        tone(0.9, f, f, 0.22, "triangle", i * 0.09),
+      );
+      noise(0.8, 6000, 2000, 0.12, "highpass", 0.7, 0.3);
+    },
     hook() {
       noise(0.18, 3500, 900, 0.35, "bandpass", 3);
       tone(0.3, 600, 180, 0.2, "sawtooth", 0.05);

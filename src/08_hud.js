@@ -318,6 +318,7 @@ const HUD = (() => {
       d = el.plaque;
     if (!i || G.state !== "play") {
       d.style.display = "none";
+      d.classList.remove("flare");
       plKey = "";
       return;
     }
@@ -359,6 +360,13 @@ const HUD = (() => {
       s = R.toScreen(q.x, PLAQUE_Y, q.z) || [W / 2, H / 2],
       x = lerp(s[0], W / 2, k),
       y = lerp(s[1], H / 2, k);
+    if (i.flare) {
+      // restart the flare on a fresh unlock
+      i.flare = false;
+      d.classList.remove("flare");
+      void d.offsetWidth;
+      d.classList.add("flare");
+    }
     d.style.display = "flex";
     d.style.opacity = k.toFixed(3);
     d.style.transform =

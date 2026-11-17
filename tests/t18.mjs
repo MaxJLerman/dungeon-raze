@@ -1,12 +1,23 @@
 // Plaques, unlock codes and binds.
 // Run with: SCRIPT=$PWD/tests/t18.mjs node test.mjs hub
 // Every step returns an object with a boolean `pass`.
+// The real codes live only in tests/codes.local.json, which git ignores. The
+// steps that enter a code swap in a test code with DF.setPlaqueCode instead.
+import fs from "node:fs";
+const local = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(new URL("./codes.local.json", import.meta.url)));
+  } catch {
+    return null;
+  }
+})();
 const step = (name, body) => ({
   name,
   eval: `(() => { const { G, cam } = DF; G.manual = true; const K = (a) => { DF.taps[DF.BIND[a]] = true; }; ${body} })()`,
 });
 // stand facing the first plaque, close enough to inspect it
-const stand = `const p = G.player, q = G.world.plaques[0], f = DF.plaqueFront(q, 1.6);
+// (in play: removing a fake pad in an earlier step pauses the game)
+const stand = `DF.show("play"); const p = G.player, q = G.world.plaques[0], f = DF.plaqueFront(q, 1.6);
   p.x = f.x; p.z = f.z; p.yaw = cam.yaw = q.yaw + Math.PI; p.state = "free"; DF.sim(0.05);`;
 export default [
   step("default binds", `
@@ -87,4 +98,55 @@ export default [
   const open = p.state === "inspect", cy = cam.yaw; pads[0].axes[2] = 1; DF.sim(0.3, () => DF.PAD.poll(1 / 60));
   pads[0].axes[2] = 0; const still = Math.abs(cam.yaw - cy) < 1e-6; DF.closePlaque(true); navigator.getGamepads = () => [];
   DF.PAD.poll(1 / 60); return { pass: open && still, open, still };`),
+  step("keyboard code unlocks", `
+  DF.UNLOCKED.clear(); DF.saveOpt(); DF.setPlaqueCode("enforcer", "UUDDLRBXYB"); DF.enterHub(); ${stand}
+  const B = DF.BIND, key = { U: B.fwd, D: B.back, L: B.left, R: B.right, B: B.dodge, X: B.heal, Y: B.tool };
+  K("interact"); DF.sim(0.6); const send = (s) => { for (const ch of s) { DF.taps[key[ch]] = true; DF.sim(0.05); } };
+  send("UUDDLRBXYX"); const wrong = !DF.UNLOCKED.has("enforcer");
+  send("UUDDLRBXYB"); const right = DF.UNLOCKED.has("enforcer") && G.msgs.some((m) => /ENFORCER UNLOCKED/.test(m.text));
+  DF.closePlaque(true); DF.UNLOCKED.clear(); DF.saveOpt(); DF.resetPlaqueCodes(); return { pass: wrong && right, wrong, right };`),
+  step("pad code unlocks", `
+  DF.UNLOCKED.clear(); DF.setPlaqueCode("enforcer", "LRLRYYXB"); DF.enterHub(); ${stand}
+  const pads = [{ index: 0, connected: true, mapping: "standard", id: "fake",
+    buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })), axes: [0, 0, 0, 0] }];
+  navigator.getGamepads = () => pads; const btn = { U: 12, D: 13, L: 14, R: 15, B: 1, X: 2, Y: 3 };
+  const press = (i) => { pads[0].buttons[i] = { pressed: true, value: 1 }; DF.sim(0.05, () => DF.PAD.poll(1 / 60));
+    pads[0].buttons[i] = { pressed: false, value: 0 }; DF.sim(0.05, () => DF.PAD.poll(1 / 60)); };
+  press(0); DF.sim(0.6, () => DF.PAD.poll(1 / 60)); for (const ch of "LRLRYYXB") press(btn[ch]);
+  const ok = DF.UNLOCKED.has("enforcer"); DF.closePlaque(true); navigator.getGamepads = () => []; DF.PAD.poll(1 / 60);
+  DF.UNLOCKED.clear(); DF.saveOpt(); DF.resetPlaqueCodes(); return { pass: ok };`),
+  step("left stick enters directions once per push", `
+  DF.UNLOCKED.clear(); DF.setPlaqueCode("enforcer", "UDLRUDLR"); DF.enterHub(); ${stand}
+  const pads = [{ index: 0, connected: true, mapping: "standard", id: "fake",
+    buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })), axes: [0, 0, 0, 0] }];
+  navigator.getGamepads = () => pads; DF.taps[DF.BIND.interact] = true; DF.sim(0.6, () => DF.PAD.poll(1 / 60));
+  const ax = { U: [0, -1], D: [0, 1], L: [-1, 0], R: [1, 0] };
+  for (const ch of "UDLRUDLR") { pads[0].axes[0] = ax[ch][0]; pads[0].axes[1] = ax[ch][1]; DF.sim(0.2, () => DF.PAD.poll(1 / 60));
+    pads[0].axes[0] = pads[0].axes[1] = 0; DF.sim(0.1, () => DF.PAD.poll(1 / 60)); }
+  const ok = DF.UNLOCKED.has("enforcer"); DF.closePlaque(true); navigator.getGamepads = () => []; DF.PAD.poll(1 / 60);
+  DF.UNLOCKED.clear(); DF.saveOpt(); DF.resetPlaqueCodes(); return { pass: ok };`),
+  step("held keys, sealed and already open plaques take nothing", `
+  DF.UNLOCKED.clear(); DF.setPlaqueCode("enforcer", "UUUUUUUU"); DF.enterHub(); ${stand}
+  DF.keys[DF.BIND.fwd] = true; K("interact"); DF.sim(1); DF.keys[DF.BIND.fwd] = false;
+  const held = G.insp.syms.length === 0 && !DF.UNLOCKED.has("enforcer"); DF.closePlaque(true);
+  DF.unlockClass("enforcer"); G.msgs.length = 0; let writes = 0; const real = Storage.prototype.setItem;
+  Storage.prototype.setItem = function (...a) { writes++; return real.apply(this, a); };
+  K("interact"); DF.sim(0.6); for (let i = 0; i < 8; i++) { DF.taps[DF.BIND.fwd] = true; DF.sim(0.05); }
+  const opened = G.msgs.filter((m) => /UNLOCKED/.test(m.text)).length === 0 && writes === 0; DF.closePlaque(true);
+  const r = G.world.plaques[1], g = DF.plaqueFront(r, 1.6); p.x = g.x; p.z = g.z; DF.sim(0.05);
+  K("interact"); DF.sim(0.6); for (let i = 0; i < 8; i++) { DF.taps[DF.BIND.fwd] = true; DF.sim(0.05); }
+  const sealed = p.state === "inspect" && G.insp.q.id === "sapper" && writes === 0;
+  Storage.prototype.setItem = real; DF.closePlaque(true); DF.UNLOCKED.clear(); DF.saveOpt(); DF.resetPlaqueCodes();
+  return { pass: held && opened && sealed, held, opened, sealed };`),
+  step("shared key enters the symbol", `
+  DF.UNLOCKED.clear(); DF.setPlaqueCode("enforcer", "BBBBBBBB"); DF.BIND.dodge = "Space"; DF.enterHub(); ${stand}
+  K("interact"); DF.sim(0.6); for (let i = 0; i < 8; i++) { DF.taps.Space = true; DF.sim(0.05); }
+  const ok = DF.UNLOCKED.has("enforcer") && p.state === "inspect"; DF.closePlaque(true);
+  DF.BIND.dodge = "KeyB"; DF.UNLOCKED.clear(); DF.saveOpt(); DF.resetPlaqueCodes(); return { pass: ok };`),
+  step("the real code", local && local.enforcer ? `
+  DF.UNLOCKED.clear(); DF.enterHub(); ${stand}
+  const B = DF.BIND, key = { U: B.fwd, D: B.back, L: B.left, R: B.right, B: B.dodge, X: B.heal, Y: B.tool };
+  K("interact"); DF.sim(0.6); for (const ch of ${JSON.stringify(local && local.enforcer)}) { DF.taps[key[ch]] = true; DF.sim(0.05); }
+  const ok = DF.UNLOCKED.has("enforcer"); DF.closePlaque(true); DF.UNLOCKED.clear(); DF.saveOpt(); return { pass: ok };`
+    : `return { pass: true, skipped: "no tests/codes.local.json" };`),
 ];

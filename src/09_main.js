@@ -652,6 +652,8 @@ window.DF = {
   startExecute,
   openPlaque,
   closePlaque,
+  setPlaqueCode,
+  resetPlaqueCodes,
   openMenu,
   loadOpt,
   saveOpt,

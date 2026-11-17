@@ -2099,16 +2099,79 @@ const PLAQUE_TEXT = {
   sapper: "Sealed",
   riftwalker: "Sealed",
 };
-// the code each live plaque takes, as a hash and a length. Filled in with
-// the codes themselves; see codeHash.
+// A code is a string of symbols: U D L R for directions, and B, X, Y for the
+// dodge, flask and tool actions, whatever they are bound to. Only its hash
+// ships; the codes themselves are kept out of the repo.
+const SHIPPED_CODES = {
+  enforcer: { hash: "e94039d11b7db", len: 10 },
+};
 const PLAQUE_CODES = {};
+function resetPlaqueCodes() {
+  for (const k in PLAQUE_CODES) delete PLAQUE_CODES[k];
+  for (const k in SHIPPED_CODES) PLAQUE_CODES[k] = { ...SHIPPED_CODES[k] };
+}
+resetPlaqueCodes();
+// for tests: give a plaque a code of their own
+function setPlaqueCode(id, syms) {
+  PLAQUE_CODES[id] = { hash: codeHash(syms), len: syms.length };
+}
+// a 53-bit string hash (cyrb53), as hex
+function codeHash(str) {
+  let h1 = 0xdeadbeef,
+    h2 = 0x41c6ce57;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507);
+  h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507);
+  h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
+}
+// This update's new code symbols, in order. The actions are read first, so a
+// key that Interact shares with one of them enters the symbol. Only presses
+// count, so a key held as the plaque opened adds nothing, and the left stick
+// counts once per push.
+function readSyms() {
+  const out = [],
+    i = G.insp;
+  if (hit("dodge")) out.push("B");
+  if (hit("heal")) out.push("X");
+  if (hit("tool")) out.push("Y");
+  for (const [a, sy] of [
+    ["fwd", "U"],
+    ["back", "D"],
+    ["left", "L"],
+    ["right", "R"],
+  ])
+    if (hit(a)) out.push(sy);
+  for (const [c, sy] of [
+    ["P:12", "U"],
+    ["P:13", "D"],
+    ["P:14", "L"],
+    ["P:15", "R"],
+  ])
+    if (tap(c)) out.push(sy);
+  const m = PAD.move;
+  if (i && m.mag < 0.2) i.stick = false;
+  else if (i && !i.stick && m.mag > 0.5) {
+    i.stick = true;
+    out.push(
+      Math.abs(m.x) > Math.abs(m.y) ? (m.x > 0 ? "R" : "L") : m.y > 0 ? "U" : "D",
+    );
+  }
+  return out;
+}
 function openPlaque(q) {
   const p = G.player;
   p.state = "inspect";
   p.vx = p.vz = 0;
   p.buf = null;
   p.lock = null;
-  G.insp = { q, k: 0, dir: 1, syms: [], stick: false };
+  // a stick already pushed must come back to rest before it counts
+  G.insp = { q, k: 0, dir: 1, syms: [], stick: PAD.move.mag >= 0.2 };
   SFX.whoosh(false);
 }
 // now skips the ease, for leaving play
@@ -2133,6 +2196,25 @@ function inspectUpdate(dt) {
   if (i.dir < 0) {
     if (i.k <= 0) closePlaque(true);
     return;
+  }
+  // a live plaque whose class is still locked takes its code
+  const id = i.q.cls,
+    code = id && !classOpen(id) && PLAQUE_CODES[id];
+  for (const sy of readSyms()) {
+    if (!code) continue;
+    i.syms.push(sy);
+    if (i.syms.length > 10) i.syms.shift();
+    if (
+      i.syms.length >= code.len &&
+      codeHash(i.syms.slice(-code.len).join("")) === code.hash
+    ) {
+      unlockClass(id);
+      i.flare = true;
+      SFX.unlock();
+      say(CLASSES[id].name.toUpperCase() + " UNLOCKED", "crit", 2.5);
+      say("Choose it from the class picker", "good", 2.5);
+      break;
+    }
   }
   if (hit("interact")) i.dir = -1;
 }
