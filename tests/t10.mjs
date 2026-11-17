@@ -5,7 +5,7 @@
 // The frame loop keeps drawing and updating the HUD while G.manual is set, so
 // a step changes state, awaits draw() and then reads the DOM.
 const WHITE = "rgb(255, 255, 255)",
-  ORANGE = "rgb(219, 77, 0)",
+  ORANGE = "rgb(232, 100, 0)",
   RED = "rgb(196, 0, 22)",
   BLACK = "rgb(0, 0, 0)";
 const step = (name, body) => ({
