@@ -568,6 +568,16 @@ The class picker and HUD read `CLASSES` and need no changes.
    world generation, loot and progression, rendering and effects, HUD, touch
    layout, touch input, tests.
    Agree shared data shapes (`CLASSES`, `MOVES`, `EDEF`) before fanning out.
+7. A jump. The owner asked for it on Space and A or Cross, with dodge moving
+   to B on keyboard (not Ctrl: Ctrl+W closes the tab). Near a plaque the same
+   button inspects instead. What the jump is for in a fight (movement,
+   clearing slam shockwaves, jump attacks, invulnerability) is undecided; ask
+   the owner before building it. The floor is flat, so there is nothing to
+   jump onto. A touch Jump button must fit the owner's honeycomb layout.
+8. Hidden classes and joke classes. See `docs/ideas/joke-classes.md`. Still
+   to come after the first piece: the Sapper and Riftwalker kits, quests on
+   the plaques that open portals D to S to a class, and the in-game hunt that
+   leads players to the hidden list of codes.
 
 ## Decisions already made, with reasons
 
