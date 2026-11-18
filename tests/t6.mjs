@@ -92,9 +92,10 @@ export default [
     name: "riftwalker execution drops the body and the landing hurts the next one",
     eval: cls("riftwalker", `
   const e = tp((e) => e.type === 'husk', 2), o = G.enemies.find((x) => x !== e && x.type === 'brute');
-  o.x = e.x + 1.5; o.z = e.z; o.state = 'idle'; const h0 = o.hp, hp0 = p.hp; e.state = 'stagger'; e.t = 0; e.dur = 3; DF.startExecute(e);
+  // only these two, so nothing else can reach the player
+  G.enemies = [e, o]; G.projs = []; o.x = e.x + 1.5; o.z = e.z; o.state = 'idle'; const h0 = o.hp, hp0 = p.hp; e.state = 'stagger'; e.t = 0; e.dur = 3; DF.startExecute(e);
   let top = 0; DF.sim(1.6, () => { top = Math.max(top, e.y); if (o.state !== 'hit') o.state = 'idle'; });
-  return { pass: e.dead && top > 1 && o.hp < h0 && p.hp === hp0 && e.y === 0, dead: e.dead, top, hurt: h0 - o.hp }; `),
+  return { pass: e.dead && top > 1 && o.hp < h0 && p.hp === hp0 && e.y === 0, dead: e.dead, top, hurt: h0 - o.hp, lost: hp0 - p.hp, y: e.y }; `),
   },
   {
     name: "riftwalker execution on the boss and the dummy",
