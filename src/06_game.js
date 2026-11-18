@@ -39,6 +39,9 @@ const G = {
   fade: 0,
   // clock for the title screen's camera sway
   t0: 0,
+  // the Riftwalker's open rift ends, oldest first, and its Drop holes
+  rifts: [],
+  holes: [],
 };
 const keys = {},
   taps = {},
@@ -1537,6 +1540,8 @@ function resetRun() {
   if (G.world && G.world.clearRocks) G.world.clearRocks();
   G.caveins = [];
   G.mines = [];
+  G.rifts = [];
+  G.holes = [];
   G.insp = null;
   G.bossDead = false;
   G.bossSeen = false;
@@ -1665,6 +1670,8 @@ function respawn() {
   G.world.clearRocks();
   G.caveins = [];
   G.mines = [];
+  G.rifts = [];
+  G.holes = [];
   G.world.resolve(p, 0.6);
   G.projs = [];
   G.bombs = [];
@@ -2718,6 +2725,29 @@ function useTool(ix, iz, il) {
     p.throwT = 0.25;
     fire({ speed: 22, dmg: 0, post: 0, kind: "sticky", life: 0.9 }, a);
     SFX.knife();
+  } else if (id === "rift") {
+    // along the camera, the furthest spot with room, from near to far
+    const a = cam.yaw,
+      w = G.world;
+    let ok = 0;
+    for (let d = RIFT.near; d <= RIFT.far + 1e-6; d += 0.25) {
+      if (w.fieldAt(p.x + Math.sin(a) * d, p.z + Math.cos(a) * d) < RIFT.room)
+        break;
+      ok = d;
+    }
+    const r = ok
+      ? openRift(p.x + Math.sin(a) * ok, p.z + Math.cos(a) * ok, a + PI)
+      : "room";
+    if (typeof r === "string") {
+      say(
+        r === "close" ? "Too close to the other rift" : "No room for a rift",
+        "bad",
+        0.8,
+      );
+      return false;
+    }
+    p.yaw = a;
+    p.throwT = 0.25;
   } else if (id === "mine") {
     plantMine(p.x, p.z);
     p.throwT = 0.3;
@@ -4256,6 +4286,58 @@ function blowMine(m) {
     )
       o.fuse = MINE.chain;
 }
+// ---- the Riftwalker's rifts ----
+// An end is a short line across its facing; a pair carries what crosses one
+// line out of the other (riftMove). Rifts never touch the walkable field.
+const RIFT = {
+  // half the width of an end's line, and how tall it is drawn
+  half: 0.9,
+  tall: 2.2,
+  life: 20,
+  // the tool opens an end this far ahead, at least and at most
+  near: 2,
+  far: 8,
+  // two ends no closer than this; the field an end needs
+  apart: 3,
+  room: 1.0,
+  // an enemy that came out of a rift passes through ends as air this long
+  rest: 3,
+  // the trait: untouchable this long after a crossing, and the next hit
+  // within bonusT does bonus more
+  safe: 0.4,
+  bonus: 0.5,
+  bonusT: 2,
+  // the player cannot cross again this soon
+  cd: 0.25,
+};
+let riftId = 0;
+// the end, or why not: "close" to the other end, or no "room"
+function openRift(x, z, yaw) {
+  const w = G.world;
+  for (const o of G.rifts)
+    if (Math.hypot(o.x - x, o.z - z) < RIFT.apart) return "close";
+  if (w.fieldAt(x, z) < RIFT.room) return "room";
+  const ux = Math.cos(yaw),
+    uz = -Math.sin(yaw);
+  for (let d = -RIFT.half; d <= RIFT.half + 1e-6; d += RIFT.half / 3)
+    if (w.fieldAt(x + ux * d, z + uz * d) < 0.3) return "room";
+  const e = { x, z, yaw, t: 0, life: RIFT.life, id: ++riftId };
+  // the oldest goes; a pair is never more than two
+  while (G.rifts.length >= 2) G.rifts.shift();
+  G.rifts.push(e);
+  SFX.tear();
+  return e;
+}
+function riftPair(A) {
+  if (G.rifts.length < 2) return null;
+  return G.rifts[0] === A ? G.rifts[1] : G.rifts[1] === A ? G.rifts[0] : null;
+}
+function riftsUpdate(dt) {
+  for (const e of G.rifts) e.t += dt;
+  const n = G.rifts.length;
+  G.rifts = G.rifts.filter((e) => e.t < e.life);
+  if (G.rifts.length < n) SFX.shut();
+}
 function projUpdate(dt) {
   const p = G.player,
     w = G.world;
@@ -4404,6 +4486,7 @@ function update(dt) {
   bombsUpdate(dt);
   caveUpdate(dt);
   minesUpdate(dt);
+  riftsUpdate(dt);
   for (const q of G.pending) {
     q.t -= dt;
     if (q.t <= 0) {

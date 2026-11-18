@@ -625,6 +625,66 @@ function drawMines() {
     }
   }
 }
+// a rift end: a dark jagged slit standing on its line, with glowing edges
+const RIFT_FIG = (() => {
+  const n = new Nd(),
+    W = [0.35, 0.7, 0.95, 1.0, 0.85, 0.6, 0.3];
+  W.forEach((w, i) => {
+    const q = n.add(
+      part("box", hexc(0x0b0610), w * RIFT.half * 1.5, 0.34, 0.05, 0, 0.25 + i * 0.3, 0),
+    );
+    q.em = [0.06, 0.01, 0.05];
+  });
+  return n;
+})();
+function riftEdge(e, i, t) {
+  // the outline at height fraction t on side i (-1 or 1), jagged and flickering
+  const j = (((t * 9) | 0) % 2 ? 0.09 : -0.06) + Math.sin(G.t * 23 + t * 17 + e.id) * 0.03;
+  return (Math.sin(t * PI) * RIFT.half * 0.78 + j) * i;
+}
+function drawRifts() {
+  const paired = G.rifts.length === 2;
+  G.rifts.forEach((e, n) => {
+    const open = sat(e.t / 0.25) * sat((e.life - e.t) / 1),
+      c = n ? [1, 0.62, 0.9] : MAGENTA,
+      glow = (paired ? 1.6 : 0.8) * open,
+      ux = Math.cos(e.yaw),
+      uz = -Math.sin(e.yaw);
+    RIFT_FIG.p[0] = e.x;
+    RIFT_FIG.p[2] = e.z;
+    RIFT_FIG.r[1] = e.yaw;
+    RIFT_FIG.s = [open, 1, 1];
+    R.drawNode(RIFT_FIG);
+    for (const i of [-1, 1])
+      R.ribbon(
+        12,
+        (t, s) => {
+          const d = riftEdge(e, i, t) * open + (s ? 0.05 : -0.05) * i;
+          return [e.x + ux * d, 0.1 + t * RIFT.tall, e.z + uz * d];
+        },
+        c[0],
+        c[1],
+        c[2],
+        (t) => glow * (0.4 + 0.6 * Math.sin(t * PI)),
+      );
+    R.sprite(e.x, 1.2, e.z, 1.1 * open, c[0], c[1], c[2], 0.25 * glow);
+    if (e.flash > 0)
+      R.sprite(e.x, 1.2, e.z, 2.2, c[0], c[1], c[2], e.flash * 2);
+  });
+  if (paired) {
+    // a faint thread on the floor between the two ends
+    const [a, b] = G.rifts,
+      k = 0.25 * sat(Math.min(a.t, b.t) / 0.25);
+    R.ribbon(
+      16,
+      (t, s) => [lerp(a.x, b.x, t), 0.06, lerp(a.z, b.z, t) + (s ? 0.03 : -0.03)],
+      MAGENTA[0],
+      MAGENTA[1],
+      MAGENTA[2],
+      (t) => k * (0.5 + 0.5 * Math.sin(G.t * 4 - t * 12)),
+    );
+  }
+}
 function drawCaveIns() {
   for (const c of G.caveins) {
     if (c.phase === "fuse") {
@@ -670,6 +730,7 @@ function render() {
   }
   drawCaveIns();
   drawMines();
+  drawRifts();
   // ---- fx ----
   if (p.state !== "dead") R.blob(p.x, p.z, 0.8, 0.55);
   for (const e of G.enemies) {
