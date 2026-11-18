@@ -38,7 +38,12 @@ function posePlayer(p) {
   } else if (id === "mage") A[0] = -0.75 - mv * 0.1;
   else if (id === "ranger") B[0] = -0.5;
   else if (id === "fighter") A[0] = -0.4;
-  else if (id === "enforcer") {
+  else if (id === "sapper") {
+    // the hammer carried low across the body in both hands
+    A[0] = -0.5;
+    B[0] = -0.75;
+    B[2] = -0.35;
+  } else if (id === "enforcer") {
     // pistols held low and ready; the long guns only while used
     A[0] = B[0] = -0.35;
     const heavy = p.state === "attack" && p.move === "eshot",
@@ -122,6 +127,14 @@ function posePlayer(p) {
         }
         f.hips.p[1] = o.leg - 0.18;
         ch[0] = 0.2;
+      } else if (an === "hslam") {
+        // both hands raise the hammer high, then drive it into the floor
+        A[0] = B[0] = lerp(-3.0, -0.55, u);
+        B[2] = -0.35;
+        ch[0] = lerp(-0.35, 0.75, u);
+        f.hips.p[1] = o.leg - 0.22 * u;
+        f.legR.r[0] = -0.7 * u;
+        f.legL.r[0] = 0.5 * u;
       } else if (an === "bash") {
         B[0] = lerp(-0.7, -1.55, u);
         B[2] = lerp(-0.2, -0.55, u);
@@ -190,6 +203,12 @@ function posePlayer(p) {
         A[1] = 0.9;
         B[0] = -1.4;
         B[2] = -0.5;
+      } else if (id === "sapper") {
+        // the hammer haft held across, as a bar
+        A[0] = B[0] = -1.55;
+        A[2] = 0.5;
+        B[2] = -0.5;
+        ch[1] = -0.2;
       } else if (id === "enforcer") {
         // forearms crossed in front of the face, guns up
         A[0] = B[0] = -1.75;

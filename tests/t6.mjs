@@ -18,6 +18,21 @@ export default [
   { name: "mage", eval: fight("mage", 9) },
   { name: "ranger", eval: fight("ranger", 10) },
   { name: "enforcer", eval: fight("enforcer", 8) },
+  { name: "sapper", eval: fight("sapper", 2.6) },
+  {
+    name: "sapper slam blasts in front",
+    eval: cls("sapper", `
+  const e = tp((e) => e.type === 'brute', 2.6); e.state = 'idle'; const h0 = e.hp, p0 = e.posture, hp0 = p.hp; K('heavy'); DF.sim(1.2);
+  const hit = e.hp < h0, post = e.posture - p0;
+  return { pass: hit && p.hp === hp0 && post >= 50, hit, post, hurt: hp0 - p.hp }; `),
+  },
+  {
+    name: "sapper is hidden until unlocked",
+    eval: `(() => { DF.UNLOCKED.clear();
+  const c = { hidden: DF.CLASSES.sapper.hidden === true, out: !DF.pickable().includes('sapper') };
+  DF.unlockClass('sapper'); c.in = DF.pickable().includes('sapper'); DF.UNLOCKED.clear(); DF.saveOpt();
+  return { pass: Object.values(c).every(Boolean), c }; })()`,
+  },
   {
     name: "enforcer shotgun and execution",
     eval: cls("enforcer", `

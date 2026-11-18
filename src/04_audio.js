@@ -195,6 +195,11 @@ const SFX = (() => {
       noise(0.18, 3500, 900, 0.35, "bandpass", 3);
       tone(0.3, 600, 180, 0.2, "sawtooth", 0.05);
     },
+    // the Sapper's hammer landing
+    thud(big) {
+      tone(big ? 0.4 : 0.25, big ? 120 : 150, 40, big ? 0.9 : 0.6, "sine");
+      noise(big ? 0.3 : 0.18, 900, 120, big ? 0.6 : 0.4, "lowpass", 0.8);
+    },
     beep() {
       tone(0.06, 1900, 1900, 0.12, "square");
     },

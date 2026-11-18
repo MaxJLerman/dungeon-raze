@@ -284,7 +284,8 @@ const WHITE = [1, 0.95, 0.8],
   GREEN = [0.55, 1, 0.45],
   ORANGE = [1, 0.5, 0.18],
   GOLD = [1, 0.85, 0.45],
-  CRIMSON = [1, 0.28, 0.32];
+  CRIMSON = [1, 0.28, 0.32],
+  HAZARD = [1, 0.92, 0.15];
 
 // ---- classes ----
 const CLASSES = {
@@ -482,6 +483,42 @@ const CLASSES = {
         "Trait",
         "Executions are a sniper shot from range and give back a sticky bomb",
       ],
+    ],
+  },
+  // hidden: the demolitions class, unlocked at its plaque in the hall
+  sapper: {
+    name: "Sapper",
+    tag: "Sledgehammer and charges",
+    hidden: true,
+    hp: 135,
+    stam: 115,
+    walk: 5.0,
+    run: 7.6,
+    chain: "s1",
+    heavy: "sslam",
+    dash: "sdrop",
+    ambush: 1.5,
+    back: 1.25,
+    parry: 0.2,
+    blockMul: 0.85,
+    chip: 0.08,
+    guardArc: 2.0,
+    col: HAZARD,
+    // the trait: posture damage from the Sapper's explosions is multiplied by
+    // this in explode, and none of them hurt the Sapper
+    blastPost: 1.5,
+    dodge: { dist: 4.2, dur: 0.46, ifr: 0.28, cost: 22 },
+    tool: { id: "mine", name: "Landmine", max: 4, ch: "◎" },
+    special: { id: "cavein", name: "Cave-in", cost: 50 },
+    kit: [
+      ["Attack", "Three heavy sledgehammer swings"],
+      ["Heavy", "Hammer slam that sets off a blast in front of you"],
+      ["Tool", "Landmines. Two mines close together are joined by a tripwire"],
+      [
+        "Ability",
+        "Cave-in: bring the roof down on a pack and wall off the tunnel",
+      ],
+      ["Trait", "Your own blasts never hurt you, and they break guards faster"],
     ],
   },
 };
@@ -887,6 +924,87 @@ const MOVES = {
     next: null,
     lunge: 4,
     proj: { speed: 60, dmg: 14, post: 10, kind: "bullet" },
+  },
+  // sapper: a sledgehammer
+  s1: {
+    anim: "gr",
+    wind: 0.22,
+    act: 0.1,
+    rec: 0.34,
+    dmg: 18,
+    post: 16,
+    range: 2.7,
+    arc: 1.9,
+    lunge: 0.6,
+    stam: 12,
+    next: "s2",
+    tilt: 0.25,
+    dir: 1,
+  },
+  s2: {
+    anim: "gl",
+    wind: 0.24,
+    act: 0.1,
+    rec: 0.36,
+    dmg: 20,
+    post: 18,
+    range: 2.7,
+    arc: 1.9,
+    lunge: 0.6,
+    stam: 12,
+    next: "s3",
+    tilt: -0.25,
+    dir: -1,
+  },
+  s3: {
+    anim: "gover",
+    wind: 0.36,
+    act: 0.12,
+    rec: 0.5,
+    dmg: 30,
+    post: 30,
+    range: 2.8,
+    arc: 1.4,
+    lunge: 0.8,
+    stam: 16,
+    next: null,
+    tilt: 1.45,
+    dir: 1,
+    heavy: true,
+  },
+  // a move with `blast` hits only through an explosion d metres ahead
+  sslam: {
+    anim: "hslam",
+    wind: 0.45,
+    act: 0.08,
+    rec: 0.6,
+    dmg: 0,
+    post: 0,
+    range: 2.4,
+    arc: 1.4,
+    lunge: 0.4,
+    stam: 24,
+    next: null,
+    tilt: 1.45,
+    dir: 1,
+    heavy: true,
+    blast: { d: 1.9, r: 2.4, dmg: 32, post: 34 },
+  },
+  sdrop: {
+    anim: "gover",
+    wind: 0.3,
+    act: 0.12,
+    rec: 0.5,
+    dmg: 26,
+    post: 30,
+    range: 2.6,
+    arc: 1.4,
+    lunge: 3.5,
+    stam: 14,
+    next: null,
+    tilt: 1.45,
+    dir: 1,
+    heavy: true,
   },
 };
 const EDEF = {
@@ -1459,6 +1577,7 @@ function ghost(p) {
   G.ghosts.push({ x: p.x, z: p.z, t: 0, c: p.cls.col });
 }
 function explode(x, z, r, dmg, post, c) {
+  post *= G.player.cls.blastPost || 1;
   G.rings.push({ x, z, r, t: 0, dur: 0.4, kind: "shock", c });
   sparks(x, 0.8, z, 30, c, 9, 0.6, 0.15);
   G.shake = Math.max(G.shake, r > 4.5 ? 0.9 : 0.45);
@@ -2719,7 +2838,18 @@ function playerUpdate(dt) {
       if (t >= m.wind && !p.arcDone) {
         p.arcDone = true;
         SFX.whoosh(m.heavy);
-        if (m.proj) {
+        if (m.blast) {
+          const b = m.blast;
+          explode(
+            p.x + Math.sin(p.yaw) * b.d,
+            p.z + Math.cos(p.yaw) * b.d,
+            b.r,
+            b.dmg,
+            b.post,
+            c.col,
+          );
+          SFX.thud(true);
+        } else if (m.proj) {
           p.yaw = p.aim;
           const n = m.proj.pellets || 1;
           for (let i = 0; i < n; i++)
@@ -2774,7 +2904,12 @@ function playerUpdate(dt) {
             });
         }
       }
-      if (!m.proj && t >= m.wind && t < m.wind + m.act + 0.03) {
+      if (
+        !m.proj &&
+        !m.blast &&
+        t >= m.wind &&
+        t < m.wind + m.act + 0.03
+      ) {
         for (const e of G.enemies) {
           if (e.dead || p.hitSet.has(e)) continue;
           const dx = e.x - p.x,
