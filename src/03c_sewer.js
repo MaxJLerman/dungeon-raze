@@ -39,6 +39,19 @@ const SEWER = {
   vault: { tunnel: 1, room: 1.6, boss: 3.8 },
   vaultIn: 3, // how far into a room the vault takes to rise
   ceilTop: 16,
+  // water. Pools in a pool room sit at least `edge` in from its walls, are
+  // at least `min` across, and are parted by walkways at least `walk` wide
+  // and one crossing `cross` wide. A side facing a wall may draw back by up
+  // to `shrink`.
+  pool: { edge: 3, walk: 3, cross: 2.5, min: 4, shrink: 1.5 },
+  gutterW: 1.2,
+  gutterP: 1 / 3, // the share of tunnels with a gutter
+  gutterEnd: 1, // a tunnel's gutter stops this far outside every room's box
+  broodGutterP: 0.5, // the chance a brood room has a gutter along one wall
+  moatW: 4,
+  crossW: 4, // the dry crossing over the moat at the cavern's entrance
+  centreR: 6,
+  fallR: 5, // the fall pool, its centre 1 m in from the far wall
 };
 const BRICK = hexc(0x7a5242),
   SEWER_LAMP = hexc(0x7dff9a);
@@ -407,7 +420,7 @@ function genSewer(seed) {
       if (d < F[k]) F[k] = d;
     });
   const fns = fieldFns(F, minX, minZ, W, H, Wt),
-    { fieldAt, resolve } = fns;
+    { fieldAt, resolve, waterAt } = fns;
   const vaultAt = (x, z) => {
     const fx = clamp(x - minX, 0, W - 1e-3),
       fz = clamp(z - minZ, 0, H - 1e-3),
@@ -440,6 +453,312 @@ function genSewer(seed) {
     [fights[i], fights[j]] = [fights[j], fights[i]];
   }
   fights.forEach((n, i) => (n.kind = i % 2 ? "brood" : "pool"));
+
+  // the one tunnel into the boss cavern runs straight in toward its centre;
+  // ea is the direction from the centre out along it
+  const entry = edges.find(
+      (e) =>
+        (e.a === boss.id && e.b === path[L - 2]) ||
+        (e.b === boss.id && e.a === path[L - 2]),
+    ),
+    ep = entry.a === boss.id ? entry.pts.slice().reverse() : entry.pts;
+  let mouth = ep[0];
+  for (const q of ep)
+    if (Math.hypot(q.x - boss.x, q.z - boss.z) >= boss.r) mouth = q;
+    else break;
+  const ea = Math.atan2(mouth.x - boss.x, mouth.z - boss.z);
+
+  // ---- water ----
+  // Wt is 1 in water and 0 on dry ground. Pools fill pool rooms inside a dry
+  // ring along the walls, which joins every tunnel mouth to every other; a
+  // gutter runs down one side of some tunnels and one wall of some brood
+  // rooms; the boss cavern has its moat, centre pool and fall pool. fieldFns
+  // already holds Wt, so waterAt reads what is written here.
+  const inBox = (n, x, z, pad) =>
+    Math.abs(x - n.x) < n.hw + pad && Math.abs(z - n.z) < n.hd + pad;
+  const paint = (r, v) =>
+    each(r.x0, r.z0, r.x1, r.z1, (k, x, z) => {
+      if (x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1) Wt[k] = v;
+    });
+  // where each tunnel meets room n: its first run leaves the centre straight
+  const mouthsOf = (n) =>
+    edges
+      .filter((e) => e.a === n.id || e.b === n.id)
+      .map((e) => {
+        const q = e.a === n.id ? e.pts[1] : e.pts[e.pts.length - 2],
+          l = Math.hypot(q.x - n.x, q.z - n.z),
+          ux = (q.x - n.x) / l,
+          uz = (q.z - n.z) / l,
+          t = roomReach(n, ux, uz);
+        return { x: n.x + ux * t, z: n.z + uz * t, ux, uz };
+      });
+  // whether dry floor with a metre of clearance joins every mouth of room n
+  const dryJoined = (n) => {
+    const ms = mouthsOf(n);
+    if (ms.length < 2) return true;
+    const i0 = Math.max(0, Math.floor(n.x - n.hw - 4 - minX)),
+      i1 = Math.min(W, Math.ceil(n.x + n.hw + 4 - minX)),
+      j0 = Math.max(0, Math.floor(n.z - n.hd - 4 - minZ)),
+      j1 = Math.min(H, Math.ceil(n.z + n.hd + 4 - minZ)),
+      bw = i1 - i0 + 1,
+      seen = new Uint8Array(bw * (j1 - j0 + 1)),
+      ok = (i, j) =>
+        i >= i0 &&
+        i <= i1 &&
+        j >= j0 &&
+        j <= j1 &&
+        F[j * W1 + i] >= 1 &&
+        Wt[j * W1 + i] < 0.5;
+    // a dry grid point just inside each mouth
+    const seeds = ms.map((m) => {
+      const ci = Math.round(m.x - m.ux * 1.5 - minX),
+        cj = Math.round(m.z - m.uz * 1.5 - minZ);
+      for (let r = 0; r <= 2; r++)
+        for (let j = cj - r; j <= cj + r; j++)
+          for (let i = ci - r; i <= ci + r; i++) if (ok(i, j)) return [i, j];
+      return null;
+    });
+    if (seeds.some((q) => !q)) return false;
+    const q = [seeds[0]];
+    seen[(seeds[0][1] - j0) * bw + seeds[0][0] - i0] = 1;
+    while (q.length) {
+      const [i, j] = q.pop();
+      for (const [a, b] of [
+        [i - 1, j],
+        [i + 1, j],
+        [i, j - 1],
+        [i, j + 1],
+      ]) {
+        if (!ok(a, b) || seen[(b - j0) * bw + a - i0]) continue;
+        seen[(b - j0) * bw + a - i0] = 1;
+        q.push([a, b]);
+      }
+    }
+    return seeds.every(([i, j]) => seen[(j - j0) * bw + i - i0]);
+  };
+  // the pool layouts a room can take, in a seeded order, then the plainest:
+  // two pools either side of a crossing through the middle
+  const poolLayouts = (n) => {
+    const P = S.pool,
+      onX = n.hw >= n.hd,
+      A = (onX ? n.hw : n.hd) - P.edge,
+      B = (onX ? n.hd : n.hw) - P.edge;
+    // a pool from spans along the room's long axis (u) and short axis (v)
+    const rect = ([u0, u1], [v0, v1]) =>
+      onX
+        ? { x0: n.x + u0, x1: n.x + u1, z0: n.z + v0, z1: n.z + v1 }
+        : { x0: n.x + v0, x1: n.x + v1, z0: n.z + u0, z1: n.z + u1 };
+    // cuts [-h, h] into spans at least P.min long with these gaps between
+    const cut = (h, gaps) => {
+      const spare =
+        2 * h - gaps.reduce((s, g) => s + g, 0) - (gaps.length + 1) * P.min;
+      if (spare < 0) return null;
+      const wt = [0, ...gaps].map(() => 0.5 + Rn()),
+        sum = wt.reduce((s, w) => s + w, 0),
+        out = [];
+      let a = -h;
+      wt.forEach((w, i) => {
+        const b = i === gaps.length ? h : a + P.min + (spare * w) / sum;
+        out.push([a, b]);
+        a = b + (gaps[i] || 0);
+      });
+      return out;
+    };
+    // a side facing a wall draws back, leaving the pool at least P.min across
+    const shrink = (us, vs) =>
+      us.flatMap((u) =>
+        vs.map((v) => {
+          const s = [u.slice(), v.slice()];
+          for (const [d, h] of [
+            [0, A],
+            [1, B],
+          ]) {
+            if (s[d][0] === -h)
+              s[d][0] += Rn() * Math.min(P.shrink, s[d][1] - s[d][0] - P.min);
+            if (s[d][1] === h)
+              s[d][1] -= Rn() * Math.min(P.shrink, s[d][1] - s[d][0] - P.min);
+          }
+          return rect(s[0], s[1]);
+        }),
+      );
+    const whole = (h) => [[-h, h]],
+      walkFirst = Rn() < 0.5,
+      made = [
+        [cut(A, [P.cross]), cut(B, [P.walk])],
+        [cut(A, walkFirst ? [P.walk, P.cross] : [P.cross, P.walk]), whole(B)],
+        [whole(A), cut(B, [P.cross])],
+        [cut(A, [P.cross]), whole(B)],
+      ]
+        .filter(([us, vs]) => us && vs)
+        .map(([us, vs]) => shrink(us, vs));
+    for (let i = made.length - 1; i > 0; i--) {
+      const j = (Rn() * (i + 1)) | 0;
+      [made[i], made[j]] = [made[j], made[i]];
+    }
+    const c = P.cross / 2;
+    made.push([
+      rect([-A, -c], [-B, B]),
+      rect([c, A], [-B, B]),
+    ]);
+    return made;
+  };
+  // a pillar stands well inside a pool, or clear of every pool by a walkway
+  const pillarFits = (rs, c) =>
+    rs.some(
+      (r) =>
+        c.x - r.x0 >= 1 && r.x1 - c.x >= 1 && c.z - r.z0 >= 1 && r.z1 - c.z >= 1,
+    ) ||
+    rs.every(
+      (r) =>
+        Math.hypot(
+          Math.max(r.x0 - c.x, 0, c.x - r.x1),
+          Math.max(r.z0 - c.z, 0, c.z - r.z1),
+        ) >=
+        S.pool.walk + S.pillarR,
+    );
+  for (const n of nodes) {
+    if (n.kind === "pool") {
+      const mine = pillars.filter((c) => inBox(n, c.x, c.z, 0)),
+        lays = poolLayouts(n);
+      for (let li = 0; li < lays.length; li++) {
+        const rs = lays[li],
+          last = li === lays.length - 1;
+        if (!last && !mine.every((c) => pillarFits(rs, c))) continue;
+        for (const r of rs) paint(r, 1);
+        if (last || dryJoined(n)) break;
+        for (const r of rs) paint(r, 0);
+      }
+    } else if (n.kind === "brood" && Rn() < S.broodGutterP) {
+      // a gutter along one wall that no tunnel leaves by, short of the corners
+      const ms = mouthsOf(n),
+        g = S.gutterW,
+        first = (Rn() * 4) | 0;
+      for (let t = 0; t < 4; t++) {
+        const sd = (first + t) % 4,
+          onX = sd < 2, // the wall faces along X: it is a side at x = n.x +- hw
+          sg = sd % 2 ? -1 : 1,
+          half = onX ? n.hd : n.hw,
+          span = half - S.corner,
+          wall = onX ? n.x + sg * n.hw : n.z + sg * n.hd,
+          hit = ms.some((m) => Math.abs((onX ? m.x : m.z) - wall) < 0.01);
+        if (hit) continue;
+        const lo = Math.min(wall - sg * g, wall + sg * 0.5),
+          hi = Math.max(wall - sg * g, wall + sg * 0.5),
+          r = onX
+            ? { x0: lo, x1: hi, z0: n.z - span, z1: n.z + span }
+            : { x0: n.x - span, x1: n.x + span, z0: lo, z1: hi };
+        paint(r, 1);
+        if (!dryJoined(n)) paint(r, 0);
+        break;
+      }
+    }
+  }
+  // tunnel gutters: a strip along one wall, off every room and every other
+  // tunnel's floor, reaching a metre into the wall so waterAt reads 1 at it
+  for (const e of edges) {
+    if (Rn() >= S.gutterP) continue;
+    const side = Rn() < 0.5 ? -1 : 1,
+      pts = e.pts;
+    let x0 = 1e9,
+      z0 = 1e9,
+      x1 = -1e9,
+      z1 = -1e9;
+    for (const q of pts) {
+      x0 = Math.min(x0, q.x);
+      z0 = Math.min(z0, q.z);
+      x1 = Math.max(x1, q.x);
+      z1 = Math.max(z1, q.z);
+    }
+    const m = S.tunR + 1,
+      near = (x, z, ps) => {
+        let best = 1e9,
+          sgn = 0;
+        for (let i = 1; i < ps.length; i++) {
+          const a = ps[i - 1],
+            b = ps[i],
+            dx = b.x - a.x,
+            dz = b.z - a.z,
+            t = sat(((x - a.x) * dx + (z - a.z) * dz) / (dx * dx + dz * dz || 1)),
+            d = Math.hypot(x - a.x - dx * t, z - a.z - dz * t);
+          if (d < best) {
+            best = d;
+            sgn = Math.sign(dx * (z - a.z) - dz * (x - a.x));
+          }
+        }
+        return [best, sgn];
+      };
+    each(x0 - m, z0 - m, x1 + m, z1 + m, (k, x, z) => {
+      const [d, sgn] = near(x, z, pts);
+      if (sgn !== side || d < S.tunR - S.gutterW || d > m) return;
+      for (const n of nodes) {
+        if (inBox(n, x, z, S.gutterEnd)) return;
+        if (n === boss && Math.hypot(x - n.x, z - n.z) < n.r + 2) return;
+      }
+      for (const o of edges)
+        if (o !== e && near(x, z, o.pts)[0] < S.tunR + 0.3) return;
+      Wt[k] = 1;
+    });
+  }
+  // the boss cavern: a moat along the wall but for a dry crossing at the
+  // entrance, a centre pool, and a fall pool at the far wall joined to the moat
+  {
+    const R = boss.r,
+      ex = Math.sin(ea),
+      ez = Math.cos(ea),
+      fx = boss.x - ex * (R - 1),
+      fz = boss.z - ez * (R - 1);
+    each(boss.x - R - 2, boss.z - R - 2, boss.x + R + 2, boss.z + R + 2, (k, x, z) => {
+      const dx = x - boss.x,
+        dz = z - boss.z,
+        d = Math.hypot(dx, dz),
+        along = dx * ex + dz * ez,
+        across = Math.abs(dx * ez - dz * ex),
+        moat =
+          d >= R - S.moatW &&
+          d <= R + 0.9 &&
+          (d <= R || F[k] < 0) &&
+          !(along > 0 && across < S.crossW / 2);
+      if (
+        moat ||
+        d <= S.centreR ||
+        (Math.hypot(x - fx, z - fz) <= S.fallR && (d <= R || F[k] < 0))
+      )
+        Wt[k] = 1;
+    });
+  }
+  // the bodies of water: one id per region of grid points joined side to
+  // side, each with its room (-1 in a tunnel) and its most open point
+  const bodies = [],
+    stack = [];
+  for (let k0 = 0; k0 < NP; k0++) {
+    if (Wt[k0] < 0.5 || bodyIds[k0] >= 0) continue;
+    const id = bodies.length;
+    let cnt = 0,
+      best = k0;
+    bodyIds[k0] = id;
+    stack.push(k0);
+    while (stack.length) {
+      const k = stack.pop(),
+        i = k % W1,
+        j = (k / W1) | 0;
+      cnt++;
+      if (F[k] > F[best]) best = k;
+      for (const q of [
+        i > 0 ? k - 1 : -1,
+        i < W ? k + 1 : -1,
+        j > 0 ? k - W1 : -1,
+        j < H ? k + W1 : -1,
+      ])
+        if (q >= 0 && Wt[q] > 0.5 && bodyIds[q] < 0) {
+          bodyIds[q] = id;
+          stack.push(q);
+        }
+    }
+    const x = (best % W1) + minX,
+      z = ((best / W1) | 0) + minZ,
+      home = roomAt(x, z, 0.5);
+    bodies.push({ id, room: home ? home.id : -1, n: cnt, x, z });
+  }
 
   // ---- mesh: a plain placeholder, brick coloured ----
   const { P, C, tri } = meshSink();
@@ -536,16 +855,19 @@ function genSewer(seed) {
   const spawns = [];
   for (const n of nodes) {
     if (n.kind !== "pool" && n.kind !== "brood") continue;
-    const pk = PACK[n.kind][Rn() < 0.5 ? 0 : 1];
+    const pk = PACK[n.kind][Rn() < 0.5 ? 0 : 1],
+      // a pool room's dry floor is mostly the walkway along its walls
+      sx = n.kind === "pool" ? n.hw - 1.5 : (n.hw - 3) * 0.7,
+      sz = n.kind === "pool" ? n.hd - 1.5 : (n.hd - 3) * 0.7;
     for (const type of pk) {
       let o = null;
-      for (let t = 0; t < 12; t++) {
+      for (let t = 0; t < 40; t++) {
         const q = {
-          x: n.x + (Rn() * 2 - 1) * (n.hw - 3) * 0.7,
-          z: n.z + (Rn() * 2 - 1) * (n.hd - 3) * 0.7,
+          x: n.x + (Rn() * 2 - 1) * sx,
+          z: n.z + (Rn() * 2 - 1) * sz,
         };
         resolve(q, 1.2);
-        if (fieldAt(q.x, q.z) >= 1) {
+        if (fieldAt(q.x, q.z) >= 1 && waterAt(q.x, q.z) === 0) {
           o = q;
           break;
         }
@@ -573,7 +895,7 @@ function genSewer(seed) {
     if (roomAt(m.x, m.z, 2) || Math.hypot(m.x - boss.x, m.z - boss.z) < keep)
       continue;
     resolve(m, 1);
-    if (fieldAt(m.x, m.z) < 1) continue;
+    if (fieldAt(m.x, m.z) < 1 || waterAt(m.x, m.z) > 0) continue;
     spawns.push({
       type: "husk",
       x: m.x,
@@ -585,17 +907,6 @@ function genSewer(seed) {
   }
   // the boss stands on the dry ring between the entrance and the centre
   // pool, facing the entrance
-  const entry = edges.find(
-      (e) =>
-        (e.a === boss.id && e.b === path[L - 2]) ||
-        (e.b === boss.id && e.a === path[L - 2]),
-    ),
-    ep = entry.a === boss.id ? entry.pts.slice().reverse() : entry.pts;
-  let mouth = ep[0];
-  for (const q of ep)
-    if (Math.hypot(q.x - boss.x, q.z - boss.z) >= boss.r) mouth = q;
-    else break;
-  const ea = Math.atan2(mouth.x - boss.x, mouth.z - boss.z);
   spawns.push({
     type: "warden",
     x: boss.x + Math.sin(ea) * S.wardenD,
@@ -628,9 +939,9 @@ function genSewer(seed) {
     addRock: fns.addRock,
     removeRock: fns.removeRock,
     clearRocks: fns.clearRocks,
-    waterAt: fns.waterAt,
+    waterAt,
     bodyAt: (x, z) => fns.bodyAt(x, z, bodyIds),
-    bodies: [],
+    bodies,
     grates: [],
     wallTunnels: [],
     shafts: [],

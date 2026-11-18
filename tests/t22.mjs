@@ -72,4 +72,18 @@ export default [
   const room = w.nodes.find((n) => n.kind === "pool");
   return { pass: low === 0 && w.ceilAt(room.x, room.z) >= 6 && w.ceilAt(b.x + 8, b.z) >= 12, low };`),
   step("the sewer generates in under 1.5 seconds", `const t = performance.now(); DF.genSewer(11); const ms = performance.now() - t; return { pass: ms < 1500, ms };`),
+  step("pool rooms hold 2 to 4 bodies, gutters stay apart", `const bad = []; for (let s = 1; s <= 8; s++) { const w = DF.genSewer(s);
+    for (const n of w.nodes) { const own = w.bodies.filter((b) => b.room === n.id).length;
+      if (n.kind === "pool" && (own < 2 || own > 4)) bad.push([s, n.id, own]); }
+    for (const b of w.bodies) if (b.room === -1) { for (const n of w.nodes) if (Math.abs(b.x - n.x) < n.hw + 1 && Math.abs(b.z - n.z) < n.hd + 1) bad.push([s, "gutter", n.id]); } }
+  return { pass: bad.length === 0, bad };`),
+  step("a dry route joins every tunnel mouth of every room", `const bad = []; for (let s = 1; s <= 6; s++) { const w = DF.genSewer(s), Fd = w.F.map((f, k) => (w.Wt[k] > 0.5 ? -1 : f)), dry = DF.fieldFns(Fd, w.minX, w.minZ, w.W, w.H);
+    for (const n of w.nodes) { if (n.kind === "boss") continue; const mids = w.edges.filter((e) => e.a === n.id || e.b === n.id).map((e) => e.pts[(e.pts.length / 2) | 0]);
+      for (let i = 1; i < mids.length; i++) if (!dry.route(mids[0].x, mids[0].z, mids[i].x, mids[i].z, 0.6)) bad.push([s, n.id]); } }
+  return { pass: bad.length === 0, bad };`),
+  step("the boss cavern has a moat, a centre pool and a dry ring", `const bad = []; for (let s = 1; s <= 6; s++) { const w = DF.genSewer(s), b = w.boss, R = b.r;
+    const centre = w.waterAt(b.x, b.z) === 1, ring = [0, 1, 2, 3, 4, 5, 6, 7].every((k) => { const a = k * Math.PI / 4; return w.waterAt(b.x + Math.sin(a) * (R - 10), b.z + Math.cos(a) * (R - 10)) === 0; });
+    let moat = 0; for (let k = 0; k < 36; k++) { const a = k * Math.PI / 18; if (w.waterAt(b.x + Math.sin(a) * (R - 2), b.z + Math.cos(a) * (R - 2)) === 1) moat++; }
+    if (!centre || !ring || moat < 30) bad.push({ s, centre, ring, moat }); }
+  return { pass: bad.length === 0, bad };`),
 ];
