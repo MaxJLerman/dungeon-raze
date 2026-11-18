@@ -52,4 +52,24 @@ export default [
   d.c = { fighter: ["E", 7] }; localStorage.setItem(k, JSON.stringify(d)); DF.loadOpt(); const c2 = DF.gradeCleared("E");
   localStorage.setItem(k, keep); DF.resetCleared();
   return { pass: a && b && c2, a, b, c2 };`),
+  step("the sewer is connected and has every room kind", `const bad = []; for (let s = 1; s <= 12; s++) { const w = DF.genSewer(s), k = w.nodes.map((n) => n.kind);
+    const ok = ["start", "pool", "brood", "shrine", "boss"].every((x) => k.includes(x)) && w.shrines.length === 4 && w.nodes.every((n) => n.depth >= 0)
+      && w.nodes.filter((n) => n.kind === "start")[0].adj.length === 1;
+    if (!ok) bad.push(s); }
+  return { pass: bad.length === 0, bad };`),
+  step("a D run is about 1.5 times an E run, with more fights, dead ends and loops", `let e = 0, d = 0, few = [];
+  const len = (w) => { const r = w.route(w.spawn.x, w.spawn.z, w.boss.x, w.boss.z, 0.6); let l = 0, a = w.spawn; for (const q of r) { l += Math.hypot(a.x - q.x, a.z - q.z); a = q; } return l; };
+  for (let s = 1; s <= 8; s++) { DF.newRun(s); e += len(G.world); const w = DF.genSewer(s); d += len(w);
+    const fights = w.nodes.filter((n) => n.kind === "pool" || n.kind === "brood").length, leaves = w.nodes.filter((n) => n.adj.length === 1 && n.kind !== "start" && !w.path.includes(n.id)).length;
+    if (fights < 15 || leaves < 2 || w.edges.length - w.nodes.length + 1 < 2) few.push({ s, fights, leaves }); }
+  const ratio = d / e; return { pass: ratio > 1.35 && ratio < 1.65 && few.length === 0, ratio, few };`),
+  step("every sewer spawn and respawn spot is dry, walkable and not in a rest room", `const bad = []; for (let s = 1; s <= 6; s++) { const w = DF.genSewer(s), rest = new Set(w.shrines.map((q) => q.node));
+    for (const q of w.spawns) if (w.fieldAt(q.x, q.z) < 0.5 || w.waterAt(q.x, q.z) > 0 || rest.has(q.node) && q.type !== "warden") bad.push([s, q.type]);
+    for (const c of w.shrines) { const o = { x: c.x, z: c.z - 1.6 }; w.resolve(o, 0.6); if (w.fieldAt(o.x, o.z) < 0.55 || w.waterAt(o.x, o.z) > 0) bad.push([s, "shrine", c.node]); } }
+  return { pass: bad.length === 0, bad };`),
+  step("the sewer ceiling clears the camera and rises in rooms", `const w = DF.genSewer(3), b = w.boss; let low = 0;
+  for (let x = w.minX; x < w.minX + w.W; x += 2) for (let z = w.minZ; z < w.minZ + w.H; z += 2) if (w.fieldAt(x, z) >= 0.6 && w.ceilAt(x, z) < 3.2) low++;
+  const room = w.nodes.find((n) => n.kind === "pool");
+  return { pass: low === 0 && w.ceilAt(room.x, room.z) >= 6 && w.ceilAt(b.x + 8, b.z) >= 12, low };`),
+  step("the sewer generates in under 1.5 seconds", `const t = performance.now(); DF.genSewer(11); const ms = performance.now() - t; return { pass: ms < 1500, ms };`),
 ];

@@ -620,6 +620,8 @@ window.DF = {
   enterCave,
   startTrans,
   genHub,
+  genSewer,
+  SEWER,
   TOUCH,
   PAD,
   PAD_BIND,
