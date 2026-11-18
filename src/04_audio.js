@@ -211,6 +211,15 @@ const SFX = (() => {
         noise(0.12, 1600 - i * 120, 400, 0.25, "bandpass", 1.5, i * 0.07);
       tone(0.5, 110, 40, 0.4, "sine");
     },
+    // a mine pressed into the floor, and a tripwire snapping
+    mine() {
+      tone(0.05, 2200, 1800, 0.18, "square");
+      tone(0.08, 900, 900, 0.12, "square", 0.08);
+    },
+    wire() {
+      tone(0.25, 1400, 300, 0.3, "sawtooth");
+      noise(0.1, 5000, 2000, 0.2, "highpass", 1);
+    },
     beep() {
       tone(0.06, 1900, 1900, 0.12, "square");
     },

@@ -1417,6 +1417,7 @@ function setEnv(e) {
 function resetRun() {
   if (G.world && G.world.clearRocks) G.world.clearRocks();
   G.caveins = [];
+  G.mines = [];
   G.insp = null;
   G.bossDead = false;
   G.bossSeen = false;
@@ -1544,6 +1545,7 @@ function respawn() {
   // the same cave again: its rubble has to come out of the field
   G.world.clearRocks();
   G.caveins = [];
+  G.mines = [];
   G.world.resolve(p, 0.6);
   G.projs = [];
   G.bombs = [];
@@ -2591,6 +2593,10 @@ function useTool(ix, iz, il) {
     p.throwT = 0.25;
     fire({ speed: 22, dmg: 0, post: 0, kind: "sticky", life: 0.9 }, a);
     SFX.knife();
+  } else if (id === "mine") {
+    plantMine(p.x, p.z);
+    p.throwT = 0.3;
+    SFX.mine();
   } else if (id === "leap") {
     const a = aimRanged();
     p.yaw = a;
@@ -3821,13 +3827,17 @@ const CAVEIN = {
   // a forced stagger lasts this share of the usual time, by enemy type
   stag: { brute: 0.75 },
 };
-// distance from (x, z) to a cave-in's ridge line, less nothing
-function ridgeD(c, x, z) {
-  const dx = c.bx - c.ax,
-    dz = c.bz - c.az,
+// distance from (x, z) to the segment from (ax, az) to (bx, bz)
+function segDist(x, z, ax, az, bx, bz) {
+  const dx = bx - ax,
+    dz = bz - az,
     l2 = dx * dx + dz * dz,
-    t = l2 ? clamp(((x - c.ax) * dx + (z - c.az) * dz) / l2, 0, 1) : 0;
-  return Math.hypot(x - c.ax - dx * t, z - c.az - dz * t);
+    t = l2 ? clamp(((x - ax) * dx + (z - az) * dz) / l2, 0, 1) : 0;
+  return Math.hypot(x - ax - dx * t, z - az - dz * t);
+}
+// distance from (x, z) to a cave-in's ridge line
+function ridgeD(c, x, z) {
+  return segDist(x, z, c.ax, c.az, c.bx, c.bz);
 }
 function inRubble(x, z) {
   for (const c of G.caveins)
@@ -3895,6 +3905,7 @@ function caveImpact(c) {
     });
     if (!e.dead && !e.def.boss) stagger(e, CAVEIN.stag[e.type] || 1);
   }
+  for (const m of G.mines) if (ridgeD(c, m.x, m.z) < th + 0.5) boomMine(m);
   c.id = w.addRock(c.ax, c.az, c.bx, c.bz, th);
   // nobody is left inside: out along the throw to the side they are on; one
   // on the line goes to the player's side, and the player to where it threw
@@ -3949,6 +3960,87 @@ function caveUpdate(dt) {
     }
   }
   G.caveins = G.caveins.filter((c) => !c.gone);
+}
+// The Sapper's landmines. Each arms MINE.arm seconds after planting and goes
+// off when an enemy body comes within MINE.trig of it. A mine planted near
+// another is wired to it, and an enemy crossing a wire whose mines are both
+// armed sets off both. A mine going off sets off the mines in its blast, a
+// moment later. The player never sets one off.
+const MINE = {
+  arm: 0.8,
+  trig: 0.5,
+  r: 3,
+  dmg: 40,
+  post: 35,
+  link: 6,
+  wires: 2,
+  cap: 8,
+  chain: 0.12,
+};
+function plantMine(x, z) {
+  const w = G.world,
+    m = { x, z, t: 0, links: [], fuse: null };
+  let best = null,
+    bd = MINE.link;
+  for (const o of G.mines) {
+    if (o.fuse !== null || o.links.length >= MINE.wires) continue;
+    const d = Math.hypot(o.x - x, o.z - z);
+    if (d < bd && w.los(x, z, o.x, o.z)) {
+      bd = d;
+      best = o;
+    }
+  }
+  if (best) {
+    m.links.push(best);
+    best.links.push(m);
+  }
+  G.mines.push(m);
+  // past the cap the oldest goes quiet, with its wires
+  while (G.mines.length > MINE.cap) dropMine(G.mines[0]);
+  return m;
+}
+function dropMine(m) {
+  for (const o of m.links) o.links = o.links.filter((q) => q !== m);
+  G.mines = G.mines.filter((q) => q !== m);
+}
+function boomMine(m) {
+  if (m.fuse === null) m.fuse = 0;
+}
+function minesUpdate(dt) {
+  const w = G.world;
+  for (const m of G.mines) {
+    m.t += dt;
+    if (m.fuse !== null || m.t < MINE.arm) continue;
+    for (const e of G.enemies)
+      if (!e.dead && Math.hypot(e.x - m.x, e.z - m.z) < MINE.trig + e.r) {
+        boomMine(m);
+        break;
+      }
+    for (const o of m.links) {
+      if (o.t < MINE.arm || o.fuse !== null) continue;
+      for (const e of G.enemies)
+        if (!e.dead && segDist(e.x, e.z, m.x, m.z, o.x, o.z) < e.r) {
+          boomMine(m);
+          boomMine(o);
+          SFX.wire();
+          break;
+        }
+    }
+  }
+  for (const m of [...G.mines]) {
+    if (m.fuse === null) continue;
+    m.fuse -= dt;
+    if (m.fuse > 0) continue;
+    dropMine(m);
+    explode(m.x, m.z, MINE.r, MINE.dmg, MINE.post, HAZARD);
+    for (const o of G.mines)
+      if (
+        o.fuse === null &&
+        Math.hypot(o.x - m.x, o.z - m.z) < MINE.r &&
+        w.los(m.x, m.z, o.x, o.z)
+      )
+        o.fuse = MINE.chain;
+  }
 }
 function projUpdate(dt) {
   const p = G.player,
@@ -4096,6 +4188,7 @@ function update(dt) {
   projUpdate(dt);
   bombsUpdate(dt);
   caveUpdate(dt);
+  minesUpdate(dt);
   for (const q of G.pending) {
     q.t -= dt;
     if (q.t <= 0) {

@@ -112,4 +112,8 @@ export default [
   DF.enterHub(); const W = G.world, d = G.enemies.find((e) => e.def.dummy); p.x = d.x - 4; p.z = d.z; p.yaw = Math.PI / 2;
   DF.startCaveIn(d.x, d.z); DF.sim(1.5);
   return { pass: d.x === d.hx && d.z === d.hz && W.fieldAt(p.x, p.z) >= 0 && W.fieldAt(d.x, d.z) < 0 };`),
+  game("a mine under the rubble goes off", `
+  const t = tunnel(); put(p, at(t, -6)); p.yaw = cam.yaw = t.yaw; DF.plantMine(t.x, t.z); const far = at(t, -4); DF.plantMine(far.x, far.z);
+  DF.startCaveIn(t.x, t.z); DF.sim(1.1);
+  return { pass: G.mines.length === 1 && Math.hypot(G.mines[0].x - far.x, G.mines[0].z - far.z) < 0.01, left: G.mines.length };`),
 ];

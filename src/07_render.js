@@ -574,6 +574,37 @@ function makeRubble(c) {
   }
   return root;
 }
+// A mine: a dark disc on the floor with a light that blinks while it arms
+// and holds steady once armed. A wire: a thin line at shin height.
+const MINE_FIG = (() => {
+  const n = new Nd();
+  n.add(part("cyl", hexc(0x2e2f33), 0.42, 0.08, 0.42, 0, 0.04, 0));
+  n.add(part("cyl", hexc(0x55575c), 0.16, 0.06, 0.16, 0, 0.1, 0));
+  return n;
+})();
+function drawMines() {
+  for (const m of G.mines) {
+    MINE_FIG.p[0] = m.x;
+    MINE_FIG.p[2] = m.z;
+    R.drawNode(MINE_FIG);
+    const armed = m.t >= MINE.arm,
+      on = armed || m.t % 0.25 < 0.12,
+      c = HAZARD;
+    if (on) R.sprite(m.x, 0.17, m.z, armed ? 0.22 : 0.16, c[0], c[1], c[2], armed ? 1.2 : 1.8);
+    for (const o of m.links) {
+      if (o.x < m.x || (o.x === m.x && o.z < m.z)) continue; // once per wire
+      const k = armed && o.t >= MINE.arm ? 0.9 : 0.35;
+      R.ribbon(
+        1,
+        (t, s) => [lerp(m.x, o.x, t), 0.32 + 0.035 * s, lerp(m.z, o.z, t)],
+        c[0],
+        c[1],
+        c[2],
+        () => k,
+      );
+    }
+  }
+}
 function drawCaveIns() {
   for (const c of G.caveins) {
     if (c.phase === "fuse") {
@@ -618,6 +649,7 @@ function render() {
     R.drawNode(e.fig.root, e.fig.rim);
   }
   drawCaveIns();
+  drawMines();
   // ---- fx ----
   if (p.state !== "dead") R.blob(p.x, p.z, 0.8, 0.55);
   for (const e of G.enemies) {

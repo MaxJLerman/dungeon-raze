@@ -22,9 +22,39 @@ export default [
   {
     name: "sapper slam blasts in front",
     eval: cls("sapper", `
-  const e = tp((e) => e.type === 'brute', 2.6); e.state = 'idle'; const h0 = e.hp, p0 = e.posture, hp0 = p.hp; K('heavy'); DF.sim(1.2);
+  const e = tp((e) => e.type === 'brute', 2.6); e.state = 'idle'; const h0 = e.hp, p0 = e.posture, hp0 = p.hp; K('heavy');
+  // read just after the slam lands at 0.45 s, before the brute it woke can swing back
+  DF.sim(0.55);
   const hit = e.hp < h0, post = e.posture - p0;
   return { pass: hit && p.hp === hp0 && post >= 50, hit, post, hurt: hp0 - p.hp }; `),
+  },
+  {
+    name: "mine arms and blows on an enemy",
+    eval: cls("sapper", `
+  const e = tp((e) => e.type === 'husk', 6); e.state = 'idle'; const h0 = e.hp, hp0 = p.hp; K('tool'); DF.sim(0.3);
+  // the husk is held on the mine, so only the arming decides when it goes off
+  const m = G.mines[0], early = !!m, hold = () => { if (!e.dead) { e.x = m.x + 0.2; e.z = m.z; } };
+  DF.sim(0.2, hold); const waited = G.mines.length === 1;
+  DF.sim(0.8, hold); return { pass: early && waited && G.mines.length === 0 && e.hp < h0 && p.hp === hp0, early, waited, left: G.mines.length, hurt: hp0 - p.hp }; `),
+  },
+  {
+    name: "two mines wire up and a crossing sets both off",
+    eval: cls("sapper", `
+  const e = tp((e) => e.type === 'brute', 12); e.state = 'idle'; const a = DF.plantMine(p.x, p.z), b = DF.plantMine(p.x + 4, p.z);
+  const wired = a.links.includes(b) && b.links.includes(a); DF.sim(1); e.x = p.x + 2; e.z = p.z + 0.3; DF.sim(0.2);
+  return { pass: wired && G.mines.length === 0, wired, left: G.mines.length }; `),
+  },
+  {
+    name: "a mine sets off its neighbour and the cap holds",
+    eval: cls("sapper", `
+  const e = tp((e) => e.type === 'husk', 12); e.state = 'idle'; DF.plantMine(p.x + 5, p.z); DF.plantMine(p.x + 7, p.z + 2); DF.sim(1);
+  DF.boomMine(G.mines[0]); DF.sim(0.4); const chained = G.mines.length === 0;
+  // no enemies from here: the player alone, standing among armed mines
+  G.enemies = []; G.projs = [];
+  for (let i = 0; i < 12; i++) DF.plantMine(p.x + (i % 4), p.z + (i >> 2)); const capped = G.mines.length === DF.MINE.cap;
+  const linked = G.mines.every((m) => m.links.every((o) => G.mines.includes(o)));
+  const hp0 = p.hp; DF.sim(2); const safe = p.hp === hp0 && G.mines.length === DF.MINE.cap;
+  return { pass: chained && capped && linked && safe, chained, capped, linked, n: G.mines.length, safe, lost: hp0 - p.hp }; `),
   },
   {
     name: "sapper is hidden until unlocked",
