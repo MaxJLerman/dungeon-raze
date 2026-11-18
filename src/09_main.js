@@ -622,6 +622,7 @@ window.DF = {
   genHub,
   genSewer,
   SEWER,
+  ENV_SEWER,
   TOUCH,
   PAD,
   PAD_BIND,

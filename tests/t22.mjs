@@ -86,4 +86,18 @@ export default [
     let moat = 0; for (let k = 0; k < 36; k++) { const a = k * Math.PI / 18; if (w.waterAt(b.x + Math.sin(a) * (R - 2), b.z + Math.cos(a) * (R - 2)) === 1) moat++; }
     if (!centre || !ring || moat < 30) bad.push({ s, centre, ring, moat }); }
   return { pass: bad.length === 0, bad };`),
+  sewer("entering D builds the sewer with its air and echo", `const c = { sewer: !!w.sewer, grade: G.grade === "D", env: DF.R.env.fogD === DF.ENV_SEWER.fogD, echo: DF.SFX.echo === true };
+  DF.newRun(99); c.back = !G.world.sewer && G.grade === "E" && DF.SFX.echo === false && DF.R.env.fogD !== DF.ENV_SEWER.fogD;
+  return { pass: Object.values(c).every(Boolean), c };`),
+  step("the reduced-motion cut into D lands in the sewer", `DF.LIVE_GRADES.add("D"); DF.enterHub(); DF.startTrans("D", true);
+  return { pass: !!G.world.sewer && G.grade === "D" && DF.SFX.echo === true };`),
+  sewer("a stand-in boss kill in D records D", `DF.resetCleared(); const b = G.enemies.find((e) => e.def.boss); b.hp = 0; DF.kill(b);
+  const ok = DF.gradeCleared("D") && !!G.gate; DF.resetCleared(); return { pass: ok };`),
+  sewer("a cave-in seals a sewer tunnel, a rift carries over water", `DF.setClass("sapper"); DF.newRun(5, "D"); const w2 = G.world, e = w2.edges.find((e) => e.pts.length > 8), m = e.pts[(e.pts.length / 2) | 0], A = e.pts[2], B = e.pts[e.pts.length - 3];
+  const before = !!w2.route(A.x, A.z, B.x, B.z, 0.6); DF.startCaveIn(m.x, m.z); DF.sim(1.2); const after = w2.route(A.x, A.z, B.x, B.z, 0.6);
+  DF.setClass("riftwalker"); DF.newRun(5, "D"); const w3 = G.world, pool = w3.bodies.find((b) => b.room >= 0), p3 = G.player;
+  p3.x = pool.x; p3.z = pool.z; const a = DF.openRift(pool.x, pool.z + 1, 0), b2 = DF.openRift(w3.spawn.x, w3.spawn.z + 2, 0);
+  const o = { x: pool.x, z: pool.z + 0.6 }; DF.riftMove(o, pool.x, pool.z + 1.4, 0.6);
+  DF.setClass("fighter");
+  return { pass: before && (after === null || after.length > 20) && typeof a === "object" && typeof b2 === "object" && Math.hypot(o.x - w3.spawn.x, o.z - w3.spawn.z) < 4, before, after: after && after.length, a, b2, o, spawn: w3.spawn };`),
 ];

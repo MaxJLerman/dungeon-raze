@@ -1569,7 +1569,13 @@ const ENV_CAVE = {
     fog: R.env.fog.slice(),
     fogD: R.env.fogD,
   },
-  ENV_HUB = { amb: [0.15, 0.17, 0.22], fog: [0.03, 0.035, 0.05], fogD: 0.014 };
+  ENV_HUB = { amb: [0.15, 0.17, 0.22], fog: [0.03, 0.035, 0.05], fogD: 0.014 },
+  // the sewer: damp and green-dark, with thicker fog than the cave
+  ENV_SEWER = { amb: [0.07, 0.11, 0.08], fog: [0.015, 0.03, 0.02], fogD: 0.032 };
+// How each grade builds its world and what its air is like. A grade not listed
+// gets the cave.
+const WORLD_GEN = { E: genWorld, D: genSewer },
+  ENV_GRADE = { D: ENV_SEWER };
 // Copies, so nothing that later adjusts R.env can change the presets.
 function setEnv(e) {
   R.env.amb = e.amb.slice();
@@ -1615,11 +1621,13 @@ function snapCam() {
   cam.pz = G.player.z;
 }
 // Starts a cave from a seed. Tests call this directly.
-function newRun(seed) {
+function newRun(seed, grade = "E") {
   G.zone = "cave";
-  setEnv(ENV_CAVE);
+  G.grade = grade;
+  setEnv(ENV_GRADE[grade] || ENV_CAVE);
   G.seed = seed;
-  G.world = genWorld(seed);
+  G.world = (WORLD_GEN[grade] || genWorld)(seed);
+  SFX.setEcho(!!G.world.sewer);
   R.setWorld(G.world.pos, G.world.col);
   resetRun();
   G.player = makePlayer(OPT.cls);
@@ -1633,6 +1641,7 @@ function enterHub(fromGrade = null) {
   G.zone = "hub";
   setEnv(ENV_HUB);
   G.world = genHub();
+  SFX.setEcho(!!G.world.sewer);
   R.setWorld(G.world.pos, G.world.col);
   resetRun();
   const p = (G.player = makePlayer(OPT.cls));
@@ -1651,8 +1660,7 @@ function enterHub(fromGrade = null) {
 }
 // Enters a freshly generated cave through the portal of the given grade.
 function enterCave(gradeId, seed = (Math.random() * 1e9) | 0 || 7) {
-  G.grade = gradeId;
-  newRun(seed);
+  newRun(seed, gradeId);
   say(GRADES[gradeId].name.toUpperCase(), "big", 3);
 }
 // Begins the fade into a cave. A cut swaps at once, for reduced motion.
