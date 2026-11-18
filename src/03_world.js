@@ -11,8 +11,29 @@ const CRY = {
 
 // Collision and line of sight over a walkable field sampled on a one-unit grid.
 // Shared by the cave and the hall so both collide the same way.
-function fieldFns(F, minX, minZ, W, H) {
+// Wt (optional) is water depth 0 to 1 on the same grid; ids (optional, passed to
+// bodyAt) is an Int16Array of water body ids. Water blocks nothing.
+function fieldFns(F, minX, minZ, W, H, Wt) {
   const W1 = W + 1;
+  function waterAt(x, z) {
+    if (!Wt) return 0;
+    const fx = x - minX,
+      fz = z - minZ;
+    if (fx < 0 || fz < 0 || fx >= W || fz >= H) return 0;
+    const i = fx | 0,
+      j = fz | 0,
+      u = fx - i,
+      v = fz - j,
+      k = j * W1 + i;
+    return lerp(lerp(Wt[k], Wt[k + 1], u), lerp(Wt[k + W1], Wt[k + W1 + 1], u), v);
+  }
+  function bodyAt(x, z, ids) {
+    if (!ids) return -1;
+    const i = Math.round(x - minX),
+      j = Math.round(z - minZ);
+    if (i < 0 || j < 0 || i > W || j > H) return -1;
+    return ids[j * W1 + i];
+  }
   function fieldAt(x, z) {
     const fx = x - minX,
       fz = z - minZ;
@@ -277,7 +298,17 @@ function fieldFns(F, minX, minZ, W, H) {
     rocks.clear();
     for (const q of all) repaint(q);
   }
-  return { fieldAt, resolve, los, route, addRock, removeRock, clearRocks };
+  return {
+    fieldAt,
+    resolve,
+    los,
+    route,
+    addRock,
+    removeRock,
+    clearRocks,
+    waterAt,
+    bodyAt,
+  };
 }
 // how far past a rock's capsule its points are kept as a distance estimate
 const ROCK_PAD = 3;
@@ -587,8 +618,17 @@ function genWorld(seed) {
           (vnoise(x * 0.63, z * 0.63) - 0.5) * 0.55,
       );
     }
-  const { fieldAt, resolve, los, route, addRock, removeRock, clearRocks } =
-    fieldFns(F, minX, minZ, W, H);
+  const {
+    fieldAt,
+    resolve,
+    los,
+    route,
+    addRock,
+    removeRock,
+    clearRocks,
+    waterAt,
+    bodyAt,
+  } = fieldFns(F, minX, minZ, W, H);
   const ceilRaw = (f) => 3.1 + 1.45 * Math.sqrt(Math.max(f + 0.5, 0));
   const ceilAt = (x, z) => ceilRaw(fieldAt(x, z));
   // ---- mesh ----
@@ -930,6 +970,13 @@ function genWorld(seed) {
     addRock,
     removeRock,
     clearRocks,
+    waterAt,
+    bodyAt,
+    bodies: [],
+    grates: [],
+    wallTunnels: [],
+    shafts: [],
+    pieces: null,
     pos: new Float32Array(P),
     col: new Uint8Array(C),
     lights,

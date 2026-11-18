@@ -118,8 +118,17 @@ function genHub(layout = hubPortals()) {
         f = Math.min(f, Math.hypot(x - o.x, z - o.z) - o.r);
       F[j * W1 + i] = Math.max(-3, f);
     }
-  const { fieldAt, resolve, los, route, addRock, removeRock, clearRocks } =
-    fieldFns(F, minX, minZ, W, H);
+  const {
+    fieldAt,
+    resolve,
+    los,
+    route,
+    addRock,
+    removeRock,
+    clearRocks,
+    waterAt,
+    bodyAt,
+  } = fieldFns(F, minX, minZ, W, H);
   const ceilAt = () => TOP;
 
   // ---- mesh ----
@@ -372,6 +381,13 @@ function genHub(layout = hubPortals()) {
     addRock,
     removeRock,
     clearRocks,
+    waterAt,
+    bodyAt,
+    bodies: [],
+    grates: [],
+    wallTunnels: [],
+    shafts: [],
+    pieces: null,
     pos: new Float32Array(P),
     col: new Uint8Array(C),
     lights,

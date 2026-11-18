@@ -1129,6 +1129,11 @@ const MOVES = {
     ifr: 0.3,
   },
 };
+// Water wades the player and every enemy that has no `wade` of its own.
+// slow is the speed left at full depth; sink is for the look of the wading.
+const WATER = { slow: 0.6, sink: 0.3 };
+const wadeOf = (def) => (typeof def.wade === "number" ? def.wade : WATER.slow);
+const wadeMul = (water, wade) => lerp(1, wade, sat(water));
 const EDEF = {
   husk: {
     name: "Husk",
@@ -3398,6 +3403,9 @@ function playerUpdate(dt) {
   // knockback + integrate
   p.kx = damp(p.kx, 0, 9, dt);
   p.kz = damp(p.kz, 0, 9, dt);
+  const wade = wadeMul(G.world.waterAt(p.x, p.z), WATER.slow);
+  mvx *= wade;
+  mvz *= wade;
   p.x += (mvx + p.kx) * dt;
   p.z += (mvz + p.kz) * dt;
   p.speed = Math.hypot(mvx, mvz);
@@ -3469,6 +3477,7 @@ function chooseAtk(e, dist) {
   return c[0];
 }
 function eStep(e, dx, dz, spd, dt) {
+  spd *= wadeMul(G.world.waterAt(e.x, e.z), wadeOf(e.def));
   e.x += dx * spd * dt;
   e.z += dz * spd * dt;
   e.speed = spd;
