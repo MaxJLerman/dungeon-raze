@@ -57,6 +57,15 @@ export default [
   return { pass: chained && capped && linked && safe, chained, capped, linked, n: G.mines.length, safe, lost: hp0 - p.hp }; `),
   },
   {
+    name: "sapper execution kicks a charge that hurts the next one",
+    eval: cls("sapper", `
+  const e = tp((e) => e.type === 'husk', 2), o = G.enemies.find((x) => x !== e && x.type === 'brute');
+  const dir = Math.atan2(e.x - p.x, e.z - p.z); o.x = e.x + Math.sin(dir) * 4; o.z = e.z + Math.cos(dir) * 4; o.state = 'idle';
+  const h0 = o.hp, hp0 = p.hp, ex = e.x, ez = e.z; e.state = 'stagger'; e.t = 0; e.dur = 3; DF.startExecute(e); DF.sim(1);
+  const flew = Math.hypot(e.x - ex, e.z - ez);
+  return { pass: e.dead && flew > 2 && o.hp < h0 && p.hp === hp0, dead: e.dead, flew, hurt: h0 - o.hp, lost: hp0 - p.hp }; `),
+  },
+  {
     name: "sapper is hidden until unlocked",
     eval: `(() => { DF.UNLOCKED.clear();
   const c = { hidden: DF.CLASSES.sapper.hidden === true, out: !DF.pickable().includes('sapper') };

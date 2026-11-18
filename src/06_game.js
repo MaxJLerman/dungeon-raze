@@ -3050,7 +3050,8 @@ function playerUpdate(dt) {
         G.flashWhite = 0.6;
         p.hp = Math.min(p.maxHp, p.hp + 10);
         p.focus = Math.min(100, p.focus + 12);
-        const sniper = p.clsId === "enforcer";
+        const sniper = p.clsId === "enforcer",
+          sapper = p.clsId === "sapper";
         if (sniper) {
           // a tracer all the way to the target, and a sticky bomb back
           SFX.gun(true);
@@ -3069,6 +3070,39 @@ function playerUpdate(dt) {
           wd: sniper ? 0.1 : undefined,
         });
         sparks(e.x, 1.2 * e.fig.o.sc, e.z, 30, AMBER, 10, 0.6, 0.15);
+        // the Sapper jams a charge in and kicks: the body flies on and the
+        // charge goes off where it lands. The boss and the dummy are too
+        // heavy to kick, so it goes off on them.
+        let bx = e.x,
+          bz = e.z;
+        if (sapper) {
+          const heavy = e.def.boss || e.def.dummy,
+            a = Math.atan2(e.x - p.x, e.z - p.z);
+          if (!heavy) {
+            let d = 0;
+            while (
+              d < 4 &&
+              G.world.fieldAt(
+                e.x + Math.sin(a) * (d + 0.25),
+                e.z + Math.cos(a) * (d + 0.25),
+              ) > 0.5
+            )
+              d += 0.25;
+            bx = e.x + Math.sin(a) * d;
+            bz = e.z + Math.cos(a) * d;
+          }
+          G.pending.push({
+            t: 0.45,
+            x: bx,
+            z: bz,
+            r: 3.5,
+            dmg: 50,
+            post: 50,
+            c: c.col,
+          });
+          SFX.thud(true);
+          SFX.mine();
+        }
         if (e.def.boss) {
           e.state = "recoil";
           e.t = 0;
@@ -3090,6 +3124,11 @@ function playerUpdate(dt) {
           e.hp = 0;
           G.hitstop = 0.13;
           kill(e);
+          if (sapper) {
+            const k = Math.hypot(bx - e.x, bz - e.z) / 0.4;
+            const a = Math.atan2(bx - e.x, bz - e.z);
+            e.kick = { vx: Math.sin(a) * k, vz: Math.cos(a) * k, t: 0.4 };
+          }
         }
         say("EXECUTION", "crit", 0.9);
       }
@@ -3309,6 +3348,13 @@ function enemyUpdate(e, dt) {
   }
   if (e.state === "dead") {
     e.t += dt;
+    // kicked away by the Sapper's execution
+    if (e.kick && e.kick.t > 0) {
+      e.x += e.kick.vx * dt;
+      e.z += e.kick.vz * dt;
+      e.kick.t -= dt;
+      w.resolve(e, e.r);
+    }
     if (e.t > 2.4) e.gone = true;
     return;
   }

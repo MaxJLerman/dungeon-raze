@@ -252,6 +252,15 @@ function posePlayer(p) {
       const u = sat((p.t - 0.14) / 0.12);
       A[0] = lerp(0.8, -1.6, u);
       if (id === "assassin" || id === "fighter") B[0] = A[0];
+      if (id === "sapper") {
+        // the charge pressed in with the left hand, then a front kick
+        B[0] = lerp(-1.5, -0.4, u);
+        f.legR.r[0] = lerp(0, -1.5, u);
+        f.legL.r[0] = 0.25 * u;
+        ch[0] = lerp(0.3, -0.25, u);
+        A[0] = -0.6;
+        break;
+      }
       if (id === "enforcer") {
         // the rifle shouldered and aimed
         A[0] = B[0] = -1.55;
