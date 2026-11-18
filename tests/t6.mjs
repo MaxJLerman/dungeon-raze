@@ -89,6 +89,23 @@ export default [
   return { pass: shard, shard }; `),
   },
   {
+    name: "riftwalker execution drops the body and the landing hurts the next one",
+    eval: cls("riftwalker", `
+  const e = tp((e) => e.type === 'husk', 2), o = G.enemies.find((x) => x !== e && x.type === 'brute');
+  o.x = e.x + 1.5; o.z = e.z; o.state = 'idle'; const h0 = o.hp, hp0 = p.hp; e.state = 'stagger'; e.t = 0; e.dur = 3; DF.startExecute(e);
+  let top = 0; DF.sim(1.6, () => { top = Math.max(top, e.y); if (o.state !== 'hit') o.state = 'idle'; });
+  return { pass: e.dead && top > 1 && o.hp < h0 && p.hp === hp0 && e.y === 0, dead: e.dead, top, hurt: h0 - o.hp }; `),
+  },
+  {
+    name: "riftwalker execution on the boss and the dummy",
+    eval: cls("riftwalker", `
+  const wd = tp((e) => e.def.boss, 2.5); wd.state = 'stagger'; wd.t = 0; wd.dur = 3; const h0 = wd.hp, at = [wd.x, wd.z]; DF.startExecute(wd); DF.sim(0.5);
+  const boss = h0 - wd.hp >= 119 && Math.hypot(wd.x - at[0], wd.z - at[1]) < 0.5 && !(wd.y > 0.05);
+  DF.enterHub(); const d = G.enemies.find((e) => e.def.dummy), d0 = [d.x, d.z]; d.state = 'stagger'; d.t = 0; d.dur = 3; DF.startExecute(d); DF.sim(1);
+  const dummy = !d.dead && Math.hypot(d.x - d0[0], d.z - d0[1]) < 0.01 && !(d.y > 0.05);
+  return { pass: boss && dummy, boss, dummy, lost: h0 - wd.hp }; `),
+  },
+  {
     name: "riftwalker is hidden until unlocked",
     eval: `(() => { DF.UNLOCKED.clear();
   const c = { hidden: DF.CLASSES.riftwalker.hidden === true, out: !DF.pickable().includes('riftwalker') };

@@ -3253,7 +3253,8 @@ function playerUpdate(dt) {
         p.hp = Math.min(p.maxHp, p.hp + 10);
         p.focus = Math.min(100, p.focus + 12);
         const sniper = p.clsId === "enforcer",
-          sapper = p.clsId === "sapper";
+          sapper = p.clsId === "sapper",
+          rift = p.clsId === "riftwalker";
         if (sniper) {
           // a tracer all the way to the target, and a sticky bomb back
           SFX.gun(true);
@@ -3305,6 +3306,9 @@ function playerUpdate(dt) {
           SFX.thud(true);
           SFX.mine();
         }
+        if (rift && (e.def.boss || e.def.dummy))
+          // too heavy to drop: a tear snaps on it where it stands
+          sparks(e.x, 1.2 * e.fig.o.sc, e.z, 26, c.col, 8, 0.5);
         if (e.def.boss) {
           e.state = "recoil";
           e.t = 0;
@@ -3326,6 +3330,13 @@ function playerUpdate(dt) {
           e.hp = 0;
           G.hitstop = 0.13;
           kill(e);
+          if (rift) {
+            // the floor opens under it: it falls out of the roof over the
+            // other end of a pair, or back onto the spot, and lands hard
+            const [lx, lz] = dropSpot(e.x, e.z);
+            dropEnemy(e, lx, lz, 0, 1, true);
+            SFX.hole();
+          }
           if (sapper) {
             const k = Math.hypot(bx - e.x, bz - e.z) / 0.4;
             const a = Math.atan2(bx - e.x, bz - e.z);
@@ -3557,7 +3568,13 @@ function enemyUpdate(e, dt) {
       e.kick.t -= dt;
       w.resolve(e, e.r);
     }
-    if (e.t > 2.4) e.gone = true;
+    // an execution's body falling out of the roof; it lands in a blast
+    if (e.y > 0 && e.fallH > 0) {
+      e.vy -= DROP.g * dt;
+      e.y += e.vy * dt;
+      if (e.y <= 0) landEnemy(e);
+    }
+    if (e.t > 2.4 && !(e.y > 0)) e.gone = true;
     return;
   }
   if (e.state === "fall") {
@@ -4486,6 +4503,8 @@ const DROP = {
   dmg: 4.5,
   // a landing hurts other enemies round it, never the player
   impact: { r: 1.6, dmg: 14, post: 20 },
+  // the blast an execution's body lands in
+  exec: { r: 3.2, dmg: 45, post: 45 },
 };
 // where something dropped at (x, z) lands: under the end of an open pair
 // further from it, otherwise back on the spot
@@ -4535,6 +4554,11 @@ function landEnemy(e) {
   G.shake = Math.max(G.shake, 0.5);
   SFX.thud(true);
   sparks(e.x, 0.2, e.z, 20, [0.6, 0.55, 0.5], 5, 0.5);
+  // an execution's body lands in one blast
+  if (e.dead) {
+    explode(e.x, e.z, DROP.exec.r, DROP.exec.dmg, DROP.exec.post, MAGENTA);
+    return;
+  }
   const im = DROP.impact;
   for (const o of G.enemies)
     if (
@@ -4544,7 +4568,6 @@ function landEnemy(e) {
       Math.hypot(o.x - e.x, o.z - e.z) < im.r + o.r
     )
       hitEnemy(o, im.dmg, im.post, { src: "aoe", heavy: true, fx: e.x, fz: e.z });
-  if (e.dead) return;
   e.state = "idle";
   e.t = 0;
   hitEnemy(e, DROP.dmg * e.fallH, 30, { heavy: true, src: "drop" });
