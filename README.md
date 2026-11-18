@@ -213,6 +213,7 @@ Screenshots go to `shots/`.
 | `tests/t18.mjs` | Interact and dodge bindings, the plaques, the close-up view, saved unlocks. Run in `hub` mode |
 | `tests/t19.mjs` | The plaques by touch on every device. Run in `hub` mode with `touch-all.mjs` |
 | `tests/t20.mjs` | Rock in the walkable field and the cave-in that uses it. Run in `smoke` mode |
+| `tests/t21.mjs` | The Riftwalker's rift ends, crossing and Drop. Run in `smoke` mode |
 
 The touch scripts `t14` and `t15` run under emulated phones and tablets. Run
 one device with `DEVICE=pixel-9 SCRIPT=$PWD/tests/t14.mjs node test.mjs smoke`,

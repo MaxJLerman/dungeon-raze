@@ -72,6 +72,47 @@ export default [
   DF.unlockClass('sapper'); c.in = DF.pickable().includes('sapper'); DF.UNLOCKED.clear(); DF.saveOpt();
   return { pass: Object.values(c).every(Boolean), c }; })()`,
   },
+  { name: "riftwalker", eval: fight("riftwalker", 4.2) },
+  {
+    name: "riftwalker cuts reach about 5 m",
+    eval: cls("riftwalker", `
+  const e = tp((e) => e.type === 'brute', 4.6); e.state = 'idle'; const h0 = e.hp, p0 = [p.x, p.z]; K('light');
+  DF.sim(0.5, () => { if (e.state !== 'hit') e.state = 'idle'; });
+  const moved = Math.hypot(p.x - p0[0], p.z - p0[1]);
+  return { pass: e.hp < h0 && moved < 1, hurt: h0 - e.hp, moved }; `),
+  },
+  {
+    name: "riftwalker's third cut throws a shard",
+    eval: cls("riftwalker", `
+  const e = tp((e) => e.type === 'brute', 9); e.state = 'idle'; let shard = false; K('light');
+  DF.sim(1.4, (i) => { if (i % 18 === 0) K('light'); e.state = 'idle'; if (G.projs.some((q) => q.kind === 'shard' && q.own !== 'e')) shard = true; });
+  return { pass: shard, shard }; `),
+  },
+  {
+    name: "riftwalker execution drops the body and the landing hurts the next one",
+    eval: cls("riftwalker", `
+  const e = tp((e) => e.type === 'husk', 2), o = G.enemies.find((x) => x !== e && x.type === 'brute');
+  // only these two, so nothing else can reach the player
+  G.enemies = [e, o]; G.projs = []; o.x = e.x + 1.5; o.z = e.z; o.state = 'idle'; const h0 = o.hp, hp0 = p.hp; e.state = 'stagger'; e.t = 0; e.dur = 3; DF.startExecute(e);
+  let top = 0; DF.sim(1.6, () => { top = Math.max(top, e.y); if (o.state !== 'hit') o.state = 'idle'; });
+  return { pass: e.dead && top > 1 && o.hp < h0 && p.hp === hp0 && e.y === 0, dead: e.dead, top, hurt: h0 - o.hp, lost: hp0 - p.hp, y: e.y }; `),
+  },
+  {
+    name: "riftwalker execution on the boss and the dummy",
+    eval: cls("riftwalker", `
+  const wd = tp((e) => e.def.boss, 2.5); wd.state = 'stagger'; wd.t = 0; wd.dur = 3; const h0 = wd.hp, at = [wd.x, wd.z]; DF.startExecute(wd); DF.sim(0.5);
+  const boss = h0 - wd.hp >= 119 && Math.hypot(wd.x - at[0], wd.z - at[1]) < 0.5 && !(wd.y > 0.05);
+  DF.enterHub(); const d = G.enemies.find((e) => e.def.dummy), d0 = [d.x, d.z]; d.state = 'stagger'; d.t = 0; d.dur = 3; DF.startExecute(d); DF.sim(1);
+  const dummy = !d.dead && Math.hypot(d.x - d0[0], d.z - d0[1]) < 0.01 && !(d.y > 0.05);
+  return { pass: boss && dummy, boss, dummy, lost: h0 - wd.hp }; `),
+  },
+  {
+    name: "riftwalker is hidden until unlocked",
+    eval: `(() => { DF.UNLOCKED.clear();
+  const c = { hidden: DF.CLASSES.riftwalker.hidden === true, out: !DF.pickable().includes('riftwalker') };
+  DF.unlockClass('riftwalker'); c.in = DF.pickable().includes('riftwalker'); DF.UNLOCKED.clear(); DF.saveOpt();
+  return { pass: Object.values(c).every(Boolean), c }; })()`,
+  },
   {
     name: "enforcer shotgun and execution",
     eval: cls("enforcer", `

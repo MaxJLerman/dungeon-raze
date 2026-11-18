@@ -39,6 +39,9 @@ const G = {
   fade: 0,
   // clock for the title screen's camera sway
   t0: 0,
+  // the Riftwalker's open rift ends, oldest first, and its Drop holes
+  rifts: [],
+  holes: [],
 };
 const keys = {},
   taps = {},
@@ -285,7 +288,8 @@ const WHITE = [1, 0.95, 0.8],
   ORANGE = [1, 0.5, 0.18],
   GOLD = [1, 0.85, 0.45],
   CRIMSON = [1, 0.28, 0.32],
-  HAZARD = [1, 0.92, 0.15];
+  HAZARD = [1, 0.92, 0.15],
+  MAGENTA = [0.95, 0.3, 0.75];
 
 // ---- classes ----
 const CLASSES = {
@@ -519,6 +523,47 @@ const CLASSES = {
         "Cave-in: bring the roof down on a pack and wall off the tunnel",
       ],
       ["Trait", "Your own blasts never hurt you, and they break guards faster"],
+    ],
+  },
+  riftwalker: {
+    name: "Riftwalker",
+    tag: "Rifts and a short blade",
+    hidden: true,
+    hp: 110,
+    stam: 105,
+    walk: 5.4,
+    run: 8.1,
+    chain: "v1",
+    heavy: "vsnap",
+    dash: "vstep",
+    ambush: 2,
+    back: 1.35,
+    parry: 0.2,
+    blockMul: 1.0,
+    chip: 0.1,
+    guardArc: 1.9,
+    col: MAGENTA,
+    dodge: { dist: 5.0, dur: 0.42, ifr: 0.3, cost: 20 },
+    tool: { id: "rift", name: "Rift", max: 4, ch: "◇" },
+    special: { id: "drop", name: "Drop", cost: 45 },
+    kit: [
+      [
+        "Attack",
+        "Cuts through small tears that reach about 5 m. The third throws a shard",
+      ],
+      ["Heavy", "A tear snaps shut on the target"],
+      [
+        "Tool",
+        "Rift ends. Open two: you, enemies and shots that go into one come out of the other",
+      ],
+      [
+        "Ability",
+        "Drop: the floor opens under a pack and it falls from the ceiling over your other rift",
+      ],
+      [
+        "Trait",
+        "Untouchable while passing through a rift, and the next hit after does more",
+      ],
     ],
   },
 };
@@ -1006,6 +1051,83 @@ const MOVES = {
     dir: 1,
     heavy: true,
   },
+  // riftwalker: `reach` cuts come out of a small tear beside the target, so
+  // they land from range; aimYaw looks that far for a target
+  v1: {
+    anim: "r",
+    wind: 0.16,
+    act: 0.08,
+    rec: 0.28,
+    dmg: 12,
+    post: 11,
+    range: 5.0,
+    arc: 0.6,
+    lunge: 0.3,
+    stam: 10,
+    next: "v2",
+    tilt: 0.3,
+    dir: 1,
+    reach: true,
+  },
+  v2: {
+    anim: "l",
+    wind: 0.15,
+    act: 0.08,
+    rec: 0.28,
+    dmg: 12,
+    post: 11,
+    range: 5.0,
+    arc: 0.6,
+    lunge: 0.3,
+    stam: 10,
+    next: "v3",
+    tilt: -0.3,
+    dir: -1,
+    reach: true,
+  },
+  v3: {
+    anim: "r",
+    wind: 0.18,
+    act: 0.05,
+    rec: 0.34,
+    stam: 11,
+    next: null,
+    proj: { speed: 26, dmg: 18, post: 16, kind: "shard", life: 0.9 },
+  },
+  vsnap: {
+    anim: "x",
+    wind: 0.38,
+    act: 0.1,
+    rec: 0.5,
+    dmg: 30,
+    post: 42,
+    range: 6.0,
+    arc: 0.6,
+    lunge: 0,
+    stam: 22,
+    next: null,
+    tilt: 0.9,
+    dir: 1,
+    heavy: true,
+    reach: true,
+  },
+  vstep: {
+    anim: "thrust",
+    wind: 0.12,
+    act: 0.12,
+    rec: 0.42,
+    dmg: 24,
+    post: 26,
+    range: 3.0,
+    arc: 1.2,
+    lunge: 5.0,
+    stam: 14,
+    next: null,
+    tilt: 0,
+    dir: 1,
+    heavy: true,
+    ifr: 0.3,
+  },
 };
 const EDEF = {
   husk: {
@@ -1418,6 +1540,8 @@ function resetRun() {
   if (G.world && G.world.clearRocks) G.world.clearRocks();
   G.caveins = [];
   G.mines = [];
+  G.rifts = [];
+  G.holes = [];
   G.insp = null;
   G.bossDead = false;
   G.bossSeen = false;
@@ -1546,6 +1670,8 @@ function respawn() {
   G.world.clearRocks();
   G.caveins = [];
   G.mines = [];
+  G.rifts = [];
+  G.holes = [];
   G.world.resolve(p, 0.6);
   G.projs = [];
   G.bombs = [];
@@ -1590,7 +1716,7 @@ function explode(x, z, r, dmg, post, c) {
   G.shake = Math.max(G.shake, r > 4.5 ? 0.9 : 0.45);
   SFX.slam();
   for (const e of G.enemies) {
-    if (e.dead) continue;
+    if (e.dead || e.state === "fall") continue;
     if (Math.hypot(e.x - x, e.z - z) < r + e.r && G.world.los(x, z, e.x, e.z))
       hitEnemy(e, dmg, post, { src: "aoe", heavy: true, fx: x, fz: z });
   }
@@ -1744,7 +1870,7 @@ function kill(e) {
     let b = null,
       bd = p.cls.ranged ? 22 : 13;
     for (const o of G.enemies)
-      if (!o.dead && o.aware) {
+      if (!o.dead && o.aware && o.state !== "fall") {
         const d = Math.hypot(o.x - p.x, o.z - p.z);
         if (d < bd) {
           bd = d;
@@ -1763,9 +1889,14 @@ function kill(e) {
   }
 }
 function hitEnemy(e, dmg, post, o = {}) {
-  if (e.dead) return;
+  if (e.dead || e.state === "fall") return;
   const p = G.player,
     c = p.cls;
+  // the Riftwalker's trait: the first hit after coming out of a rift
+  if (p.riftBonus > 0) {
+    dmg *= 1 + RIFT.bonus;
+    p.riftBonus = 0;
+  }
   let mult = 1;
   const close = o.src === "melee" || o.src === "blink" || o.src === "exec";
   const back = Math.abs(angDiff(e.yaw, Math.atan2(p.x - e.x, p.z - e.z))) > 2.1;
@@ -2014,7 +2145,7 @@ function pickLock(exclude) {
     bs = 1e9;
   const far = p.cls.ranged ? 34 : 24;
   for (const e of G.enemies) {
-    if (e.dead || e === exclude) continue;
+    if (e.dead || e === exclude || e.state === "fall") continue;
     const d = Math.hypot(e.x - p.x, e.z - p.z);
     if (d > far) continue;
     const a = Math.abs(angDiff(cam.yaw, Math.atan2(e.x - p.x, e.z - p.z)));
@@ -2034,7 +2165,7 @@ function aimYaw(base, range = 4.8, cone = 1.1) {
   let best = null,
     bs = 1e9;
   for (const e of G.enemies) {
-    if (e.dead) continue;
+    if (e.dead || e.state === "fall") continue;
     const d = Math.hypot(e.x - p.x, e.z - p.z);
     if (d > range + e.r) continue;
     const a = Math.abs(angDiff(base, Math.atan2(e.x - p.x, e.z - p.z)));
@@ -2054,7 +2185,7 @@ function aimRanged() {
   let best = null,
     bs = 1;
   for (const e of G.enemies) {
-    if (e.dead) continue;
+    if (e.dead || e.state === "fall") continue;
     const d = Math.hypot(e.x - p.x, e.z - p.z);
     if (d > 36) continue;
     const ey = Math.atan2(e.x - p.x, e.z - p.z),
@@ -2101,7 +2232,12 @@ function startMove(id, base, free) {
   p.t = 0;
   p.hitSet = new Set();
   p.arcDone = false;
-  p.aim = m.proj ? aimRanged() : aimYaw(base === undefined ? p.yaw : base);
+  const b0 = base === undefined ? p.yaw : base;
+  p.aim = m.proj
+    ? aimRanged()
+    : m.reach
+      ? aimYaw(b0, m.range + 0.5, 0.7)
+      : aimYaw(b0);
   p.buf = null;
   if (m.ifr) p.iframe = Math.max(p.iframe, m.ifr);
   return true;
@@ -2232,7 +2368,7 @@ const INSPECT_T = 0.5;
 const PLAQUE_TEXT = {
   enforcer: "The one who settles accounts",
   sapper: "The one who brings the roof down",
-  riftwalker: "Sealed",
+  riftwalker: "The one who is never where you left them",
 };
 // A code is a list of action names: fwd, back, left, right, dodge, heal and
 // tool, entered with whatever they are bound to. Its hash is taken over the
@@ -2241,6 +2377,7 @@ const PLAQUE_TEXT = {
 const SHIPPED_CODES = {
   enforcer: { hash: "14ac1f9c18e2c", len: 10 },
   sapper: { hash: "b469f1954f03b", len: 10 },
+  riftwalker: { hash: "d78746fe4dee0", len: 10 },
 };
 const PLAQUE_CODES = {};
 function resetPlaqueCodes() {
@@ -2473,7 +2610,7 @@ function useSpecial(ix, iz, il) {
       let best = null,
         bd = 1e9;
       for (const e of G.enemies) {
-        if (e.dead) continue;
+        if (e.dead || e.state === "fall") continue;
         const d = Math.hypot(e.x - p.x, e.z - p.z);
         if (
           d < 30 &&
@@ -2531,6 +2668,20 @@ function useSpecial(ix, iz, il) {
     p.throwT = 0.4;
     SFX.whoosh(true);
     startCaveIn(p.x + Math.sin(a) * ok, p.z + Math.cos(a) * ok);
+  } else if (sp.id === "drop") {
+    // the floor opens at the lock target or along the camera, short of walls
+    const a = p.lock ? Math.atan2(p.lock.x - p.x, p.lock.z - p.z) : cam.yaw,
+      far = p.lock
+        ? Math.min(CAVEIN.range, Math.hypot(p.lock.x - p.x, p.lock.z - p.z))
+        : 9;
+    let ok = 0.5;
+    for (let d = 0.5; d <= far; d += 0.25) {
+      if (w.fieldAt(p.x + Math.sin(a) * d, p.z + Math.cos(a) * d) > 0.3) ok = d;
+      else break;
+    }
+    p.yaw = a;
+    p.throwT = 0.3;
+    startDrop(p.x + Math.sin(a) * ok, p.z + Math.cos(a) * ok);
   } else if (sp.id === "grapple") {
     if (!startGrapple()) return false;
   } else if (sp.id === "volley") {
@@ -2594,6 +2745,29 @@ function useTool(ix, iz, il) {
     p.throwT = 0.25;
     fire({ speed: 22, dmg: 0, post: 0, kind: "sticky", life: 0.9 }, a);
     SFX.knife();
+  } else if (id === "rift") {
+    // along the camera, the furthest spot with room, from near to far
+    const a = cam.yaw,
+      w = G.world;
+    let ok = 0;
+    for (let d = RIFT.near; d <= RIFT.far + 1e-6; d += 0.25) {
+      if (w.fieldAt(p.x + Math.sin(a) * d, p.z + Math.cos(a) * d) < RIFT.room)
+        break;
+      ok = d;
+    }
+    const r = ok
+      ? openRift(p.x + Math.sin(a) * ok, p.z + Math.cos(a) * ok, a + PI)
+      : "room";
+    if (typeof r === "string") {
+      say(
+        r === "close" ? "Too close to the other rift" : "No room for a rift",
+        "bad",
+        0.8,
+      );
+      return false;
+    }
+    p.yaw = a;
+    p.throwT = 0.25;
   } else if (id === "mine") {
     plantMine(p.x, p.z);
     p.throwT = 0.3;
@@ -2845,7 +3019,7 @@ function playerUpdate(dt) {
           const hx = Math.sin(p.yaw),
             hz = Math.cos(p.yaw);
           for (const e of G.enemies) {
-            if (e.dead) continue;
+            if (e.dead || e.state === "fall") continue;
             const dx = e.x - p.x,
               dz = e.z - p.z,
               d = Math.hypot(dx, dz);
@@ -2899,7 +3073,35 @@ function playerUpdate(dt) {
             c: c.col,
             wd: m.anim === "bash" ? 0.7 : 0.26,
           });
-        else {
+        else if (m.reach) {
+          // the cut comes out of a small tear 1.4 m short of the target, to
+          // one side
+          const e = G.enemies.find(
+              (e) =>
+                !e.dead &&
+                Math.hypot(e.x - p.x, e.z - p.z) < m.range + e.r &&
+                Math.abs(angDiff(p.yaw, Math.atan2(e.x - p.x, e.z - p.z))) <
+                  m.arc / 2 + 0.2,
+            ),
+            d = e ? Math.max(0.8, Math.hypot(e.x - p.x, e.z - p.z) - 1.4) : 2,
+            sx = -Math.cos(p.yaw) * 0.5 * m.dir,
+            sz = Math.sin(p.yaw) * 0.5 * m.dir;
+          G.arcs.push({
+            x: p.x + Math.sin(p.yaw) * d + sx,
+            y: 1.2,
+            z: p.z + Math.cos(p.yaw) * d + sz,
+            yaw: p.yaw,
+            tilt: m.tilt,
+            r0: 0.2,
+            r1: 1.6,
+            a0: 1.25 * m.dir,
+            a1: -1.25 * m.dir,
+            t: 0,
+            dur: 0.24,
+            c: c.col,
+            tear: true,
+          });
+        } else {
           const wd = m.wide || 1;
           G.arcs.push({
             x: p.x,
@@ -2939,7 +3141,7 @@ function playerUpdate(dt) {
         t < m.wind + m.act + 0.03
       ) {
         for (const e of G.enemies) {
-          if (e.dead || p.hitSet.has(e)) continue;
+          if (e.dead || e.state === "fall" || p.hitSet.has(e)) continue;
           const dx = e.x - p.x,
             dz = e.z - p.z,
             d = Math.hypot(dx, dz);
@@ -3052,7 +3254,8 @@ function playerUpdate(dt) {
         p.hp = Math.min(p.maxHp, p.hp + 10);
         p.focus = Math.min(100, p.focus + 12);
         const sniper = p.clsId === "enforcer",
-          sapper = p.clsId === "sapper";
+          sapper = p.clsId === "sapper",
+          rift = p.clsId === "riftwalker";
         if (sniper) {
           // a tracer all the way to the target, and a sticky bomb back
           SFX.gun(true);
@@ -3104,6 +3307,9 @@ function playerUpdate(dt) {
           SFX.thud(true);
           SFX.mine();
         }
+        if (rift && (e.def.boss || e.def.dummy))
+          // too heavy to drop: a tear snaps on it where it stands
+          sparks(e.x, 1.2 * e.fig.o.sc, e.z, 26, c.col, 8, 0.5);
         if (e.def.boss) {
           e.state = "recoil";
           e.t = 0;
@@ -3125,6 +3331,13 @@ function playerUpdate(dt) {
           e.hp = 0;
           G.hitstop = 0.13;
           kill(e);
+          if (rift) {
+            // the floor opens under it: it falls out of the roof over the
+            // other end of a pair, or back onto the spot, and lands hard
+            const [lx, lz] = dropSpot(e.x, e.z);
+            dropEnemy(e, lx, lz, 0, 1, true);
+            SFX.hole();
+          }
           if (sapper) {
             const k = Math.hypot(bx - e.x, bz - e.z) / 0.4;
             const a = Math.atan2(bx - e.x, bz - e.z);
@@ -3356,7 +3569,20 @@ function enemyUpdate(e, dt) {
       e.kick.t -= dt;
       w.resolve(e, e.r);
     }
-    if (e.t > 2.4) e.gone = true;
+    // an execution's body falling out of the roof; it lands in a blast
+    if (e.y > 0 && e.fallH > 0) {
+      e.vy -= DROP.g * dt;
+      e.y += e.vy * dt;
+      if (e.y <= 0) landEnemy(e);
+    }
+    if (e.t > 2.4 && !(e.y > 0)) e.gone = true;
+    return;
+  }
+  if (e.state === "fall") {
+    // dropped through the floor, out of the roof: out of the fight till down
+    e.vy -= DROP.g * dt;
+    e.y += e.vy * dt;
+    if (e.y <= 0) landEnemy(e);
     return;
   }
   if (e.yank) {
@@ -4070,14 +4296,22 @@ function minesUpdate(dt) {
     m.t += dt;
     if (m.fuse !== null || m.t < MINE.arm) continue;
     for (const e of G.enemies)
-      if (!e.dead && Math.hypot(e.x - m.x, e.z - m.z) < MINE.trig + e.r) {
+      if (
+        !e.dead &&
+        e.state !== "fall" &&
+        Math.hypot(e.x - m.x, e.z - m.z) < MINE.trig + e.r
+      ) {
         boomMine(m);
         break;
       }
     for (const o of m.links) {
       if (o.t < MINE.arm || o.fuse !== null) continue;
       for (const e of G.enemies)
-        if (!e.dead && segDist(e.x, e.z, m.x, m.z, o.x, o.z) < e.r) {
+        if (
+          !e.dead &&
+          e.state !== "fall" &&
+          segDist(e.x, e.z, m.x, m.z, o.x, o.z) < e.r
+        ) {
           boomMine(m);
           boomMine(o);
           SFX.wire();
@@ -4104,6 +4338,267 @@ function blowMine(m) {
     )
       o.fuse = MINE.chain;
 }
+// ---- the Riftwalker's rifts ----
+// An end is a short line across its facing; a pair carries what crosses one
+// line out of the other (riftMove). Rifts never touch the walkable field.
+const RIFT = {
+  // half the width of an end's line, and how tall it is drawn
+  half: 0.9,
+  tall: 2.2,
+  life: 20,
+  // the tool opens an end this far ahead, at least and at most
+  near: 2,
+  far: 8,
+  // two ends no closer than this; the field an end needs
+  apart: 3,
+  room: 1.0,
+  // an enemy that came out of a rift passes through ends as air this long
+  rest: 3,
+  // the trait: untouchable this long after a crossing, and the next hit
+  // within bonusT does bonus more
+  safe: 0.4,
+  bonus: 0.5,
+  bonusT: 2,
+  // the player cannot cross again this soon
+  cd: 0.25,
+};
+let riftId = 0;
+// the end, or why not: "close" to the other end, or no "room"
+function openRift(x, z, yaw) {
+  const w = G.world;
+  // the oldest of a full pair is about to go, so only the newer one counts
+  for (const o of G.rifts.length >= 2 ? G.rifts.slice(1) : G.rifts)
+    if (Math.hypot(o.x - x, o.z - z) < RIFT.apart) return "close";
+  if (w.fieldAt(x, z) < RIFT.room) return "room";
+  const ux = Math.cos(yaw),
+    uz = -Math.sin(yaw);
+  for (let d = -RIFT.half; d <= RIFT.half + 1e-6; d += RIFT.half / 3)
+    if (w.fieldAt(x + ux * d, z + uz * d) < 0.3) return "room";
+  const e = { x, z, yaw, t: 0, life: RIFT.life, id: ++riftId };
+  // the oldest goes; a pair is never more than two
+  while (G.rifts.length >= 2) G.rifts.shift();
+  G.rifts.push(e);
+  SFX.tear();
+  return e;
+}
+function riftPair(A) {
+  if (G.rifts.length < 2) return null;
+  return G.rifts[0] === A ? G.rifts[1] : G.rifts[1] === A ? G.rifts[0] : null;
+}
+// turn a vector (x, z) by angle a: a facing yaw becomes yaw + a
+function riftTurn(x, z, a) {
+  const c = Math.cos(a),
+    s = Math.sin(a);
+  return [x * c + z * s, -x * s + z * c];
+}
+// the angle the last crossing turned its mover by
+let riftA = 0;
+// Did o, moving from (ox, oz) to where it is now, cross an end of a pair? If
+// so it comes out of the other end, offset and heading turned by
+// yaw_B - yaw_A + PI, on the side that turn puts it, clear of the line by
+// its radius r, and put through resolve (r 0 for a shot: no resolve).
+function riftMove(o, ox, oz, r) {
+  if (G.rifts.length < 2) return false;
+  for (const A of G.rifts) {
+    const B = riftPair(A),
+      nx = Math.sin(A.yaw),
+      nz = Math.cos(A.yaw),
+      s0 = (ox - A.x) * nx + (oz - A.z) * nz,
+      s1 = (o.x - A.x) * nx + (o.z - A.z) * nz;
+    if (!((s0 > 0 && s1 <= 0) || (s0 < 0 && s1 >= 0))) continue;
+    const k = s0 / (s0 - s1),
+      qx = ox + (o.x - ox) * k,
+      qz = oz + (o.z - oz) * k;
+    if (Math.abs((qx - A.x) * nz - (qz - A.z) * nx) > RIFT.half) continue;
+    const a = B.yaw - A.yaw + PI,
+      [rx, rz] = riftTurn(qx - A.x, qz - A.z, a),
+      [dx, dz] = riftTurn(o.x - ox, o.z - oz, a),
+      bx = Math.sin(B.yaw),
+      bz = Math.cos(B.yaw),
+      sd = dx * bx + dz * bz >= 0 ? 1 : -1;
+    o.x = B.x + rx + bx * sd * (r + 0.15);
+    o.z = B.z + rz + bz * sd * (r + 0.15);
+    if ("vx" in o) [o.vx, o.vz] = riftTurn(o.vx, o.vz, a);
+    if ("yaw" in o) o.yaw += a;
+    if (r > 0) G.world.resolve(o, r);
+    A.flash = B.flash = 1;
+    riftA = a;
+    return true;
+  }
+  return false;
+}
+// where the player and every enemy stood before this update moved them, or
+// null with no pair open
+function riftSnap() {
+  if (G.rifts.length < 2) return null;
+  const e = new Map();
+  for (const o of G.enemies) e.set(o, [o.x, o.z]);
+  return { p: [G.player.x, G.player.z], e };
+}
+// bodies that crossed an end this update. The player, not while dead,
+// executing or inspecting, keeps a lock and turns the camera with them, and
+// gets the trait. A regular enemy that comes out rests: ends are air to it
+// for RIFT.rest. The boss, the dummy, a falling or airborne enemy never cross.
+function riftBodies(prev) {
+  const p = G.player;
+  if (
+    p.state !== "dead" &&
+    p.state !== "execute" &&
+    p.state !== "inspect" &&
+    !(p.riftCD > 0) &&
+    riftMove(p, prev.p[0], prev.p[1], p.r)
+  ) {
+    const a = riftA;
+    [p.ddx, p.ddz] = riftTurn(p.ddx || 0, p.ddz || 0, a);
+    [p.kx, p.kz] = riftTurn(p.kx || 0, p.kz || 0, a);
+    if (p.aim !== undefined) p.aim += a;
+    cam.yaw += a;
+    cam.px = p.x;
+    cam.pz = p.z;
+    p.iframe = Math.max(p.iframe, RIFT.safe);
+    p.riftBonus = RIFT.bonusT;
+    p.riftCD = RIFT.cd;
+    SFX.cross();
+  }
+  for (const e of G.enemies) {
+    if (e.dead || e.def.boss || e.def.dummy || e.state === "fall") continue;
+    if (e.rest > 0 || e.y > 0.3) continue;
+    const q = prev.e.get(e);
+    if (!q || !riftMove(e, q[0], q[1], e.r)) continue;
+    [e.kx, e.kz] = riftTurn(e.kx || 0, e.kz || 0, riftA);
+    e.route = null;
+    e.rest = RIFT.rest;
+  }
+}
+// a shot that crossed an end this step; a regular enemy's shot becomes the
+// player's, as a parried one does. The boss's shots go through as if the
+// tear were air.
+function riftShot(pr, ox, oz) {
+  if (pr.src && pr.src.def && pr.src.def.boss) return;
+  if (!riftMove(pr, ox, oz, 0)) return;
+  if (pr.own === "e") {
+    pr.own = "p";
+    pr.post = 20;
+    pr.c = MAGENTA;
+    pr.life = Math.max(pr.life, 1.2);
+  }
+}
+function riftsUpdate(dt) {
+  const p = G.player;
+  if (p.riftCD > 0) p.riftCD -= dt;
+  if (p.riftBonus > 0) p.riftBonus = Math.max(0, p.riftBonus - dt);
+  for (const e of G.enemies) if (e.rest > 0) e.rest -= dt;
+  for (const e of G.rifts) {
+    e.t += dt;
+    if (e.flash > 0) e.flash = Math.max(0, e.flash - dt * 3);
+  }
+  const n = G.rifts.length;
+  G.rifts = G.rifts.filter((e) => e.t < e.life);
+  if (G.rifts.length < n) SFX.shut();
+}
+// ---- Drop: the floor opens under a pack ----
+const DROP = {
+  fuse: 0.5,
+  r: 2.2,
+  g: 22,
+  // damage per metre fallen
+  dmg: 4.5,
+  // a landing hurts other enemies round it, never the player
+  impact: { r: 1.6, dmg: 14, post: 20 },
+  // the blast an execution's body lands in
+  exec: { r: 3.2, dmg: 45, post: 45 },
+};
+// where something dropped at (x, z) lands: under the end of an open pair
+// further from it, otherwise back on the spot
+function dropSpot(x, z) {
+  if (G.rifts.length === 2) {
+    const [a, b] = G.rifts;
+    return Math.hypot(a.x - x, a.z - z) > Math.hypot(b.x - x, b.z - z)
+      ? [a.x, a.z]
+      : [b.x, b.z];
+  }
+  return [x, z];
+}
+function startDrop(x, z) {
+  const [lx, lz] = dropSpot(x, z),
+    h = { x, z, t: 0, lx, lz };
+  G.holes.push(h);
+  SFX.hole();
+  return h;
+}
+// e drops out of the ceiling over the i-th of n spots round (lx, lz). It is
+// out of the fight (state "fall") until it lands. kill: an execution's body.
+function dropEnemy(e, lx, lz, i, n, kill) {
+  const w = G.world,
+    a = (i / Math.max(1, n)) * TAU,
+    rr = n > 1 ? 0.9 + e.r : 0,
+    o = { x: lx + Math.sin(a) * rr, z: lz + Math.cos(a) * rr };
+  for (let k = 0; k < 4; k++) w.resolve(o, e.r);
+  e.x = o.x;
+  e.z = o.z;
+  e.y = w.ceilAt(o.x, o.z) - 0.6;
+  e.vy = 0;
+  e.fallH = e.y;
+  e.token = false;
+  e.route = null;
+  e.kx = e.kz = 0;
+  if (!kill) {
+    e.wasAware = e.aware;
+    e.state = "fall";
+  }
+  if (G.player.lock === e) G.player.lock = null;
+  // a small tear in the roof where it comes out
+  sparks(o.x, e.y, o.z, 16, MAGENTA, 4, 0.5);
+}
+function landEnemy(e) {
+  e.y = 0;
+  e.vy = 0;
+  G.shake = Math.max(G.shake, 0.5);
+  SFX.thud(true);
+  sparks(e.x, 0.2, e.z, 20, [0.6, 0.55, 0.5], 5, 0.5);
+  // an execution's body lands in one blast
+  if (e.dead) {
+    explode(e.x, e.z, DROP.exec.r, DROP.exec.dmg, DROP.exec.post, MAGENTA);
+    return;
+  }
+  const im = DROP.impact;
+  for (const o of G.enemies)
+    if (
+      o !== e &&
+      !o.dead &&
+      o.state !== "fall" &&
+      Math.hypot(o.x - e.x, o.z - e.z) < im.r + o.r
+    )
+      hitEnemy(o, im.dmg, im.post, { src: "aoe", heavy: true, fx: e.x, fz: e.z });
+  e.state = "idle";
+  e.t = 0;
+  // an area hit, as the Sapper's crush is: no ambush bonus for a fall
+  hitEnemy(e, DROP.dmg * e.fallH, 30, { heavy: true, src: "aoe", fx: e.x, fz: e.z });
+  if (!e.dead) {
+    if (e.wasAware) alertE(e, true);
+    stagger(e, CAVEIN.stag[e.type] || 1);
+    // it came out of a rift: ends are air to it until its stagger and a
+    // rest are over, so it does not walk straight back through the far end
+    e.rest = e.dur + RIFT.rest;
+  }
+}
+function holesUpdate(dt) {
+  for (const h of G.holes) {
+    h.t += dt;
+    if (h.t < DROP.fuse) continue;
+    const fall = G.enemies.filter(
+      (e) =>
+        !e.dead &&
+        !e.def.boss &&
+        !e.def.dummy &&
+        e.state !== "fall" &&
+        Math.hypot(e.x - h.x, e.z - h.z) < DROP.r + e.r,
+    );
+    fall.forEach((e, i) => dropEnemy(e, h.lx, h.lz, i, fall.length));
+    h.done = true;
+  }
+  G.holes = G.holes.filter((h) => !h.done);
+}
 function projUpdate(dt) {
   const p = G.player,
     w = G.world;
@@ -4111,6 +4606,8 @@ function projUpdate(dt) {
     pr.life -= dt;
     pr.x += pr.vx * dt;
     pr.z += pr.vz * dt;
+    if (G.rifts.length === 2)
+      riftShot(pr, pr.x - pr.vx * dt, pr.z - pr.vz * dt);
     const wall = w.fieldAt(pr.x, pr.z) < 0.12;
     if (pr.kind === "sticky" && (wall || pr.life <= 0)) {
       // it sticks where it stopped, a step back from a wall
@@ -4156,7 +4653,8 @@ function projUpdate(dt) {
       }
     } else {
       for (const e of G.enemies) {
-        if (e.dead || (pr.hitSet && pr.hitSet.has(e))) continue;
+        if (e.dead || e.state === "fall" || (pr.hitSet && pr.hitSet.has(e)))
+          continue;
         if (Math.hypot(pr.x - e.x, pr.z - e.z) < e.r + 0.45 + (pr.rad || 0)) {
           if (pr.kind === "sticky") {
             plantBomb(pr.x, pr.z, e);
@@ -4186,10 +4684,10 @@ function separate() {
     es = G.enemies;
   for (let i = 0; i < es.length; i++) {
     const a = es[i];
-    if (a.dead) continue;
+    if (a.dead || a.state === "fall") continue;
     for (let j = i + 1; j < es.length; j++) {
       const b = es[j];
-      if (b.dead) continue;
+      if (b.dead || b.state === "fall") continue;
       const dx = b.x - a.x,
         dz = b.z - a.z,
         d = Math.hypot(dx, dz),
@@ -4246,12 +4744,16 @@ function update(dt) {
     if (bd < bc.r) G.inBoss = true;
     else if (bd > bc.r + PURSUIT.bossPad) G.inBoss = false;
   }
+  const prev = riftSnap();
   playerUpdate(dt);
   for (const e of G.enemies) enemyUpdate(e, dt);
+  if (prev) riftBodies(prev);
   projUpdate(dt);
   bombsUpdate(dt);
   caveUpdate(dt);
   minesUpdate(dt);
+  riftsUpdate(dt);
+  holesUpdate(dt);
   for (const q of G.pending) {
     q.t -= dt;
     if (q.t <= 0) {

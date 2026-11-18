@@ -30,8 +30,11 @@ is what you need to change the code without breaking it.
   hidden class, the Enforcer.
 - Branch `feat/sapper` added the second hidden class, the Sapper: a
   sledgehammer, landmines joined by tripwires, and a cave-in that crushes a
-  pack and walls off a tunnel for a while. Only the Riftwalker plaque is
-  still sealed.
+  pack and walls off a tunnel for a while.
+- Branch `feat/riftwalker` added the third and last plaque class, the
+  Riftwalker: paired rift ends that the player, regular enemies and shots
+  pass through, and a Drop that sends a pack through the floor and out of
+  the roof. No plaque is sealed now.
 
 ## Rules of the build
 
@@ -461,6 +464,55 @@ is what you need to change the code without breaking it.
     where it lands. The boss and the dummy are not kicked; the blast goes off
     on them.
   - `resetRun` and `respawn` clear the rock, `G.caveins` and `G.mines`.
+- The Riftwalker. A melee class with `reach` cuts (`v1`, `v2`) that land from
+  about 5 m, a thrown shard (`v3`, a real shot), a tear that snaps shut
+  (`vsnap`) and a step through a short rift (`vstep`, a lunge with no real rift, so it never triggers the trait).
+  - **Rift ends** (tool) are entries in `G.rifts`, at most two, oldest
+    first: `{ x, z, yaw, t, life, id }`, `yaw` facing the player when it
+    opened. `openRift(x, z, yaw)` returns the end, or `"close"` or `"room"`
+    when refused (a refused tool press spends nothing). A third end shifts
+    out the oldest, so only the newer end counts for `"close"`;
+    `riftsUpdate` closes ends after `RIFT.life`.
+  - **Crossing.** `riftMove(o, ox, oz, r)` is the one transform: a mover
+    whose path in the step crosses an end's line (within `RIFT.half` of its
+    centre, from either face) comes out of the other end, offset, direction
+    and `yaw` turned by `yaw_B - yaw_A + PI`, `r + 0.15` clear of the line,
+    then through `resolve` (shots pass `r` 0 and skip it). `update` takes a
+    snapshot (`riftSnap`) before anything moves and calls `riftBodies` after
+    the enemies have moved; `projUpdate` calls `riftShot` right after a shot
+    moves, before its wall and hit checks.
+  - The player crosses in any state but `dead`, `execute` and `inspect`. The
+    camera turns with them, a lock is kept, the dodge direction, knockback
+    and aim turn too, and the trait applies: `RIFT.safe` of invulnerability
+    and `p.riftBonus`, which `hitEnemy` spends on the next hit for
+    `RIFT.bonus` more.
+  - A regular enemy keeps its state, drops its route and then rests
+    (`e.rest`, `RIFT.rest`): ends are air to it until it runs out, so a pair
+    cannot hold a pack off for good. The boss, the dummy, a falling enemy
+    and one in the air (`e.y > 0.3`) never cross.
+  - A regular enemy's shot that comes out of a rift becomes the player's, as
+    a parried one does. The boss's shots go through as if the tear were air.
+  - Rifts never change the walkable field, sight or routes.
+  - **Drop** (ability). `startDrop(x, z)` adds a hole to `G.holes` with its
+    landing spot fixed then (`dropSpot`: under the end of an open pair
+    further from it, or the spot itself). After `DROP.fuse`, `holesUpdate`
+    sends every regular enemy over it to `dropEnemy`: it appears under the
+    ceiling (`ceilAt`) over its spot in state `fall`, out of the fight until
+    `landEnemy`, which hurts it by the height fallen (an `aoe` hit, so no
+    ambush bonus), forces a stagger by the Sapper's rule, sets `e.rest` to
+    the stagger plus `RIFT.rest` so it does not walk straight back through
+    the far end, and hurts other enemies round it. Landings never hurt the
+    player. **A falling enemy is skipped by** `hitEnemy`, `pickLock`,
+    `aimYaw`, `aimRanged`, `explode`, the melee hit loop, the shot hit loop,
+    the Starfall target, mines and tripwires, `separate`, `riftBodies` and
+    `kill`'s relock.
+    A new way of hitting or targeting an enemy must skip it too.
+  - **Execution.** The enemy is killed, then dropped like a Drop (its body
+    falls in the `dead` case of `enemyUpdate`) and lands in one blast
+    (`DROP.exec`). The boss takes the execution in place; the dummy stands
+    back up.
+  - `resetRun` and `respawn` clear `G.rifts` and `G.holes`; both rebuild
+    every enemy, so nothing is left falling.
 - `G.insp` is set only while the player is in `inspect`. Anything that moves
   them out of it closes the plaque on the next update.
 
@@ -536,12 +588,13 @@ is what you need to change the code without breaking it.
   is tall because the resting camera looks down, so an enemy straight ahead
   sits above the centre. The HUD only reads enemies; looking never wakes one.
 - `EDEF.dummy` is the training dummy. Its `dummy: true` flag is honoured in
-  seven places: `makeEnemy` (always aware, so no ambush bonus and its bar
+  nine places: `makeEnemy` (always aware, so no ambush bonus and its bar
   shows), `enemyUpdate` (pinned in place, no AI), `hitEnemy` (health restored
   after every hit), `kill` (refuses), the `execute` case of `playerUpdate`
-  (stands back up, and is not kicked by the Sapper) and `caveImpact` and
-  `separate` (not pushed out of the rubble). Any new way of killing or moving an enemy must
-  respect it.
+  (stands back up, and is not kicked by the Sapper or dropped by the
+  Riftwalker), `caveImpact` and `separate` (not pushed out of the rubble),
+  and `riftBodies` and `holesUpdate` (never crosses a rift, never falls).
+  Any new way of killing or moving an enemy must respect it.
 
 ## Recipes
 
@@ -552,7 +605,9 @@ Edit `MOVES` in `06_game.js`. Fields: `wind`, `act`, `rec` (seconds), `dmg`,
 (distance moved), `stam`, `next` (the chained move), `anim`, `tilt` and `dir`
 (slash arc shape), `heavy`, `lance` (straight thrust effect), and `blast`
 (`{ d, r, dmg, post }`: an `explode` `d` metres ahead when the act starts,
-in place of the melee hit). A ranged move has
+in place of the melee hit), and `reach` (aims as far as `range`, drawn as a
+cut out of a small tear beside the target; give it a narrow `arc`). A ranged
+move has
 `proj` instead of the melee fields: `speed`, `dmg`, `post` and `kind`, with
 `life`, `big` and `heavy` optional. `pellets` fires that many shots at once,
 `spread` radians apart. A `proj` move with a `lunge` slides the player
@@ -634,8 +689,13 @@ The class picker and HUD read `CLASSES` and need no changes.
   plaque and skips when that file is missing.
 - Run `tests/t19.mjs` on every device after any change to plaques by touch:
   `node tests/touch-all.mjs tests/t19.mjs hub`.
-- The Enforcer's steps (bombs, grapple, shotgun, sniper execution) and the
-  Sapper's (slam, mines, wires, execution) are in `tests/t6.mjs`.
+- The Enforcer's steps (bombs, grapple, shotgun, sniper execution), the
+  Sapper's (slam, mines, wires, execution) and the Riftwalker's (reach,
+  shard, execution) are in `tests/t6.mjs`.
+- Run `tests/t21.mjs` after any change to rifts, Drop or the `fall` state:
+  `SCRIPT=$PWD/tests/t21.mjs node test.mjs smoke`. It works in a tunnel of
+  cave 99; `along(t, d)` centres a point across the tunnel, because route
+  points hug a wall.
 - Run `tests/t20.mjs` after any change to `fieldFns` rock or the Sapper's
   cave-in: `SCRIPT=$PWD/tests/t20.mjs node test.mjs smoke`. It checks rock
   on a hand-built corridor, then cave-ins in a tunnel of cave 99.
@@ -683,6 +743,9 @@ The class picker and HUD read `CLASSES` and need no changes.
 - The Sapper is untested by hand. Its numbers, the cave-in's size and how
   long rubble stands were set without a playtest. Rubble is drawn as a heap
   about head high, while it blocks sight and shots as a full wall.
+- The Riftwalker is untested by hand. Its numbers, the reach, how long ends
+  stay open, the rest time and Drop's fall damage were set without a
+  playtest. Nobody can see through a rift; ends are drawn as glowing slits.
 - iPhones cannot run the file directly; they play at
   https://maxjlerman.github.io/dungeon-raze/.
 - Touch was checked only in Chromium device emulation. Fullscreen, the
@@ -718,8 +781,8 @@ The class picker and HUD read `CLASSES` and need no changes.
    clearing slam shockwaves, jump attacks, invulnerability) is undecided; ask
    the owner before building it. The floor is flat, so there is nothing to
    jump onto. A touch Jump button must fit the owner's honeycomb layout.
-8. Hidden classes and joke classes. See `docs/ideas/joke-classes.md`. Still
-   to come: the Riftwalker kit, quests on
+8. Hidden classes and joke classes. See `docs/ideas/joke-classes.md`. All
+   three plaque classes are built. Still to come: the joke classes, quests on
    the plaques that open portals D to S to a class, and the in-game hunt that
    leads players to the hidden list of codes.
 
