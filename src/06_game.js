@@ -1892,6 +1892,11 @@ function hitEnemy(e, dmg, post, o = {}) {
   if (e.dead) return;
   const p = G.player,
     c = p.cls;
+  // the Riftwalker's trait: the first hit after coming out of a rift
+  if (p.riftBonus > 0) {
+    dmg *= 1 + RIFT.bonus;
+    p.riftBonus = 0;
+  }
   let mult = 1;
   const close = o.src === "melee" || o.src === "blink" || o.src === "exec";
   const back = Math.abs(angDiff(e.yaw, Math.atan2(p.x - e.x, p.z - e.z))) > 2.1;
@@ -4332,8 +4337,113 @@ function riftPair(A) {
   if (G.rifts.length < 2) return null;
   return G.rifts[0] === A ? G.rifts[1] : G.rifts[1] === A ? G.rifts[0] : null;
 }
+// turn a vector (x, z) by angle a: a facing yaw becomes yaw + a
+function riftTurn(x, z, a) {
+  const c = Math.cos(a),
+    s = Math.sin(a);
+  return [x * c + z * s, -x * s + z * c];
+}
+// the angle the last crossing turned its mover by
+let riftA = 0;
+// Did o, moving from (ox, oz) to where it is now, cross an end of a pair? If
+// so it comes out of the other end, offset and heading turned by
+// yaw_B - yaw_A + PI, on the side that turn puts it, clear of the line by
+// its radius r, and put through resolve (r 0 for a shot: no resolve).
+function riftMove(o, ox, oz, r) {
+  if (G.rifts.length < 2) return false;
+  for (const A of G.rifts) {
+    const B = riftPair(A),
+      nx = Math.sin(A.yaw),
+      nz = Math.cos(A.yaw),
+      s0 = (ox - A.x) * nx + (oz - A.z) * nz,
+      s1 = (o.x - A.x) * nx + (o.z - A.z) * nz;
+    if (!((s0 > 0 && s1 <= 0) || (s0 < 0 && s1 >= 0))) continue;
+    const k = s0 / (s0 - s1),
+      qx = ox + (o.x - ox) * k,
+      qz = oz + (o.z - oz) * k;
+    if (Math.abs((qx - A.x) * nz - (qz - A.z) * nx) > RIFT.half) continue;
+    const a = B.yaw - A.yaw + PI,
+      [rx, rz] = riftTurn(qx - A.x, qz - A.z, a),
+      [dx, dz] = riftTurn(o.x - ox, o.z - oz, a),
+      bx = Math.sin(B.yaw),
+      bz = Math.cos(B.yaw),
+      sd = dx * bx + dz * bz >= 0 ? 1 : -1;
+    o.x = B.x + rx + bx * sd * (r + 0.15);
+    o.z = B.z + rz + bz * sd * (r + 0.15);
+    if ("vx" in o) [o.vx, o.vz] = riftTurn(o.vx, o.vz, a);
+    if ("yaw" in o) o.yaw += a;
+    if (r > 0) G.world.resolve(o, r);
+    A.flash = B.flash = 1;
+    riftA = a;
+    return true;
+  }
+  return false;
+}
+// where the player and every enemy stood before this update moved them, or
+// null with no pair open
+function riftSnap() {
+  if (G.rifts.length < 2) return null;
+  const e = new Map();
+  for (const o of G.enemies) e.set(o, [o.x, o.z]);
+  return { p: [G.player.x, G.player.z], e };
+}
+// bodies that crossed an end this update. The player, not while dead,
+// executing or inspecting, keeps a lock and turns the camera with them, and
+// gets the trait. A regular enemy that comes out rests: ends are air to it
+// for RIFT.rest. The boss, the dummy, a falling or airborne enemy never cross.
+function riftBodies(prev) {
+  const p = G.player;
+  if (
+    p.state !== "dead" &&
+    p.state !== "execute" &&
+    p.state !== "inspect" &&
+    !(p.riftCD > 0) &&
+    riftMove(p, prev.p[0], prev.p[1], p.r)
+  ) {
+    const a = riftA;
+    [p.ddx, p.ddz] = riftTurn(p.ddx || 0, p.ddz || 0, a);
+    [p.kx, p.kz] = riftTurn(p.kx || 0, p.kz || 0, a);
+    if (p.aim !== undefined) p.aim += a;
+    cam.yaw += a;
+    cam.px = p.x;
+    cam.pz = p.z;
+    p.iframe = Math.max(p.iframe, RIFT.safe);
+    p.riftBonus = RIFT.bonusT;
+    p.riftCD = RIFT.cd;
+    SFX.cross();
+  }
+  for (const e of G.enemies) {
+    if (e.dead || e.def.boss || e.def.dummy || e.state === "fall") continue;
+    if (e.rest > 0 || e.y > 0.3) continue;
+    const q = prev.e.get(e);
+    if (!q || !riftMove(e, q[0], q[1], e.r)) continue;
+    [e.kx, e.kz] = riftTurn(e.kx || 0, e.kz || 0, riftA);
+    e.route = null;
+    e.rest = RIFT.rest;
+  }
+}
+// a shot that crossed an end this step; a regular enemy's shot becomes the
+// player's, as a parried one does. The boss's shots go through as if the
+// tear were air.
+function riftShot(pr, ox, oz) {
+  if (pr.src && pr.src.def && pr.src.def.boss) return;
+  if (!riftMove(pr, ox, oz, 0)) return;
+  if (pr.own === "e") {
+    pr.own = "p";
+    pr.post = 20;
+    pr.c = MAGENTA;
+    pr.life = Math.max(pr.life, 1.2);
+  }
+}
 function riftsUpdate(dt) {
-  for (const e of G.rifts) e.t += dt;
+  const p = G.player;
+  if (p.riftCD > 0) p.riftCD -= dt;
+  if (p.riftBonus > 0) p.riftBonus = Math.max(0, p.riftBonus - dt);
+  for (const e of G.enemies) if (e.rest > 0) e.rest -= dt;
+  for (const e of G.rifts) {
+    e.t += dt;
+    if (e.flash > 0) e.flash = Math.max(0, e.flash - dt * 3);
+  }
   const n = G.rifts.length;
   G.rifts = G.rifts.filter((e) => e.t < e.life);
   if (G.rifts.length < n) SFX.shut();
@@ -4345,6 +4455,8 @@ function projUpdate(dt) {
     pr.life -= dt;
     pr.x += pr.vx * dt;
     pr.z += pr.vz * dt;
+    if (G.rifts.length === 2)
+      riftShot(pr, pr.x - pr.vx * dt, pr.z - pr.vz * dt);
     const wall = w.fieldAt(pr.x, pr.z) < 0.12;
     if (pr.kind === "sticky" && (wall || pr.life <= 0)) {
       // it sticks where it stopped, a step back from a wall
@@ -4480,8 +4592,10 @@ function update(dt) {
     if (bd < bc.r) G.inBoss = true;
     else if (bd > bc.r + PURSUIT.bossPad) G.inBoss = false;
   }
+  const prev = riftSnap();
   playerUpdate(dt);
   for (const e of G.enemies) enemyUpdate(e, dt);
+  if (prev) riftBodies(prev);
   projUpdate(dt);
   bombsUpdate(dt);
   caveUpdate(dt);

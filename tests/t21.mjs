@@ -38,6 +38,9 @@ const game = (name, body) => ({
   // a pair of ends 5 m either side of the tunnel point, both facing its middle
   const pair = (t) => { const a = along(t, -5), b = along(t, 5);
     const A = DF.openRift(a.x, a.z, Math.atan2(t.x - a.x, t.z - a.z)), B = DF.openRift(b.x, b.z, Math.atan2(t.x - b.x, t.z - b.z)); return [A, B]; };
+  // an end's facing n and line direction u
+  const nv = (E) => ({ x: Math.sin(E.yaw), z: Math.cos(E.yaw) }), uv = (E) => ({ x: Math.cos(E.yaw), z: -Math.sin(E.yaw) });
+  const off = (E, fn, fu) => { const n = nv(E), u = uv(E); return { x: E.x + n.x * fn + u.x * fu, z: E.z + n.z * fn + u.z * fu }; };
   ${body} })()`,
 });
 
@@ -70,4 +73,73 @@ export default [
   const t = tunnel(); pair(t); const two = G.rifts.length === 2; DF.respawn(); const r1 = G.rifts.length === 0;
   pair(tunnel()); DF.newRun(99); const r2 = DF.G.rifts.length === 0;
   return { pass: two && r1 && r2, two, r1, r2 };`),
+  game("a body crossing either face comes out of the other, turned", `
+  const t = tunnel(), [A, B] = pair(t), out = {};
+  for (const side of [1, -1]) {
+    const s0 = off(A, 0.5 * side, 0.5), s1 = off(A, -0.5 * side, 0.5), o = { x: s1.x, z: s1.z, vx: -nv(A).x * side * 4, vz: -nv(A).z * side * 4, yaw: A.yaw + (side > 0 ? Math.PI : 0) };
+    const crossed = DF.riftMove(o, s0.x, s0.z, 0.6), want = off(B, 0.75 * side, -0.5), nb = nv(B);
+    out[side] = { crossed, miss: D(o, want), dir: (o.vx * nb.x + o.vz * nb.z) / 4 * side, yaw: Math.abs(DF.angDiff(o.yaw, B.yaw + (side > 0 ? 0 : Math.PI))), f: w.fieldAt(o.x, o.z) };
+  }
+  const ok = (r) => r.crossed && r.miss < 0.1 && r.dir > 0.99 && r.yaw < 0.01 && r.f >= 0.55;
+  return { pass: ok(out[1]) && ok(out[-1]), out };`),
+  game("the player crosses, the camera turns, the lock stays", `
+  const t = tunnel(), [A, B] = pair(t), e = spawnAt('husk', along(t, 0)); p.lock = e;
+  put(p, off(A, 1.5, 0)); p.yaw = cam.yaw = A.yaw + Math.PI; const y0 = cam.yaw, a = B.yaw - A.yaw + Math.PI;
+  // the husk held still, so the lock is not lost to a fight
+  DF.keys[DF.BIND.fwd] = true; DF.sim(2, () => { e.state = 'idle'; e.aware = false; return !(p.riftBonus > 0); }); DF.keys[DF.BIND.fwd] = false;
+  const c = { near: D(p, B) < 2, cam: Math.abs(DF.angDiff(cam.yaw, y0 + a)) < 0.05, lock: p.lock === e, safe: p.iframe > 0, bonus: p.riftBonus > 0 };
+  return { pass: Object.values(c).every(Boolean), c, dB: D(p, B) };`),
+  game("a dodge through a rift crosses once and carries on out", `
+  const t = tunnel(), [A, B] = pair(t); put(p, off(A, 1.2, 0)); p.yaw = cam.yaw = A.yaw + Math.PI; let n = 0, last = 0;
+  DF.keys[DF.BIND.fwd] = true; DF.taps[DF.BIND.dodge] = true;
+  DF.sim(1, () => { if ((p.riftBonus || 0) > last) n++; last = p.riftBonus || 0; }); DF.keys[DF.BIND.fwd] = false;
+  const nb = nv(B), out = (p.x - B.x) * nb.x + (p.z - B.z) * nb.z;
+  return { pass: n === 1 && out > 0.5, n, out };`),
+  game("a pack is carried once, then comes on foot", `
+  const t = tunnel(), [A, B] = pair(t); put(p, off(A, 5, 0));
+  const e = spawnAt('husk', off(A, -7, 0)); e.aware = true; e.state = 'chase'; e.lsx = p.x; e.lsz = p.z;
+  let n = 0, last = 0, first = -1, closest = 99, i = 0, e2 = null, n2 = 0;
+  DF.sim(7, () => { i++; p.hp = p.maxHp; const r = e.rest || 0; if (r > last + 0.5) { n++; if (first < 0) first = i; } last = r;
+    if (first > 0 && i > first) closest = Math.min(closest, D(e, p));
+    if (first > 0 && i === first + 20) { e2 = G.enemies.find((o) => o !== e && !o.dead && o.type === 'husk'); const q = off(A, -1, 0); put(e2, q); e2.aware = true; e2.state = 'chase'; }
+    if (e2 && (e2.rest || 0) > 0) n2 = 1; });
+  return { pass: n === 1 && closest < 2.2 && n2 === 1, n, closest, n2 };`),
+  game("an enemy at the edge of the line comes out clear of rock", `
+  const t = tunnel(), [A, B0] = pair(t); let B = B0; const u = uv(B0);
+  for (let d = 0.25; d < 6; d += 0.25) { G.rifts = [A]; const r = DF.openRift(B0.x + u.x * d, B0.z + u.z * d, B0.yaw); if (typeof r === 'string') break; B = r; }
+  G.rifts = [A, B]; const e = spawnAt('brute', off(A, 3, 0)); const s0 = off(A, 0.4, -0.85), s1 = off(A, -0.4, -0.85);
+  e.x = s1.x; e.z = s1.z; const crossed = DF.riftMove(e, s0.x, s0.z, e.r);
+  return { pass: crossed && w.fieldAt(e.x, e.z) >= e.r - 0.05, crossed, f: w.fieldAt(e.x, e.z), r: e.r, edge: D(B, B0) };`),
+  game("the boss and the dummy walk through the tear", `
+  const wd = G.enemies.find((e) => e.def.boss); G.rifts = []; const A = DF.openRift(wd.x, wd.z + 0.5, 0);
+  const far = { x: wd.x + 12, z: wd.z }, B = DF.openRift(far.x, far.z, 0); const at0 = { x: wd.x, z: wd.z };
+  DF.riftBodies({ p: [p.x, p.z], e: new Map([[wd, [wd.x, wd.z + 1.2]]]) });
+  const boss = D(wd, at0) < 0.01;
+  DF.enterHub(); const d = G.enemies.find((e) => e.def.dummy); G.rifts = []; DF.openRift(d.x, d.z + 0.5, 0); DF.openRift(d.x + 8, d.z, 0);
+  const d0 = { x: d.x, z: d.z }; DF.riftBodies({ p: [G.player.x, G.player.z], e: new Map([[d, [d.x, d.z + 1.2]]]) });
+  return { pass: boss && D(d, d0) < 0.01 && !!A && !!B, boss, dummy: D(d, d0) };`),
+  game("a Spitter shot through a rift turns on a husk", `
+  const t = tunnel(), [A, B] = pair(t); put(p, off(A, 5, 0)); const hp0 = p.hp;
+  const sp = spawnAt('spit', off(A, -3, 0)), h = spawnAt('husk', off(B, -3, 0)); const h0 = h.hp, nA = nv(A); p.iframe = 0;
+  DF.shoot(sp, Math.atan2(nA.x, nA.z), 13, 18); const pr = G.projs[G.projs.length - 1]; let mine = false;
+  DF.sim(0.8, () => { sp.state = 'idle'; sp.cd = 9; if (h.state !== 'hit') h.state = 'idle'; if (pr.own === 'p') mine = true; });
+  const safe = p.hp === hp0;
+  // the boss's shot goes through the tear as air, at the player
+  const wd = spawnAt('warden', off(A, -4, 0)); DF.shoot(wd, Math.atan2(nA.x, nA.z), 13, 18); const wp = G.projs[G.projs.length - 1]; let wOwn = true, wNear = false;
+  DF.sim(0.6, () => { wd.state = 'idle'; wd.cd = 9; if (wp.own !== 'e') wOwn = false; if (wp.life > 0 && D(wp, B) < 1.5) wNear = true; });
+  const c = { hurt: h.hp < h0, mine, safe, bossKept: wOwn && !wNear };
+  return { pass: Object.values(c).every(Boolean), c };`),
+  game("the shard passes through", `
+  const t = tunnel(), [A, B] = pair(t); put(p, off(A, -3, 0)); const nA = nv(A); let seen = false;
+  DF.fire(DF.MOVES.v3.proj, Math.atan2(nA.x, nA.z)); const pr = G.projs[G.projs.length - 1];
+  DF.sim(0.6, () => { if (pr.life > 0 && D(pr, B) < 1.5) seen = true; });
+  return { pass: seen, seen };`),
+  game("the next hit after a crossing does more", `
+  const t = tunnel(), e = spawnAt('brute', at(t, 0)); e.aware = true; e.state = 'chase';
+  let h = e.hp; DF.hitEnemy(e, 10, 0, { src: 'melee' }); const plain = h - e.hp; p.riftBonus = 2; h = e.hp; DF.hitEnemy(e, 10, 0, { src: 'melee' }); const more = h - e.hp;
+  return { pass: Math.abs(more / plain - 1 - DF.RIFT.bonus) < 0.02 && p.riftBonus === 0, plain, more };`),
+  game("unpaired ends do nothing", `
+  const t = tunnel(), a = along(t, 0); G.rifts = []; const A = DF.openRift(a.x, a.z, t.yaw); const s0 = off(A, 0.5, 0), s1 = off(A, -0.5, 0);
+  const o = { x: s1.x, z: s1.z }; const crossed = DF.riftMove(o, s0.x, s0.z, 0.6);
+  return { pass: !crossed && D(o, s1) < 0.01, crossed };`),
 ];
