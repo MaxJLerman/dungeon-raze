@@ -284,7 +284,8 @@ const WHITE = [1, 0.95, 0.8],
   GREEN = [0.55, 1, 0.45],
   ORANGE = [1, 0.5, 0.18],
   GOLD = [1, 0.85, 0.45],
-  CRIMSON = [1, 0.28, 0.32];
+  CRIMSON = [1, 0.28, 0.32],
+  HAZARD = [1, 0.92, 0.15];
 
 // ---- classes ----
 const CLASSES = {
@@ -482,6 +483,42 @@ const CLASSES = {
         "Trait",
         "Executions are a sniper shot from range and give back a sticky bomb",
       ],
+    ],
+  },
+  // hidden: the demolitions class, unlocked at its plaque in the hall
+  sapper: {
+    name: "Sapper",
+    tag: "Sledgehammer and charges",
+    hidden: true,
+    hp: 135,
+    stam: 115,
+    walk: 5.0,
+    run: 7.6,
+    chain: "s1",
+    heavy: "sslam",
+    dash: "sdrop",
+    ambush: 1.5,
+    back: 1.25,
+    parry: 0.2,
+    blockMul: 0.85,
+    chip: 0.08,
+    guardArc: 2.0,
+    col: HAZARD,
+    // the trait: posture damage from the Sapper's explosions is multiplied by
+    // this in explode, and none of them hurt the Sapper
+    blastPost: 1.5,
+    dodge: { dist: 4.2, dur: 0.46, ifr: 0.28, cost: 22 },
+    tool: { id: "mine", name: "Landmine", max: 4, ch: "◎" },
+    special: { id: "cavein", name: "Cave-in", cost: 50 },
+    kit: [
+      ["Attack", "Three heavy sledgehammer swings"],
+      ["Heavy", "Hammer slam that sets off a blast in front of you"],
+      ["Tool", "Landmines. Two mines close together are joined by a tripwire"],
+      [
+        "Ability",
+        "Cave-in: bring the roof down on a pack and wall off the tunnel",
+      ],
+      ["Trait", "Your own blasts never hurt you, and they break guards faster"],
     ],
   },
 };
@@ -887,6 +924,87 @@ const MOVES = {
     next: null,
     lunge: 4,
     proj: { speed: 60, dmg: 14, post: 10, kind: "bullet" },
+  },
+  // sapper: a sledgehammer
+  s1: {
+    anim: "gr",
+    wind: 0.22,
+    act: 0.1,
+    rec: 0.34,
+    dmg: 18,
+    post: 16,
+    range: 2.7,
+    arc: 1.9,
+    lunge: 0.6,
+    stam: 12,
+    next: "s2",
+    tilt: 0.25,
+    dir: 1,
+  },
+  s2: {
+    anim: "gl",
+    wind: 0.24,
+    act: 0.1,
+    rec: 0.36,
+    dmg: 20,
+    post: 18,
+    range: 2.7,
+    arc: 1.9,
+    lunge: 0.6,
+    stam: 12,
+    next: "s3",
+    tilt: -0.25,
+    dir: -1,
+  },
+  s3: {
+    anim: "gover",
+    wind: 0.36,
+    act: 0.12,
+    rec: 0.5,
+    dmg: 30,
+    post: 30,
+    range: 2.8,
+    arc: 1.4,
+    lunge: 0.8,
+    stam: 16,
+    next: null,
+    tilt: 1.45,
+    dir: 1,
+    heavy: true,
+  },
+  // a move with `blast` hits only through an explosion d metres ahead
+  sslam: {
+    anim: "hslam",
+    wind: 0.45,
+    act: 0.08,
+    rec: 0.6,
+    dmg: 0,
+    post: 0,
+    range: 2.4,
+    arc: 1.4,
+    lunge: 0.4,
+    stam: 24,
+    next: null,
+    tilt: 1.45,
+    dir: 1,
+    heavy: true,
+    blast: { d: 1.9, r: 2.4, dmg: 32, post: 34 },
+  },
+  sdrop: {
+    anim: "gover",
+    wind: 0.3,
+    act: 0.12,
+    rec: 0.5,
+    dmg: 26,
+    post: 30,
+    range: 2.6,
+    arc: 1.4,
+    lunge: 3.5,
+    stam: 14,
+    next: null,
+    tilt: 1.45,
+    dir: 1,
+    heavy: true,
   },
 };
 const EDEF = {
@@ -1297,6 +1415,9 @@ function setEnv(e) {
 }
 // Clears everything that must not carry from one world into the next.
 function resetRun() {
+  if (G.world && G.world.clearRocks) G.world.clearRocks();
+  G.caveins = [];
+  G.mines = [];
   G.insp = null;
   G.bossDead = false;
   G.bossSeen = false;
@@ -1421,6 +1542,10 @@ function respawn() {
     buff: null,
     buffT: 0,
   });
+  // the same cave again: its rubble has to come out of the field
+  G.world.clearRocks();
+  G.caveins = [];
+  G.mines = [];
   G.world.resolve(p, 0.6);
   G.projs = [];
   G.bombs = [];
@@ -1459,6 +1584,7 @@ function ghost(p) {
   G.ghosts.push({ x: p.x, z: p.z, t: 0, c: p.cls.col });
 }
 function explode(x, z, r, dmg, post, c) {
+  post *= G.player.cls.blastPost || 1;
   G.rings.push({ x, z, r, t: 0, dur: 0.4, kind: "shock", c });
   sparks(x, 0.8, z, 30, c, 9, 0.6, 0.15);
   G.shake = Math.max(G.shake, r > 4.5 ? 0.9 : 0.45);
@@ -1589,10 +1715,11 @@ function alertE(e, quiet, by) {
       o.alertBy = e;
     }
 }
-function stagger(e) {
+// k scales how long it lasts: the Sapper's cave-in staggers a brute for less
+function stagger(e, k = 1) {
   e.state = "stagger";
   e.t = 0;
-  e.dur = e.def.boss ? 3.4 : 3.0;
+  e.dur = (e.def.boss ? 3.4 : 3.0) * k;
   e.posture = e.def.posture;
   e.token = false;
   e.y = 0;
@@ -2104,7 +2231,7 @@ const INSPECT_T = 0.5;
 // what a locked plaque says instead of the class name
 const PLAQUE_TEXT = {
   enforcer: "The one who settles accounts",
-  sapper: "Sealed",
+  sapper: "The one who brings the roof down",
   riftwalker: "Sealed",
 };
 // A code is a list of action names: fwd, back, left, right, dodge, heal and
@@ -2113,6 +2240,7 @@ const PLAQUE_TEXT = {
 // out of the repo. codeText writes a code in an input's own notation.
 const SHIPPED_CODES = {
   enforcer: { hash: "14ac1f9c18e2c", len: 10 },
+  sapper: { hash: "b469f1954f03b", len: 10 },
 };
 const PLAQUE_CODES = {};
 function resetPlaqueCodes() {
@@ -2388,6 +2516,21 @@ function useSpecial(ix, iz, il) {
     SFX.tele(true);
     p.throwT = 0.5;
     say("STARFALL", "good", 1);
+  } else if (sp.id === "cavein") {
+    // thrown at the lock target or along the camera, short of any wall
+    const a = p.lock ? Math.atan2(p.lock.x - p.x, p.lock.z - p.z) : cam.yaw,
+      far = p.lock
+        ? Math.min(CAVEIN.range, Math.hypot(p.lock.x - p.x, p.lock.z - p.z))
+        : 9;
+    let ok = 0.5;
+    for (let d = 0.5; d <= far; d += 0.25) {
+      if (w.fieldAt(p.x + Math.sin(a) * d, p.z + Math.cos(a) * d) > 0.3) ok = d;
+      else break;
+    }
+    p.yaw = a;
+    p.throwT = 0.4;
+    SFX.whoosh(true);
+    startCaveIn(p.x + Math.sin(a) * ok, p.z + Math.cos(a) * ok);
   } else if (sp.id === "grapple") {
     if (!startGrapple()) return false;
   } else if (sp.id === "volley") {
@@ -2451,6 +2594,10 @@ function useTool(ix, iz, il) {
     p.throwT = 0.25;
     fire({ speed: 22, dmg: 0, post: 0, kind: "sticky", life: 0.9 }, a);
     SFX.knife();
+  } else if (id === "mine") {
+    plantMine(p.x, p.z);
+    p.throwT = 0.3;
+    SFX.mine();
   } else if (id === "leap") {
     const a = aimRanged();
     p.yaw = a;
@@ -2719,7 +2866,18 @@ function playerUpdate(dt) {
       if (t >= m.wind && !p.arcDone) {
         p.arcDone = true;
         SFX.whoosh(m.heavy);
-        if (m.proj) {
+        if (m.blast) {
+          const b = m.blast;
+          explode(
+            p.x + Math.sin(p.yaw) * b.d,
+            p.z + Math.cos(p.yaw) * b.d,
+            b.r,
+            b.dmg,
+            b.post,
+            c.col,
+          );
+          SFX.thud(true);
+        } else if (m.proj) {
           p.yaw = p.aim;
           const n = m.proj.pellets || 1;
           for (let i = 0; i < n; i++)
@@ -2774,7 +2932,12 @@ function playerUpdate(dt) {
             });
         }
       }
-      if (!m.proj && t >= m.wind && t < m.wind + m.act + 0.03) {
+      if (
+        !m.proj &&
+        !m.blast &&
+        t >= m.wind &&
+        t < m.wind + m.act + 0.03
+      ) {
         for (const e of G.enemies) {
           if (e.dead || p.hitSet.has(e)) continue;
           const dx = e.x - p.x,
@@ -2888,7 +3051,8 @@ function playerUpdate(dt) {
         G.flashWhite = 0.6;
         p.hp = Math.min(p.maxHp, p.hp + 10);
         p.focus = Math.min(100, p.focus + 12);
-        const sniper = p.clsId === "enforcer";
+        const sniper = p.clsId === "enforcer",
+          sapper = p.clsId === "sapper";
         if (sniper) {
           // a tracer all the way to the target, and a sticky bomb back
           SFX.gun(true);
@@ -2907,6 +3071,39 @@ function playerUpdate(dt) {
           wd: sniper ? 0.1 : undefined,
         });
         sparks(e.x, 1.2 * e.fig.o.sc, e.z, 30, AMBER, 10, 0.6, 0.15);
+        // the Sapper jams a charge in and kicks: the body flies on and the
+        // charge goes off where it lands. The boss and the dummy are too
+        // heavy to kick, so it goes off on them.
+        let bx = e.x,
+          bz = e.z;
+        if (sapper) {
+          const heavy = e.def.boss || e.def.dummy,
+            a = Math.atan2(e.x - p.x, e.z - p.z);
+          if (!heavy) {
+            let d = 0;
+            while (
+              d < 4 &&
+              G.world.fieldAt(
+                e.x + Math.sin(a) * (d + 0.25),
+                e.z + Math.cos(a) * (d + 0.25),
+              ) > 0.5
+            )
+              d += 0.25;
+            bx = e.x + Math.sin(a) * d;
+            bz = e.z + Math.cos(a) * d;
+          }
+          G.pending.push({
+            t: 0.45,
+            x: bx,
+            z: bz,
+            r: 3.5,
+            dmg: 50,
+            post: 50,
+            c: c.col,
+          });
+          SFX.thud(true);
+          SFX.mine();
+        }
         if (e.def.boss) {
           e.state = "recoil";
           e.t = 0;
@@ -2928,6 +3125,11 @@ function playerUpdate(dt) {
           e.hp = 0;
           G.hitstop = 0.13;
           kill(e);
+          if (sapper) {
+            const k = Math.hypot(bx - e.x, bz - e.z) / 0.4;
+            const a = Math.atan2(bx - e.x, bz - e.z);
+            e.kick = { vx: Math.sin(a) * k, vz: Math.cos(a) * k, t: 0.4 };
+          }
         }
         say("EXECUTION", "crit", 0.9);
       }
@@ -3147,6 +3349,13 @@ function enemyUpdate(e, dt) {
   }
   if (e.state === "dead") {
     e.t += dt;
+    // kicked away by the Sapper's execution
+    if (e.kick && e.kick.t > 0) {
+      e.x += e.kick.vx * dt;
+      e.z += e.kick.vz * dt;
+      e.kick.t -= dt;
+      w.resolve(e, e.r);
+    }
     if (e.t > 2.4) e.gone = true;
     return;
   }
@@ -3648,6 +3857,253 @@ function bombsUpdate(dt) {
   }
   G.bombs = G.bombs.filter((b) => b.t > 0);
 }
+// The Sapper's cave-in. A charge lands where it was thrown; at the end of its
+// fuse rock falls on a ridge lying across the throw, crushing and staggering
+// what is under it, and the rubble stands as rock in the walkable field for
+// CAVEIN.life seconds. Everything that reads the field treats it as wall.
+const CAVEIN = {
+  fuse: 0.9,
+  range: 12,
+  thick: 1,
+  half: 5.5,
+  into: 0.8,
+  dmg: 55,
+  post: 60,
+  life: 12,
+  crumble: 1.5,
+  // standing at once; a new one brings the oldest down early
+  cap: 3,
+  // a forced stagger lasts this share of the usual time, by enemy type
+  stag: { brute: 0.75 },
+};
+// distance from (x, z) to the segment from (ax, az) to (bx, bz)
+function segDist(x, z, ax, az, bx, bz) {
+  const dx = bx - ax,
+    dz = bz - az,
+    l2 = dx * dx + dz * dz,
+    t = l2 ? clamp(((x - ax) * dx + (z - az) * dz) / l2, 0, 1) : 0;
+  return Math.hypot(x - ax - dx * t, z - az - dz * t);
+}
+// distance from (x, z) to a cave-in's ridge line
+function ridgeD(c, x, z) {
+  return segDist(x, z, c.ax, c.az, c.bx, c.bz);
+}
+function inRubble(x, z) {
+  for (const c of G.caveins)
+    if (c.phase === "stand" && ridgeD(c, x, z) < CAVEIN.thick + 0.3) return true;
+  return false;
+}
+function startCaveIn(tx, tz) {
+  const p = G.player,
+    w = G.world,
+    yaw =
+      Math.hypot(tx - p.x, tz - p.z) > 0.5
+        ? Math.atan2(tx - p.x, tz - p.z)
+        : p.yaw,
+    // along the ridge: across the throw
+    ux = Math.cos(yaw),
+    uz = -Math.sin(yaw);
+  // each end runs out to the rock, past other rubble, and into it
+  const end = (s) => {
+    let d = 0;
+    while (d < CAVEIN.half) {
+      const x = tx + ux * s * (d + 0.25),
+        z = tz + uz * s * (d + 0.25);
+      if (w.fieldAt(x, z) < 0.3 && !inRubble(x, z)) break;
+      d += 0.25;
+    }
+    return d + CAVEIN.into;
+  };
+  const ea = end(-1),
+    eb = end(1);
+  const c = {
+    x: tx,
+    z: tz,
+    yaw,
+    t: CAVEIN.fuse,
+    phase: "fuse",
+    fx: p.x,
+    fz: p.z,
+    ax: tx - ux * ea,
+    az: tz - uz * ea,
+    bx: tx + ux * eb,
+    bz: tz + uz * eb,
+    id: 0,
+    ceil: w.ceilAt(tx, tz),
+    seed: (Math.random() * 1e9) | 0,
+  };
+  while (G.caveins.length >= CAVEIN.cap) {
+    const old = G.caveins.shift();
+    if (old.phase === "stand") crumbleCave(old);
+  }
+  G.caveins.push(c);
+  SFX.beep();
+}
+function crumbleCave(c) {
+  G.world.removeRock(c.id);
+  for (const e of G.enemies) e.route = null;
+  SFX.crumble();
+  for (let s = 0; s <= 1; s += 0.1)
+    sparks(lerp(c.ax, c.bx, s), 0.8, lerp(c.az, c.bz, s), 3, [0.55, 0.5, 0.45], 3, 0.8, 0.22);
+  c.gone = true;
+}
+function caveImpact(c) {
+  const p = G.player,
+    w = G.world,
+    th = CAVEIN.thick,
+    nx = Math.sin(c.yaw),
+    nz = Math.cos(c.yaw),
+    // which side of the ridge a point is on, along the throw
+    off = (o) => (o.x - c.x) * nx + (o.z - c.z) * nz,
+    thrown = Math.sign((c.fx - c.x) * nx + (c.fz - c.z) * nz) || -1;
+  for (const e of G.enemies) {
+    if (e.dead || ridgeD(c, e.x, e.z) > th + e.r + 0.4) continue;
+    hitEnemy(e, CAVEIN.dmg, CAVEIN.post, {
+      src: "aoe",
+      heavy: true,
+      fx: c.x,
+      fz: c.z,
+    });
+    // a stagger the crush earned by filling posture keeps its full length
+    if (!e.dead && !e.def.boss && e.state !== "stagger")
+      stagger(e, CAVEIN.stag[e.type] || 1);
+  }
+  // mines under the ridge go off now, before the rock would bury their blast
+  for (const m of [...G.mines])
+    if (ridgeD(c, m.x, m.z) < th + 0.5) blowMine(m);
+  c.id = w.addRock(c.ax, c.az, c.bx, c.bz, th);
+  // nobody is left inside: out along the throw to the side they are on; one
+  // on the line goes to the player's side, and the player to where it threw
+  // from. The dummy stays pinned.
+  const po = off(p),
+    pside = Math.abs(po) < 0.05 ? thrown : Math.sign(po);
+  const out = (o, r, side) => {
+    if (ridgeD(c, o.x, o.z) >= th + r) return;
+    const d = off(o),
+      s = Math.abs(d) < 0.05 ? side : Math.sign(d),
+      to = s * (th + r + 0.15) - d;
+    o.x += nx * to;
+    o.z += nz * to;
+    w.resolve(o, r);
+  };
+  out(p, 0.6, pside);
+  for (const e of G.enemies) if (!e.def.dummy) out(e, e.r, pside);
+  for (const e of G.enemies) e.route = null;
+  for (let s = 0; s <= 1; s += 0.1)
+    sparks(
+      lerp(c.ax, c.bx, s),
+      0.6,
+      lerp(c.az, c.bz, s),
+      4,
+      [0.55, 0.5, 0.45],
+      5,
+      0.7,
+      0.2,
+    );
+  G.shake = Math.max(G.shake, 1);
+  SFX.rumble();
+}
+function caveUpdate(dt) {
+  for (const c of G.caveins) {
+    c.t -= dt;
+    if (c.phase === "fuse") {
+      if (c.t <= 0) {
+        caveImpact(c);
+        c.phase = "stand";
+        c.t = CAVEIN.life;
+      }
+    } else if (c.t <= 0) crumbleCave(c);
+    else if (c.t < CAVEIN.crumble && Math.random() < dt * 12) {
+      const s = Math.random();
+      sparks(lerp(c.ax, c.bx, s), 1.2, lerp(c.az, c.bz, s), 2, [0.55, 0.5, 0.45], 1.5, 0.6, 0.15);
+    }
+  }
+  G.caveins = G.caveins.filter((c) => !c.gone);
+}
+// The Sapper's landmines. Each arms MINE.arm seconds after planting and goes
+// off when an enemy body comes within MINE.trig of it. A mine planted near
+// another is wired to it, and an enemy crossing a wire whose mines are both
+// armed sets off both. A mine going off sets off the mines in its blast, a
+// moment later. The player never sets one off.
+const MINE = {
+  arm: 0.8,
+  trig: 0.5,
+  r: 3,
+  dmg: 40,
+  post: 35,
+  link: 6,
+  wires: 2,
+  cap: 8,
+  chain: 0.12,
+};
+function plantMine(x, z) {
+  const w = G.world,
+    m = { x, z, t: 0, links: [], fuse: null };
+  let best = null,
+    bd = MINE.link;
+  for (const o of G.mines) {
+    if (o.fuse !== null || o.links.length >= MINE.wires) continue;
+    const d = Math.hypot(o.x - x, o.z - z);
+    if (d < bd && w.los(x, z, o.x, o.z)) {
+      bd = d;
+      best = o;
+    }
+  }
+  if (best) {
+    m.links.push(best);
+    best.links.push(m);
+  }
+  G.mines.push(m);
+  // past the cap the oldest goes quiet, with its wires
+  while (G.mines.length > MINE.cap) dropMine(G.mines[0]);
+  return m;
+}
+function dropMine(m) {
+  for (const o of m.links) o.links = o.links.filter((q) => q !== m);
+  G.mines = G.mines.filter((q) => q !== m);
+}
+function boomMine(m) {
+  if (m.fuse === null) m.fuse = 0;
+}
+function minesUpdate(dt) {
+  for (const m of G.mines) {
+    m.t += dt;
+    if (m.fuse !== null || m.t < MINE.arm) continue;
+    for (const e of G.enemies)
+      if (!e.dead && Math.hypot(e.x - m.x, e.z - m.z) < MINE.trig + e.r) {
+        boomMine(m);
+        break;
+      }
+    for (const o of m.links) {
+      if (o.t < MINE.arm || o.fuse !== null) continue;
+      for (const e of G.enemies)
+        if (!e.dead && segDist(e.x, e.z, m.x, m.z, o.x, o.z) < e.r) {
+          boomMine(m);
+          boomMine(o);
+          SFX.wire();
+          break;
+        }
+    }
+  }
+  for (const m of [...G.mines]) {
+    if (m.fuse === null) continue;
+    m.fuse -= dt;
+    if (m.fuse <= 0) blowMine(m);
+  }
+}
+// a mine going off: the blast, and the mines in it go off a moment later
+function blowMine(m) {
+  const w = G.world;
+  dropMine(m);
+  explode(m.x, m.z, MINE.r, MINE.dmg, MINE.post, HAZARD);
+  for (const o of G.mines)
+    if (
+      o.fuse === null &&
+      Math.hypot(o.x - m.x, o.z - m.z) < MINE.r &&
+      w.los(m.x, m.z, o.x, o.z)
+    )
+      o.fuse = MINE.chain;
+}
 function projUpdate(dt) {
   const p = G.player,
     w = G.world;
@@ -3767,7 +4223,8 @@ function separate() {
         a.z -= dz * k * (1 - wp);
       }
     }
-    if (a.y < 0.5) w.resolve(a, a.r);
+    // the dummy stays on its spot, even inside a cave-in's rubble
+    if (a.y < 0.5 && !a.def.dummy) w.resolve(a, a.r);
   }
   w.resolve(p, p.r);
 }
@@ -3793,6 +4250,8 @@ function update(dt) {
   for (const e of G.enemies) enemyUpdate(e, dt);
   projUpdate(dt);
   bombsUpdate(dt);
+  caveUpdate(dt);
+  minesUpdate(dt);
   for (const q of G.pending) {
     q.t -= dt;
     if (q.t <= 0) {

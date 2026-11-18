@@ -212,6 +212,46 @@ function makePlayerFig(id) {
       [f.handR, 0.3],
       [f.handL, 0.3],
     ];
+  } else if (id === "sapper") {
+    // a demolitions worker: hard hat with a lamp, a padded vest with charges
+    // strapped on, a sledgehammer
+    f = makeFigure({
+      body: C_(0x4b4f3a),
+      trim: C_(0xe8c62a),
+      skin: SKIN,
+      limb: C_(0x3d4130),
+      legc: C_(0x2b2d24),
+      w: 0.62,
+      d: 0.36,
+      aw: 0.16,
+      lw: 0.19,
+    });
+    const hat = f.headN.add(
+      part("sph", C_(0xe8c62a), 0.36, 0.2, 0.38, 0, 0.13, 0),
+    );
+    hat.em = [0.06, 0.05, 0];
+    f.headN.add(part("cyl", C_(0xd1b020), 0.44, 0.03, 0.46, 0, 0.1, 0.02));
+    const lamp = f.headN.add(
+      part("cyl", C_(0xfff3c0), 0.08, 0.06, 0.08, 0, 0.17, 0.18),
+    );
+    lamp.r[0] = PI / 2;
+    lamp.em = [0.9, 0.85, 0.5];
+    // the vest, and three charges across its front
+    f.chest.add(part("box", C_(0x7a5a2a), 0.66, 0.42, 0.4, 0, 0.36, 0));
+    for (const sx of [-1, 0, 1]) {
+      const c = f.chest.add(
+        part("cyl", C_(0xb2402a), 0.08, 0.24, 0.08, sx * 0.16, 0.36, 0.21),
+      );
+      c.em = [0.08, 0.01, 0];
+    }
+    cape(C_(0x3a3d2c), 0.46, 0.4);
+    f.handR.add(part("box", C_(0x5a3f28), 0.06, 0.06, 1.05, 0, -0.03, 0.42));
+    const h = f.handR.add(
+      part("box", C_(0x6d727c), 0.2, 0.44, 0.22, 0, -0.03, 0.96),
+    );
+    h.em = [0.1, 0.09, 0.02];
+    f.rim = [0.4, 0.36, 0.08];
+    f.tips = [[f.handR, 0.96]];
   } else {
     f = makeFigure({
       body: C_(0x1d2733),

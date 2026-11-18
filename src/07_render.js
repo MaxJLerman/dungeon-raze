@@ -38,7 +38,12 @@ function posePlayer(p) {
   } else if (id === "mage") A[0] = -0.75 - mv * 0.1;
   else if (id === "ranger") B[0] = -0.5;
   else if (id === "fighter") A[0] = -0.4;
-  else if (id === "enforcer") {
+  else if (id === "sapper") {
+    // the hammer carried low across the body in both hands
+    A[0] = -0.5;
+    B[0] = -0.75;
+    B[2] = -0.35;
+  } else if (id === "enforcer") {
     // pistols held low and ready; the long guns only while used
     A[0] = B[0] = -0.35;
     const heavy = p.state === "attack" && p.move === "eshot",
@@ -122,6 +127,14 @@ function posePlayer(p) {
         }
         f.hips.p[1] = o.leg - 0.18;
         ch[0] = 0.2;
+      } else if (an === "hslam") {
+        // both hands raise the hammer high, then drive it into the floor
+        A[0] = B[0] = lerp(-3.0, -0.55, u);
+        B[2] = -0.35;
+        ch[0] = lerp(-0.35, 0.75, u);
+        f.hips.p[1] = o.leg - 0.22 * u;
+        f.legR.r[0] = -0.7 * u;
+        f.legL.r[0] = 0.5 * u;
       } else if (an === "bash") {
         B[0] = lerp(-0.7, -1.55, u);
         B[2] = lerp(-0.2, -0.55, u);
@@ -190,6 +203,12 @@ function posePlayer(p) {
         A[1] = 0.9;
         B[0] = -1.4;
         B[2] = -0.5;
+      } else if (id === "sapper") {
+        // the hammer haft held across, as a bar
+        A[0] = B[0] = -1.55;
+        A[2] = 0.5;
+        B[2] = -0.5;
+        ch[1] = -0.2;
       } else if (id === "enforcer") {
         // forearms crossed in front of the face, guns up
         A[0] = B[0] = -1.75;
@@ -233,6 +252,15 @@ function posePlayer(p) {
       const u = sat((p.t - 0.14) / 0.12);
       A[0] = lerp(0.8, -1.6, u);
       if (id === "assassin" || id === "fighter") B[0] = A[0];
+      if (id === "sapper") {
+        // the charge pressed in with the left hand, then a front kick
+        B[0] = lerp(-1.5, -0.4, u);
+        f.legR.r[0] = lerp(0, -1.5, u);
+        f.legL.r[0] = 0.25 * u;
+        ch[0] = lerp(0.3, -0.25, u);
+        A[0] = -0.6;
+        break;
+      }
       if (id === "enforcer") {
         // the rifle shouldered and aimed
         A[0] = B[0] = -1.55;
@@ -521,6 +549,98 @@ function buildLights() {
   }
   R.setLights(L);
 }
+// A cave-in's rubble: faceted rocks heaped along its ridge, three or four
+// high, taller than a person, laid out once from the entry's seed so they do not flicker. Each rock
+// keeps where it lands in `hx`, `ty` and `hz`.
+const RUBBLE = [hexc(0x7a6656), hexc(0x66564a), hexc(0x8a7766)];
+function makeRubble(c) {
+  const root = new Nd(),
+    r = rng(c.seed),
+    L = Math.hypot(c.bx - c.ax, c.bz - c.az),
+    n = Math.max(2, Math.ceil(L / 0.6));
+  for (let i = 0; i <= n; i++) {
+    const s = i / n,
+      x = lerp(c.ax, c.bx, s),
+      z = lerp(c.az, c.bz, s);
+    for (const row of [-0.55, 0, 0.55]) {
+      const layers = row === 0 ? 4 : 3;
+      for (let k = 0; k < layers; k++) {
+        const sz = 0.6 + r() * 0.35 - k * 0.04,
+          q = root.add(
+            part("oct", RUBBLE[(r() * 3) | 0], sz * 1.2, sz, sz * 1.1),
+          );
+        q.p = [
+          x + Math.sin(c.yaw) * (row + (r() - 0.5) * 0.3),
+          0.3 + k * 0.62 + r() * 0.15,
+          z + Math.cos(c.yaw) * (row + (r() - 0.5) * 0.3),
+        ];
+        q.r = [r() * 3, r() * 3, r() * 3];
+        q.ty = q.p[1];
+        q.hx = q.p[0];
+        q.hz = q.p[2];
+      }
+    }
+  }
+  return root;
+}
+// A mine: a dark disc on the floor with a light that blinks while it arms
+// and holds steady once armed. A wire: a thin line at shin height.
+const MINE_FIG = (() => {
+  const n = new Nd();
+  n.add(part("cyl", hexc(0x2e2f33), 0.42, 0.08, 0.42, 0, 0.04, 0));
+  n.add(part("cyl", hexc(0x55575c), 0.16, 0.06, 0.16, 0, 0.1, 0));
+  return n;
+})();
+function drawMines() {
+  for (const m of G.mines) {
+    MINE_FIG.p[0] = m.x;
+    MINE_FIG.p[2] = m.z;
+    R.drawNode(MINE_FIG);
+    const armed = m.t >= MINE.arm,
+      on = armed || m.t % 0.25 < 0.12,
+      c = HAZARD;
+    if (on) R.sprite(m.x, 0.17, m.z, armed ? 0.22 : 0.16, c[0], c[1], c[2], armed ? 1.2 : 1.8);
+    for (const o of m.links) {
+      if (o.x < m.x || (o.x === m.x && o.z < m.z)) continue; // once per wire
+      const k = armed && o.t >= MINE.arm ? 0.9 : 0.35;
+      R.ribbon(
+        1,
+        (t, s) => [lerp(m.x, o.x, t), 0.32 + 0.035 * s, lerp(m.z, o.z, t)],
+        c[0],
+        c[1],
+        c[2],
+        () => k,
+      );
+    }
+  }
+}
+function drawCaveIns() {
+  for (const c of G.caveins) {
+    if (c.phase === "fuse") {
+      // the charge in the air for 0.4 s, then blinking on the floor
+      const k = sat((CAVEIN.fuse - c.t) / 0.4),
+        x = lerp(c.fx, c.x, k),
+        z = lerp(c.fz, c.z, k),
+        y = 0.25 + 1.2 * Math.sin(k * PI) + (1 - k) * 1.1,
+        on = k < 1 || c.t % 0.2 < 0.1;
+      R.sprite(x, y, z, 0.16, 0.35, 0.3, 0.25, 1);
+      if (on) R.sprite(x, y + 0.05, z, 0.34, HAZARD[0], HAZARD[1], HAZARD[2], 1.6);
+    }
+    // the rocks fall from the roof over the last 0.3 s of the fuse
+    const fall = c.phase === "fuse" ? sat(1 - c.t / 0.3) : 1;
+    if (fall <= 0) continue;
+    if (!c.node) c.node = makeRubble(c);
+    const crumble =
+      c.phase === "stand" ? sat(1 - c.t / CAVEIN.crumble) : 0;
+    for (const q of c.node.ch) {
+      q.p[1] = lerp(c.ceil, q.ty, fall * fall) - crumble * crumble * q.ty;
+      // shaking as it gives way
+      q.p[0] = q.hx + (Math.random() - 0.5) * 0.08 * crumble;
+      q.p[2] = q.hz + (Math.random() - 0.5) * 0.08 * crumble;
+    }
+    R.drawNode(c.node);
+  }
+}
 function render() {
   const p = G.player,
     w = G.world;
@@ -537,6 +657,8 @@ function render() {
     poseEnemy(e);
     R.drawNode(e.fig.root, e.fig.rim);
   }
+  drawCaveIns();
+  drawMines();
   // ---- fx ----
   if (p.state !== "dead") R.blob(p.x, p.z, 0.8, 0.55);
   for (const e of G.enemies) {

@@ -195,6 +195,31 @@ const SFX = (() => {
       noise(0.18, 3500, 900, 0.35, "bandpass", 3);
       tone(0.3, 600, 180, 0.2, "sawtooth", 0.05);
     },
+    // the Sapper's hammer landing
+    thud(big) {
+      tone(big ? 0.4 : 0.25, big ? 120 : 150, 40, big ? 0.9 : 0.6, "sine");
+      noise(big ? 0.3 : 0.18, 900, 120, big ? 0.6 : 0.4, "lowpass", 0.8);
+    },
+    // the roof coming down, and the rubble giving way
+    rumble() {
+      tone(1.4, 70, 22, 1.2, "sine");
+      noise(1.3, 400, 60, 1.0, "lowpass", 0.5);
+      noise(0.6, 2500, 600, 0.35, "bandpass", 0.8, 0.1);
+    },
+    crumble() {
+      for (let i = 0; i < 6; i++)
+        noise(0.12, 1600 - i * 120, 400, 0.25, "bandpass", 1.5, i * 0.07);
+      tone(0.5, 110, 40, 0.4, "sine");
+    },
+    // a mine pressed into the floor, and a tripwire snapping
+    mine() {
+      tone(0.05, 2200, 1800, 0.18, "square");
+      tone(0.08, 900, 900, 0.12, "square", 0.08);
+    },
+    wire() {
+      tone(0.25, 1400, 300, 0.3, "sawtooth");
+      noise(0.1, 5000, 2000, 0.2, "highpass", 1);
+    },
     beep() {
       tone(0.06, 1900, 1900, 0.12, "square");
     },
