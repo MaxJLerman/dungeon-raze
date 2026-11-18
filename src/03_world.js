@@ -219,8 +219,68 @@ function fieldFns(F, minX, minZ, W, H) {
     }
     return out;
   }
-  return { fieldAt, resolve, los, route };
+  // Rock: a capsule written into F for a while, as the Sapper's rubble.
+  // Each grid point a rock covers holds min(base, distance to the capsule
+  // less its radius) over every live rock, so the field stays a distance
+  // estimate and every reader of F treats rock as wall. Taking a rock out
+  // recomputes its points from the base copy and the rocks still live.
+  const rocks = new Map();
+  let base = null,
+    rockN = 0;
+  const segD = (x, z, q) => {
+    const dx = q.bx - q.ax,
+      dz = q.bz - q.az,
+      l2 = dx * dx + dz * dz,
+      t = l2 ? clamp(((x - q.ax) * dx + (z - q.az) * dz) / l2, 0, 1) : 0;
+    return Math.hypot(x - q.ax - dx * t, z - q.az - dz * t) - q.r;
+  };
+  function repaint(q) {
+    const i0 = Math.max(0, Math.floor(q.x0 - minX)),
+      i1 = Math.min(W, Math.ceil(q.x1 - minX)),
+      j0 = Math.max(0, Math.floor(q.z0 - minZ)),
+      j1 = Math.min(H, Math.ceil(q.z1 - minZ));
+    for (let j = j0; j <= j1; j++)
+      for (let i = i0; i <= i1; i++) {
+        const k = j * W1 + i,
+          x = minX + i,
+          z = minZ + j;
+        let f = base[k];
+        for (const o of rocks.values())
+          if (x >= o.x0 && x <= o.x1 && z >= o.z0 && z <= o.z1)
+            f = Math.min(f, segD(x, z, o));
+        F[k] = f;
+      }
+  }
+  function addRock(ax, az, bx, bz, r) {
+    if (!base) base = Float32Array.from(F);
+    const pad = r + ROCK_PAD,
+      q = {
+        ax, az, bx, bz, r,
+        x0: Math.min(ax, bx) - pad,
+        x1: Math.max(ax, bx) + pad,
+        z0: Math.min(az, bz) - pad,
+        z1: Math.max(az, bz) + pad,
+      },
+      id = ++rockN;
+    rocks.set(id, q);
+    repaint(q);
+    return id;
+  }
+  function removeRock(id) {
+    const q = rocks.get(id);
+    if (!q) return;
+    rocks.delete(id);
+    repaint(q);
+  }
+  function clearRocks() {
+    const all = [...rocks.values()];
+    rocks.clear();
+    for (const q of all) repaint(q);
+  }
+  return { fieldAt, resolve, los, route, addRock, removeRock, clearRocks };
 }
+// how far past a rock's capsule its points are kept as a distance estimate
+const ROCK_PAD = 3;
 // Collects world triangles: positions as floats, colours square-root encoded
 // in bytes with the glow amount in the alpha byte.
 function meshSink() {
@@ -429,7 +489,8 @@ function genWorld(seed) {
           (vnoise(x * 0.63, z * 0.63) - 0.5) * 0.55,
       );
     }
-  const { fieldAt, resolve, los, route } = fieldFns(F, minX, minZ, W, H);
+  const { fieldAt, resolve, los, route, addRock, removeRock, clearRocks } =
+    fieldFns(F, minX, minZ, W, H);
   const ceilRaw = (f) => 3.1 + 1.45 * Math.sqrt(Math.max(f + 0.5, 0));
   const ceilAt = (x, z) => ceilRaw(fieldAt(x, z));
   // ---- mesh ----
@@ -833,6 +894,9 @@ function genWorld(seed) {
     resolve,
     los,
     route,
+    addRock,
+    removeRock,
+    clearRocks,
     pos: new Float32Array(P),
     col: new Uint8Array(C),
     lights,
