@@ -3871,6 +3871,8 @@ const CAVEIN = {
   post: 60,
   life: 12,
   crumble: 1.5,
+  // standing at once; a new one brings the oldest down early
+  cap: 3,
   // a forced stagger lasts this share of the usual time, by enemy type
   stag: { brute: 0.75 },
 };
@@ -3930,8 +3932,20 @@ function startCaveIn(tx, tz) {
     ceil: w.ceilAt(tx, tz),
     seed: (Math.random() * 1e9) | 0,
   };
+  while (G.caveins.length >= CAVEIN.cap) {
+    const old = G.caveins.shift();
+    if (old.phase === "stand") crumbleCave(old);
+  }
   G.caveins.push(c);
   SFX.beep();
+}
+function crumbleCave(c) {
+  G.world.removeRock(c.id);
+  for (const e of G.enemies) e.route = null;
+  SFX.crumble();
+  for (let s = 0; s <= 1; s += 0.1)
+    sparks(lerp(c.ax, c.bx, s), 0.8, lerp(c.az, c.bz, s), 3, [0.55, 0.5, 0.45], 3, 0.8, 0.22);
+  c.gone = true;
 }
 function caveImpact(c) {
   const p = G.player,
@@ -3950,9 +3964,13 @@ function caveImpact(c) {
       fx: c.x,
       fz: c.z,
     });
-    if (!e.dead && !e.def.boss) stagger(e, CAVEIN.stag[e.type] || 1);
+    // a stagger the crush earned by filling posture keeps its full length
+    if (!e.dead && !e.def.boss && e.state !== "stagger")
+      stagger(e, CAVEIN.stag[e.type] || 1);
   }
-  for (const m of G.mines) if (ridgeD(c, m.x, m.z) < th + 0.5) boomMine(m);
+  // mines under the ridge go off now, before the rock would bury their blast
+  for (const m of [...G.mines])
+    if (ridgeD(c, m.x, m.z) < th + 0.5) blowMine(m);
   c.id = w.addRock(c.ax, c.az, c.bx, c.bz, th);
   // nobody is left inside: out along the throw to the side they are on; one
   // on the line goes to the player's side, and the player to where it threw
@@ -3994,14 +4012,8 @@ function caveUpdate(dt) {
         c.phase = "stand";
         c.t = CAVEIN.life;
       }
-    } else if (c.t <= 0) {
-      G.world.removeRock(c.id);
-      for (const e of G.enemies) e.route = null;
-      SFX.crumble();
-      for (let s = 0; s <= 1; s += 0.1)
-        sparks(lerp(c.ax, c.bx, s), 0.8, lerp(c.az, c.bz, s), 3, [0.55, 0.5, 0.45], 3, 0.8, 0.22);
-      c.gone = true;
-    } else if (c.t < CAVEIN.crumble && Math.random() < dt * 12) {
+    } else if (c.t <= 0) crumbleCave(c);
+    else if (c.t < CAVEIN.crumble && Math.random() < dt * 12) {
       const s = Math.random();
       sparks(lerp(c.ax, c.bx, s), 1.2, lerp(c.az, c.bz, s), 2, [0.55, 0.5, 0.45], 1.5, 0.6, 0.15);
     }
@@ -4054,7 +4066,6 @@ function boomMine(m) {
   if (m.fuse === null) m.fuse = 0;
 }
 function minesUpdate(dt) {
-  const w = G.world;
   for (const m of G.mines) {
     m.t += dt;
     if (m.fuse !== null || m.t < MINE.arm) continue;
@@ -4077,17 +4088,21 @@ function minesUpdate(dt) {
   for (const m of [...G.mines]) {
     if (m.fuse === null) continue;
     m.fuse -= dt;
-    if (m.fuse > 0) continue;
-    dropMine(m);
-    explode(m.x, m.z, MINE.r, MINE.dmg, MINE.post, HAZARD);
-    for (const o of G.mines)
-      if (
-        o.fuse === null &&
-        Math.hypot(o.x - m.x, o.z - m.z) < MINE.r &&
-        w.los(m.x, m.z, o.x, o.z)
-      )
-        o.fuse = MINE.chain;
+    if (m.fuse <= 0) blowMine(m);
   }
+}
+// a mine going off: the blast, and the mines in it go off a moment later
+function blowMine(m) {
+  const w = G.world;
+  dropMine(m);
+  explode(m.x, m.z, MINE.r, MINE.dmg, MINE.post, HAZARD);
+  for (const o of G.mines)
+    if (
+      o.fuse === null &&
+      Math.hypot(o.x - m.x, o.z - m.z) < MINE.r &&
+      w.los(m.x, m.z, o.x, o.z)
+    )
+      o.fuse = MINE.chain;
 }
 function projUpdate(dt) {
   const p = G.player,
@@ -4208,7 +4223,8 @@ function separate() {
         a.z -= dz * k * (1 - wp);
       }
     }
-    if (a.y < 0.5) w.resolve(a, a.r);
+    // the dummy stays on its spot, even inside a cave-in's rubble
+    if (a.y < 0.5 && !a.def.dummy) w.resolve(a, a.r);
   }
   w.resolve(p, p.r);
 }

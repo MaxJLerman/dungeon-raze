@@ -116,4 +116,21 @@ export default [
   const t = tunnel(); put(p, at(t, -6)); p.yaw = cam.yaw = t.yaw; DF.plantMine(t.x, t.z); const far = at(t, -4); DF.plantMine(far.x, far.z);
   DF.startCaveIn(t.x, t.z); DF.sim(1.1);
   return { pass: G.mines.length === 1 && Math.hypot(G.mines[0].x - far.x, G.mines[0].z - far.z) < 0.01, left: G.mines.length };`),
+  game("a mine under the rubble sets off a mine beside it", `
+  const t = tunnel(); put(p, at(t, -6)); p.yaw = cam.yaw = t.yaw; DF.plantMine(t.x, t.z); const near = at(t, -2.4); DF.plantMine(near.x, near.z);
+  DF.sim(1); DF.startCaveIn(t.x, t.z); DF.sim(1.3);
+  return { pass: G.mines.length === 0, left: G.mines.length };`),
+  game("brute filled by the crush keeps the full stagger", `
+  const t = tunnel(); put(p, at(t, -6)); p.yaw = cam.yaw = t.yaw; const b = spawnAt("brute", at(t, 0.3)); b.posture = b.def.posture - 5;
+  DF.startCaveIn(t.x, t.z); DF.sim(0.95);
+  return { pass: b.state === "stagger" && Math.abs(b.dur - 3) < 0.01, state: b.state, dur: b.dur };`),
+  game("no more than three cave-ins stand at once", `
+  DF.enterHub(); const W = G.world; p.x = 0; p.z = -12; p.yaw = 0; const spots = [-8, -4, 0, 4];
+  for (const z of spots) { DF.startCaveIn(-6, z); DF.sim(1); }
+  const n = G.caveins.length, first = W.fieldAt(-6, -8) > 0.5, last = W.fieldAt(-6, 4) < 0;
+  return { pass: n === DF.CAVEIN.cap && first && last, n, first, last };`),
+  game("the dummy stays pinned when the ridge passes off its centre", `
+  DF.enterHub(); const d = G.enemies.find((e) => e.def.dummy); p.x = d.x - 4; p.z = d.z + 0.5; p.yaw = Math.PI / 2;
+  DF.startCaveIn(d.x, d.z + 0.5); DF.sim(1.5);
+  return { pass: Math.hypot(d.x - d.hx, d.z - d.hz) < 0.01, off: [d.x - d.hx, d.z - d.hz] };`),
 ];

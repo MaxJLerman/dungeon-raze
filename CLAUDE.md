@@ -438,7 +438,8 @@ is what you need to change the code without breaking it.
     `MINE.link` that has fewer than `MINE.wires` wires. A mine arms after
     `MINE.arm`, goes off when an enemy body is within `MINE.trig`, and a wire
     between two armed mines sets both off when an enemy crosses it. `boomMine`
-    sets one off; a blast sets off the mines inside it after `MINE.chain`.
+    sets one off and `blowMine` blows it at once; a blast sets off the mines
+    inside it after `MINE.chain`.
     Past `MINE.cap` the oldest goes quiet. The player never sets one off.
   - **Cave-in** (ability) is an entry in `G.caveins`. `startCaveIn(x, z)`
     lands a charge and finds the ridge: a capsule `CAVEIN.thick` in radius
@@ -446,11 +447,15 @@ is what you need to change the code without breaking it.
     `CAVEIN.into` into them. After `CAVEIN.fuse` (`caveImpact`) it hits every
     enemy under it, forces a stagger on all but the boss
     (`stagger(e, k)`, with `k` from `CAVEIN.stag`: a brute's lasts 75%),
-    sets off mines under it, adds the rock and pushes every body out along
+    blows the mines under it (before the rock, so their blasts reach out),
+    adds the rock and pushes every body out along
     the throw to the side it is on (one on the line goes to the player's
     side; the player goes to the side it threw from). The dummy is not
-    pushed. Every enemy's route is dropped when the rock rises and again
-    when it crumbles, after `CAVEIN.life`.
+    pushed, and `separate` does not resolve it, so it stays on its spot in
+    the rock. A stagger the crush earns by filling posture keeps its full
+    length. Every enemy's route is dropped when the rock rises and again
+    when it crumbles (`crumbleCave`), after `CAVEIN.life`. At most
+    `CAVEIN.cap` stand at once; a new one brings the oldest down early.
   - **Execution.** The charge is jammed in and the body kicked (`e.kick`,
     moved by the `dead` case of `enemyUpdate`); a `G.pending` blast goes off
     where it lands. The boss and the dummy are not kicked; the blast goes off
@@ -531,11 +536,11 @@ is what you need to change the code without breaking it.
   is tall because the resting camera looks down, so an enemy straight ahead
   sits above the centre. The HUD only reads enemies; looking never wakes one.
 - `EDEF.dummy` is the training dummy. Its `dummy: true` flag is honoured in
-  six places: `makeEnemy` (always aware, so no ambush bonus and its bar
+  seven places: `makeEnemy` (always aware, so no ambush bonus and its bar
   shows), `enemyUpdate` (pinned in place, no AI), `hitEnemy` (health restored
   after every hit), `kill` (refuses), the `execute` case of `playerUpdate`
-  (stands back up, and is not kicked by the Sapper) and `caveImpact` (not
-  pushed out of the rubble). Any new way of killing or moving an enemy must
+  (stands back up, and is not kicked by the Sapper) and `caveImpact` and
+  `separate` (not pushed out of the rubble). Any new way of killing or moving an enemy must
   respect it.
 
 ## Recipes
