@@ -1415,6 +1415,8 @@ function setEnv(e) {
 }
 // Clears everything that must not carry from one world into the next.
 function resetRun() {
+  if (G.world && G.world.clearRocks) G.world.clearRocks();
+  G.caveins = [];
   G.insp = null;
   G.bossDead = false;
   G.bossSeen = false;
@@ -1539,6 +1541,9 @@ function respawn() {
     buff: null,
     buffT: 0,
   });
+  // the same cave again: its rubble has to come out of the field
+  G.world.clearRocks();
+  G.caveins = [];
   G.world.resolve(p, 0.6);
   G.projs = [];
   G.bombs = [];
@@ -1708,10 +1713,11 @@ function alertE(e, quiet, by) {
       o.alertBy = e;
     }
 }
-function stagger(e) {
+// k scales how long it lasts: the Sapper's cave-in staggers a brute for less
+function stagger(e, k = 1) {
   e.state = "stagger";
   e.t = 0;
-  e.dur = e.def.boss ? 3.4 : 3.0;
+  e.dur = (e.def.boss ? 3.4 : 3.0) * k;
   e.posture = e.def.posture;
   e.token = false;
   e.y = 0;
@@ -2507,6 +2513,21 @@ function useSpecial(ix, iz, il) {
     SFX.tele(true);
     p.throwT = 0.5;
     say("STARFALL", "good", 1);
+  } else if (sp.id === "cavein") {
+    // thrown at the lock target or along the camera, short of any wall
+    const a = p.lock ? Math.atan2(p.lock.x - p.x, p.lock.z - p.z) : cam.yaw,
+      far = p.lock
+        ? Math.min(CAVEIN.range, Math.hypot(p.lock.x - p.x, p.lock.z - p.z))
+        : 9;
+    let ok = 0.5;
+    for (let d = 0.5; d <= far; d += 0.25) {
+      if (w.fieldAt(p.x + Math.sin(a) * d, p.z + Math.cos(a) * d) > 0.3) ok = d;
+      else break;
+    }
+    p.yaw = a;
+    p.throwT = 0.4;
+    SFX.whoosh(true);
+    startCaveIn(p.x + Math.sin(a) * ok, p.z + Math.cos(a) * ok);
   } else if (sp.id === "grapple") {
     if (!startGrapple()) return false;
   } else if (sp.id === "volley") {
@@ -3783,6 +3804,152 @@ function bombsUpdate(dt) {
   }
   G.bombs = G.bombs.filter((b) => b.t > 0);
 }
+// The Sapper's cave-in. A charge lands where it was thrown; at the end of its
+// fuse rock falls on a ridge lying across the throw, crushing and staggering
+// what is under it, and the rubble stands as rock in the walkable field for
+// CAVEIN.life seconds. Everything that reads the field treats it as wall.
+const CAVEIN = {
+  fuse: 0.9,
+  range: 12,
+  thick: 1,
+  half: 5.5,
+  into: 0.8,
+  dmg: 55,
+  post: 60,
+  life: 12,
+  crumble: 1.5,
+  // a forced stagger lasts this share of the usual time, by enemy type
+  stag: { brute: 0.75 },
+};
+// distance from (x, z) to a cave-in's ridge line, less nothing
+function ridgeD(c, x, z) {
+  const dx = c.bx - c.ax,
+    dz = c.bz - c.az,
+    l2 = dx * dx + dz * dz,
+    t = l2 ? clamp(((x - c.ax) * dx + (z - c.az) * dz) / l2, 0, 1) : 0;
+  return Math.hypot(x - c.ax - dx * t, z - c.az - dz * t);
+}
+function inRubble(x, z) {
+  for (const c of G.caveins)
+    if (c.phase === "stand" && ridgeD(c, x, z) < CAVEIN.thick + 0.3) return true;
+  return false;
+}
+function startCaveIn(tx, tz) {
+  const p = G.player,
+    w = G.world,
+    yaw =
+      Math.hypot(tx - p.x, tz - p.z) > 0.5
+        ? Math.atan2(tx - p.x, tz - p.z)
+        : p.yaw,
+    // along the ridge: across the throw
+    ux = Math.cos(yaw),
+    uz = -Math.sin(yaw);
+  // each end runs out to the rock, past other rubble, and into it
+  const end = (s) => {
+    let d = 0;
+    while (d < CAVEIN.half) {
+      const x = tx + ux * s * (d + 0.25),
+        z = tz + uz * s * (d + 0.25);
+      if (w.fieldAt(x, z) < 0.3 && !inRubble(x, z)) break;
+      d += 0.25;
+    }
+    return d + CAVEIN.into;
+  };
+  const ea = end(-1),
+    eb = end(1);
+  const c = {
+    x: tx,
+    z: tz,
+    yaw,
+    t: CAVEIN.fuse,
+    phase: "fuse",
+    fx: p.x,
+    fz: p.z,
+    ax: tx - ux * ea,
+    az: tz - uz * ea,
+    bx: tx + ux * eb,
+    bz: tz + uz * eb,
+    id: 0,
+    ceil: w.ceilAt(tx, tz),
+    seed: (Math.random() * 1e9) | 0,
+  };
+  G.caveins.push(c);
+  SFX.beep();
+}
+function caveImpact(c) {
+  const p = G.player,
+    w = G.world,
+    th = CAVEIN.thick,
+    nx = Math.sin(c.yaw),
+    nz = Math.cos(c.yaw),
+    // which side of the ridge a point is on, along the throw
+    off = (o) => (o.x - c.x) * nx + (o.z - c.z) * nz,
+    thrown = Math.sign((c.fx - c.x) * nx + (c.fz - c.z) * nz) || -1;
+  for (const e of G.enemies) {
+    if (e.dead || ridgeD(c, e.x, e.z) > th + e.r + 0.4) continue;
+    hitEnemy(e, CAVEIN.dmg, CAVEIN.post, {
+      src: "aoe",
+      heavy: true,
+      fx: c.x,
+      fz: c.z,
+    });
+    if (!e.dead && !e.def.boss) stagger(e, CAVEIN.stag[e.type] || 1);
+  }
+  c.id = w.addRock(c.ax, c.az, c.bx, c.bz, th);
+  // nobody is left inside: out along the throw to the side they are on; one
+  // on the line goes to the player's side, and the player to where it threw
+  // from. The dummy stays pinned.
+  const po = off(p),
+    pside = Math.abs(po) < 0.05 ? thrown : Math.sign(po);
+  const out = (o, r, side) => {
+    if (ridgeD(c, o.x, o.z) >= th + r) return;
+    const d = off(o),
+      s = Math.abs(d) < 0.05 ? side : Math.sign(d),
+      to = s * (th + r + 0.15) - d;
+    o.x += nx * to;
+    o.z += nz * to;
+    w.resolve(o, r);
+  };
+  out(p, 0.6, pside);
+  for (const e of G.enemies) if (!e.def.dummy) out(e, e.r, pside);
+  for (const e of G.enemies) e.route = null;
+  for (let s = 0; s <= 1; s += 0.1)
+    sparks(
+      lerp(c.ax, c.bx, s),
+      0.6,
+      lerp(c.az, c.bz, s),
+      4,
+      [0.55, 0.5, 0.45],
+      5,
+      0.7,
+      0.2,
+    );
+  G.shake = Math.max(G.shake, 1);
+  SFX.rumble();
+}
+function caveUpdate(dt) {
+  for (const c of G.caveins) {
+    c.t -= dt;
+    if (c.phase === "fuse") {
+      if (c.t <= 0) {
+        caveImpact(c);
+        c.phase = "stand";
+        c.t = CAVEIN.life;
+      }
+    } else if (c.t <= 0) {
+      G.world.removeRock(c.id);
+      for (const e of G.enemies) e.route = null;
+      SFX.crumble();
+      for (let s = 0; s <= 1; s += 0.1)
+        sparks(lerp(c.ax, c.bx, s), 0.8, lerp(c.az, c.bz, s), 3, [0.55, 0.5, 0.45], 3, 0.8, 0.22);
+      c.gone = true;
+    } else if (c.t < CAVEIN.crumble && Math.random() < dt * 12) {
+      const s = Math.random();
+      sparks(lerp(c.ax, c.bx, s), 1.2, lerp(c.az, c.bz, s), 2, [0.55, 0.5, 0.45], 1.5, 0.6, 0.15);
+    }
+  }
+  G.caveins = G.caveins.filter((c) => !c.gone);
+}
 function projUpdate(dt) {
   const p = G.player,
     w = G.world;
@@ -3928,6 +4095,7 @@ function update(dt) {
   for (const e of G.enemies) enemyUpdate(e, dt);
   projUpdate(dt);
   bombsUpdate(dt);
+  caveUpdate(dt);
   for (const q of G.pending) {
     q.t -= dt;
     if (q.t <= 0) {

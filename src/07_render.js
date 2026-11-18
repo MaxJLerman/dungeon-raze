@@ -540,6 +540,67 @@ function buildLights() {
   }
   R.setLights(L);
 }
+// A cave-in's rubble: faceted rocks heaped along its ridge, three or four
+// high, taller than a person, laid out once from the entry's seed so they do not flicker. Each rock
+// keeps where it lands in `hx`, `ty` and `hz`.
+const RUBBLE = [hexc(0x7a6656), hexc(0x66564a), hexc(0x8a7766)];
+function makeRubble(c) {
+  const root = new Nd(),
+    r = rng(c.seed),
+    L = Math.hypot(c.bx - c.ax, c.bz - c.az),
+    n = Math.max(2, Math.ceil(L / 0.6));
+  for (let i = 0; i <= n; i++) {
+    const s = i / n,
+      x = lerp(c.ax, c.bx, s),
+      z = lerp(c.az, c.bz, s);
+    for (const row of [-0.55, 0, 0.55]) {
+      const layers = row === 0 ? 4 : 3;
+      for (let k = 0; k < layers; k++) {
+        const sz = 0.6 + r() * 0.35 - k * 0.04,
+          q = root.add(
+            part("oct", RUBBLE[(r() * 3) | 0], sz * 1.2, sz, sz * 1.1),
+          );
+        q.p = [
+          x + Math.sin(c.yaw) * (row + (r() - 0.5) * 0.3),
+          0.3 + k * 0.62 + r() * 0.15,
+          z + Math.cos(c.yaw) * (row + (r() - 0.5) * 0.3),
+        ];
+        q.r = [r() * 3, r() * 3, r() * 3];
+        q.ty = q.p[1];
+        q.hx = q.p[0];
+        q.hz = q.p[2];
+      }
+    }
+  }
+  return root;
+}
+function drawCaveIns() {
+  for (const c of G.caveins) {
+    if (c.phase === "fuse") {
+      // the charge in the air for 0.4 s, then blinking on the floor
+      const k = sat((CAVEIN.fuse - c.t) / 0.4),
+        x = lerp(c.fx, c.x, k),
+        z = lerp(c.fz, c.z, k),
+        y = 0.25 + 1.2 * Math.sin(k * PI) + (1 - k) * 1.1,
+        on = k < 1 || c.t % 0.2 < 0.1;
+      R.sprite(x, y, z, 0.16, 0.35, 0.3, 0.25, 1);
+      if (on) R.sprite(x, y + 0.05, z, 0.34, HAZARD[0], HAZARD[1], HAZARD[2], 1.6);
+    }
+    // the rocks fall from the roof over the last 0.3 s of the fuse
+    const fall = c.phase === "fuse" ? sat(1 - c.t / 0.3) : 1;
+    if (fall <= 0) continue;
+    if (!c.node) c.node = makeRubble(c);
+    const crumble =
+      c.phase === "stand" ? sat(1 - c.t / CAVEIN.crumble) : 0;
+    for (const q of c.node.ch) {
+      q.p[1] = lerp(c.ceil, q.ty, fall * fall) - crumble * crumble * q.ty;
+      // shaking as it gives way
+      q.p[0] = q.hx + (Math.random() - 0.5) * 0.08 * crumble;
+      q.p[2] = q.hz + (Math.random() - 0.5) * 0.08 * crumble;
+    }
+    R.drawNode(c.node);
+  }
+}
 function render() {
   const p = G.player,
     w = G.world;
@@ -556,6 +617,7 @@ function render() {
     poseEnemy(e);
     R.drawNode(e.fig.root, e.fig.rim);
   }
+  drawCaveIns();
   // ---- fx ----
   if (p.state !== "dead") R.blob(p.x, p.z, 0.8, 0.55);
   for (const e of G.enemies) {
