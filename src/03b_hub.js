@@ -24,13 +24,21 @@ const PORTAL_WALL = 1,
 // Where the six frames stand: a row along the north wall in rank order, with
 // E at +X. An entry is all the hall needs to build, collide, light and label
 // a portal, so opening or moving one is a change to this list.
+// Grades whose gate is built and can be entered. A gate also needs the grade
+// before it cleared, see portalOpen.
+const LIVE_GRADES = new Set(["E"]);
+function portalOpen(grade) {
+  if (grade === "E") return true;
+  const i = GRADE_IDS.indexOf(grade);
+  return i > 0 && LIVE_GRADES.has(grade) && gradeCleared(GRADE_IDS[i - 1]);
+}
 function hubPortals() {
   return GRADE_IDS.map((grade, i) => ({
     x: 11.5 - i * 4.6,
     z: 16,
     yaw: PI,
     grade,
-    open: i === 0,
+    open: portalOpen(grade),
   }));
 }
 // Plaques on the hall's +X wall, the player's left at the start, one per

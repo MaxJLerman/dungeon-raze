@@ -213,11 +213,37 @@ function unlockClass(id) {
   saveOpt();
   return true;
 }
+// Grades whose boss a class has beaten, saved under "c": class id to grade
+// ids. A gate opens when any class has cleared the one before it.
+const CLEARED = {};
+// true when this class had not cleared the grade until now
+function clearGrade(grade, cls) {
+  if (!CLASSES[cls] || !GRADE_IDS.includes(grade)) return false;
+  const list = CLEARED[cls] || (CLEARED[cls] = []);
+  if (list.includes(grade)) return false;
+  list.push(grade);
+  saveOpt();
+  return true;
+}
+function gradeCleared(grade) {
+  for (const id in CLEARED) if (CLEARED[id].includes(grade)) return true;
+  return false;
+}
+function resetCleared() {
+  for (const id in CLEARED) delete CLEARED[id];
+  saveOpt();
+}
 function saveOpt() {
   try {
     localStorage.setItem(
       "dungeon-raze.v2",
-      JSON.stringify({ b: BIND, p: PAD_BIND, o: OPT, u: [...UNLOCKED] }),
+      JSON.stringify({
+        b: BIND,
+        p: PAD_BIND,
+        o: OPT,
+        u: [...UNLOCKED],
+        c: CLEARED,
+      }),
     );
   } catch (e) {
     /* storage may be unavailable */
@@ -247,6 +273,15 @@ function loadOpt() {
           d.p[k] === null || PAD_CODES.includes(d.p[k]) ? d.p[k] : DEFAULT_PAD[k];
     if (Array.isArray(d.u))
       for (const id of d.u) if (CLASSES[id]) UNLOCKED.add(id);
+    // only known classes and grades; anything else in "c" is dropped
+    if (d.c && typeof d.c === "object" && !Array.isArray(d.c))
+      for (const id in d.c)
+        if (CLASSES[id] && Array.isArray(d.c[id]))
+          for (const g of d.c[id])
+            if (typeof g === "string" && GRADE_IDS.includes(g)) {
+              const list = CLEARED[id] || (CLEARED[id] = []);
+              if (!list.includes(g)) list.push(g);
+            }
     if (d.o) {
       // a hidden class that is not unlocked falls back to the first open one
       if (CLASSES[d.o.cls]) OPT.cls = classOpen(d.o.cls) ? d.o.cls : pickable()[0];
@@ -1886,11 +1921,17 @@ function kill(e) {
     p.lock = b;
   }
   if (e.def.boss) {
+    const grade = G.grade || "E";
+    const next = GRADE_IDS[GRADE_IDS.indexOf(grade) + 1];
+    const before = next ? portalOpen(next) : true;
+    clearGrade(grade, OPT.cls);
     G.bossDead = true;
     G.gate = { x: G.world.boss.x, z: G.world.boss.z, t: 0 };
     G.slowT = 1.2;
     say("THE WARDEN FALLS", "big", 4);
     say("A gate opens. Step through to leave.", "", 6);
+    if (next && !before && portalOpen(next))
+      say("A new gate has opened in the base.", "good", 6);
     SFX.win();
   }
 }

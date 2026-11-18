@@ -33,4 +33,23 @@ export default [
     DF.taps[DF.BIND.light] = true; DF.sim(0.05);
     DF.keys[DF.BIND.fwd] = false; DF.keys[DF.BIND.sprint] = false;
     return { pass: p.state === "attack" && p.move === p.cls.dash && sp < run * 0.8 && ds > run * 0.8, move: p.move, state: p.state, sp, ds, run };`),
+  step("D is sealed until E is cleared and D is live", `DF.resetCleared(); DF.LIVE_GRADES.delete("D");
+  const c = { e: DF.portalOpen("E"), d0: !DF.portalOpen("D") };
+  DF.clearGrade("E", "fighter"); c.notLive = !DF.portalOpen("D");
+  DF.LIVE_GRADES.add("D"); c.open = DF.portalOpen("D") && DF.hubPortals().find((q) => q.grade === "D").open;
+  DF.resetCleared(); c.reset = !DF.portalOpen("D"); DF.LIVE_GRADES.delete("D");
+  return { pass: Object.values(c).every(Boolean), c };`),
+  step("killing E's boss records E and says so once", `DF.resetCleared(); DF.LIVE_GRADES.add("D"); DF.newRun(99); DF.show("play"); G.state = "play";
+  const b = G.enemies.find((e) => e.def.boss); b.hp = 0; DF.kill(b);
+  const said = G.msgs.some((m) => /new gate has opened/.test(m.text || m.t || ""));
+  const c = { cleared: DF.gradeCleared("E"), said, saved: /"c":/.test(localStorage.getItem("dungeon-raze.v2")) };
+  DF.LIVE_GRADES.delete("D"); DF.resetCleared();
+  return { pass: Object.values(c).every(Boolean), c };`),
+  step("an old save, or a broken c, loads with nothing cleared", `const k = "dungeon-raze.v2", keep = localStorage.getItem(k);
+  const d = JSON.parse(keep || "{}"); delete d.c; localStorage.setItem(k, JSON.stringify(d));
+  for (const id in DF.CLEARED) delete DF.CLEARED[id]; DF.loadOpt(); const a = !DF.gradeCleared("E");
+  d.c = "rubbish"; localStorage.setItem(k, JSON.stringify(d)); DF.loadOpt(); const b = !DF.gradeCleared("E") && typeof DF.BIND.fwd === "string";
+  d.c = { fighter: ["E", 7] }; localStorage.setItem(k, JSON.stringify(d)); DF.loadOpt(); const c2 = DF.gradeCleared("E");
+  localStorage.setItem(k, keep); DF.resetCleared();
+  return { pass: a && b && c2, a, b, c2 };`),
 ];
