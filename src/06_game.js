@@ -1407,6 +1407,7 @@ function makePlayer(id) {
     kx: 0,
     kz: 0,
     speed: 0,
+    dspeed: 0,
     walk: 0,
     sprint: false,
     fig: makePlayerFig(id),
@@ -2480,7 +2481,7 @@ function inspectUpdate(dt) {
   const p = G.player,
     i = G.insp;
   p.vx = p.vz = 0;
-  p.speed = 0;
+  p.speed = p.dspeed = 0;
   if (!i) {
     p.state = "free";
     return;
@@ -2912,7 +2913,7 @@ function playerUpdate(dt) {
         return true;
       }
       return startMove(
-        wasSprint && p.speed > c.run * 0.8 ? c.dash : c.chain,
+        wasSprint && p.dspeed > c.run * 0.8 ? c.dash : c.chain,
         inYaw(),
       );
     }
@@ -3403,6 +3404,8 @@ function playerUpdate(dt) {
   // knockback + integrate
   p.kx = damp(p.kx, 0, 9, dt);
   p.kz = damp(p.kz, 0, 9, dt);
+  // dspeed is the speed before the wade, which the sprint attack reads
+  p.dspeed = Math.hypot(mvx, mvz);
   const wade = wadeMul(G.world.waterAt(p.x, p.z), WATER.slow);
   mvx *= wade;
   mvz *= wade;

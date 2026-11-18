@@ -27,4 +27,10 @@ export default [
     const stepX = (wet, wade) => { G.world.waterAt = () => wet; const old = e.def.wade; e.def.wade = wade; const x = e.x; DF.eStep(e, 1, 0, 4, 0.5); const d = e.x - x; e.x = x; e.def.wade = old; return d; };
     const base = stepX(0, 1.5), fast = stepX(1, 1.5), slow = stepX(1, undefined);
     return { pass: Math.abs(base - 2) < 1e-6 && Math.abs(fast - 3) < 1e-6 && Math.abs(slow - 2 * DF.WATER.slow) < 1e-6 };`),
+  step("a sprint attack in water still starts the dash", `DF.newRun(99); DF.show("play"); G.state = "play"; const p = G.player; G.world.waterAt = () => 1;
+    DF.keys[DF.BIND.fwd] = true; DF.keys[DF.BIND.sprint] = true; DF.sim(1.0);
+    const sp = p.speed, ds = p.dspeed, run = p.cls.run;
+    DF.taps[DF.BIND.light] = true; DF.sim(0.05);
+    DF.keys[DF.BIND.fwd] = false; DF.keys[DF.BIND.sprint] = false;
+    return { pass: p.state === "attack" && p.move === p.cls.dash && sp < run * 0.8 && ds > run * 0.8, move: p.move, state: p.state, sp, ds, run };`),
 ];
