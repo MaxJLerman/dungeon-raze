@@ -177,4 +177,26 @@ export default [
   const t = tunnel(); put(p, along(t, -6)); p.yaw = cam.yaw = t.yaw; p.focus = 100; DF.taps[DF.BIND.special] = true; DF.sim(0.05);
   const hl = G.holes[0];
   return { pass: !!hl && p.focus <= 55.1 && D(hl, p) > 2 && D(hl, p) <= 9.01, n: G.holes.length, focus: p.focus };`),
+  game("a lock that dies mid-Drop never moves to a falling enemy", `
+  const t = tunnel(), q = along(t, 0); put(p, along(t, -8)); G.rifts = [];
+  const h = spawnAt('husk', q); h.aware = true; h.state = 'chase'; const o = spawnAt('brute', along(t, -5)); o.aware = true; p.lock = o;
+  // only these two, so the relock has one candidate
+  G.enemies = [h, o]; DF.startDrop(q.x, q.z); DF.sim(DF.DROP.fuse + 0.05); const fall = h.state === 'fall';
+  DF.hitEnemy(o, 9999, 0, { src: 'melee' });
+  return { pass: fall && o.dead && !(p.lock && p.lock.state === 'fall'), fall, dead: o.dead, lock: p.lock && p.lock.state };`),
+  game("a landing is no ambush: an unaware enemy takes the fall's damage", `
+  const t = tunnel(), q = along(t, 0); put(p, along(t, -6)); G.rifts = []; const b = spawnAt('brute', q); b.aware = false; b.state = 'idle';
+  const h0 = b.hp; DF.startDrop(q.x, q.z); DF.sim(DF.DROP.fuse + 0.05); const H = b.fallH; DF.sim(2, () => b.state === 'fall');
+  const lost = h0 - b.hp, want = DF.DROP.dmg * H;
+  return { pass: Math.abs(lost - want) < 0.5, lost, want };`),
+  game("a dropped pack does not walk straight back through the far end", `
+  const t = tunnel(), [A, B] = pair(t); put(p, along(t, -12)); const q = along(t, -9), h = spawnAt('husk', q); h.aware = true; h.state = 'chase';
+  DF.startDrop(q.x, q.z); DF.sim(DF.DROP.fuse + 0.05); DF.sim(2, () => h.state === 'fall');
+  // landed: walk it across B's line by hand once its stagger is over
+  h.state = 'chase'; h.t = 0; const s0 = off(B, 0.4, 0), s1 = off(B, -0.4, 0); h.x = s1.x; h.z = s1.z;
+  DF.riftBodies({ p: [p.x, p.z], e: new Map([[h, [s0.x, s0.z]]]) });
+  return { pass: D(h, s1) < 0.01 && h.rest > 0, rest: h.rest, moved: D(h, s1) };`),
+  game("an end near the one being replaced is not refused", `
+  const t = tunnel(), [A, B] = pair(t), u = uv(A); const r = DF.openRift(A.x + u.x * 1, A.z + u.z * 1, A.yaw);
+  return { pass: typeof r === 'object' && G.rifts.length === 2 && !G.rifts.includes(A) && G.rifts.includes(B), r: typeof r === 'string' ? r : 'ok' };`),
 ];

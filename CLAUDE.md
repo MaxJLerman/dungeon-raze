@@ -466,12 +466,13 @@ is what you need to change the code without breaking it.
   - `resetRun` and `respawn` clear the rock, `G.caveins` and `G.mines`.
 - The Riftwalker. A melee class with `reach` cuts (`v1`, `v2`) that land from
   about 5 m, a thrown shard (`v3`, a real shot), a tear that snaps shut
-  (`vsnap`) and a step through a short rift (`vstep`, a look only).
+  (`vsnap`) and a step through a short rift (`vstep`, a lunge with no real rift, so it never triggers the trait).
   - **Rift ends** (tool) are entries in `G.rifts`, at most two, oldest
     first: `{ x, z, yaw, t, life, id }`, `yaw` facing the player when it
     opened. `openRift(x, z, yaw)` returns the end, or `"close"` or `"room"`
     when refused (a refused tool press spends nothing). A third end shifts
-    out the oldest; `riftsUpdate` closes ends after `RIFT.life`.
+    out the oldest, so only the newer end counts for `"close"`;
+    `riftsUpdate` closes ends after `RIFT.life`.
   - **Crossing.** `riftMove(o, ox, oz, r)` is the one transform: a mover
     whose path in the step crosses an end's line (within `RIFT.half` of its
     centre, from either face) comes out of the other end, offset, direction
@@ -497,11 +498,14 @@ is what you need to change the code without breaking it.
     further from it, or the spot itself). After `DROP.fuse`, `holesUpdate`
     sends every regular enemy over it to `dropEnemy`: it appears under the
     ceiling (`ceilAt`) over its spot in state `fall`, out of the fight until
-    `landEnemy`, which hurts it by the height fallen, forces a stagger by
-    the Sapper's rule, and hurts other enemies round it. Landings never hurt
-    the player. **A falling enemy is skipped by** `hitEnemy`, `pickLock`,
+    `landEnemy`, which hurts it by the height fallen (an `aoe` hit, so no
+    ambush bonus), forces a stagger by the Sapper's rule, sets `e.rest` to
+    the stagger plus `RIFT.rest` so it does not walk straight back through
+    the far end, and hurts other enemies round it. Landings never hurt the
+    player. **A falling enemy is skipped by** `hitEnemy`, `pickLock`,
     `aimYaw`, `aimRanged`, `explode`, the melee hit loop, the shot hit loop,
-    the Starfall target, mines and tripwires, `separate` and `riftBodies`.
+    the Starfall target, mines and tripwires, `separate`, `riftBodies` and
+    `kill`'s relock.
     A new way of hitting or targeting an enemy must skip it too.
   - **Execution.** The enemy is killed, then dropped like a Drop (its body
     falls in the `dead` case of `enemyUpdate`) and lands in one blast
@@ -584,7 +588,7 @@ is what you need to change the code without breaking it.
   is tall because the resting camera looks down, so an enemy straight ahead
   sits above the centre. The HUD only reads enemies; looking never wakes one.
 - `EDEF.dummy` is the training dummy. Its `dummy: true` flag is honoured in
-  seven places: `makeEnemy` (always aware, so no ambush bonus and its bar
+  nine places: `makeEnemy` (always aware, so no ambush bonus and its bar
   shows), `enemyUpdate` (pinned in place, no AI), `hitEnemy` (health restored
   after every hit), `kill` (refuses), the `execute` case of `playerUpdate`
   (stands back up, and is not kicked by the Sapper or dropped by the

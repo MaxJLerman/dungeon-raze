@@ -1870,7 +1870,7 @@ function kill(e) {
     let b = null,
       bd = p.cls.ranged ? 22 : 13;
     for (const o of G.enemies)
-      if (!o.dead && o.aware) {
+      if (!o.dead && o.aware && o.state !== "fall") {
         const d = Math.hypot(o.x - p.x, o.z - p.z);
         if (d < bd) {
           bd = d;
@@ -4366,7 +4366,8 @@ let riftId = 0;
 // the end, or why not: "close" to the other end, or no "room"
 function openRift(x, z, yaw) {
   const w = G.world;
-  for (const o of G.rifts)
+  // the oldest of a full pair is about to go, so only the newer one counts
+  for (const o of G.rifts.length >= 2 ? G.rifts.slice(1) : G.rifts)
     if (Math.hypot(o.x - x, o.z - z) < RIFT.apart) return "close";
   if (w.fieldAt(x, z) < RIFT.room) return "room";
   const ux = Math.cos(yaw),
@@ -4571,10 +4572,14 @@ function landEnemy(e) {
       hitEnemy(o, im.dmg, im.post, { src: "aoe", heavy: true, fx: e.x, fz: e.z });
   e.state = "idle";
   e.t = 0;
-  hitEnemy(e, DROP.dmg * e.fallH, 30, { heavy: true, src: "drop" });
+  // an area hit, as the Sapper's crush is: no ambush bonus for a fall
+  hitEnemy(e, DROP.dmg * e.fallH, 30, { heavy: true, src: "aoe", fx: e.x, fz: e.z });
   if (!e.dead) {
     if (e.wasAware) alertE(e, true);
     stagger(e, CAVEIN.stag[e.type] || 1);
+    // it came out of a rift: ends are air to it until its stagger and a
+    // rest are over, so it does not walk straight back through the far end
+    e.rest = e.dur + RIFT.rest;
   }
 }
 function holesUpdate(dt) {
