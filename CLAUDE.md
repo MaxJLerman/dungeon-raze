@@ -27,7 +27,11 @@ is what you need to change the code without breaking it.
   with a faked Gamepad API only. No real pad has been played yet.
 - Branch `feat/plaques-enforcer` added three plaques on the hall's left wall,
   an Inspect close-up, input codes that unlock hidden classes, and the first
-  hidden class, the Enforcer. The Sapper and Riftwalker plaques are sealed.
+  hidden class, the Enforcer.
+- Branch `feat/sapper` added the second hidden class, the Sapper: a
+  sledgehammer, landmines joined by tripwires, and a cave-in that crushes a
+  pack and walls off a tunnel for a while. Only the Riftwalker plaque is
+  still sealed.
 
 ## Rules of the build
 
@@ -96,6 +100,16 @@ is what you need to change the code without breaking it.
   `fieldFns`, so the hall has it too. `world.path` is something else: the
   list of chamber ids from the start to the boss.
 - The ceiling height at a point is `world.ceilAt(x, z)`.
+- **Rock.** `world.addRock(ax, az, bx, bz, r)` writes a capsule of rock into
+  the field and returns an id; `removeRock(id)` and `clearRocks()` take it
+  out again. `fieldFns` keeps a copy of the base field on the first rock, and
+  each point a rock covers (its box grown by `ROCK_PAD`) holds the least of
+  the base and every live rock's distance, so overlapping rocks do not open
+  each other. This is how the Sapper's rubble blocks movement, sight, routes,
+  shots and the camera. **Rubble is only ever a change to the field.** Never
+  give a reader of the field a rubble check of its own.
+  In the cave, `ceilAt` is worked out from the field, so the ceiling the
+  camera collides with drops near rubble while the drawn ceiling stays put.
 - Spawn packs are chosen by a chamber's distance from the start, in `PACKS`.
 
 ### Zones (`06_game.js`, `03b_hub.js`)
@@ -415,6 +429,33 @@ is what you need to change the code without breaking it.
   the `grapple` state. With no target it costs nothing. Either way the enemy
   reels in `hit` for `e.hitT` seconds (a flinch is 0.32), and a staggered
   enemy stays staggered.
+- The Sapper. A melee class: sledgehammer chain (`s1` to `s3`), a slam
+  (`sslam`) whose damage comes only through a `blast` in front, and a dash
+  (`sdrop`). `blastPost` on its class multiplies the posture damage of every
+  `explode` while it is played; none of its blasts call `hurtPlayer`.
+  - **Landmines** (tool) are entries in `G.mines` (`{ x, z, t, links, fuse }`).
+    `plantMine` wires a new mine to the nearest one in sight within
+    `MINE.link` that has fewer than `MINE.wires` wires. A mine arms after
+    `MINE.arm`, goes off when an enemy body is within `MINE.trig`, and a wire
+    between two armed mines sets both off when an enemy crosses it. `boomMine`
+    sets one off; a blast sets off the mines inside it after `MINE.chain`.
+    Past `MINE.cap` the oldest goes quiet. The player never sets one off.
+  - **Cave-in** (ability) is an entry in `G.caveins`. `startCaveIn(x, z)`
+    lands a charge and finds the ridge: a capsule `CAVEIN.thick` in radius
+    across the throw, running out to the walls (past standing rubble) and
+    `CAVEIN.into` into them. After `CAVEIN.fuse` (`caveImpact`) it hits every
+    enemy under it, forces a stagger on all but the boss
+    (`stagger(e, k)`, with `k` from `CAVEIN.stag`: a brute's lasts 75%),
+    sets off mines under it, adds the rock and pushes every body out along
+    the throw to the side it is on (one on the line goes to the player's
+    side; the player goes to the side it threw from). The dummy is not
+    pushed. Every enemy's route is dropped when the rock rises and again
+    when it crumbles, after `CAVEIN.life`.
+  - **Execution.** The charge is jammed in and the body kicked (`e.kick`,
+    moved by the `dead` case of `enemyUpdate`); a `G.pending` blast goes off
+    where it lands. The boss and the dummy are not kicked; the blast goes off
+    on them.
+  - `resetRun` and `respawn` clear the rock, `G.caveins` and `G.mines`.
 - `G.insp` is set only while the player is in `inspect`. Anything that moves
   them out of it closes the plaque on the next update.
 
@@ -490,10 +531,12 @@ is what you need to change the code without breaking it.
   is tall because the resting camera looks down, so an enemy straight ahead
   sits above the centre. The HUD only reads enemies; looking never wakes one.
 - `EDEF.dummy` is the training dummy. Its `dummy: true` flag is honoured in
-  five places: `makeEnemy` (always aware, so no ambush bonus and its bar
+  six places: `makeEnemy` (always aware, so no ambush bonus and its bar
   shows), `enemyUpdate` (pinned in place, no AI), `hitEnemy` (health restored
-  after every hit), `kill` (refuses) and the `execute` case of `playerUpdate`
-  (stands back up). Any new way of killing an enemy must respect it.
+  after every hit), `kill` (refuses), the `execute` case of `playerUpdate`
+  (stands back up, and is not kicked by the Sapper) and `caveImpact` (not
+  pushed out of the rubble). Any new way of killing or moving an enemy must
+  respect it.
 
 ## Recipes
 
@@ -502,7 +545,9 @@ is what you need to change the code without breaking it.
 Edit `MOVES` in `06_game.js`. Fields: `wind`, `act`, `rec` (seconds), `dmg`,
 `post` (posture damage), `range`, `arc` (radians, `TAU` for all round), `lunge`
 (distance moved), `stam`, `next` (the chained move), `anim`, `tilt` and `dir`
-(slash arc shape), `heavy`, `lance` (straight thrust effect). A ranged move has
+(slash arc shape), `heavy`, `lance` (straight thrust effect), and `blast`
+(`{ d, r, dmg, post }`: an `explode` `d` metres ahead when the act starts,
+in place of the melee hit). A ranged move has
 `proj` instead of the melee fields: `speed`, `dmg`, `post` and `kind`, with
 `life`, `big` and `heavy` optional. `pellets` fires that many shots at once,
 `spread` radians apart. A `proj` move with a `lunge` slides the player
@@ -580,12 +625,15 @@ The class picker and HUD read `CLASSES` and need no changes.
   Set `DF.G.manual` and call `DF.PAD.poll` yourself, as the steps do.
 - Run `tests/t18.mjs` after any change to plaques, Inspect, codes, unlocks or
   the interact and dodge bindings: `SCRIPT=$PWD/tests/t18.mjs node test.mjs hub`.
-  Its last step enters the real Enforcer code from `tests/codes.local.json`
-  and skips when that file is missing.
+  Its last step enters every real code in `tests/codes.local.json` at its
+  plaque and skips when that file is missing.
 - Run `tests/t19.mjs` on every device after any change to plaques by touch:
   `node tests/touch-all.mjs tests/t19.mjs hub`.
-- The Enforcer's steps (bombs, grapple, shotgun, sniper execution) are in
-  `tests/t6.mjs`.
+- The Enforcer's steps (bombs, grapple, shotgun, sniper execution) and the
+  Sapper's (slam, mines, wires, execution) are in `tests/t6.mjs`.
+- Run `tests/t20.mjs` after any change to `fieldFns` rock or the Sapper's
+  cave-in: `SCRIPT=$PWD/tests/t20.mjs node test.mjs smoke`. It checks rock
+  on a hand-built corridor, then cave-ins in a tunnel of cave 99.
 - Run `tests/t17.mjs` after any change to how a pad and touch share the screen.
   It uses a phone with a fake pad. Shots of the fight and the Controls menu go
   to `shots/`:
@@ -627,6 +675,9 @@ The class picker and HUD read `CLASSES` and need no changes.
   the standard mapping gets a note in the Controls menu.
 - The Enforcer, the plaques and the codes are untested by hand. The sticky
   bomb's self damage and the grapple's reach were set without a playtest.
+- The Sapper is untested by hand. Its numbers, the cave-in's size and how
+  long rubble stands were set without a playtest. Rubble is drawn as a heap
+  about head high, while it blocks sight and shots as a full wall.
 - iPhones cannot run the file directly; they play at
   https://maxjlerman.github.io/dungeon-raze/.
 - Touch was checked only in Chromium device emulation. Fullscreen, the
@@ -663,7 +714,7 @@ The class picker and HUD read `CLASSES` and need no changes.
    the owner before building it. The floor is flat, so there is nothing to
    jump onto. A touch Jump button must fit the owner's honeycomb layout.
 8. Hidden classes and joke classes. See `docs/ideas/joke-classes.md`. Still
-   to come after the first piece: the Sapper and Riftwalker kits, quests on
+   to come: the Riftwalker kit, quests on
    the plaques that open portals D to S to a class, and the in-game hunt that
    leads players to the hidden list of codes.
 
