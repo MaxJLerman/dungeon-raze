@@ -142,4 +142,39 @@ export default [
   const t = tunnel(), a = along(t, 0); G.rifts = []; const A = DF.openRift(a.x, a.z, t.yaw); const s0 = off(A, 0.5, 0), s1 = off(A, -0.5, 0);
   const o = { x: s1.x, z: s1.z }; const crossed = DF.riftMove(o, s0.x, s0.z, 0.6);
   return { pass: !crossed && D(o, s1) < 0.01, crossed };`),
+  game("Drop over a pair lands the pack at the far end, staggered", `
+  const t = tunnel(), [A, B] = pair(t); put(p, along(t, 0)); const hp0 = p.hp; p.iframe = 0;
+  const q = along(t, -9), h = spawnAt('husk', q), b = spawnAt('brute', { x: q.x + 0.8, z: q.z }); const h0 = h.hp, b0 = b.hp;
+  DF.startDrop(q.x, q.z); DF.sim(DF.DROP.fuse + 0.05); const falling = h.state === 'fall' && b.state === 'fall' && D(h, B) < 3 && D(b, B) < 3;
+  DF.sim(2, () => { p.hp = Math.min(p.hp, hp0); return h.state === 'fall' || b.state === 'fall'; });
+  const c = { falling, landed: D(h, B) < 3 && D(b, B) < 3, hurt: h.hp < h0 && b.hp < b0, safe: p.hp === hp0,
+    hDur: h.dead || (h.state === 'stagger' && Math.abs(h.dur - 3) < 0.01), bDur: b.dead || (b.state === 'stagger' && Math.abs(b.dur - 2.25) < 0.01), holes: G.holes.length === 0 };
+  return { pass: Object.values(c).every(Boolean), c, hs: h.state, bs: b.state };`),
+  game("Drop with no pair lands them on the spot", `
+  const t = tunnel(), q = along(t, 0); G.rifts = []; const h = spawnAt('husk', q); DF.startDrop(q.x, q.z);
+  DF.sim(DF.DROP.fuse + 0.05); const fell = h.state === 'fall'; DF.sim(2, () => h.state === 'fall');
+  return { pass: fell && D(h, q) < 2 && h.y === 0, fell, d: D(h, q), y: h.y };`),
+  game("falling enemies cannot be hit, locked or aimed at", `
+  const t = tunnel(), q = along(t, 0); put(p, along(t, -4)); G.rifts = []; const h = spawnAt('husk', q); p.lock = h;
+  DF.startDrop(q.x, q.z); DF.sim(DF.DROP.fuse + 0.05); const h0 = h.hp;
+  DF.hitEnemy(h, 50, 50, { src: 'melee' }); DF.explode(h.x, h.z, 3, 50, 50, DF.MAGENTA);
+  const c = { fall: h.state === 'fall', unhurt: h.hp === h0, lockDropped: p.lock !== h, noPick: DF.pickLock() !== h };
+  return { pass: Object.values(c).every(Boolean), c };`),
+  game("the boss and the dummy stay", `
+  const wd = G.enemies.find((e) => e.def.boss); DF.startDrop(wd.x, wd.z); DF.sim(DF.DROP.fuse + 0.1); const boss = wd.state !== 'fall' && wd.y === 0;
+  DF.enterHub(); const d = DF.G.enemies.find((e) => e.def.dummy); DF.startDrop(d.x, d.z); DF.sim(DF.DROP.fuse + 0.1);
+  return { pass: boss && d.state !== 'fall', boss, dummy: d.state };`),
+  game("a reset mid-fall leaves no hole and no fall", `
+  const t = tunnel(), q = along(t, 0); G.rifts = []; spawnAt('husk', q); DF.startDrop(q.x, q.z); DF.sim(DF.DROP.fuse + 0.05);
+  const was = G.enemies.some((e) => e.state === 'fall'); DF.startDrop(q.x, q.z); DF.respawn();
+  return { pass: was && G.holes.length === 0 && !G.enemies.some((e) => e.state === 'fall'), was, holes: G.holes.length };`),
+  game("a landing on a pack hurts it", `
+  const t = tunnel(), [A, B] = pair(t); put(p, along(t, 0)); const q = along(t, -9), h = spawnAt('husk', q);
+  const o = G.enemies.find((e) => e !== h && !e.dead && e.type === 'husk'); put(o, { x: B.x, z: B.z }); o.state = 'idle'; o.aware = false; const o0 = o.hp;
+  DF.startDrop(q.x, q.z); DF.sim(DF.DROP.fuse + 2, () => { if (o.state !== 'hit') { o.state = 'idle'; o.aware = false; } });
+  return { pass: o.hp < o0, hurt: o0 - o.hp };`),
+  game("the ability opens a hole where the camera points", `
+  const t = tunnel(); put(p, along(t, -6)); p.yaw = cam.yaw = t.yaw; p.focus = 100; DF.taps[DF.BIND.special] = true; DF.sim(0.05);
+  const hl = G.holes[0];
+  return { pass: !!hl && p.focus <= 55.1 && D(hl, p) > 2 && D(hl, p) <= 9.01, n: G.holes.length, focus: p.focus };`),
 ];

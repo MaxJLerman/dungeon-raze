@@ -685,6 +685,25 @@ function drawRifts() {
     );
   }
 }
+// Drop: a dark disc with a glowing rim over the fuse, and a tear in the roof
+// over anything falling
+function drawHoles() {
+  for (const h of G.holes) {
+    const k = sat(h.t / DROP.fuse),
+      c = MAGENTA;
+    R.blob(h.x, h.z, DROP.r * (0.4 + 0.6 * k), 0.85 * k);
+    R.ring(h.x, 0.08, h.z, DROP.r * k - 0.12, DROP.r * k, c[0], c[1], c[2], 1.4 * k);
+    R.ring(h.x, 0.08, h.z, DROP.r * k * 0.55 - 0.06, DROP.r * k * 0.55, c[0], c[1], c[2], 0.6 * k);
+  }
+  for (const e of G.enemies) {
+    if (!(e.fallH > 0) || e.y <= 0.05) continue;
+    const top = e.fallH + 0.5,
+      k = sat(e.y / e.fallH),
+      c = MAGENTA;
+    R.ring(e.x, top - 0.02, e.z, 0.2, 0.2 + e.r * 1.3, c[0], c[1], c[2], 1.2 * k);
+    R.sprite(e.x, top - 0.1, e.z, 0.9, c[0], c[1], c[2], 0.5 * k);
+  }
+}
 function drawCaveIns() {
   for (const c of G.caveins) {
     if (c.phase === "fuse") {
@@ -731,6 +750,7 @@ function render() {
   drawCaveIns();
   drawMines();
   drawRifts();
+  drawHoles();
   // ---- fx ----
   if (p.state !== "dead") R.blob(p.x, p.z, 0.8, 0.55);
   for (const e of G.enemies) {

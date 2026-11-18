@@ -1716,7 +1716,7 @@ function explode(x, z, r, dmg, post, c) {
   G.shake = Math.max(G.shake, r > 4.5 ? 0.9 : 0.45);
   SFX.slam();
   for (const e of G.enemies) {
-    if (e.dead) continue;
+    if (e.dead || e.state === "fall") continue;
     if (Math.hypot(e.x - x, e.z - z) < r + e.r && G.world.los(x, z, e.x, e.z))
       hitEnemy(e, dmg, post, { src: "aoe", heavy: true, fx: x, fz: z });
   }
@@ -1889,7 +1889,7 @@ function kill(e) {
   }
 }
 function hitEnemy(e, dmg, post, o = {}) {
-  if (e.dead) return;
+  if (e.dead || e.state === "fall") return;
   const p = G.player,
     c = p.cls;
   // the Riftwalker's trait: the first hit after coming out of a rift
@@ -2145,7 +2145,7 @@ function pickLock(exclude) {
     bs = 1e9;
   const far = p.cls.ranged ? 34 : 24;
   for (const e of G.enemies) {
-    if (e.dead || e === exclude) continue;
+    if (e.dead || e === exclude || e.state === "fall") continue;
     const d = Math.hypot(e.x - p.x, e.z - p.z);
     if (d > far) continue;
     const a = Math.abs(angDiff(cam.yaw, Math.atan2(e.x - p.x, e.z - p.z)));
@@ -2165,7 +2165,7 @@ function aimYaw(base, range = 4.8, cone = 1.1) {
   let best = null,
     bs = 1e9;
   for (const e of G.enemies) {
-    if (e.dead) continue;
+    if (e.dead || e.state === "fall") continue;
     const d = Math.hypot(e.x - p.x, e.z - p.z);
     if (d > range + e.r) continue;
     const a = Math.abs(angDiff(base, Math.atan2(e.x - p.x, e.z - p.z)));
@@ -2185,7 +2185,7 @@ function aimRanged() {
   let best = null,
     bs = 1;
   for (const e of G.enemies) {
-    if (e.dead) continue;
+    if (e.dead || e.state === "fall") continue;
     const d = Math.hypot(e.x - p.x, e.z - p.z);
     if (d > 36) continue;
     const ey = Math.atan2(e.x - p.x, e.z - p.z),
@@ -2609,7 +2609,7 @@ function useSpecial(ix, iz, il) {
       let best = null,
         bd = 1e9;
       for (const e of G.enemies) {
-        if (e.dead) continue;
+        if (e.dead || e.state === "fall") continue;
         const d = Math.hypot(e.x - p.x, e.z - p.z);
         if (
           d < 30 &&
@@ -2667,6 +2667,20 @@ function useSpecial(ix, iz, il) {
     p.throwT = 0.4;
     SFX.whoosh(true);
     startCaveIn(p.x + Math.sin(a) * ok, p.z + Math.cos(a) * ok);
+  } else if (sp.id === "drop") {
+    // the floor opens at the lock target or along the camera, short of walls
+    const a = p.lock ? Math.atan2(p.lock.x - p.x, p.lock.z - p.z) : cam.yaw,
+      far = p.lock
+        ? Math.min(CAVEIN.range, Math.hypot(p.lock.x - p.x, p.lock.z - p.z))
+        : 9;
+    let ok = 0.5;
+    for (let d = 0.5; d <= far; d += 0.25) {
+      if (w.fieldAt(p.x + Math.sin(a) * d, p.z + Math.cos(a) * d) > 0.3) ok = d;
+      else break;
+    }
+    p.yaw = a;
+    p.throwT = 0.3;
+    startDrop(p.x + Math.sin(a) * ok, p.z + Math.cos(a) * ok);
   } else if (sp.id === "grapple") {
     if (!startGrapple()) return false;
   } else if (sp.id === "volley") {
@@ -3004,7 +3018,7 @@ function playerUpdate(dt) {
           const hx = Math.sin(p.yaw),
             hz = Math.cos(p.yaw);
           for (const e of G.enemies) {
-            if (e.dead) continue;
+            if (e.dead || e.state === "fall") continue;
             const dx = e.x - p.x,
               dz = e.z - p.z,
               d = Math.hypot(dx, dz);
@@ -3126,7 +3140,7 @@ function playerUpdate(dt) {
         t < m.wind + m.act + 0.03
       ) {
         for (const e of G.enemies) {
-          if (e.dead || p.hitSet.has(e)) continue;
+          if (e.dead || e.state === "fall" || p.hitSet.has(e)) continue;
           const dx = e.x - p.x,
             dz = e.z - p.z,
             d = Math.hypot(dx, dz);
@@ -3544,6 +3558,13 @@ function enemyUpdate(e, dt) {
       w.resolve(e, e.r);
     }
     if (e.t > 2.4) e.gone = true;
+    return;
+  }
+  if (e.state === "fall") {
+    // dropped through the floor, out of the roof: out of the fight till down
+    e.vy -= DROP.g * dt;
+    e.y += e.vy * dt;
+    if (e.y <= 0) landEnemy(e);
     return;
   }
   if (e.yank) {
@@ -4257,14 +4278,22 @@ function minesUpdate(dt) {
     m.t += dt;
     if (m.fuse !== null || m.t < MINE.arm) continue;
     for (const e of G.enemies)
-      if (!e.dead && Math.hypot(e.x - m.x, e.z - m.z) < MINE.trig + e.r) {
+      if (
+        !e.dead &&
+        e.state !== "fall" &&
+        Math.hypot(e.x - m.x, e.z - m.z) < MINE.trig + e.r
+      ) {
         boomMine(m);
         break;
       }
     for (const o of m.links) {
       if (o.t < MINE.arm || o.fuse !== null) continue;
       for (const e of G.enemies)
-        if (!e.dead && segDist(e.x, e.z, m.x, m.z, o.x, o.z) < e.r) {
+        if (
+          !e.dead &&
+          e.state !== "fall" &&
+          segDist(e.x, e.z, m.x, m.z, o.x, o.z) < e.r
+        ) {
           boomMine(m);
           boomMine(o);
           SFX.wire();
@@ -4448,6 +4477,99 @@ function riftsUpdate(dt) {
   G.rifts = G.rifts.filter((e) => e.t < e.life);
   if (G.rifts.length < n) SFX.shut();
 }
+// ---- Drop: the floor opens under a pack ----
+const DROP = {
+  fuse: 0.5,
+  r: 2.2,
+  g: 22,
+  // damage per metre fallen
+  dmg: 4.5,
+  // a landing hurts other enemies round it, never the player
+  impact: { r: 1.6, dmg: 14, post: 20 },
+};
+// where something dropped at (x, z) lands: under the end of an open pair
+// further from it, otherwise back on the spot
+function dropSpot(x, z) {
+  if (G.rifts.length === 2) {
+    const [a, b] = G.rifts;
+    return Math.hypot(a.x - x, a.z - z) > Math.hypot(b.x - x, b.z - z)
+      ? [a.x, a.z]
+      : [b.x, b.z];
+  }
+  return [x, z];
+}
+function startDrop(x, z) {
+  const [lx, lz] = dropSpot(x, z),
+    h = { x, z, t: 0, lx, lz };
+  G.holes.push(h);
+  SFX.hole();
+  return h;
+}
+// e drops out of the ceiling over the i-th of n spots round (lx, lz). It is
+// out of the fight (state "fall") until it lands. kill: an execution's body.
+function dropEnemy(e, lx, lz, i, n, kill) {
+  const w = G.world,
+    a = (i / Math.max(1, n)) * TAU,
+    rr = n > 1 ? 0.9 + e.r : 0,
+    o = { x: lx + Math.sin(a) * rr, z: lz + Math.cos(a) * rr };
+  for (let k = 0; k < 4; k++) w.resolve(o, e.r);
+  e.x = o.x;
+  e.z = o.z;
+  e.y = w.ceilAt(o.x, o.z) - 0.6;
+  e.vy = 0;
+  e.fallH = e.y;
+  e.token = false;
+  e.route = null;
+  e.kx = e.kz = 0;
+  if (!kill) {
+    e.wasAware = e.aware;
+    e.state = "fall";
+  }
+  if (G.player.lock === e) G.player.lock = null;
+  // a small tear in the roof where it comes out
+  sparks(o.x, e.y, o.z, 16, MAGENTA, 4, 0.5);
+}
+function landEnemy(e) {
+  e.y = 0;
+  e.vy = 0;
+  G.shake = Math.max(G.shake, 0.5);
+  SFX.thud(true);
+  sparks(e.x, 0.2, e.z, 20, [0.6, 0.55, 0.5], 5, 0.5);
+  const im = DROP.impact;
+  for (const o of G.enemies)
+    if (
+      o !== e &&
+      !o.dead &&
+      o.state !== "fall" &&
+      Math.hypot(o.x - e.x, o.z - e.z) < im.r + o.r
+    )
+      hitEnemy(o, im.dmg, im.post, { src: "aoe", heavy: true, fx: e.x, fz: e.z });
+  if (e.dead) return;
+  e.state = "idle";
+  e.t = 0;
+  hitEnemy(e, DROP.dmg * e.fallH, 30, { heavy: true, src: "drop" });
+  if (!e.dead) {
+    if (e.wasAware) alertE(e, true);
+    stagger(e, CAVEIN.stag[e.type] || 1);
+  }
+}
+function holesUpdate(dt) {
+  for (const h of G.holes) {
+    h.t += dt;
+    if (h.t < DROP.fuse) continue;
+    const fall = G.enemies.filter(
+      (e) =>
+        !e.dead &&
+        !e.def.boss &&
+        !e.def.dummy &&
+        e.state !== "fall" &&
+        Math.hypot(e.x - h.x, e.z - h.z) < DROP.r + e.r,
+    );
+    fall.forEach((e, i) => dropEnemy(e, h.lx, h.lz, i, fall.length));
+    h.done = true;
+  }
+  G.holes = G.holes.filter((h) => !h.done);
+}
 function projUpdate(dt) {
   const p = G.player,
     w = G.world;
@@ -4502,7 +4624,8 @@ function projUpdate(dt) {
       }
     } else {
       for (const e of G.enemies) {
-        if (e.dead || (pr.hitSet && pr.hitSet.has(e))) continue;
+        if (e.dead || e.state === "fall" || (pr.hitSet && pr.hitSet.has(e)))
+          continue;
         if (Math.hypot(pr.x - e.x, pr.z - e.z) < e.r + 0.45 + (pr.rad || 0)) {
           if (pr.kind === "sticky") {
             plantBomb(pr.x, pr.z, e);
@@ -4532,10 +4655,10 @@ function separate() {
     es = G.enemies;
   for (let i = 0; i < es.length; i++) {
     const a = es[i];
-    if (a.dead) continue;
+    if (a.dead || a.state === "fall") continue;
     for (let j = i + 1; j < es.length; j++) {
       const b = es[j];
-      if (b.dead) continue;
+      if (b.dead || b.state === "fall") continue;
       const dx = b.x - a.x,
         dz = b.z - a.z,
         d = Math.hypot(dx, dz),
@@ -4601,6 +4724,7 @@ function update(dt) {
   caveUpdate(dt);
   minesUpdate(dt);
   riftsUpdate(dt);
+  holesUpdate(dt);
   for (const q of G.pending) {
     q.t -= dt;
     if (q.t <= 0) {
