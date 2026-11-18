@@ -285,7 +285,8 @@ const WHITE = [1, 0.95, 0.8],
   ORANGE = [1, 0.5, 0.18],
   GOLD = [1, 0.85, 0.45],
   CRIMSON = [1, 0.28, 0.32],
-  HAZARD = [1, 0.92, 0.15];
+  HAZARD = [1, 0.92, 0.15],
+  MAGENTA = [0.95, 0.3, 0.75];
 
 // ---- classes ----
 const CLASSES = {
@@ -519,6 +520,47 @@ const CLASSES = {
         "Cave-in: bring the roof down on a pack and wall off the tunnel",
       ],
       ["Trait", "Your own blasts never hurt you, and they break guards faster"],
+    ],
+  },
+  riftwalker: {
+    name: "Riftwalker",
+    tag: "Rifts and a short blade",
+    hidden: true,
+    hp: 110,
+    stam: 105,
+    walk: 5.4,
+    run: 8.1,
+    chain: "v1",
+    heavy: "vsnap",
+    dash: "vstep",
+    ambush: 2,
+    back: 1.35,
+    parry: 0.2,
+    blockMul: 1.0,
+    chip: 0.1,
+    guardArc: 1.9,
+    col: MAGENTA,
+    dodge: { dist: 5.0, dur: 0.42, ifr: 0.3, cost: 20 },
+    tool: { id: "rift", name: "Rift", max: 4, ch: "◇" },
+    special: { id: "drop", name: "Drop", cost: 45 },
+    kit: [
+      [
+        "Attack",
+        "Cuts through small tears that reach about 5 m. The third throws a shard",
+      ],
+      ["Heavy", "A tear snaps shut on the target"],
+      [
+        "Tool",
+        "Rift ends. Open two: you, enemies and shots that go into one come out of the other",
+      ],
+      [
+        "Ability",
+        "Drop: the floor opens under a pack and it falls from the ceiling over your other rift",
+      ],
+      [
+        "Trait",
+        "Untouchable while passing through a rift, and the next hit after does more",
+      ],
     ],
   },
 };
@@ -1005,6 +1047,83 @@ const MOVES = {
     tilt: 1.45,
     dir: 1,
     heavy: true,
+  },
+  // riftwalker: `reach` cuts come out of a small tear beside the target, so
+  // they land from range; aimYaw looks that far for a target
+  v1: {
+    anim: "r",
+    wind: 0.16,
+    act: 0.08,
+    rec: 0.28,
+    dmg: 12,
+    post: 11,
+    range: 5.0,
+    arc: 0.6,
+    lunge: 0.3,
+    stam: 10,
+    next: "v2",
+    tilt: 0.3,
+    dir: 1,
+    reach: true,
+  },
+  v2: {
+    anim: "l",
+    wind: 0.15,
+    act: 0.08,
+    rec: 0.28,
+    dmg: 12,
+    post: 11,
+    range: 5.0,
+    arc: 0.6,
+    lunge: 0.3,
+    stam: 10,
+    next: "v3",
+    tilt: -0.3,
+    dir: -1,
+    reach: true,
+  },
+  v3: {
+    anim: "r",
+    wind: 0.18,
+    act: 0.05,
+    rec: 0.34,
+    stam: 11,
+    next: null,
+    proj: { speed: 26, dmg: 18, post: 16, kind: "shard", life: 0.9 },
+  },
+  vsnap: {
+    anim: "x",
+    wind: 0.38,
+    act: 0.1,
+    rec: 0.5,
+    dmg: 30,
+    post: 42,
+    range: 6.0,
+    arc: 0.6,
+    lunge: 0,
+    stam: 22,
+    next: null,
+    tilt: 0.9,
+    dir: 1,
+    heavy: true,
+    reach: true,
+  },
+  vstep: {
+    anim: "thrust",
+    wind: 0.12,
+    act: 0.12,
+    rec: 0.42,
+    dmg: 24,
+    post: 26,
+    range: 3.0,
+    arc: 1.2,
+    lunge: 5.0,
+    stam: 14,
+    next: null,
+    tilt: 0,
+    dir: 1,
+    heavy: true,
+    ifr: 0.3,
   },
 };
 const EDEF = {
@@ -2101,7 +2220,12 @@ function startMove(id, base, free) {
   p.t = 0;
   p.hitSet = new Set();
   p.arcDone = false;
-  p.aim = m.proj ? aimRanged() : aimYaw(base === undefined ? p.yaw : base);
+  const b0 = base === undefined ? p.yaw : base;
+  p.aim = m.proj
+    ? aimRanged()
+    : m.reach
+      ? aimYaw(b0, m.range + 0.5, 0.7)
+      : aimYaw(b0);
   p.buf = null;
   if (m.ifr) p.iframe = Math.max(p.iframe, m.ifr);
   return true;
@@ -2899,7 +3023,35 @@ function playerUpdate(dt) {
             c: c.col,
             wd: m.anim === "bash" ? 0.7 : 0.26,
           });
-        else {
+        else if (m.reach) {
+          // the cut comes out of a small tear 1.4 m short of the target, to
+          // one side
+          const e = G.enemies.find(
+              (e) =>
+                !e.dead &&
+                Math.hypot(e.x - p.x, e.z - p.z) < m.range + e.r &&
+                Math.abs(angDiff(p.yaw, Math.atan2(e.x - p.x, e.z - p.z))) <
+                  m.arc / 2 + 0.2,
+            ),
+            d = e ? Math.max(0.8, Math.hypot(e.x - p.x, e.z - p.z) - 1.4) : 2,
+            sx = -Math.cos(p.yaw) * 0.5 * m.dir,
+            sz = Math.sin(p.yaw) * 0.5 * m.dir;
+          G.arcs.push({
+            x: p.x + Math.sin(p.yaw) * d + sx,
+            y: 1.2,
+            z: p.z + Math.cos(p.yaw) * d + sz,
+            yaw: p.yaw,
+            tilt: m.tilt,
+            r0: 0.2,
+            r1: 1.6,
+            a0: 1.25 * m.dir,
+            a1: -1.25 * m.dir,
+            t: 0,
+            dur: 0.24,
+            c: c.col,
+            tear: true,
+          });
+        } else {
           const wd = m.wide || 1;
           G.arcs.push({
             x: p.x,

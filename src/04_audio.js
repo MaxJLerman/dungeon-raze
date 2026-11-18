@@ -223,6 +223,24 @@ const SFX = (() => {
     beep() {
       tone(0.06, 1900, 1900, 0.12, "square");
     },
+    // the Riftwalker: a tear opening, passing through one, a tear closing,
+    // the floor opening under a pack
+    tear() {
+      noise(0.35, 300, 3200, 0.3, "bandpass", 4);
+      tone(0.35, 180, 620, 0.18, "triangle");
+    },
+    cross() {
+      noise(0.28, 2600, 400, 0.32, "bandpass", 2);
+      tone(0.25, 700, 240, 0.16, "sine");
+    },
+    shut() {
+      noise(0.2, 2400, 300, 0.22, "bandpass", 4);
+      tone(0.18, 520, 160, 0.12, "triangle");
+    },
+    hole() {
+      tone(0.6, 90, 40, 0.6, "sine");
+      noise(0.5, 200, 1400, 0.35, "bandpass", 3);
+    },
     shot() {
       tone(0.25, 520, 180, 0.3, "sawtooth");
       noise(0.2, 800, 2500, 0.2, "bandpass", 2);

@@ -72,6 +72,29 @@ export default [
   DF.unlockClass('sapper'); c.in = DF.pickable().includes('sapper'); DF.UNLOCKED.clear(); DF.saveOpt();
   return { pass: Object.values(c).every(Boolean), c }; })()`,
   },
+  { name: "riftwalker", eval: fight("riftwalker", 4.2) },
+  {
+    name: "riftwalker cuts reach about 5 m",
+    eval: cls("riftwalker", `
+  const e = tp((e) => e.type === 'brute', 4.6); e.state = 'idle'; const h0 = e.hp, p0 = [p.x, p.z]; K('light');
+  DF.sim(0.5, () => { if (e.state !== 'hit') e.state = 'idle'; });
+  const moved = Math.hypot(p.x - p0[0], p.z - p0[1]);
+  return { pass: e.hp < h0 && moved < 1, hurt: h0 - e.hp, moved }; `),
+  },
+  {
+    name: "riftwalker's third cut throws a shard",
+    eval: cls("riftwalker", `
+  const e = tp((e) => e.type === 'brute', 9); e.state = 'idle'; let shard = false; K('light');
+  DF.sim(1.4, (i) => { if (i % 18 === 0) K('light'); e.state = 'idle'; if (G.projs.some((q) => q.kind === 'shard' && q.own !== 'e')) shard = true; });
+  return { pass: shard, shard }; `),
+  },
+  {
+    name: "riftwalker is hidden until unlocked",
+    eval: `(() => { DF.UNLOCKED.clear();
+  const c = { hidden: DF.CLASSES.riftwalker.hidden === true, out: !DF.pickable().includes('riftwalker') };
+  DF.unlockClass('riftwalker'); c.in = DF.pickable().includes('riftwalker'); DF.UNLOCKED.clear(); DF.saveOpt();
+  return { pass: Object.values(c).every(Boolean), c }; })()`,
+  },
   {
     name: "enforcer shotgun and execution",
     eval: cls("enforcer", `

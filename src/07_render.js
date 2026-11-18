@@ -43,6 +43,11 @@ function posePlayer(p) {
     A[0] = -0.5;
     B[0] = -0.75;
     B[2] = -0.35;
+  } else if (id === "riftwalker") {
+    // blade low and ready, the device arm half raised
+    A[0] = -0.45;
+    B[0] = -0.7;
+    B[2] = -0.2;
   } else if (id === "enforcer") {
     // pistols held low and ready; the long guns only while used
     A[0] = B[0] = -0.35;
@@ -209,6 +214,12 @@ function posePlayer(p) {
         A[2] = 0.5;
         B[2] = -0.5;
         ch[1] = -0.2;
+      } else if (id === "riftwalker") {
+        // the device arm up across the face, the blade held back
+        B[0] = -1.75;
+        B[2] = -0.7;
+        A[0] = -0.6;
+        A[2] = 0.3;
       } else if (id === "enforcer") {
         // forearms crossed in front of the face, guns up
         A[0] = B[0] = -1.75;
@@ -900,7 +911,7 @@ function render() {
   for (const pr of G.projs) {
     const c = pr.c,
       k = pr.kind;
-    if (k === "arrow") {
+    if (k === "arrow" || k === "shard") {
       const n = pr.big ? 9 : 6;
       for (let i = 0; i < n; i++)
         R.sprite(
@@ -988,6 +999,23 @@ function render() {
       rx = -fz,
       rz = fx,
       c = a.c;
+    if (a.tear) {
+      // the small tear the cut comes out of: a jagged upright slit
+      const al = 1 - k;
+      R.ribbon(
+        8,
+        (t, s) => {
+          const j = (((t * 8) | 0) % 2 ? 1 : -1) * 0.07,
+            wd = (s ? 1 : -1) * 0.05 * Math.sin(t * PI) + j;
+          return [a.x + rx * wd, 0.5 + t * 1.6, a.z + rz * wd];
+        },
+        c[0],
+        c[1],
+        c[2],
+        (t) => al * Math.sin(t * PI) * 1.8,
+      );
+      R.sprite(a.x, 1.3, a.z, 0.5, c[0], c[1], c[2], al * 0.6);
+    }
     if (a.lance) {
       const head = Math.min(1, k * 2.6),
         tail = Math.max(0, k * 2.6 - 1.3);

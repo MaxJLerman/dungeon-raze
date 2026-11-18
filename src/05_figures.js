@@ -252,6 +252,52 @@ function makePlayerFig(id) {
     h.em = [0.1, 0.09, 0.02];
     f.rim = [0.4, 0.36, 0.08];
     f.tips = [[f.handR, 0.96]];
+  } else if (id === "riftwalker") {
+    // a long close coat with a hood, glowing jagged seams like the tears it
+    // opens, a rift device on the left forearm, a short curved blade
+    f = makeFigure({
+      body: C_(0x2a2233),
+      trim: C_(0xd94fb0),
+      skin: SKIN,
+      limb: C_(0x2e2638),
+      legc: C_(0x1d1724),
+      w: 0.48,
+      d: 0.28,
+    });
+    f.headN.add(part("cone", C_(0x241d2c), 0.46, 0.5, 0.48, 0, 0.1, -0.05));
+    cape(C_(0x2a2233), 0.46, 1.0);
+    // coat skirts, and the seams: thin glowing zig-zags down the front
+    for (const sx of [-1, 1]) {
+      f.hips.add(
+        part("box", C_(0x251e2e), 0.22, 0.66, 0.05, sx * 0.12, -0.32, 0.15),
+      );
+      for (let i = 0; i < 3; i++) {
+        const sm = f.chest.add(
+          part("box", C_(0xf06ac8), 0.03, 0.2, 0.02, sx * (0.08 + (i % 2) * 0.05), 0.5 - i * 0.17, 0.15),
+        );
+        sm.r[2] = sx * (i % 2 ? -0.5 : 0.5);
+        sm.em = [0.6, 0.12, 0.42];
+      }
+    }
+    // the device: a band and a ring on the left forearm
+    f.armL.add(part("box", C_(0x3b3344), 0.17, 0.22, 0.17, 0, -0.44, 0));
+    const ring = f.armL.add(
+      part("cyl", C_(0xf06ac8), 0.2, 0.04, 0.2, 0, -0.44, 0),
+    );
+    ring.em = [0.7, 0.15, 0.5];
+    // a short curved blade: two angled pieces
+    f.handR.add(part("box", C_(0x2a2f38), 0.06, 0.06, 0.16, 0, -0.03, -0.04));
+    const b1 = f.handR.add(
+      part("box", C_(0xe6d6ef), 0.04, 0.09, 0.36, 0, -0.03, 0.2),
+    );
+    b1.em = [0.25, 0.06, 0.2];
+    const b2 = f.handR.add(
+      part("box", C_(0xe6d6ef), 0.04, 0.08, 0.26, 0, 0.03, 0.48),
+    );
+    b2.r[0] = -0.45;
+    b2.em = [0.25, 0.06, 0.2];
+    f.rim = [0.42, 0.12, 0.32];
+    f.tips = [[f.handR, 0.55]];
   } else {
     f = makeFigure({
       body: C_(0x1d2733),
