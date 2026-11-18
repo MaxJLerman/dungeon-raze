@@ -298,19 +298,19 @@ function meshSink() {
   return { P, C, tri };
 }
 
-function genWorld(seed) {
-  const Rn = rng(seed);
-  const GX = 4,
-    GZ = 4,
-    SP = 44;
+// Room graph: a jittered grid of rooms, a spanning tree and some loop edges.
+// Consumes Rn in a fixed order. Edges come back without pts. o = { GX, GZ, SP,
+// jit, rMin, rVar, startR, bossR, diagP, loopP, loopDiagP }.
+function planGraph(Rn, o) {
+  const { GX, GZ, SP } = o;
   const nodes = [];
   for (let gz = 0; gz < GZ; gz++)
     for (let gx = 0; gx < GX; gx++)
       nodes.push({
         id: nodes.length,
-        x: gx * SP + (Rn() - 0.5) * 20,
-        z: gz * SP + (Rn() - 0.5) * 20,
-        r: 8.5 + Rn() * 3.5,
+        x: gx * SP + (Rn() - 0.5) * o.jit,
+        z: gz * SP + (Rn() - 0.5) * o.jit,
+        r: o.rMin + Rn() * o.rVar,
         adj: [],
         depth: -1,
         seen: false,
@@ -318,9 +318,9 @@ function genWorld(seed) {
       });
   const start = nodes[0],
     boss = nodes[GX * GZ - 1];
-  start.r = 9.5;
+  start.r = o.startR;
   start.kind = "start";
-  boss.r = 16.5;
+  boss.r = o.bossR;
   boss.kind = "boss";
 
   // graph: spanning tree + extra edges for loops
@@ -330,7 +330,7 @@ function genWorld(seed) {
     for (let gx = 0; gx < GX; gx++) {
       if (gx < GX - 1) cand.push({ a: id(gx, gz), b: id(gx + 1, gz), w: Rn() });
       if (gz < GZ - 1) cand.push({ a: id(gx, gz), b: id(gx, gz + 1), w: Rn() });
-      if (gx < GX - 1 && gz < GZ - 1 && Rn() < 0.35) {
+      if (gx < GX - 1 && gz < GZ - 1 && Rn() < o.diagP) {
         if (Rn() < 0.5)
           cand.push({
             a: id(gx, gz),
@@ -358,12 +358,128 @@ function genWorld(seed) {
       par[ra] = rb;
       edges.push(c);
     } else if (
-      Rn() < (c.diag ? 0.6 : 0.5) &&
+      Rn() < (c.diag ? o.loopDiagP : o.loopP) &&
       c.a !== boss.id &&
       c.b !== boss.id
     )
       edges.push(c);
   }
+  return { nodes, edges, start, boss };
+}
+
+// Fills adj (in edge order) and depth by BFS from start, and returns the node
+// ids from start to boss. Uses no random numbers.
+function linkGraph(nodes, edges, start, boss) {
+  for (const e of edges) {
+    nodes[e.a].adj.push(e.b);
+    nodes[e.b].adj.push(e.a);
+  }
+  start.depth = 0;
+  const q = [start],
+    prev = {};
+  while (q.length) {
+    const n = q.shift();
+    for (const j of n.adj) {
+      const m = nodes[j];
+      if (m.depth < 0) {
+        m.depth = n.depth + 1;
+        prev[j] = n.id;
+        q.push(m);
+      }
+    }
+  }
+  const path = [];
+  for (let c = boss.id; c !== undefined; c = prev[c]) path.unshift(c);
+  return path;
+}
+
+// Calls seg(ax, az, bx, bz) once per wall segment where F crosses zero, over
+// the grid whose corner is (minX, minZ), W cells wide and H cells tall.
+function marchWalls(F, minX, minZ, W, H, seg) {
+  const W1 = W + 1;
+  for (let j = 0; j < H; j++)
+    for (let i = 0; i < W; i++) {
+      const k = j * W1 + i,
+        v0 = F[k],
+        v1 = F[k + 1],
+        v2 = F[k + W1 + 1],
+        v3 = F[k + W1];
+      const idx =
+        (v0 > 0 ? 1 : 0) |
+        (v1 > 0 ? 2 : 0) |
+        (v2 > 0 ? 4 : 0) |
+        (v3 > 0 ? 8 : 0);
+      if (idx === 0 || idx === 15) continue;
+      const x = i + minX,
+        z = j + minZ;
+      const e0 = () => [x + v0 / (v0 - v1), z],
+        e1 = () => [x + 1, z + v1 / (v1 - v2)],
+        e2 = () => [x + v3 / (v3 - v2), z + 1],
+        e3 = () => [x, z + v0 / (v0 - v3)];
+      const S = (p, q2) => seg(p[0], p[1], q2[0], q2[1]);
+      const ctr = (v0 + v1 + v2 + v3) / 4 > 0;
+      switch (idx) {
+        case 1:
+        case 14:
+          S(e3(), e0());
+          break;
+        case 2:
+        case 13:
+          S(e0(), e1());
+          break;
+        case 3:
+        case 12:
+          S(e3(), e1());
+          break;
+        case 4:
+        case 11:
+          S(e1(), e2());
+          break;
+        case 6:
+        case 9:
+          S(e0(), e2());
+          break;
+        case 7:
+        case 8:
+          S(e3(), e2());
+          break;
+        case 5:
+          if (ctr) {
+            S(e0(), e1());
+            S(e2(), e3());
+          } else {
+            S(e3(), e0());
+            S(e1(), e2());
+          }
+          break;
+        case 10:
+          if (ctr) {
+            S(e3(), e0());
+            S(e1(), e2());
+          } else {
+            S(e0(), e1());
+            S(e2(), e3());
+          }
+          break;
+      }
+    }
+}
+
+function genWorld(seed) {
+  const Rn = rng(seed);
+  const { nodes, edges, start, boss } = planGraph(Rn, {
+    GX: 4,
+    GZ: 4,
+    SP: 44,
+    jit: 20,
+    rMin: 8.5,
+    rVar: 3.5,
+    startR: 9.5,
+    bossR: 16.5,
+    diagP: 0.35,
+    loopP: 0.5,
+    loopDiagP: 0.6,
+  });
   const segs = [];
   for (const e of edges) {
     const A = nodes[e.a],
@@ -400,26 +516,8 @@ function genWorld(seed) {
         q = e.pts[i + 1];
       segs.push({ ax: p.x, az: p.z, bx: q.x, bz: q.z, r: (p.r + q.r) / 2 });
     }
-    A.adj.push(e.b);
-    B.adj.push(e.a);
   }
-  // BFS depth + path to boss
-  start.depth = 0;
-  const q = [start],
-    prev = {};
-  while (q.length) {
-    const n = q.shift();
-    for (const j of n.adj) {
-      const m = nodes[j];
-      if (m.depth < 0) {
-        m.depth = n.depth + 1;
-        prev[j] = n.id;
-        q.push(m);
-      }
-    }
-  }
-  const path = [];
-  for (let c = boss.id; c !== undefined; c = prev[c]) path.unshift(c);
+  const path = linkGraph(nodes, edges, start, boss);
 
   // ---- walkable field on a grid ----
   let minX = 1e9,
@@ -586,72 +684,7 @@ function genWorld(seed) {
       tri(a, c, d, mulc(rc, m * 0.88));
     }
   }
-  for (let j = 0; j < H; j++)
-    for (let i = 0; i < W; i++) {
-      const k = j * W1 + i,
-        v0 = F[k],
-        v1 = F[k + 1],
-        v2 = F[k + W1 + 1],
-        v3 = F[k + W1];
-      const idx =
-        (v0 > 0 ? 1 : 0) |
-        (v1 > 0 ? 2 : 0) |
-        (v2 > 0 ? 4 : 0) |
-        (v3 > 0 ? 8 : 0);
-      if (idx === 0 || idx === 15) continue;
-      const x = i + minX,
-        z = j + minZ;
-      const e0 = () => [x + v0 / (v0 - v1), z],
-        e1 = () => [x + 1, z + v1 / (v1 - v2)],
-        e2 = () => [x + v3 / (v3 - v2), z + 1],
-        e3 = () => [x, z + v0 / (v0 - v3)];
-      const S = (p, q2) => wall(p[0], p[1], q2[0], q2[1]);
-      const ctr = (v0 + v1 + v2 + v3) / 4 > 0;
-      switch (idx) {
-        case 1:
-        case 14:
-          S(e3(), e0());
-          break;
-        case 2:
-        case 13:
-          S(e0(), e1());
-          break;
-        case 3:
-        case 12:
-          S(e3(), e1());
-          break;
-        case 4:
-        case 11:
-          S(e1(), e2());
-          break;
-        case 6:
-        case 9:
-          S(e0(), e2());
-          break;
-        case 7:
-        case 8:
-          S(e3(), e2());
-          break;
-        case 5:
-          if (ctr) {
-            S(e0(), e1());
-            S(e2(), e3());
-          } else {
-            S(e3(), e0());
-            S(e1(), e2());
-          }
-          break;
-        case 10:
-          if (ctr) {
-            S(e3(), e0());
-            S(e1(), e2());
-          } else {
-            S(e0(), e1());
-            S(e2(), e3());
-          }
-          break;
-      }
-    }
+  marchWalls(F, minX, minZ, W, H, (ax, az, bx, bz) => wall(ax, az, bx, bz));
   // decor
   function cone(x, y0, z, rad, h, col, glow = 0, lx = 0, lz = 0) {
     const n = 5,
