@@ -139,11 +139,12 @@ const HUD = (() => {
         L[1].toFixed(1) +
         "px) rotate(45deg)";
     } else el.ret.style.display = "none";
-    // enemy names and bars: a name tag over a health and posture bar. The
-    // boss gets the tag alone, because the big bar already shows the rest.
+    // enemy names and bars: a name tag over a health and posture bar. A boss
+    // on the big bar gets no slot, because that bar shows its name. One that
+    // has not noticed the player yet gets the tag alone.
     let n = 0;
     const slot = (e) => {
-      if (n >= ebars.length || e.dead || !e.vis) return;
+      if (n >= ebars.length || e.dead || !e.vis || e === boss) return;
       if (Math.hypot(e.x - p.x, e.z - p.z) > 26) return;
       const s = R.toScreen(e.x, e.def.top + 0.25, e.z);
       if (!s) return;
