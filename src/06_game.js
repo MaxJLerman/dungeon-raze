@@ -2231,7 +2231,7 @@ const INSPECT_T = 0.5;
 // what a locked plaque says instead of the class name
 const PLAQUE_TEXT = {
   enforcer: "The one who settles accounts",
-  sapper: "Sealed",
+  sapper: "The one who brings the roof down",
   riftwalker: "Sealed",
 };
 // A code is a list of action names: fwd, back, left, right, dodge, heal and
@@ -2240,6 +2240,7 @@ const PLAQUE_TEXT = {
 // out of the repo. codeText writes a code in an input's own notation.
 const SHIPPED_CODES = {
   enforcer: { hash: "14ac1f9c18e2c", len: 10 },
+  sapper: { hash: "b469f1954f03b", len: 10 },
 };
 const PLAQUE_CODES = {};
 function resetPlaqueCodes() {

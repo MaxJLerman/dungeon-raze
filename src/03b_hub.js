@@ -41,7 +41,7 @@ const PLAQUE_Y = 1.7;
 function hubPlaques() {
   return [
     ["enforcer", "enforcer", -11],
-    ["sapper", null, -7],
+    ["sapper", "sapper", -7],
     ["riftwalker", null, -3],
   ].map(([id, cls, z]) => ({ id, cls, x: 14.85, z, yaw: -PI / 2 }));
 }

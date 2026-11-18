@@ -177,9 +177,9 @@ export default [
   Storage.prototype.setItem = function (...a) { writes++; return real.apply(this, a); };
   K("interact"); DF.sim(0.6); for (let i = 0; i < 8; i++) { DF.taps[DF.BIND.fwd] = true; DF.sim(0.05); }
   const opened = G.msgs.filter((m) => /UNLOCKED/.test(m.text)).length === 0 && writes === 0; DF.closePlaque(true);
-  const r = G.world.plaques[1], g = DF.plaqueFront(r, 1.6); p.x = g.x; p.z = g.z; DF.sim(0.05);
+  const r = G.world.plaques[2], g = DF.plaqueFront(r, 1.6); p.x = g.x; p.z = g.z; DF.sim(0.05);
   K("interact"); DF.sim(0.6); for (let i = 0; i < 8; i++) { DF.taps[DF.BIND.fwd] = true; DF.sim(0.05); }
-  const sealed = p.state === "inspect" && G.insp.q.id === "sapper" && writes === 0;
+  const sealed = p.state === "inspect" && G.insp.q.id === "riftwalker" && writes === 0;
   Storage.prototype.setItem = real; DF.closePlaque(true); DF.UNLOCKED.clear(); DF.saveOpt(); DF.resetPlaqueCodes();
   return { pass: held && opened && sealed, held, opened, sealed };`),
   step("shared key enters the symbol", `
@@ -205,9 +205,19 @@ export default [
   DF.PAD.fam = "xbox"; const xb = await marks(); DF.PAD.active = false;
   DF.closePlaque(true); DF.resetPlaqueCodes();
   return { pass: kb === "D E" && ps === "→ □" && xb === "→ X", kb, ps, xb };`),
-  step("the real code", local && local.enforcer ? `
-  DF.UNLOCKED.clear(); DF.enterHub(); ${stand}
-  K("interact"); DF.sim(0.6); for (const a of ${JSON.stringify(local && local.enforcer)}.split(" ")) { K(a); DF.sim(0.05); }
-  const ok = DF.UNLOCKED.has("enforcer"); DF.closePlaque(true); DF.UNLOCKED.clear(); DF.saveOpt(); return { pass: ok };`
+  step("the Sapper plaque takes its code", `
+  DF.UNLOCKED.clear(); DF.setPlaqueCode("sapper", "left left right right heal"); DF.enterHub(); ${stand}
+  const sq = G.world.plaques[1], sf = DF.plaqueFront(sq, 1.6); p.x = sf.x; p.z = sf.z; DF.sim(0.05);
+  K("interact"); DF.sim(0.6); const at = G.insp && G.insp.q.id;
+  for (const a of ["left", "left", "right", "right", "heal"]) { K(a); DF.sim(0.05); }
+  const ok = DF.UNLOCKED.has("sapper"); DF.closePlaque(true); DF.UNLOCKED.clear(); DF.saveOpt(); DF.resetPlaqueCodes();
+  return { pass: at === "sapper" && ok, at, ok };`),
+  step("the real codes", local ? `
+  const codes = ${JSON.stringify(local)}, out = {}; DF.UNLOCKED.clear(); DF.enterHub(); ${stand}
+  for (const id in codes) { const pq = G.world.plaques.find((o) => o.id === id), pf = DF.plaqueFront(pq, 1.6);
+    p.x = pf.x; p.z = pf.z; p.state = "free"; DF.sim(0.05); K("interact"); DF.sim(0.6);
+    for (const a of codes[id].split(" ")) { K(a); DF.sim(0.05); }
+    out[id] = DF.UNLOCKED.has(id); DF.closePlaque(true); DF.sim(0.6); }
+  DF.UNLOCKED.clear(); DF.saveOpt(); return { pass: Object.values(out).every(Boolean), out };`
     : `return { pass: true, skipped: "no tests/codes.local.json" };`),
 ];
