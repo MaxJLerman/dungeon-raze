@@ -177,10 +177,12 @@ export default [
   Storage.prototype.setItem = function (...a) { writes++; return real.apply(this, a); };
   K("interact"); DF.sim(0.6); for (let i = 0; i < 8; i++) { DF.taps[DF.BIND.fwd] = true; DF.sim(0.05); }
   const opened = G.msgs.filter((m) => /UNLOCKED/.test(m.text)).length === 0 && writes === 0; DF.closePlaque(true);
-  const r = G.world.plaques[2], g = DF.plaqueFront(r, 1.6); p.x = g.x; p.z = g.z; DF.sim(0.05);
+  // every plaque is live now, so seal one for this check and put it back
+  const r = G.world.plaques[2], rc = r.cls, g = DF.plaqueFront(r, 1.6); r.cls = null; p.x = g.x; p.z = g.z; DF.sim(0.05);
+  DF.setPlaqueCode("riftwalker", "fwd fwd fwd fwd fwd fwd fwd fwd");
   K("interact"); DF.sim(0.6); for (let i = 0; i < 8; i++) { DF.taps[DF.BIND.fwd] = true; DF.sim(0.05); }
-  const sealed = p.state === "inspect" && G.insp.q.id === "riftwalker" && writes === 0;
-  Storage.prototype.setItem = real; DF.closePlaque(true); DF.UNLOCKED.clear(); DF.saveOpt(); DF.resetPlaqueCodes();
+  const sealed = p.state === "inspect" && G.insp.q.id === "riftwalker" && writes === 0 && !DF.UNLOCKED.has("riftwalker");
+  Storage.prototype.setItem = real; DF.closePlaque(true); r.cls = rc; DF.UNLOCKED.clear(); DF.saveOpt(); DF.resetPlaqueCodes();
   return { pass: held && opened && sealed, held, opened, sealed };`),
   step("shared key enters the symbol", `
   DF.UNLOCKED.clear(); DF.setPlaqueCode("enforcer", "dodge dodge dodge dodge dodge dodge dodge dodge"); DF.BIND.dodge = "Space"; DF.BIND.interact = "Space"; DF.enterHub(); ${stand}
@@ -212,6 +214,13 @@ export default [
   for (const a of ["left", "left", "right", "right", "heal"]) { K(a); DF.sim(0.05); }
   const ok = DF.UNLOCKED.has("sapper"); DF.closePlaque(true); DF.UNLOCKED.clear(); DF.saveOpt(); DF.resetPlaqueCodes();
   return { pass: at === "sapper" && ok, at, ok };`),
+  step("the Riftwalker plaque takes its code", `
+  DF.UNLOCKED.clear(); DF.setPlaqueCode("riftwalker", "right left heal tool dodge"); DF.enterHub(); ${stand}
+  const rq = G.world.plaques[2], rf = DF.plaqueFront(rq, 1.6); p.x = rf.x; p.z = rf.z; DF.sim(0.05);
+  K("interact"); DF.sim(0.6); const at = G.insp && G.insp.q.id;
+  for (const a of ["right", "left", "heal", "tool", "dodge"]) { K(a); DF.sim(0.05); }
+  const ok = DF.UNLOCKED.has("riftwalker"); DF.closePlaque(true); DF.UNLOCKED.clear(); DF.saveOpt(); DF.resetPlaqueCodes();
+  return { pass: at === "riftwalker" && ok, at, ok };`),
   step("the real codes", local ? `
   const codes = ${JSON.stringify(local)}, out = {}; DF.UNLOCKED.clear(); DF.enterHub(); ${stand}
   for (const id in codes) { const pq = G.world.plaques.find((o) => o.id === id), pf = DF.plaqueFront(pq, 1.6);

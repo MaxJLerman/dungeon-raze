@@ -2368,7 +2368,7 @@ const INSPECT_T = 0.5;
 const PLAQUE_TEXT = {
   enforcer: "The one who settles accounts",
   sapper: "The one who brings the roof down",
-  riftwalker: "Sealed",
+  riftwalker: "The one who is never where you left them",
 };
 // A code is a list of action names: fwd, back, left, right, dodge, heal and
 // tool, entered with whatever they are bound to. Its hash is taken over the
@@ -2377,6 +2377,7 @@ const PLAQUE_TEXT = {
 const SHIPPED_CODES = {
   enforcer: { hash: "14ac1f9c18e2c", len: 10 },
   sapper: { hash: "b469f1954f03b", len: 10 },
+  riftwalker: { hash: "d78746fe4dee0", len: 10 },
 };
 const PLAQUE_CODES = {};
 function resetPlaqueCodes() {

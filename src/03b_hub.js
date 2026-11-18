@@ -42,7 +42,7 @@ function hubPlaques() {
   return [
     ["enforcer", "enforcer", -11],
     ["sapper", "sapper", -7],
-    ["riftwalker", null, -3],
+    ["riftwalker", "riftwalker", -3],
   ].map(([id, cls, z]) => ({ id, cls, x: 14.85, z, yaw: -PI / 2 }));
 }
 // The point d metres in front of a plaque.
