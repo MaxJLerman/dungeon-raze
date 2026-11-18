@@ -147,6 +147,43 @@ function genSewer(seed) {
     loopDiagP: S.loopDiagP,
   });
   const { nodes, edges, boss } = plan;
+  // grid neighbours (not diagonal), in a seeded order, for joining rooms
+  const gridPairs = () => {
+    const more = [];
+    for (let gz = 0; gz < S.GZ; gz++)
+      for (let gx = 0; gx < S.GX; gx++) {
+        const a = gz * S.GX + gx;
+        if (gx < S.GX - 1) more.push([a, a + 1]);
+        if (gz < S.GZ - 1) more.push([a, a + S.GX]);
+      }
+    for (let i = more.length - 1; i > 0; i--) {
+      const j = (Rn() * (i + 1)) | 0;
+      [more[i], more[j]] = [more[j], more[i]];
+    }
+    return more;
+  };
+  const has = (a, b) =>
+    edges.some((e) => (e.a === a && e.b === b) || (e.a === b && e.b === a));
+  // ---- one way into the boss cavern ----
+  // The first boss edge in plan order is a tree edge and is kept; the rest
+  // go. Rooms that cut off are joined again by grid neighbours away from the
+  // boss (the grid less one corner is always connected).
+  {
+    const bossEdges = edges.filter((e) => e.a === boss.id || e.b === boss.id);
+    for (const e of bossEdges.slice(1)) edges.splice(edges.indexOf(e), 1);
+    const par = nodes.map((_, i) => i),
+      find = (i) => (par[i] === i ? i : (par[i] = find(par[i]))),
+      join = (a, b) => {
+        const ra = find(a),
+          rb = find(b);
+        if (ra === rb) return false;
+        par[ra] = rb;
+        return true;
+      };
+    for (const e of edges) join(e.a, e.b);
+    for (const [a, b] of gridPairs())
+      if (a !== boss.id && b !== boss.id && join(a, b)) edges.push({ a, b });
+  }
   // ---- dead ends ----
   // At least S.spurs rooms off the path keep one tunnel. A leaf of the
   // spanning tree is never inside the path, so it becomes a dead end once its
@@ -189,21 +226,8 @@ function genSewer(seed) {
     }
     // too few loops from the plan: join grid neighbours that are not yet
     // joined, away from the boss and the dead ends
-    const has = (a, b) =>
-        edges.some((e) => (e.a === a && e.b === b) || (e.a === b && e.b === a)),
-      free = (i) => i !== boss.id && !spurs.has(i),
-      more = [];
-    for (let gz = 0; gz < S.GZ; gz++)
-      for (let gx = 0; gx < S.GX; gx++) {
-        const a = gz * S.GX + gx;
-        if (gx < S.GX - 1) more.push([a, a + 1]);
-        if (gz < S.GZ - 1) more.push([a, a + S.GX]);
-      }
-    for (let i = more.length - 1; i > 0; i--) {
-      const j = (Rn() * (i + 1)) | 0;
-      [more[i], more[j]] = [more[j], more[i]];
-    }
-    for (const [a, b] of more) {
+    const free = (i) => i !== boss.id && !spurs.has(i);
+    for (const [a, b] of gridPairs()) {
       if (edges.length - nodes.length + 1 >= S.loopsMin) break;
       if (free(a) && free(b) && !has(a, b)) edges.push({ a, b });
     }

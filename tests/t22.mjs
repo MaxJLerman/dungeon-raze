@@ -54,7 +54,7 @@ export default [
   return { pass: a && b && c2, a, b, c2 };`),
   step("the sewer is connected and has every room kind", `const bad = []; for (let s = 1; s <= 12; s++) { const w = DF.genSewer(s), k = w.nodes.map((n) => n.kind);
     const ok = ["start", "pool", "brood", "shrine", "boss"].every((x) => k.includes(x)) && w.shrines.length === 4 && w.nodes.every((n) => n.depth >= 0)
-      && w.nodes.filter((n) => n.kind === "start")[0].adj.length === 1;
+      && w.nodes.filter((n) => n.kind === "start")[0].adj.length === 1 && w.boss.adj.length === 1;
     if (!ok) bad.push(s); }
   return { pass: bad.length === 0, bad };`),
   step("a D run is about 1.5 times an E run, with more fights, dead ends and loops", `let e = 0, d = 0, few = [];
