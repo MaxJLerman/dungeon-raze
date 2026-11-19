@@ -43,12 +43,18 @@ is what you need to change the code without breaking it.
   the siren, eel, bloater and drain grabber, the rules for enemies bound to
   water or a wall, a held player state, and their placement: sirens or eels
   in pool rooms, bloaters in pools and gutters, grabbers at grates. Only the
-  crocodile boss (project 3) remains before D joins `LIVE_GRADES`. Until it
-  lands, `LIVE_GRADES` holds only E, so the D portal stays sealed on the
-  published page. A D run made live by hand has no E type in it but the
-  Warden, which holds the cavern. The design is in
-  `docs/superpowers/specs/2026-11-19-d-enemies-design.md` for the enemies and
-  `docs/superpowers/specs/2026-11-18-sewer-d-gate-design.md` for the sewer.
+  crocodile boss (project 3, branch `feat/crocodile`) remains before D joins
+  `LIVE_GRADES`. Until it lands, `LIVE_GRADES` holds only E, so the D portal
+  stays sealed on the published page. The crocodile, Old Sluicejaw, has its
+  body, numbers and place in the cavern's centre pool, in place of the
+  Warden; its modes (under the water, surfacing, land), death roll and 25%
+  marks are still to come, so for now it stands in its pool and fights
+  through the shared boss path. A D run made live by hand has no E type in
+  it. The design is in
+  `docs/superpowers/specs/2026-11-19-d-enemies-design.md` for the enemies,
+  `docs/superpowers/specs/2026-11-18-sewer-d-gate-design.md` for the sewer
+  and `docs/superpowers/specs/2026-11-19-crocodile-boss-design.md` for the
+  crocodile.
   It has been checked by tests and screenshots only, never played by hand.
 
 ## Rules of the build
@@ -210,7 +216,9 @@ is what you need to change the code without breaking it.
   4 `rat`, and with chance 0.4 one `drowned`. A tunnel post (half the tunnels)
   holds a `drowned` with chance 0.4, else a pack of three `rat`: the post and
   two points 1.2 m either way along the tunnel, each kept only if dry and open
-  (`kind: "tunnel"`). No E type spawns in D but the Warden.
+  (`kind: "tunnel"`). No E type spawns in D. The boss, `croc`, is the last
+  spawn: in the middle of the centre pool, facing the entrance
+  (`kind: "boss"`).
   - **Pool rooms.** `crossingOf(n)` (beside the spawn block, no draws) finds
     the pair of the room's bodies whose nearest grid points are closest, when
     that gap is at most `SEWER.pool.cross + 2`: `{ x, z, a, b }`, the midpoint
@@ -358,8 +366,8 @@ is what you need to change the code without breaking it.
   grades whose content is finished. `portalOpen(grade)`: E is always open;
   a higher grade is open when it is in `LIVE_GRADES` and the grade below is
   cleared. `hubPortals()` takes `open` from it. **D joins `LIVE_GRADES` only
-  when project 3 (the crocodile) lands**, because the Warden must not appear
-  in the published D. Tests add and remove it through
+  when project 3 (the crocodile) is finished**, because a crocodile without
+  its modes must not appear in the published D. Tests add and remove it through
   `DF.LIVE_GRADES`.
 
 - `G` is the single state object. `G.state` is one of `title`, `play`,
@@ -1007,6 +1015,20 @@ table runs exactly as before.
   and hides at once once it has taken `GRAB.back` (15) damage while shown,
   which also frees the player. It cannot strike again for `GRAB.rearm` (4 s)
   after hiding. A heavy flinch or a kill frees the player too.
+- **Old Sluicejaw** (`croc`, threat 2, 800 health, `boss`, `arena`,
+  `ownPhases`, `fell` "OLD SLUICEJAW FALLS") is D's boss, spawned in the
+  cavern's centre pool. Its attacks: `rear` (kind `"rear"`, no `trig`: only
+  surfacing will start it), the bite chain `b1` to `b3`, `tail` (a sweep
+  all round) and `roll` (kind `"roll"`, the death roll). The kinds `rear` and `roll` are its own: until its `EBEH` hooks
+  land, their wind and act do nothing but run their time. Its body
+  (`makeCrocFig`, `poseCroc`) is built from scratch, facing +Z: `f.spin` is
+  the body's centre, `CROC_H` up, and turns it about its long axis (`r[2]`:
+  the roll, on its back when dead) and round itself (`r[1]`: the tail
+  sweep); `f.hip` pitches the trunk, head and forelegs up onto the hind
+  legs, which hang off `f.spin` so they stay planted; `f.tail` is eight
+  tapering segments; `f.jaw` opens with positive `r[0]`; `f.body` is the
+  trunk. `f.headN` and `f.weapon` are markers for the eye glints and the
+  wind-up glow.
 
 ## Recipes
 
@@ -1073,7 +1095,7 @@ The class picker and HUD read `CLASSES` and need no changes.
    Moving a gate is a change to that list.
 3. Give `EDEF` entries for its enemies, with `wade` where water matters, and
    point its spawn packs at them. Until then a live grade runs on E's types
-   (D has all but its boss, which is still the Warden).
+   (D has its own types throughout, the crocodile in the cavern).
 4. Extend `tests/t8.mjs` and `tests/t22.mjs`: t8's "sealed frames do nothing"
    step assumes only E is open, and t22 makes D live and cleared through `DF`.
 
@@ -1146,11 +1168,19 @@ The class picker and HUD read `CLASSES` and need no changes.
   (`__w`, `__b`, `__a`) inside each step and deletes them after, checks the
   hooks on a real pool of D (seed 5), the hold, the cloud, the shock, the
   song and drag, the grate, and over seeds 1 to 12 the placement (no E type
-  in D but the Warden, a siren or eels in each pool room and never both,
+  in D, a siren or eels in each pool room and never both,
   the siren near the crossing, eels in different bodies, every water-bound
   spawn on its footing, grabbers at grates, bloaters only in water). Shots
   go to `shots/t24-*`: look at them, above all `t24-fight-pool-siren` and
   `t24-fight-pool-eel`, which are real pool rooms with everything awake.
+- Run `tests/t25.mjs` after any change to the crocodile, its place in the
+  cavern or the boss flags (`arena`, `ownPhases`, `fell`, `atkOk`):
+  `SCRIPT=$PWD/tests/t25.mjs node test.mjs smoke`. It checks the cavern
+  holds one crocodile and no Warden over seeds 1 to 12, poses its body in
+  every state and attack, and keeps a cavern frame with it drawn within
+  cave 99's triangles (the renderer counts only the world's, so the test
+  adds the figure's). Shots go to `shots/t25-croc-*` (idle, rear, bite,
+  tail, roll): look at them.
 - Run `tests/t22.mjs` after any change to the sewer, water, `fieldFns`,
   `meshSink`, the world shader, `visiblePieces`, cleared grades or portal
   opening: `SCRIPT=$PWD/tests/t22.mjs node test.mjs smoke`. It makes D live
@@ -1233,7 +1263,8 @@ The class picker and HUD read `CLASSES` and need no changes.
   crocodile lands. A D made live by hand fights the D enemies everywhere (rat,
   drowned and brood mother in brood rooms and tunnels, siren or eels with
   rats and bloaters in pool rooms, bloaters in gutters, grabbers at grates)
-  and the Warden in the cavern.
+  and Old Sluicejaw in the cavern, which until its modes land stands in its
+  pool and fights like any boss.
 - The rat, the drowned and the brood mother are untested by hand. Their
   numbers (speed, health, the cover's angle, the brood timer, cap and
   distances, placement odds) and how they look were set by tests and

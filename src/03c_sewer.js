@@ -46,7 +46,6 @@ const SEWER = {
   // the boss cavern, the far corner, pushed out this far in X and Z
   bossR: 26,
   bossOff: 10,
-  wardenD: 13, // from the cavern's centre toward its entrance
   // collapsed wall sections
   crumble: [3, 6],
   crumbleR: 2.5,
@@ -1531,12 +1530,11 @@ function genSewer(seed) {
     if (fieldAt(x, z) >= 0.35 && waterAt(x, z) === 0)
       spawns.push({ type: "grabber", x, z, yaw: g.yaw, node: -1, kind: "tunnel" });
   }
-  // the boss stands on the dry ring between the entrance and the centre
-  // pool, facing the entrance
+  // the boss, Old Sluicejaw, lies in the centre pool facing the entrance
   spawns.push({
-    type: "warden",
-    x: boss.x + Math.sin(ea) * S.wardenD,
-    z: boss.z + Math.cos(ea) * S.wardenD,
+    type: "croc",
+    x: boss.x,
+    z: boss.z,
     yaw: ea,
     node: boss.id,
     kind: "boss",
