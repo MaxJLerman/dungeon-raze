@@ -193,3 +193,69 @@ EBEH.bloater = {
     G.clouds.push({ x: e.x, z: e.z, r: CLOUD.r, t: 0, tick: 0 });
   },
 };
+// The eel lives in one body of water (foot) and waits at the shore nearest the
+// player (goal). It is under, and cannot be hit, except while it bites,
+// recovers, flinches, is staggered or glows. In a hunt, every EEL.every s it
+// glows for EEL.glow s and then shocks its whole pool: the player in the
+// water of its body, and every other enemy there that is not an eel, whoever
+// is on the bank is safe. A hunt that ends starts the count again.
+const EEL_UP = { wind: 1, act: 1, rec: 1, hit: 1, recoil: 1, stagger: 1 };
+EBEH.eel = {
+  foot: waterFoot,
+  goal: waterGoal,
+  step(e, dt, c) {
+    const w = c.w;
+    if (e.body === undefined) e.body = w.bodyAt(e.x, e.z);
+    if (e.shockT === undefined) e.shockT = e.glowT = 0;
+    e.safe = !EEL_UP[e.state] && !(e.glowT > 0);
+    if (!e.aware || G.inBoss) {
+      // an idle eel never shocks
+      e.shockT = e.glowT = 0;
+      e.safe = !EEL_UP[e.state];
+      return false;
+    }
+    if (e.state === "stagger") return false;
+    if (e.glowT > 0) {
+      e.glowT -= dt;
+      if (e.glowT > 0) return false;
+      e.glowT = 0;
+      e.shockT = 0;
+      eelShock(e, w, c.p);
+      e.safe = !EEL_UP[e.state];
+      return false;
+    }
+    e.shockT += dt;
+    if (e.shockT >= EEL.every) {
+      e.glowT = EEL.glow;
+      e.safe = false;
+      SFX.tele(true);
+    }
+    return false;
+  },
+};
+// The shock: hurts the player and every other enemy in e's body of water, and
+// lights the pool for EEL.lit s.
+function eelShock(e, w, p) {
+  const id = e.body;
+  if (id < 0 || id === undefined) return;
+  if (p.state !== "dead" && w.waterAt(p.x, p.z) > 0.5 && w.bodyAt(p.x, p.z) === id)
+    hurtPlayer(EEL.dmg, e, { dmg: EEL.dmg, unb: true });
+  for (const o of G.enemies.slice())
+    if (
+      o !== e &&
+      o.type !== "eel" &&
+      !o.dead &&
+      o.state !== "fall" &&
+      !o.hidden &&
+      w.waterAt(o.x, o.z) > 0.5 &&
+      w.bodyAt(o.x, o.z) === id
+    )
+      hitEnemy(o, EEL.dmg, EEL.post, { src: "aoe", fx: e.x, fz: e.z });
+  const b = w.bodies[id];
+  G.shocks.push({
+    body: id,
+    room: b && b.room >= 0 ? w.nodes[b.room] : null,
+    t: 0,
+    dur: EEL.lit,
+  });
+}

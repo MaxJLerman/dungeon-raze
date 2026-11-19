@@ -68,6 +68,20 @@ const STAYS = `
     G.enemies = [e]; e.x = at.x; e.z = at.z; p.x = e.x + 0.3; p.z = e.z; p.state = "free"; const p0 = D(p, e); DF.separate();
     out.player = D(e, at) < 0.01 && D(p, e) >= e.r + p.r - 0.01 && D(p, e) > p0;
     return { pass: out.start && out.step && out.over && out.kick && out.kickX && out.pushtrue && out.pushfalse && out.player, out, shore: sh.s, deep: bd };`;
+// the eel's pool: B is another body of the same room; spotA(d) and spotB(d) are free water points of the two bodies,
+// the nearest to d metres from the eel (from the middle of B), 0.9 m or more from the ones already taken
+const EELSET = `
+  const B = w.bodies.find((q) => q.room === big.room && q.id !== big.id);
+  if (!B) return { pass: false, why: "no second body" };
+  const taken = [], mkr = (type, s) => { const q = DF.makeEnemy({ type, x: s.x, z: s.z, yaw: 0, node: -1 }); q.hx = q.x; q.hz = q.z; return q; };
+  const spot = (b, ox, oz, d) => { let best = null, bs = 1e9;
+    for (let x = b.x - 25; x <= b.x + 25; x += 0.5) for (let z = b.z - 25; z <= b.z + 25; z += 0.5) {
+      if (w.waterAt(x, z) !== 1 || w.bodyAt(x, z) !== b.id || w.fieldAt(x, z) < 1 || taken.some((q) => Math.hypot(q.x - x, q.z - z) < 0.9)) continue;
+      const s = Math.abs(Math.hypot(x - ox, z - oz) - d); if (s < bs) { bs = s; best = { x, z }; } }
+    if (best) taken.push(best); return best; };
+  const spotA = (d) => spot(big, e.x, e.z, d), spotB = (d) => spot(B, B.x, B.z, d);
+  const aggro = (q) => { DF.alertE(q, true); q.aware = true; q.state = "chase"; };
+`;
 // the player 2.5 m short of the bloater at `at` and to its right, the camera behind the player looking down on both
 const SHOTCAM = `const a = 2.4, fx = Math.sin(a), fz = Math.cos(a), rx = -fz, rz = fx; cam.yaw = a; cam.pitch = 0.5;
     p.x = at.x - fx * 2.5 + rx * 1.4; p.z = at.z - fz * 2.5 + rz * 1.4; w.resolve(p, 0.6); p.yaw = a; p.state = "free"; cam.px = p.x; cam.pz = p.z; DF.sim(0.3);`;
@@ -442,5 +456,88 @@ export default [
     ${SHOTCAM}
     DF.kill(e); DF.sim(0.8, () => { p.hp = p.maxHp; });
     return { pass: G.clouds.length === 1, n: G.clouds.length }; })()`, wait: 400, shot: "t24-cloud" },
+  // ---- the eel ----
+  pool("an eel stays in water", STAYS, "fighter", "eel"),
+  pool("the eel's shock hurts only those in its pool", EELSET + `
+    // a rat and a bloater are not needed here: a rat in each pool, a second eel in A, and the player in A, in B or on dry floor
+    const run = (where) => {
+      taken.length = 0; const rA = mkr("rat", spotA(4)), rB = mkr("rat", spotB(0)), e2 = mkr("eel", spotA(3));
+      G.enemies = [e, rA, rB, e2]; for (const q of [rA, rB, e2]) { q.hx = q.x; q.hz = q.z; }
+      const s = where === "A" ? spotA(2.5) : where === "B" ? spotB(1) : sh.P;
+      p.x = s.x; p.z = s.z; cam.px = p.x; cam.pz = p.z; p.state = "free"; p.iframe = 0; p.hp = p.maxHp; p.kx = p.kz = 0;
+      e.shockT = 0; e.glowT = 0; G.shocks = []; aggro(e);
+      e.shockT = DF.EEL.every - 0.01; let fired = false;
+      DF.sim(DF.EEL.glow + 0.6, () => { for (const q of G.enemies) q.cd = 99; p.x = s.x; p.z = s.z; if (G.shocks.length) fired = true; });
+      return { loss: p.maxHp - p.hp, fired, rA: rA.dead || rA.hp < DF.EDEF.rat.hp, rB: !rB.dead && rB.hp === DF.EDEF.rat.hp, e2: !e2.dead && e2.hp === DF.EDEF.eel.hp, shocks: G.shocks.length };
+    };
+    const a = run("A"), b = run("B"), d = run("dry");
+    const c = { inA: Math.abs(a.loss - DF.EEL.dmg) < 0.01 && a.fired, inB: b.loss === 0 && b.fired, dry: d.loss === 0 && d.fired,
+      ratA: a.rA && b.rA && d.rA, ratB: a.rB && b.rB && d.rB, eels: a.e2 && b.e2 && d.e2 };
+    return { pass: Object.values(c).every(Boolean), c, a, b, d };`, "fighter", "eel"),
+  pool("it warns first", EELSET + `
+    const s = spotA(2.5); p.x = s.x; p.z = s.z; cam.px = p.x; cam.pz = p.z; p.hp = p.maxHp; p.iframe = 0; G.shocks = [];
+    aggro(e); e.shockT = DF.EEL.every - 0.01; let max = 0;
+    DF.sim(1.0, () => { e.cd = 99; p.x = s.x; p.z = s.z; max = Math.max(max, e.glowT || 0); });
+    const c = { glowing: e.glowT > 0 && max <= DF.EEL.glow, noDmg: p.hp === p.maxHp, noShock: G.shocks.length === 0, notSafe: e.safe === false };
+    DF.sim(0.5, () => { e.cd = 99; p.x = s.x; p.z = s.z; });
+    c.then = p.hp < p.maxHp && G.shocks.length === 1 && e.glowT === 0 && e.shockT < 1;
+    return { pass: Object.values(c).every(Boolean), c, glowT: e.glowT };`, "fighter", "eel"),
+  pool("an idle eel never shocks", EELSET + `
+    // the player on the bank behind it, out of its notice: it stays unaware for 20 s
+    const back = () => { e.yaw = Math.atan2(p.x - e.x, p.z - e.z) + Math.PI; };
+    p.hp = p.maxHp; G.shocks = []; back();
+    let bad = 0; DF.sim(20, (i) => { e.cd = 99; keep(); back(); if (e.aware || e.shockT > 0 || e.glowT > 0) bad++; });
+    // the player in its pool, so that a shock would hurt: still nothing while it has not noticed
+    const s = spotA(3.6); p.x = s.x; p.z = s.z; cam.px = p.x; cam.pz = p.z; back();
+    DF.sim(10, () => { e.cd = 99; keep(); back(); if (e.aware || e.shockT > 0 || e.glowT > 0) bad++; });
+    // a hunt that ends in the middle of its count starts again from nothing
+    aggro(e); e.shockT = DF.EEL.every - 0.5; DF.sim(0.1, () => { e.cd = 99; keep(); }); const mid = e.shockT > 0;
+    e.aware = false; e.state = "idle"; back(); DF.sim(0.1, () => { e.cd = 99; keep(); back(); });
+    const c = { none: G.shocks.length === 0 && bad === 0, p: p.hp === p.maxHp, counted: mid, reset: e.shockT === 0 && !(e.glowT > 0) };
+    return { pass: Object.values(c).every(Boolean), c, shockT: e.shockT, bad };`, "fighter", "eel"),
+  pool("a shock sets off a bloater", EELSET + `
+    const bl = mkr("bloater", spotA(4)); G.enemies = [e, bl]; bl.hx = bl.x; bl.hz = bl.z;
+    const s = spotB(0); p.x = s.x; p.z = s.z; cam.px = p.x; cam.pz = p.z; keep(); G.clouds = [];
+    aggro(e); e.shockT = DF.EEL.every - 0.01; DF.sim(DF.EEL.glow + 0.4, () => { e.cd = 99; keep(); });
+    const c = { dead: bl.dead, cloud: G.clouds.length === 1 || bl.dead && G.clouds.length >= 1 };
+    return { pass: Object.values(c).every(Boolean), c, hp: bl.hp, clouds: G.clouds.length };`, "fighter", "eel"),
+  pool("it can be hit only while surfaced", EELSET + `
+    const s = spotA(2.5); p.x = s.x; p.z = s.z; cam.px = p.x; cam.pz = p.z; keep(); p.iframe = 0;
+    aggro(e); e.shockT = 0; const hit = () => { const h = e.hp; DF.hitEnemy(e, 5, 5, { src: "melee" }); return e.hp < h; };
+    DF.sim(0.05, () => { e.cd = 99; });
+    const out = { under: e.state === "chase" && e.safe === true && !hit() };
+    // glowing: the glow starts and the hit lands
+    e.shockT = DF.EEL.every - 0.01; DF.sim(0.1, () => { e.cd = 99; keep(); });
+    out.glow = e.glowT > 0 && e.safe === false && hit();
+    // winding up a bite
+    e.glowT = 0; e.shockT = 0; e.state = "wind"; e.atk = DF.EDEF.eel.atks.bite; e.t = 0; DF.sim(0.05, () => { e.cd = 99; keep(); });
+    out.wind = e.state === "wind" && e.safe === false && hit();
+    // flinching, recovering, staggered
+    for (const st of ["rec", "hit", "recoil", "stagger"]) { e.state = st; e.t = 0; e.dur = 5; e.hitT = 5; e.atk = DF.EDEF.eel.atks.bite; e.safe = true; DF.sim(1 / 60, () => { e.cd = 99; keep(); }); out[st] = e.state === st && e.safe === false && hit(); }
+    return { pass: Object.values(out).every(Boolean), out };`, "fighter", "eel"),
+  pool("it can be hit from the bank", EELSET + `
+    // the player on dry floor 1.5 m past the shore, the eel awake: it comes to the shore and in reach of a light attack while surfaced
+    const P2 = { x: e.x + Math.sin(sh.a) * (sh.s + 1.5), z: e.z + Math.cos(sh.a) * (sh.s + 1.5) };
+    if (w.waterAt(P2.x, P2.z) !== 0 || w.fieldAt(P2.x, P2.z) < 0.6) return { pass: false, why: "no dry bank", P2 };
+    p.x = P2.x; p.z = P2.z; cam.px = p.x; cam.pz = p.z; aggro(e);
+    const range = DF.MOVES[p.cls.chain].range + e.r + p.r; let t = null, landed = false;
+    DF.sim(10, (i) => { keep(); if (t === null && D(e, p) <= range && e.safe === false) { t = i / 60; const h = e.hp; DF.hitEnemy(e, 5, 5, { src: "melee" }); landed = e.hp < h; return false; } });
+    const c = { near: t !== null, landed, foot: foot() };
+    return { pass: Object.values(c).every(Boolean), c, t, range, d: D(e, p) };`, "fighter", "eel"),
+  { ...pool("the eel, surfaced and biting at a shore", EELSET + `
+    const P2 = { x: e.x + Math.sin(sh.a) * (sh.s + 1.5), z: e.z + Math.cos(sh.a) * (sh.s + 1.5) };
+    p.x = P2.x; p.z = P2.z; p.state = "free"; aggro(e);
+    const face = Math.atan2(e.x - p.x, e.z - p.z); cam.yaw = face - 1.3; cam.pitch = 0.3; p.yaw = face; cam.px = p.x; cam.pz = p.z;
+    let seen = false; DF.sim(10, () => { keep(); p.x = P2.x; p.z = P2.z; cam.px = p.x; cam.pz = p.z; cam.yaw = face - 1.3; if (e.state === "wind" && e.t > 0.38) { seen = true; return false; } });
+    return { pass: seen, st: e.state };`, "fighter", "eel"), wait: 400, shot: "t24-eel" },
+  { ...pool("the shocked pool lit while the other is dark", EELSET + `
+    // the player on the dry floor nearest the middle between the two pools, looking across both
+    const mid = { x: (big.x + B.x) / 2, z: (big.z + B.z) / 2 }; let dry = null, dd = 1e9;
+    for (let x = mid.x - 8; x <= mid.x + 8; x += 0.5) for (let z = mid.z - 8; z <= mid.z + 8; z += 0.5)
+      if (w.waterAt(x, z) === 0 && w.fieldAt(x, z) >= 1 && Math.hypot(x - mid.x, z - mid.z) < dd) { dd = Math.hypot(x - mid.x, z - mid.z); dry = { x, z }; }
+    p.x = dry.x; p.z = dry.z; p.state = "free"; aggro(e);
+    e.shockT = DF.EEL.every - 0.01; let n = 0; DF.sim(4, () => { keep(); p.x = dry.x; p.z = dry.z; e.cd = 99; if (G.shocks.length && ++n > 6) return false; });
+    const face = Math.atan2(B.x - big.x, B.z - big.z) + SIDE; cam.yaw = face; cam.pitch = 0.55; p.yaw = face; cam.px = p.x; cam.pz = p.z;
+    return { pass: G.shocks.length === 1, n: G.shocks.length, dB: D(B, big), dry, dd };`.replace("SIDE", "-Math.PI / 2"), "fighter", "eel"), wait: 400, shot: "t24-eel-shock" },
   step("the class is put back", `DF.setClass("fighter"); return { pass: true };`),
 ];

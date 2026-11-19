@@ -925,6 +925,7 @@ function render() {
   drawRifts();
   drawHoles();
   drawClouds();
+  drawShocks();
   // ---- fx ----
   if (p.state !== "dead") {
     R.blob(p.x, p.z, 0.8, 0.55);

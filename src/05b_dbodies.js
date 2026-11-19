@@ -509,3 +509,165 @@ function poseBloater(e) {
   setEm(f, tr + e.flash * 0.7, tg + e.flash * 0.7, tb + e.flash * 0.5);
 }
 EPOSE.bloater = { pose: poseBloater };
+// ---- the eel ----
+// A long, low eel of eight tapering segments, each a pivot hung behind the
+// last (-Z) so the whole body can wave and arch. Dark olive back, pale belly,
+// a low dorsal ridge and glowing spots along the flanks (marked `spot`, which
+// poseEel brightens through the shock's glow). The head is the first segment,
+// with a lower jaw on a pivot.
+const EEL_W = [0.5, 0.56, 0.56, 0.52, 0.45, 0.37, 0.28, 0.17],
+  EEL_STEP = 0.5;
+function makeEelFig() {
+  const back = C_(0x39421f),
+    belly = C_(0xbdb98c),
+    ridge = C_(0x262d17),
+    spotC = C_(0x5aa8a8),
+    teeth = C_(0xe8e4cf),
+    eyeC = C_(0xe8d36a);
+  const f = { o: { sc: 1 }, root: new Nd(), segs: [] };
+  let parent = f.root;
+  for (let i = 0; i < EEL_W.length; i++) {
+    const W = EEL_W[i],
+      sg = parent.add(new Nd());
+    sg.p = [0, 0, i ? -EEL_STEP : 0];
+    sg.add(part("sph", back, W, W * 0.8, 0.8, 0, 0, 0));
+    sg.add(part("sph", belly, W * 0.8, W * 0.46, 0.72, 0, -W * 0.22, 0));
+    if (i > 0 && i < 7) sg.add(part("box", ridge, 0.04, 0.12, 0.56, 0, W * 0.4 + 0.02, 0));
+    if (i > 0)
+      for (const s of [-1, 1]) {
+        const sp = sg.add(part("sph", spotC, 0.1, 0.1, 0.1, s * W * 0.44, W * 0.05, 0.08));
+        sp.em = [0.04, 0.22, 0.26];
+        sp.spot = true;
+      }
+    f.segs.push(sg);
+    parent = sg;
+  }
+  // head: a blunt upper jaw, a lower jaw that hinges, teeth and two eyes
+  const hd = f.segs[0];
+  hd.add(part("sph", back, 0.4, 0.24, 0.5, 0, -0.01, 0.36));
+  f.jaw = hd.add(new Nd());
+  f.jaw.p = [0, -0.1, 0.12];
+  f.jaw.add(part("sph", belly, 0.32, 0.1, 0.52, 0, -0.01, 0.26));
+  for (const z of [0.22, 0.4, 0.58])
+    for (const s of [-1, 1]) {
+      f.jaw.add(part("cone", teeth, 0.04, 0.1, 0.04, s * 0.12, 0.05, z - 0.1));
+      const t = hd.add(part("cone", teeth, 0.04, 0.1, 0.04, s * 0.12, -0.1, z + 0.12));
+      t.r[0] = PI;
+    }
+  for (const s of [-1, 1]) {
+    const eye = hd.add(part("sph", eyeC, 0.07, 0.07, 0.07, s * 0.19, 0.1, 0.34));
+    eye.em = [0.7, 0.55, 0.1];
+  }
+  // marker nodes for the shared effects: headN puts the eye glints on the
+  // eyes (it is stretched across the head), weapon is the mouth, where a
+  // wind-up gathers
+  f.headN = hd.add(new Nd());
+  f.headN.p = [0, 0.1, 0.2];
+  f.headN.s = [2.6, 1, 1];
+  f.weapon = f.jaw.add(new Nd());
+  f.weapon.p = [0, 0.05, 0.5];
+  f.rim = [0.14, 0.2, 0.14];
+  f.eye = [0.5, 0.95, 0.95];
+  return finishFigure(f);
+}
+EFIG.eel = makeEelFig;
+// Under the water it lies low (its ridge breaks the surface), waving gently;
+// it rises to bite, to flinch and to glow. The travelling wave runs down the
+// body and widens toward the tail. A bite rears the head back and strikes
+// forward with the jaw open. Spots brighten through the shock's glow.
+function poseEel(e) {
+  const f = e.fig,
+    mv = sat(e.speed / e.def.speed),
+    dt = e.pt === undefined ? 0 : Math.min(0.1, Math.max(0, G.t - e.pt));
+  e.pt = G.t;
+  // 0 under, 1 surfaced: quick up, slow down
+  let up = e.glowT > 0 ? 1 : 0,
+    rear = 0,
+    jaw = 0,
+    amp = 0.35 + 0.8 * mv,
+    rate = 3.5 + 4 * mv,
+    roll = 0,
+    tr = 0;
+  switch (e.state) {
+    case "wind": {
+      const k = smooth(sat(e.t / e.atk.wind));
+      up = 1;
+      rear = -0.6 * k;
+      jaw = 0.9 * k;
+      amp *= 1 - 0.6 * k;
+      break;
+    }
+    case "act": {
+      const k = sat(e.t / e.atk.act);
+      up = 1;
+      rear = lerp(-0.6, 0.4, k);
+      jaw = 0.9;
+      amp *= 0.3;
+      break;
+    }
+    case "rec": {
+      const k = smooth(sat(e.t / e.atk.rec));
+      up = 1;
+      rear = lerp(0.4, 0, k);
+      jaw = 0.9 * (1 - k);
+      break;
+    }
+    case "hit":
+    case "recoil": {
+      const k = 1 - sat(e.t / 0.32);
+      up = 1;
+      rear = -0.35 * k;
+      roll = 0.4 * k;
+      amp += 0.8 * k;
+      rate += 6 * k;
+      jaw = 0.5 * k;
+      break;
+    }
+    case "stagger": {
+      const pu = 0.5 + 0.5 * Math.sin(G.t * 10);
+      up = 1;
+      rear = -0.25 + 0.15 * pu;
+      roll = Math.sin(G.t * 6) * 0.35;
+      amp = 1.1;
+      rate = 9;
+      jaw = 0.6;
+      tr = 0.25 + 0.3 * pu;
+      break;
+    }
+    case "dead": {
+      // turns belly up and floats
+      up = 0.8;
+      roll = PI * sat(e.t / 0.6);
+      amp = 0.15 * (1 - sat(e.t / 1.2));
+      jaw = 0.5;
+      break;
+    }
+  }
+  // the first pose finds it at rest where it is (a frame drawn with no time passed too)
+  e.surf = e.surf === undefined ? up : damp(e.surf, up, up > e.surf ? 14 : 3.5, dt);
+  e.wph = (e.wph || e.ph || 0) + dt * rate;
+  f.root.p[0] = e.x;
+  f.root.p[1] = e.y - 0.3 + 0.38 * e.surf + Math.sin(G.t * 1.3 + e.ph) * 0.02;
+  f.root.p[2] = e.z;
+  f.root.r[0] = 0;
+  f.root.r[1] = e.yaw;
+  f.root.r[2] = roll;
+  // the head's pitch and a counter-pitch behind it that levels the body again
+  const n = f.segs.length;
+  for (let i = 0; i < n; i++) {
+    const s = f.segs[i];
+    s.r[0] = i === 0 ? rear : i < 4 ? -rear * [0, 0.5, 0.3, 0.2][i] : 0;
+    s.r[1] = (i === 0 ? 0.6 : 0.5 + i * 0.25) * amp * 0.3 * Math.sin(e.wph - i * 0.85);
+  }
+  f.jaw.r[0] = jaw;
+  // glow in the spots, the hit flash and a stagger's red over everything
+  const g = e.glowT > 0 ? (0.4 + 1.4 * sat(1 - e.glowT / EEL.glow)) * (0.75 + 0.25 * Math.sin(G.t * 30)) : 0,
+    fl = e.flash * 0.6;
+  for (const m of f.meshes) {
+    const s = m.spot ? g : 0;
+    m.em[0] = m.em0[0] + fl + tr + s * 0.5;
+    m.em[1] = m.em0[1] + fl + s * 1.1;
+    m.em[2] = m.em0[2] + fl + s * 1.3;
+  }
+}
+EPOSE.eel = { pose: poseEel };

@@ -45,6 +45,8 @@ const G = {
   holes: [],
   // poison clouds left by bloaters, { x, z, r, t, tick }
   clouds: [],
+  // the pools an eel has shocked, { body, room, t, dur }
+  shocks: [],
 };
 const keys = {},
   taps = {},
@@ -1180,6 +1182,10 @@ const BROOD = { every: 6, first: 3, cap: 4, keep: 7, close: 3, focus: 2 };
 // The bloater's poison cloud, left where it bursts: it hurts everything within
 // r of its middle (the player and every enemy) every `tick` s for `life` s.
 const CLOUD = { r: 1.5, life: 3, tick: 0.5, dmg: 4 };
+// The eel's shock: every `every` s of a hunt it glows for `glow` s and then
+// shocks everything standing in its body of water for `dmg` (and `post`
+// posture, for an enemy). The pool is drawn lit for `lit` s.
+const EEL = { every: 8, glow: 1.2, dmg: 22, post: 20, lit: 0.4 };
 const EDEF = {
   husk: {
     name: "Husk",
@@ -1364,6 +1370,37 @@ const EDEF = {
         arc: 2.0,
         lunge: 0.6,
         trig: 1.4,
+      },
+    },
+  },
+  // D gate: an eel, which lives under the water of one pool and comes up to
+  // bite whoever stands at the shore. Every EEL.every s of a hunt it glows and
+  // shocks its whole pool (EBEH.eel); it can be hit only while surfaced.
+  eel: {
+    name: "Eel",
+    threat: 1,
+    hp: 70,
+    posture: 60,
+    speed: 2.5,
+    wade: 2.0,
+    turn: 6,
+    r: 0.45,
+    sight: 14,
+    cd: 1.6,
+    poise: 1,
+    top: 1.0,
+    bound: "water",
+    atks: {
+      bite: {
+        style: "thrust",
+        wind: 0.45,
+        act: 0.12,
+        rec: 0.6,
+        dmg: 12,
+        reach: 2.2,
+        arc: 1.4,
+        lunge: 0.6,
+        trig: 2.2,
       },
     },
   },
@@ -1753,6 +1790,7 @@ function resetRun() {
   G.rifts = [];
   G.holes = [];
   G.clouds = [];
+  G.shocks = [];
   G.insp = null;
   G.grabGrace = 0;
   G.bossDead = false;
@@ -1890,6 +1928,7 @@ function respawn() {
   G.rifts = [];
   G.holes = [];
   G.clouds = [];
+  G.shocks = [];
   G.world.resolve(p, 0.6);
   G.projs = [];
   G.bombs = [];
@@ -5106,6 +5145,12 @@ function cloudsUpdate(dt) {
   }
   G.clouds = G.clouds.filter((c) => c.t < CLOUD.life);
 }
+// The pools an eel has shocked are drawn lit for EEL.lit s (drawShocks).
+function shocksUpdate(dt) {
+  if (!G.shocks.length) return;
+  for (const s of G.shocks) s.t += dt;
+  G.shocks = G.shocks.filter((s) => s.t < s.dur);
+}
 function holesUpdate(dt) {
   for (const h of G.holes) {
     h.t += dt;
@@ -5292,6 +5337,7 @@ function update(dt) {
   riftsUpdate(dt);
   holesUpdate(dt);
   cloudsUpdate(dt);
+  shocksUpdate(dt);
   for (const q of G.pending) {
     q.t -= dt;
     if (q.t <= 0) {
