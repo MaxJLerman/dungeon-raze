@@ -2651,6 +2651,11 @@ function heldUpdate(dt) {
   }
   const by = h.by;
   if (by && !by.dead) p.yaw = Math.atan2(by.x - p.x, by.z - p.z);
+  // a holder that is gone frees the player before any tick lands
+  if (!by || by.dead || by.state !== "hold") {
+    releaseHold();
+    return;
+  }
   h.tick += dt;
   // a small allowance, so that four ticks fit in the full hold
   while (h.tick >= HOLD.tick - 1e-9 && p.state === "held") {
@@ -2659,7 +2664,7 @@ function heldUpdate(dt) {
     if (dmg > 0) hurtPlayer(dmg, by, { dmg, dot: true });
   }
   if (p.state !== "held") return;
-  if (h.t >= HOLD.max || !by || by.dead || by.state !== "hold") releaseHold();
+  if (h.t >= HOLD.max) releaseHold();
 }
 function playerDie() {
   const p = G.player;
@@ -2718,7 +2723,8 @@ function aimYaw(base, range = 4.8, cone = 1.1) {
   let best = null,
     bs = 1e9;
   for (const e of G.enemies) {
-    if (e.dead || e.state === "fall" || e.hidden) continue;
+    // a safe enemy cannot be hurt, so the assist passes it over
+    if (e.dead || e.state === "fall" || e.hidden || e.safe) continue;
     const d = Math.hypot(e.x - p.x, e.z - p.z);
     if (d > range + e.r) continue;
     const a = Math.abs(angDiff(base, Math.atan2(e.x - p.x, e.z - p.z)));
@@ -2738,7 +2744,7 @@ function aimRanged() {
   let best = null,
     bs = 1;
   for (const e of G.enemies) {
-    if (e.dead || e.state === "fall" || e.hidden) continue;
+    if (e.dead || e.state === "fall" || e.hidden || e.safe) continue;
     const d = Math.hypot(e.x - p.x, e.z - p.z);
     if (d > 36) continue;
     const ey = Math.atan2(e.x - p.x, e.z - p.z),
@@ -3071,6 +3077,7 @@ function grappleTarget() {
     ok = (e) =>
       e &&
       !e.dead &&
+      e.state !== "fall" &&
       !e.hidden &&
       Math.hypot(e.x - p.x, e.z - p.z) <= 14 &&
       w.los(p.x, p.z, e.x, e.z);
@@ -3642,6 +3649,7 @@ function playerUpdate(dt) {
           const e = G.enemies.find(
               (e) =>
                 !e.dead &&
+                !e.hidden &&
                 Math.hypot(e.x - p.x, e.z - p.z) < m.range + e.r &&
                 Math.abs(angDiff(p.yaw, Math.atan2(e.x - p.x, e.z - p.z))) <
                   m.arc / 2 + 0.2,
@@ -4935,6 +4943,7 @@ function minesUpdate(dt) {
         !e.dead &&
         e.state !== "fall" &&
         !e.hidden &&
+        !e.safe &&
         Math.hypot(e.x - m.x, e.z - m.z) < MINE.trig + e.r
       ) {
         boomMine(m);
@@ -4947,6 +4956,7 @@ function minesUpdate(dt) {
           !e.dead &&
           e.state !== "fall" &&
           !e.hidden &&
+          !e.safe &&
           segDist(e.x, e.z, m.x, m.z, o.x, o.z) < e.r
         ) {
           boomMine(m);
@@ -5326,6 +5336,7 @@ function projUpdate(dt) {
           e.dead ||
           e.state === "fall" ||
           e.hidden ||
+          e.safe ||
           (pr.hitSet && pr.hitSet.has(e))
         )
           continue;

@@ -690,6 +690,8 @@ window.DF = {
   DROP,
   startDrop,
   pickLock,
+  aimYaw,
+  aimRanged,
   explode,
   MAGENTA,
   shoot,

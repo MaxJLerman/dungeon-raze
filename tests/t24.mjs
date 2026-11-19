@@ -245,7 +245,7 @@ export default [
     e.safe = false; DF.hitEnemy(e, 30, 10, { src: "melee" }); c.back = e.hp < hp;
     return { pass: Object.values(c).every(Boolean), c }; })()`,
   },
-  field("a hidden or safe enemy is skipped by the melee loop, shots, mines, the relock and separate", `
+  field("a hidden enemy is skipped by the melee loop, shots, mines and separate", `
     const q = spot(1.6); if (!q) return { pass: false, why: "no spot" };
     const mk = () => { const e = DF.makeEnemy({ type: "husk", x: q.x, z: q.z, yaw: q.a + Math.PI, node: -1 }); G.enemies = [e]; return e; };
     const out = {};
@@ -259,6 +259,34 @@ export default [
     // separate
     e = mk(); e.hidden = true; const o = DF.makeEnemy({ type: "husk", x: q.x + 0.3, z: q.z, yaw: 0, node: -1 }); const e0 = [e.x, e.z]; out.sep = true;
     for (const order of [[e, o], [o, e]]) { G.enemies = order; DF.separate(); if (e.x !== e0[0] || e.z !== e0[1]) out.sep = false; }
+    return { pass: Object.values(out).every(Boolean), out };`),
+  field("a safe enemy is passed over by shots, mines, wires and aim assist", `
+    // e safe 3 m out, o 6 m out on the same line behind it
+    let a = null; for (let t = 0; t < 6.3 && a === null; t += 0.1) { const ok = (d) => w.fieldAt(p.x + Math.sin(t) * d, p.z + Math.cos(t) * d) >= 1.2;
+      const side = (k) => w.fieldAt(p.x + Math.sin(t) * 4.5 - Math.cos(t) * k, p.z + Math.cos(t) * 4.5 + Math.sin(t) * k) >= 0.4;
+      if ([2, 3, 4.5, 6].every(ok) && side(1.4) && side(-1.4) && w.los(p.x, p.z, p.x + Math.sin(t) * 6, p.z + Math.cos(t) * 6)) a = t; }
+    if (a === null) return { pass: false, why: "no line" };
+    const at = (d, side = 0) => ({ x: p.x + Math.sin(a) * d - Math.cos(a) * side, z: p.z + Math.cos(a) * d + Math.sin(a) * side });
+    const mk = (q) => { const e = DF.makeEnemy({ type: "husk", x: q.x, z: q.z, yaw: a + Math.PI, node: -1 }); e.hx = e.x; e.hz = e.z; return e; };
+    const hold = (es) => () => { keep(); for (const e of es) { e.cd = 99; e.state = "idle"; e.x = e.hx; e.z = e.hz; } };
+    const out = {}, p0 = { x: p.x, z: p.z };
+    // a shot flies past the safe one and lands on the one behind
+    for (const safe of [true, false]) { const e = mk(at(3)), o = mk(at(6)); e.safe = safe; G.enemies = [e, o]; G.projs = [];
+      G.projs.push({ x: p.x + Math.sin(a) * 0.7, y: 1.25, z: p.z + Math.cos(a) * 0.7, vx: Math.sin(a) * 24, vz: Math.cos(a) * 24, life: 1, own: "p", dmg: 9, post: 5, kind: "bolt", c: [1, 1, 1] });
+      DF.sim(0.5, hold([e, o])); out[safe ? "shotSafe" : "shotControl"] = safe ? e.hp === e.def.hp && o.hp < o.def.hp : e.hp < e.def.hp && o.hp === o.def.hp; G.projs = []; }
+    // a mine at its feet, and a wire across it, set off only by one that is not safe
+    for (const safe of [true, false]) { const e = mk(at(4.5)); e.safe = safe; G.enemies = [e]; G.mines = [];
+      const m = DF.plantMine(e.x, e.z); DF.sim(1.2, hold([e])); out[safe ? "mineSafe" : "mineControl"] = safe === G.mines.includes(m);
+      G.mines = []; const s1 = at(4.5, 1.4), s2 = at(4.5, -1.4), m1 = DF.plantMine(s1.x, s1.z), m2 = DF.plantMine(s2.x, s2.z);
+      const wired = m1.links.includes(m2) || m2.links.includes(m1); DF.sim(1.2, hold([e]));
+      out[safe ? "wireSafe" : "wireControl"] = wired && safe === (G.mines.includes(m1) && G.mines.includes(m2)); G.mines = []; }
+    p.x = p0.x; p.z = p0.z;
+    // aim assist: the safe one dead ahead is passed over for one off to the side, unless it is locked
+    const e = mk(at(3)), o = mk(at(3.5, 1.2)); G.enemies = [e, o]; p.lock = null; cam.yaw = a;
+    const toE = Math.atan2(e.x - p.x, e.z - p.z), toO = Math.atan2(o.x - p.x, o.z - p.z), near = (x, y) => Math.abs(DF.angDiff(x, y)) < 1e-6;
+    out.aimControl = near(DF.aimYaw(a), toE) && near(DF.aimRanged(), toE);
+    e.safe = true; out.aimSafe = near(DF.aimYaw(a), toO) && near(DF.aimRanged(), toO);
+    p.lock = e; out.aimLock = near(DF.aimYaw(a), toE) && near(DF.aimRanged(), toE); p.lock = null;
     return { pass: Object.values(out).every(Boolean), out };`),
   field("a hidden enemy is not the relock target and not a staggered execution", `
     const a = spot(3), b = spot(5, 1.5); if (!a || !b) return { pass: false, why: "no spots" };
@@ -361,6 +389,10 @@ export default [
     const k = run((e) => DF.kill(e)), s = run((e) => DF.stagger(e));
     const c = { kHeld: k.was === "held", kFree: k.now === "free", sHeld: s.was === "held", sFree: s.now === "free" };
     return { pass: Object.values(c).every(Boolean), c, k, s };`),
+  hold("a holder killed just before a tick deals it no damage", `
+    const e = mk(); grab(e, { dps: 10 }); DF.sim(DF.HOLD.tick - 1 / 60 - 1e-6); const hp0 = p.hp, was = p.state, tick = p.hold && p.hold.tick;
+    DF.kill(e); DF.sim(1 / 60);
+    return { pass: was === "held" && p.hp === hp0 && p.state !== "held" && p.hold === null, was, loss: hp0 - p.hp, state: p.state, tick };`),
   hold("no grab during a dodge or the grace, and one holder at a time", `
     const e = mk(), o = DF.makeEnemy({ type: "husk", x: e.x, z: e.z, yaw: 0, node: -1 }); G.enemies = [e, o];
     const c = {}; const g = (en) => { en.state = "hold"; return DF.grabPlayer(en, { dps: 0, tx: p.x, tz: p.z, speed: 0 }); };
@@ -632,6 +664,18 @@ export default [
     force("lunge"); let held = false, acted = false;
     DF.sim(3, () => { keep(); e.cd = 99; if (e.state === "act") acted = true; if (p.state === "held") held = true; });
     return { pass: acted && !held, acted, held };`, "fighter", "siren"),
+  pool("rock between her and the player stops the lunge", SIRENSET + `
+    const run = (rock) => { const P0 = setUp(3); if (!dry(P0)) return { why: "the bank is not dry" };
+      // a short wall across the line, half way
+      const m = { x: (E0.x + P0.x) / 2, z: (E0.z + P0.z) / 2 }, rx = -dir.z, rz = dir.x;
+      if (rock) w.addRock(m.x - rx * 1.5, m.z - rz * 1.5, m.x + rx * 1.5, m.z + rz * 1.5, 0.3);
+      const blocked = !w.los(e.x, e.z, p.x, p.z), may = DF.EBEH.siren.canAttack(e, { p, w });
+      force("lunge"); let held = false, acted = false; const hp0 = p.hp;
+      try { DF.sim(2, () => { p.stam = p.maxStam; e.cd = 99; if (e.state === "act") acted = true; if (p.state === "held") held = true; }); } finally { w.clearRocks(); }
+      return { blocked, may, acted, held, hurt: p.hp < hp0 }; };
+    const r = run(true), c0 = run(false);
+    const c = { blocked: r.blocked, noStart: r.may === false, acted: r.acted, noGrab: !r.held && !r.hurt, control: !c0.blocked && c0.may === true && c0.held };
+    return { pass: Object.values(c).every(Boolean), c, r, c0 };`, "fighter", "siren"),
   pool("she cannot grab again for SIREN.grabCD", SIRENSET + `
     const P0 = setUp(3.5); if (!dry(P0)) return { pass: false, why: "the bank is not dry", P0 };
     force("lunge"); let held = false;

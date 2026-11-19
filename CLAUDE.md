@@ -595,8 +595,9 @@ is what you need to change the code without breaking it.
   holder. The numbers are in `HOLD`: the hold lasts `max` (2 s); each press of
   dodge counts `mash` (0.35 s) towards that, so mashing dodge breaks free
   early; every `tick` (0.5 s) it deals `dps * tick` through `hurtPlayer` with
-  `atk.dot`. It ends when the time is up, the holder dies or leaves `hold`,
-  or leaves `hold`: `releaseHold()` gives `HOLD.safe`
+  `atk.dot`. It ends when the time is up or the holder dies or leaves
+  `hold` (that is checked before the tick, so a holder that is gone deals
+  nothing more): `releaseHold()` gives `HOLD.safe`
   of invulnerability and starts `G.grabGrace` (`HOLD.grace`, 1.5 s, in which
   nothing may grab again) and swallows the press that broke free so it does
   not also dodge. `endHold()` (death) clears it and puts every holder back
@@ -808,9 +809,10 @@ is what you need to change the code without breaking it.
 - **Bound types.** An `EDEF` entry with `bound: "water"` or `bound: "wall"`
   is tied to a place. `bound(e)` reads it, and it is the one test for "heavy
   like the boss" in the class tools: the Enforcer's grapple pulls the player
-  to it, the Sapper's execution does not kick it and its cave-in forces no
-  stagger on it (and `caveImpact` skips the forced stagger when a hook
-  refused the hit), the Riftwalker's rifts and Drop never take it, and
+  to it, and the Sapper's execution does not kick it. Its cave-in staggers
+  it like any enemy, but not while it is hidden or safe (and `caveImpact`
+  skips the forced stagger when a hook refused the hit). The Riftwalker's
+  rifts and Drop never take it, and
   `separate` weights it like the boss, so other enemies cannot shove it.
   Its footing is a `foot` hook:
   - `waterFoot(e, x, z)` (bloater, eel, siren): `waterAt` at least 0.5 (the
@@ -826,8 +828,12 @@ is what you need to change the code without breaking it.
   separate or cross a rift. `makeEnemy` sets it for an `EDEF` entry with
   `ambush: true`, and its own step turns it off. Everything that skips a
   falling enemy skips a hidden one, and a lock drops the moment its enemy
-  turns hidden. `e.safe` is the lesser case: still drawn, but `hitEnemy`
-  refuses a hit quietly (the eel under the water). An `ambush` type takes no
+  turns hidden. `e.safe` is the lesser case: still drawn and lockable, but
+  not a target for damage (the eel under the water). `hitEnemy` refuses a
+  hit quietly, a player's shot flies on past it (so it neither eats the shot
+  nor sets off an `aoe` or sticky one), mines and tripwires ignore it, the
+  cave-in forces no stagger on it, and `aimYaw` and `aimRanged` pass it
+  over unless it is the locked target. An `ambush` type takes no
   part in being woken or waking others: it is left out of `seeingMate`,
   `callPack`, `alertE`'s neighbour wake and the sight wake-up, and its own
   rule says when it acts.
@@ -972,8 +978,9 @@ table runs exactly as before.
   (0.4 s). A hunt that ends starts the count again; an idle eel and a dead
   one never glow.
 - **The siren** (`siren`, threat 2, `bound: "water"`) comes to the shore
-  nearest the player. Her lunge (`kind: "grab"`, unblockable, reach 4) calls
-  `grabPlayer` with a target `SIREN.drag` (2 m) past the shore into her pool,
+  nearest the player. She starts no attack without a clear line to the
+  player (`canAttack`). Her lunge (`kind: "grab"`, unblockable, reach 4,
+  never through a wall or pier) calls `grabPlayer` with a target `SIREN.drag` (2 m) past the shore into her pool,
   at `SIREN.dragSpeed` (5 m/s) for `SIREN.dps` (8) a second (`sirenDrag`
   finds the spot; she backs off along the line as she drags so the player
   reaches the water). When the hold ends however it ended she cannot attack

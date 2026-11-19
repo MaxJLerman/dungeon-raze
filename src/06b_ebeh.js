@@ -289,7 +289,9 @@ function eelShock(e, w, p) {
 EBEH.siren = {
   foot: waterFoot,
   goal: waterGoal,
-  canAttack: (e) => !(e.grabCD > 0),
+  // she starts neither the lunge nor the song without a clear line to the
+  // player, so a pier between them stops both
+  canAttack: (e, c) => !(e.grabCD > 0) && c.w.los(e.x, e.z, c.p.x, c.p.z),
   step(e, dt, c) {
     if (e.body === undefined) e.body = c.w.bodyAt(e.x, e.z);
     e.grabCD = Math.max(0, (e.grabCD || 0) - dt);
@@ -337,6 +339,8 @@ EBEH.siren = {
     e.sing = false;
     if (a.kind === "grab") {
       if (e.hitDone || c.dist > a.reach + 0.6 || Math.abs(angDiff(e.yaw, c.toP)) > a.arc / 2) return;
+      // she cannot reach through a pier or a wall
+      if (!c.w.los(e.x, e.z, p.x, p.z)) return;
       e.hitDone = true;
       // a parry that sent her reeling leaves nothing to grab with
       if (hurtPlayer(a.dmg, e, a) === "none" || e.state !== "act") return;
