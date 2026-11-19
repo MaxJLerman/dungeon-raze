@@ -1184,3 +1184,329 @@ function poseGrabber(e) {
   }
 }
 EPOSE.grabber = { pose: poseGrabber };
+// ---- Old Sluicejaw, the crocodile ----
+// A long low body built from scratch, facing +Z. root stands on the floor;
+// spin is the body's centre, CROC_H up, and turns it about its long axis
+// (r[2], the roll and lying dead on its back) and round itself (r[1], the
+// tail sweep). hip is the pivot at the back of the trunk: pitching it lifts
+// the trunk, head and forelegs onto the hind legs, which hang off spin so they
+// stay planted. The tail is CROC_TAIL.length tapering segments, each a pivot
+// CROC_STEP behind the last. The neck carries the skull and upper jaw; the
+// lower jaw hinges under it (f.jaw, r[0] > 0 opens). Dark green-black scutes,
+// a pale belly, interlocking teeth and amber eyes.
+const CROC_H = 0.7,
+  CROC_TAIL = [0.9, 0.78, 0.66, 0.54, 0.43, 0.33, 0.24, 0.16],
+  CROC_STEP = 0.42,
+  CROC_SPLAY = 0.75;
+function makeCrocFig() {
+  const back = C_(0x1f2a1c),
+    hide = C_(0x2c3a24),
+    ridge = C_(0x121a10),
+    belly = C_(0xc9c39a),
+    teeth = C_(0xe8e4cf),
+    mouth = C_(0x7a2e2a),
+    eyeC = C_(0xd8c040);
+  const f = { o: { sc: 1.4 }, root: new Nd(), legs: [], tail: [] };
+  f.spin = f.root.add(new Nd());
+  f.spin.p = [0, CROC_H, 0];
+  f.hip = f.spin.add(new Nd());
+  f.hip.p = [0, 0, -0.75];
+  // the trunk, its belly, two rows of scutes down the back and a ridge
+  // along each flank
+  f.body = f.hip.add(part("sph", back, 1.3, 0.72, 2.5, 0, 0, 0.9));
+  f.hip.add(part("sph", belly, 1.12, 0.42, 2.3, 0, -0.19, 0.9));
+  for (let i = 0; i < 6; i++)
+    for (const s of [-1, 1])
+      f.hip.add(part("box", ridge, 0.14, 0.1, 0.22, s * 0.19, 0.34, 0.05 + i * 0.34));
+  for (const s of [-1, 1]) {
+    const fl = f.hip.add(part("box", hide, 0.12, 0.08, 1.9, s * 0.5, 0.2, 0.95));
+    fl.r[2] = s * 0.5;
+  }
+  // the neck, then the skull and upper jaw in its frame
+  f.neck = f.hip.add(new Nd());
+  f.neck.p = [0, 0.04, 2.0];
+  f.neck.add(part("sph", back, 0.95, 0.58, 0.8, 0, 0, 0));
+  for (const s of [-1, 1]) f.neck.add(part("box", ridge, 0.12, 0.09, 0.2, s * 0.17, 0.29, -0.05));
+  f.neck.add(part("sph", back, 0.84, 0.46, 0.8, 0, 0.05, 0.32));
+  f.neck.add(part("box", hide, 0.62, 0.26, 0.7, 0, 0, 0.9));
+  f.neck.add(part("box", hide, 0.5, 0.22, 0.6, 0, -0.01, 1.45));
+  f.neck.add(part("sph", back, 0.42, 0.17, 0.32, 0, 0.07, 1.68));
+  for (const s of [-1, 1]) {
+    f.neck.add(part("sph", back, 0.22, 0.2, 0.26, s * 0.25, 0.27, 0.32));
+    f.neck.add(part("sph", eyeC, 0.12, 0.11, 0.13, s * 0.27, 0.31, 0.38)).em = [0.6, 0.45, 0.05];
+  }
+  for (const z of [0.7, 0.98, 1.26, 1.54])
+    for (const s of [-1, 1])
+      f.neck.add(part("cone", teeth, 0.05, 0.12, 0.05, s * (0.3 - (z - 0.7) * 0.09), -0.16, z)).r[0] = PI;
+  // the lower jaw, hinged at the back of the skull, red inside
+  f.jaw = f.neck.add(new Nd());
+  f.jaw.p = [0, -0.13, 0.38];
+  f.jaw.add(part("box", hide, 0.64, 0.14, 0.8, 0, -0.03, 0.35));
+  f.jaw.add(part("box", hide, 0.46, 0.12, 0.62, 0, -0.02, 1.05));
+  f.jaw.add(part("sph", hide, 0.4, 0.12, 0.25, 0, -0.02, 1.32));
+  f.jaw.add(part("box", belly, 0.56, 0.04, 1.3, 0, -0.1, 0.65));
+  f.jaw.add(part("box", mouth, 0.5, 0.03, 1.3, 0, 0.045, 0.7));
+  for (const z of [0.22, 0.5, 0.78, 1.06])
+    for (const s of [-1, 1]) f.jaw.add(part("cone", teeth, 0.05, 0.12, 0.05, s * (0.27 - (z - 0.2) * 0.07), 0.07, z));
+  // markers for the shared effects: headN puts the eye glints on the eyes
+  // (stretched across the head), weapon is the mouth, where a wind-up gathers
+  f.headN = f.neck.add(new Nd());
+  f.headN.p = [0, 0.28, 0.24];
+  f.headN.s = [3.6, 1, 1];
+  f.weapon = f.jaw.add(new Nd());
+  f.weapon.p = [0, 0.05, 1.0];
+  // four short legs splayed out to the sides: the forelegs on the trunk, the
+  // hind legs on spin. Each is a hip or shoulder pivot (r[2] splays it) and
+  // a knee that brings the shin back upright, with a flat foot
+  const leg = (parent, s, z, front) => {
+    const n = parent.add(new Nd()),
+      w = front ? 1 : 1.15;
+    n.p = [s * 0.58, -0.12, z];
+    n.add(part("sph", back, 0.36 * w, 0.36 * w, 0.44 * w, 0, -0.04, 0));
+    n.add(part("box", hide, 0.22 * w, 0.36, 0.24 * w, 0, -0.17, 0));
+    const k = n.add(new Nd());
+    k.p = [0, -0.33, 0];
+    k.add(part("box", hide, 0.19 * w, 0.28, 0.2 * w, 0, -0.13, 0));
+    k.add(part("box", back, 0.3 * w, 0.07, 0.36 * w, 0, -0.27, 0.08));
+    f.legs.push({ n, k, s, front });
+  };
+  for (const s of [-1, 1]) leg(f.hip, s, 1.75, true);
+  for (const s of [-1, 1]) leg(f.spin, s, -0.75, false);
+  // the tail: tapering, flattening side to side, a double crest that
+  // becomes a single one
+  let parent = f.hip;
+  for (let i = 0; i < CROC_TAIL.length; i++) {
+    const W = CROC_TAIL[i],
+      sg = parent.add(new Nd()),
+      wd = W * (1 - i * 0.04),
+      ht = W * (0.68 + i * 0.035);
+    sg.p = [0, i ? 0 : 0.02, i ? -CROC_STEP : -0.3];
+    sg.add(part("sph", back, wd, ht, CROC_STEP * 1.5, 0, 0, -CROC_STEP / 2));
+    sg.add(part("sph", belly, wd * 0.78, ht * 0.5, CROC_STEP * 1.35, 0, -ht * 0.22, -CROC_STEP / 2));
+    if (i < 4)
+      for (const s of [-1, 1]) sg.add(part("box", ridge, 0.06, 0.13, 0.26, s * wd * 0.2, ht * 0.46, -CROC_STEP / 2));
+    else sg.add(part("box", ridge, 0.05, 0.12, 0.3, 0, ht * 0.5, -CROC_STEP / 2));
+    f.tail.push(sg);
+    parent = sg;
+  }
+  f.rim = [0.14, 0.2, 0.12];
+  f.eye = [1, 0.8, 0.25];
+  return finishFigure(f);
+}
+EFIG.croc = makeCrocFig;
+// Walks low with a diagonal gait and a tail that waves behind; rears onto
+// its hind legs and slams down (rear); snaps its jaw (b1 to b3); coils and
+// whips round on itself (tail); gapes, then rolls about its long axis (roll),
+// and over and over while it holds a player (hold); lies flat when staggered
+// and on its back when dead.
+function poseCroc(e) {
+  const f = e.fig,
+    d = e.def,
+    a = e.atk,
+    mv = sat(e.speed / d.speed),
+    ph = e.walk * 1.6;
+  // hip pitch (< 0 lifts the front), the turn and roll of the whole body and
+  // its height, neck pitch (< 0 up) and turn, jaw, how far the legs swing,
+  // splay and reach forward, the tail's wave, curl and lift, and the tint
+  let rear = 0,
+    turn = 0,
+    roll = 0,
+    lift = Math.abs(Math.sin(ph)) * 0.03 * mv,
+    neck = 0.03,
+    neckY = Math.sin(ph) * 0.12 * mv,
+    jaw = 0.06,
+    swing = 0.55 * mv,
+    splay = CROC_SPLAY,
+    reach = 0,
+    hindIn = 0,
+    tuck = 0,
+    wave = 0.12 + 0.25 * mv,
+    rate = 1.4 + 2.5 * mv,
+    curl = 0,
+    tailUp = 0,
+    tr = 0,
+    tg = 0,
+    tb = 0;
+  const k = (st) => sat(e.t / a[st]);
+  switch (e.state) {
+    case "idle":
+      lift = Math.sin(G.t * 1.2 + e.ph) * 0.012;
+      jaw = 0.05 + 0.25 * Math.max(0, Math.sin(G.t * 0.35 + e.ph) - 0.8) * 5;
+      break;
+    case "alert":
+    case "roar": {
+      // the head up and the jaw wide: a hiss
+      const q = e.state === "roar" ? Math.sin(sat(e.t / 1.2) * PI) : 1;
+      rear = -0.15 * q;
+      neck = -0.35 * q;
+      jaw = 0.75 * q;
+      tailUp = 0.1 * q;
+      wave = 0.4;
+      rate = 5;
+      tr = e.state === "roar" ? 0.5 * q : 0;
+      break;
+    }
+    case "wind":
+    case "act":
+    case "rec": {
+      const st = e.state,
+        u = k(st),
+        w = st === "wind" ? smooth(u) : 1,
+        back = st === "rec" ? smooth(u) : 0;
+      if (a.kind === "rear") {
+        // up onto the hind legs, towering for the first half of the act, then
+        // down onto the floor jaw first
+        const top = st === "act" && u < 0.55 ? lerp(1.05, 1.25, u / 0.55) : 1.05,
+          down = st === "act" ? smooth(sat((u - 0.55) / 0.45)) : st === "rec" ? 1 : 0;
+        rear = lerp(-top * w, 0.12, down) * (1 - back);
+        neck = lerp(0.35 * w, 0.15, down) * (1 - back) + 0.03 * back;
+        jaw = lerp(1.0 * w, 0.1, down) * (1 - back);
+        reach = lerp(1.2 * w, 0, down) * (1 - back);
+        hindIn = lerp(0.45 * w, 0, down) * (1 - back);
+        tailUp = -rear * 0.95;
+        wave = 0.05;
+      } else if (a.kind === "roll") {
+        // a low crouch with the jaw wide and the body cocked, then a lunge
+        // that snaps the jaw and turns the body once round its long axis
+        const r = st === "act" ? smooth(u) : st === "rec" ? 1 : 0;
+        roll = lerp(0.35 * w, -TAU, r);
+        jaw = st === "wind" ? 0.75 * w : st === "act" ? 0.75 * (1 - sat(u * 3.5)) : 0.1;
+        neck = (st === "wind" ? -0.4 * w : 0.1) * (1 - back);
+        lift = st === "wind" ? -0.08 * w : st === "act" ? 0.05 : -0.05 * (1 - back);
+        splay = CROC_SPLAY + (st === "wind" ? 0.25 * w : 0);
+        tuck = st === "act" ? Math.sin(PI * u) : 0;
+        swing = 0;
+        wave = 0.05;
+      } else if (a.style === "sweep") {
+        // coils one way with the tail wound round, then whips round on
+        // itself, tail streaming, and eases back
+        if (st === "wind") {
+          turn = 0.75 * w;
+          curl = -0.28 * w;
+        } else if (st === "act") {
+          turn = 0.75 - TAU * smooth(u);
+          curl = 0.3 * Math.sin(PI * u);
+        } else turn = 0.75 * (1 - back);
+        jaw = 0.3 * (1 - back);
+        neck = -0.1 * (1 - back);
+        splay = CROC_SPLAY + 0.2 * (1 - back);
+        swing = 0;
+        wave = 0.04;
+      } else {
+        // a bite: the head draws up with the jaw open, then drives forward
+        // and down as it snaps shut. b2 snaps to one side, b3 lifts the
+        // front into it
+        const big = a === d.atks.b3,
+          side = a === d.atks.b2 ? 0.25 : 0,
+          open = big ? 1.0 : 0.85;
+        if (st === "wind") {
+          neck = -0.45 * w;
+          jaw = open * w;
+          neckY = -side * w;
+          rear = big ? -0.18 * w : 0.05 * w;
+        } else {
+          const s2 = st === "act" ? smooth(u) : 1;
+          neck = lerp(-0.45, 0.16, s2) * (1 - back);
+          jaw = open * (1 - sat(st === "act" ? u * 2.5 : 1)) + 0.05;
+          neckY = lerp(-side, side, s2) * (1 - back);
+          rear = (big ? lerp(-0.18, 0.06, s2) : 0.05) * (1 - back);
+        }
+        swing = 0;
+        reach = 0.3 * (1 - back);
+      }
+      if (st === "wind") {
+        if (a.unb) {
+          tr = 0.45 * u;
+          tg = 0.02 * u;
+        } else {
+          tr = 0.13 * u;
+          tg = 0.1 * u;
+          tb = 0.04 * u;
+        }
+      }
+      break;
+    }
+    case "hold":
+      // the death roll: the jaw shut on the player and the whole body
+      // turning over and over about its long axis, legs tucked, tail lashing
+      roll = -((G.t * 8) % TAU);
+      jaw = 0.12;
+      neck = 0.1;
+      lift = -0.04;
+      tuck = 1;
+      swing = 0;
+      wave = 0.35;
+      rate = 9;
+      break;
+    case "hit":
+    case "recoil": {
+      const q = e.state === "hit" ? 1 - sat(e.t / 0.32) : 1;
+      neck = -0.3 * q;
+      neckY = 0.2 * q;
+      jaw = 0.4 * q;
+      rear = e.state === "recoil" ? -0.15 : 0;
+      wave = 0.5;
+      rate = 8;
+      break;
+    }
+    case "stagger": {
+      // flat on its belly, legs splayed, chin on the floor, jaw slack
+      const pu = 0.5 + 0.5 * Math.sin(G.t * 10);
+      lift = -0.22;
+      splay = 1.35;
+      swing = 0;
+      neck = 0.15;
+      jaw = 0.15;
+      roll = Math.sin(G.t * 5) * 0.06;
+      wave = 0.08;
+      tr = 0.5 + 0.3 * pu;
+      tg = 0.3 + 0.15 * pu;
+      break;
+    }
+    case "dead": {
+      // over onto its back, legs in the air, and sinking away at the end
+      const q = smooth(sat(e.t / 0.6));
+      roll = PI * q;
+      lift = -0.25 * q - Math.max(0, e.t - 1.4) * 0.9;
+      jaw = 0.5 * q;
+      neck = 0.1;
+      swing = 0;
+      splay = lerp(CROC_SPLAY, 0.35, q);
+      reach = 0.4 * q;
+      wave = 0;
+      break;
+    }
+  }
+  f.root.p[0] = e.x;
+  f.root.p[1] = e.y;
+  f.root.p[2] = e.z;
+  f.root.r[1] = e.yaw;
+  f.spin.p[1] = CROC_H + lift;
+  f.spin.r[1] = turn;
+  f.spin.r[2] = roll;
+  f.hip.r[0] = rear;
+  f.neck.r[0] = neck;
+  f.neck.r[1] = neckY;
+  f.jaw.r[0] = jaw;
+  // legs: diagonal pairs swing together, the foot coming forward lifted
+  for (const L of f.legs) {
+    const q = ph + (L.front === (L.s > 0) ? 0 : PI),
+      sw = Math.sin(q) * swing,
+      up = Math.max(0, Math.cos(q)) * swing * 0.5;
+    L.n.r[0] = sw - (L.front ? reach : hindIn) + tuck * 1.2;
+    L.n.r[2] = L.s * (splay - tuck * 0.6);
+    L.k.r[0] = -up - tuck * 0.4;
+    L.k.r[2] = -L.s * Math.min(splay, 1) * 0.9;
+  }
+  // the tail: a slight droop, the counter-pitch that keeps it on the floor
+  // when the front rears, and a wave that grows down its length
+  const wph = G.t * rate + e.ph;
+  for (let i = 0; i < f.tail.length; i++) {
+    const s = f.tail[i];
+    s.r[0] = -0.035 + (i === 0 ? tailUp : 0);
+    s.r[1] = wave * (0.3 + i * 0.1) * Math.sin(wph - i * 0.7) + curl;
+  }
+  setEm(f, tr + e.flash * 0.7, tg + e.flash * 0.65, tb + e.flash * 0.5);
+  sinkInWater(f, e.x, e.z);
+}
+EPOSE.croc = { pose: poseCroc };

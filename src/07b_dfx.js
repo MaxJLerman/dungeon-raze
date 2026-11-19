@@ -133,3 +133,94 @@ function drawSongs() {
     }
   }
 }
+// Old Sluicejaw under the water. Swimming, a V of foam spreads back from
+// just ahead of its head along its heading, brighter the faster it goes, with
+// a few bubbles over its back; rising, bubbles boil up over the spot and a
+// ring widens on the water, both quickening toward the burst. Everything is
+// drawn on water only, so no wake ever crosses dry floor.
+function drawWakes() {
+  const w = G.world,
+    wl = -WATER.sink + 0.03,
+    wet = (x, z) => w.waterAt(x, z) >= 0.5,
+    foam = [0.7, 0.88, 0.82];
+  // a ring on the water that fades out where it would cross dry floor
+  const waterRing = (x, z, r0, r1, a) =>
+    R.ribbon(
+      32,
+      (t, s) => {
+        const an = t * TAU,
+          rr = s ? r1 : r0;
+        return [x + Math.cos(an) * rr, wl, z + Math.sin(an) * rr];
+      },
+      foam[0],
+      foam[1],
+      foam[2],
+      (t) => (wet(x + Math.cos(t * TAU) * r1, z + Math.sin(t * TAU) * r1) ? a : 0),
+    );
+  for (const e of G.enemies) {
+    if (e.type !== "croc" || e.dead || (e.mode !== "under" && e.mode !== "rise")) continue;
+    if (Math.hypot(e.x - R.cam.x, e.z - R.cam.z) > 66) continue;
+    const t = G.t;
+    if (e.mode === "under") {
+      const k = sat(e.speed / (CROC.swim * 0.5)),
+        fx = Math.sin(e.yaw),
+        fz = Math.cos(e.yaw),
+        // right of its heading: (-cos yaw, sin yaw)
+        rx = -fz,
+        rz = fx,
+        hx = e.x + fx * 1.4,
+        hz = e.z + fz * 1.4;
+      if (k > 0.1) {
+        // the bow wave, then the two arms of the V, each puff drifting outward
+        if (wet(hx, hz)) R.flat(hx, wl, hz, 0.9, foam[0], foam[1], foam[2], 0.9 * k);
+        for (let i = 1; i <= 12; i++)
+          for (const sd of [-1, 1]) {
+            const d = i * 0.5,
+              j = Math.sin(t * 7 + i * 1.9 + sd) * 0.12,
+              sp = d * 0.42 + j,
+              x = hx - fx * d + rx * sd * sp,
+              z = hz - fz * d + rz * sd * sp;
+            if (!wet(x, z)) continue;
+            const a = k * (1 - i / 13) * (0.8 + 0.2 * Math.sin(t * 11 + i));
+            R.flat(x, wl, z, 0.4 + d * 0.07, foam[0], foam[1], foam[2], 1.1 * a);
+          }
+        // the trail of churned water over its back
+        for (let i = 0; i < 6; i++) {
+          const d = i * 0.6,
+            x = e.x - fx * d,
+            z = e.z - fz * d;
+          if (wet(x, z)) R.flat(x, wl, z, 0.6, foam[0], foam[1], foam[2], 0.5 * k * (1 - i / 6));
+        }
+      }
+      // a few bubbles over it, rising and bursting at the surface
+      for (let i = 0; i < 4; i++) {
+        const ph = (t * 1.3 + i * 0.37) % 1,
+          h = Math.sin(i * 12.9898 + Math.floor(t * 1.3 + i * 0.37) * 4.1),
+          x = e.x + Math.sin(h * 9) * 0.7,
+          z = e.z + Math.cos(h * 7) * 0.7;
+        if (wet(x, z)) R.sprite(x, wl + ph * 0.15, z, 0.1 + ph * 0.08, 0.8, 0.95, 0.9, 0.9 * (1 - ph));
+      }
+      continue;
+    }
+    // rising: k runs 0 to 1 over the warning
+    const k = sat(1 - e.modeT / CROC.warn),
+      n = 6 + Math.round(k * 14);
+    for (let i = 0; i < n; i++) {
+      const ph = (t * (1.6 + k * 2.4) + i * 0.173) % 1,
+        h = Math.sin(i * 78.233 + Math.floor(t * 2 + i * 0.173) * 3.7),
+        rr = (0.3 + Math.abs(h) * 1.2) * (0.6 + 0.4 * k),
+        an = h * 20 + i,
+        x = e.x + Math.sin(an) * rr,
+        z = e.z + Math.cos(an) * rr;
+      if (!wet(x, z)) continue;
+      R.sprite(x, wl + ph * (0.2 + 0.4 * k), z, 0.12 + 0.12 * k, 0.8, 0.95, 0.9, (0.6 + 0.4 * k) * (1 - ph));
+    }
+    // the churn over the spot, and the rings widening from it
+    R.flat(e.x, wl, e.z, 1.0 + 0.8 * k, foam[0], foam[1], foam[2], 0.45 + 0.5 * k);
+    for (let i = 0; i < 2; i++) {
+      const q = (t * (0.9 + k) + i / 2) % 1,
+        r = 0.6 + 2.2 * q;
+      waterRing(e.x, e.z, r - 0.12, r, (0.6 + 0.5 * k) * (1 - q));
+    }
+  }
+}

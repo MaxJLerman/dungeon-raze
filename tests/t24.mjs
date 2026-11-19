@@ -819,8 +819,8 @@ export default [
     SHOT();
     return { pass: p.state === "held", st: p.state };`), wait: 400, shot: "t24-grabber-hold" },
   // ---- placement ----
-  step("no E types in D but the Warden", `const bad = [];
-    for (let s = 1; s <= 12; s++) for (const q of DF.genSewer(s).spawns) if (["husk", "brute", "spit"].includes(q.type)) bad.push({ s, type: q.type });
+  step("no E types in D", `const bad = [];
+    for (let s = 1; s <= 12; s++) for (const q of DF.genSewer(s).spawns) if (["husk", "brute", "spit", "warden"].includes(q.type)) bad.push({ s, type: q.type });
     return { pass: bad.length === 0, bad: bad.slice(0, 6) };`),
   step("pool rooms hold sirens or eels, never both, and never a brood mother", `const bad = []; let rooms = 0, sirens = 0, eels = 0, two = 0;
     for (let s = 1; s <= 12; s++) { const w = DF.genSewer(s);

@@ -578,7 +578,8 @@ function buildLights() {
       r: 9,
     });
   for (const e of G.enemies)
-    if (e.def.boss && !e.dead && Math.hypot(e.x - p.x, e.z - p.z) < 40)
+    // a hidden boss (the crocodile under the water) gives no light away
+    if (e.def.boss && !e.dead && !e.hidden && Math.hypot(e.x - p.x, e.z - p.z) < 40)
       L.push({
         x: e.x,
         y: 2.4 + e.y,
@@ -927,6 +928,7 @@ function render() {
   drawClouds();
   drawShocks();
   drawSongs();
+  drawWakes();
   // ---- fx ----
   if (p.state !== "dead") {
     R.blob(p.x, p.z, 0.8, 0.55);

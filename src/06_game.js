@@ -1569,6 +1569,7 @@ const EDEF = {
   warden: {
     name: "The Ossuary Warden",
     boss: true,
+    fell: "THE WARDEN FALLS",
     threat: 2,
     hp: 620,
     posture: 140,
@@ -1648,6 +1649,101 @@ const EDEF = {
         trig: 20,
         minTrig: 6,
         p2: true,
+      },
+    },
+  },
+  // Old Sluicejaw, D's boss: a crocodile in the sewer cavern's centre pool.
+  // arena: it holds while the player is in the cavern; ownPhases: no
+  // half-health roar. rear has no trig (only surfacing starts it) and the
+  // kinds rear and roll belong to its EBEH hooks. Every number is a starting
+  // value for the playtest.
+  croc: {
+    name: "Old Sluicejaw",
+    boss: true,
+    arena: true,
+    ownPhases: true,
+    fell: "OLD SLUICEJAW FALLS",
+    threat: 2,
+    hp: 800,
+    posture: 160,
+    speed: 3.4,
+    // not slowed in water: it goes in to dive and for the death roll
+    wade: 1,
+    turn: 2.2,
+    r: 1.3,
+    sight: 30,
+    cd: 0.9,
+    poise: 2,
+    top: 2.2,
+    atks: {
+      rear: {
+        kind: "rear",
+        style: "slam",
+        wind: 0.5,
+        act: 0.4,
+        rec: 0.9,
+        dmg: 26,
+        radius: 3.5,
+        unb: true,
+      },
+      b1: {
+        style: "thrust",
+        wind: 0.5,
+        act: 0.14,
+        rec: 0.25,
+        dmg: 16,
+        reach: 3.6,
+        arc: 1.2,
+        lunge: 1.2,
+        trig: 3.6,
+        chain: "b2",
+        w: 3,
+      },
+      b2: {
+        style: "thrust",
+        wind: 0.32,
+        act: 0.14,
+        rec: 0.25,
+        dmg: 16,
+        reach: 3.6,
+        arc: 1.2,
+        lunge: 1.2,
+        chain: "b3",
+      },
+      b3: {
+        style: "thrust",
+        wind: 0.45,
+        act: 0.16,
+        rec: 0.8,
+        dmg: 22,
+        reach: 3.8,
+        arc: 1.2,
+        lunge: 1.6,
+      },
+      tail: {
+        style: "sweep",
+        wind: 0.55,
+        act: 0.2,
+        rec: 0.7,
+        dmg: 20,
+        reach: 4.6,
+        arc: TAU,
+        trig: 4.6,
+        w: 2,
+      },
+      roll: {
+        kind: "roll",
+        style: "thrust",
+        wind: 0.75,
+        act: 0.25,
+        rec: 0.9,
+        dmg: 8,
+        reach: 3.8,
+        arc: 1.0,
+        lunge: 2.4,
+        trig: 4.5,
+        unb: true,
+        w: 1.5,
       },
     },
   },
@@ -1845,7 +1941,7 @@ function makeEnemy(s) {
 function spawnEnemies() {
   G.enemies = [];
   for (const s of G.world.spawns) {
-    if (s.type === "warden" && G.bossDead) continue;
+    if (G.bossDead && EDEF[s.type] && EDEF[s.type].boss) continue;
     G.enemies.push(makeEnemy(s));
   }
 }
@@ -2311,7 +2407,7 @@ function kill(e) {
     G.bossDead = true;
     G.gate = { x: G.world.boss.x, z: G.world.boss.z, t: 0 };
     G.slowT = 1.2;
-    say("THE WARDEN FALLS", "big", 4);
+    say(e.def.fell, "big", 4);
     say("A gate opens. Step through to leave.", "", 6);
     if (next && !before && portalOpen(next))
       say("A new gate has opened in the base.", "good", 6);
@@ -2406,6 +2502,8 @@ function hitEnemy(e, dmg, post, o = {}) {
   }
   e.hp -= dmg * mult;
   if (e.def.dummy) e.hp = e.def.hp;
+  // a type's least health after a hit, past every multiplier (the crocodile's marks)
+  if (bh && bh.hpFloor) e.hp = Math.max(e.hp, bh.hpFloor(e));
   noticeHit(e, post);
   const ox = o.fx !== undefined ? o.fx : p.x,
     oz = o.fz !== undefined ? o.fz : p.z;
@@ -2446,7 +2544,7 @@ function hitEnemy(e, dmg, post, o = {}) {
     kill(e);
     return;
   }
-  if (e.def.boss && e.phase === 1 && e.hp < e.def.hp * 0.5) {
+  if (e.def.boss && !e.def.ownPhases && e.phase === 1 && e.hp < e.def.hp * 0.5) {
     e.phase = 2;
     e.state = "roar";
     e.t = 0;
@@ -4037,13 +4135,15 @@ function playerUpdate(dt) {
 }
 
 // ---- enemies ----
-function chooseAtk(e, dist) {
-  const c = [];
+function chooseAtk(e, dist, ctx) {
+  const c = [],
+    b = EBEH[e.type];
   for (const k in e.def.atks) {
     const a = e.def.atks[k];
     if (a.trig === undefined) continue;
     if (a.p2 && e.phase < 2) continue;
     if (dist < (a.minTrig || 0)) continue;
+    if (b && b.atkOk && !b.atkOk(e, a, ctx)) continue;
     c.push(a);
   }
   if (!c.length) return null;
@@ -4246,11 +4346,13 @@ function enemyUpdate(e, dt) {
       e.alertBy = null;
     }
   }
-  // an ambush type notices nothing: its own rule decides when it strikes
+  // an ambush type notices nothing: its own rule decides when it strikes. A
+  // hidden enemy is never seen, so sight cannot wake one either
   if (
     !e.aware &&
     alive &&
     !d.ambush &&
+    !e.hidden &&
     (d.boss || e.state !== "return" || inTerritory(e))
   ) {
     const front = Math.abs(angDiff(e.yaw, toP)) < 1.75,
@@ -4334,7 +4436,9 @@ function enemyUpdate(e, dt) {
     }
     case "chase": {
       if (
-        d.boss
+        d.arena
+          ? !alive || !G.inBoss
+          : d.boss
           ? !alive || dist > 38 || Math.hypot(e.x - e.hx, e.z - e.hz) > 30
           : huntOver(e)
       ) {
@@ -4414,7 +4518,7 @@ function enemyUpdate(e, dt) {
         }
         break;
       }
-      if (e.cd <= 0 && !e.plan) e.plan = chooseAtk(e, dist);
+      if (e.cd <= 0 && !e.plan) e.plan = chooseAtk(e, dist, c);
       if (e.plan && dist < (e.plan.minTrig || 0)) e.plan = null;
       if (!mayAtk) e.token = false;
       const want = e.plan && e.cd <= 0 && mayAtk && (e.token || takeToken(e));
@@ -4702,7 +4806,8 @@ function bombsUpdate(dt) {
   const p = G.player,
     w = G.world;
   for (const b of G.bombs) {
-    if (b.e && b.e.dead) {
+    // its enemy dead or gone hidden (under the water): it drops where it is
+    if (b.e && (b.e.dead || b.e.hidden)) {
       b.e = null;
       b.y = 0.4;
     }
