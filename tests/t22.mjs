@@ -12,6 +12,14 @@ export default [
   const h = (a) => { let x = 0; for (let i = 0; i < a.length; i++) x = (x * 31 + Math.round(a[i] * 1000)) | 0; return x; };
   const got = {}; for (const s of [1, 7, 99]) { DF.newRun(s); const w = G.world; got[s] = [h(w.pos), h(w.col), w.path.join(","), JSON.stringify(w.spawns).length]; }
   return { pass: JSON.stringify(got) === JSON.stringify(GOLD), got };`),
+  // the sewer's mesh, materials, water, spawns, pieces and dressing for three
+  // seeds: a change that only moves code must leave these as they are
+  step("genSewer is unchanged by moving code", `const GOLD = {"1":[1120373139,-297404816,196683480,-116376488,-635115949,1463472809,-975957500],"5":[-549557269,-1978863856,-1899064056,-1610458384,-1972915195,1096105572,320828384],"9":[-142133581,-1537443400,-1396076192,-837123880,-1716636275,1844049144,1094484411]};
+  const h = (a) => { let x = 0; for (let i = 0; i < a.length; i++) x = (x * 31 + Math.round(a[i] * 1000)) | 0; return x; };
+  const hs = (s) => { let x = 0; for (let i = 0; i < s.length; i++) x = (x * 31 + s.charCodeAt(i)) | 0; return x; };
+  const got = {}; for (const s of [1, 5, 9]) { const w = DF.genSewer(s);
+    got[s] = [h(w.pos), h(w.col), h(w.mat), h(w.Wt), hs(JSON.stringify(w.spawns)), hs(JSON.stringify(w.pieces)) ^ h(w.pieceGrid), hs(JSON.stringify([w.lights, w.halos, w.grates, w.shafts]))]; }
+  return { pass: JSON.stringify(got) === JSON.stringify(GOLD), got };`),
   step("every world reads water as dry", `const h = DF.genHub(); DF.newRun(99); const w = G.world;
     const ok = (x) => x.waterAt(0, 0) === 0 && x.bodyAt(0, 0) === -1 && Array.isArray(x.bodies) && Array.isArray(x.grates) && Array.isArray(x.wallTunnels) && Array.isArray(x.shafts);
     const F = new Float32Array(25).fill(1), Wt = new Float32Array(25); Wt[12] = 1; const f = DF.fieldFns(F, 0, 0, 4, 4, Wt);
