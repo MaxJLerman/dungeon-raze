@@ -128,7 +128,9 @@ earlier ones.
 | `src/02_gl.js`       | Renderer `R`: lit pass, additive effects pass, scene nodes `Nd`, primitive meshes           |
 | `src/03_world.js`    | `genWorld(seed)`: cave graph, walkable field, collision, water layer, world mesh, lights, spawns; the room graph and wall builders it shares with the sewer |
 | `src/03b_hub.js`     | `genHub()`: the hall, its portal frames and the portal grades `GRADES`                      |
-| `src/03c_sewer.js`   | `genSewer(seed)`: the D gate's sewer: rooms, tunnels, water, brick dressing, and the pieces it draws only when seen |
+| `src/03c_sewer.js`   | `genSewer(seed)`: the D gate's sewer: rooms, tunnels, water, floor, walls and vault       |
+| `src/03d_sewerdress.js` | `dressSewer()`: the sewer's ribs, lamps, grates, pipes, heaps, arrival, rest points and boss cavern set |
+| `src/03e_sewerview.js` | `sewerPieces()` and `visiblePieces()`: the sewer cut into pieces, and the pieces to draw each frame |
 | `src/04_audio.js`    | `SFX`: synthesized sound effects and ambient drone                                          |
 | `src/05_figures.js`  | Player and enemy figures, base pose, enemy attack poses                                     |
 | `src/06_game.js`     | Game state `G`, key bindings, classes, moves, combat rules, enemy AI, projectiles           |

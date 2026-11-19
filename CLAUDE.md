@@ -161,7 +161,8 @@ is what you need to change the code without breaking it.
   (`{ x, z, yaw, kind }`, `kind` being `"grate"` or `"drain"`, for the drain grabber), `world.wallTunnels` the boss
   cavern's high wall outlets, and `world.shafts` its light shafts. All three
   are arrays on every world, empty in the cave and hall.
-- **Pieces.** The sewer's mesh is cut at build time into `world.pieces`, one
+- **Pieces** (`sewerPieces` and `visiblePieces` in `03e_sewerview.js`). The
+  sewer's mesh is cut at build time into `world.pieces`, one
   per room and one per stretch of `SEWER.piece.runs` tunnel runs. A piece is
   `{ first, count, box, sees, ... }`: a range of vertices, a bounding box and
   the ids of the pieces visible from anywhere in it. `sees` is worked out with
@@ -204,7 +205,10 @@ is what you need to change the code without breaking it.
 - The ceiling is brick, a vault that rises into rooms, and `ceilAt` follows it
   so the camera collides with the arch. Ribs, pipes, grates, lamps, brick
   heaps, pillar bases and the ladder in the arrival hall are drawn and block
-  nothing (`dressSewer`). The crumbled wall sections are the only irregular
+  nothing (`dressSewer` in `03d_sewerdress.js`: `sewerKit` holds the shapes
+  and wall fittings, and one function dresses each area, `dressTunnels`,
+  `dressHeaps`, `dressRooms`, `dressArrival`, `dressRests` and `dressBoss`, in
+  that order, all drawing from `Rd`). The crumbled wall sections are the only irregular
   field. Lamps are dim green lights, and some flicker (`lampFlicker(ph, t)`).
 
 ### Zones (`06_game.js`, `03b_hub.js`)
@@ -846,7 +850,10 @@ The class picker and HUD read `CLASSES` and need no changes.
   `meshSink`, the world shader, `visiblePieces`, cleared grades or portal
   opening: `SCRIPT=$PWD/tests/t22.mjs node test.mjs smoke`. It makes D live
   with `DF.LIVE_GRADES.add("D")` and starts a run with `DF.newRun(seed, "D")`.
-  It checks that `genWorld` is unchanged (hashes of caves 1, 7 and 99), water
+  It checks that `genWorld` is unchanged (hashes of caves 1, 7 and 99), that
+  `genSewer` is unchanged (hashes of the mesh, materials, `Wt`, spawns, pieces
+  and dressing for seeds 1, 5 and 9; update them only for a change meant to
+  alter the sewer, and say so in the commit), water
   in the player and enemy moves, D sealed and opened, the save, the layout
   over many seeds, water bodies and dry routes, the boss cavern, the brick
   and water materials, lamps, drips, the minimap, that every walkable point
