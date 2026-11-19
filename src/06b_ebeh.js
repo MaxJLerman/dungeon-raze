@@ -84,27 +84,43 @@ function waterFoot(e, x, z) {
 function wallFoot(e, x, z) {
   return Math.hypot(x - e.hx, z - e.hz) <= 0.01;
 }
-// The point of e's footing nearest the player, from a 0.5 m lattice (on the
-// world's multiples of 0.5, so it does not shift as e moves) within 12 m of
+// The point of e's footing nearest the player (but no nearer than e.r + p.r
+// + 0.4), from a 0.5 m lattice (on the world's multiples of 0.5, so it does not shift as e moves) within 12 m of
 // e. Cached on e.goal and looked at again every 0.5 s; e's own spot when
 // nothing is found.
 function waterGoal(e, c) {
   if (e.goal && G.t - e.goalT < 0.5) return e.goal;
   const p = c.p,
     x0 = Math.ceil((e.x - 12) / 0.5) * 0.5,
-    z0 = Math.ceil((e.z - 12) / 0.5) * 0.5;
-  let best = null,
-    bd = 1e9;
+    z0 = Math.ceil((e.z - 12) / 0.5) * 0.5,
+    // a body in the water stops just short of the player and waits there,
+    // instead of steering into them and shoving them across the pool
+    keep = e.r + p.r + 0.4;
+  const pts = [];
+  let bd = 1e9;
   for (let x = x0; x <= e.x + 12; x += 0.5)
     for (let z = z0; z <= e.z + 12; z += 0.5) {
       if (Math.hypot(x - e.x, z - e.z) > 12 || !footOk(e, x, z)) continue;
       const d = Math.hypot(x - p.x, z - p.z);
-      if (d < bd) {
-        bd = d;
-        best = { x, z };
-      }
+      if (d < keep) continue;
+      pts.push({ x, z, d });
+      if (d < bd) bd = d;
     }
-  e.goal = best || { x: e.x, z: e.z };
+  // the nearest point to the player. With the player in the water that is a
+  // ring round them, so among the points about as near as the best the one
+  // nearest e wins: it stops on its own side and never steers through them.
+  const ring = bd < keep + 0.75;
+  let best = null,
+    bc = 1e9;
+  for (const q of pts) {
+    if (q.d > bd + (ring ? 0.5 : 0)) continue;
+    const cost = ring ? Math.hypot(q.x - e.x, q.z - e.z) : q.d;
+    if (cost < bc) {
+      bc = cost;
+      best = q;
+    }
+  }
+  e.goal = best ? { x: best.x, z: best.z } : { x: e.x, z: e.z };
   e.goalT = G.t;
   return e.goal;
 }
@@ -203,6 +219,11 @@ const EEL_UP = { wind: 1, act: 1, rec: 1, hit: 1, recoil: 1, stagger: 1 };
 EBEH.eel = {
   foot: waterFoot,
   goal: waterGoal,
+  // a corpse neither glows nor shields itself
+  death(e) {
+    e.glowT = 0;
+    e.safe = false;
+  },
   step(e, dt, c) {
     const w = c.w;
     if (e.body === undefined) e.body = w.bodyAt(e.x, e.z);
