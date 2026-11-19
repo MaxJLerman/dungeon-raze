@@ -1337,14 +1337,31 @@ function genSewer(seed) {
   });
 
   // ---- spawns ----
-  // pool rooms keep the E stand-ins until the D enemies for them are built;
-  // brood rooms and tunnels hold D's own
-  const PACK = {
-    pool: [
-      ["husk", "spit"],
-      ["husk", "husk", "spit"],
-    ],
+  // pool rooms hold a siren or eels with rats and bloaters, brood rooms and
+  // tunnels their own, gutters bloaters and grates drain grabbers. Only the
+  // Warden is E's.
+  const WET = { siren: 0.6, eel: 0.45, bloater: 0.4 }, // body radius, as in EDEF
+    // the grid points of each body of water, for placing the water-bound types
+    bodyPts = bodies.map(() => []);
+  for (let k = 0; k < NP; k++)
+    if (bodyIds[k] >= 0) bodyPts[bodyIds[k]].push({ x: (k % W1) + minX, z: ((k / W1) | 0) + minZ });
+  // the pair of room n's bodies whose nearest grid points are closest, when
+  // that gap is at most a crossing's width and two metres: { x, z, a, b }, the
+  // midpoint of those two points and the two body ids, or null. No draws.
+  const crossingOf = (n) => {
+    const own = bodies.filter((b) => b.room === n.id);
+    let best = null;
+    for (let i = 0; i < own.length; i++)
+      for (let j = i + 1; j < own.length; j++)
+        for (const p of bodyPts[own[i].id])
+          for (const q of bodyPts[own[j].id]) {
+            const d = Math.hypot(p.x - q.x, p.z - q.z);
+            if (d <= S.pool.cross + 2 && (!best || d < best.d))
+              best = { d, x: (p.x + q.x) / 2, z: (p.z + q.z) / 2, a: own[i].id, b: own[j].id };
+          }
+    return best && { x: best.x, z: best.z, a: best.a, b: best.b };
   };
+  for (const n of nodes) n.cross = n.kind === "pool" ? crossingOf(n) : null;
   const spawns = [],
     // a dry open spot in room n, up to 40 draws, or null
     dryIn = (n, sx, sz) => {
@@ -1377,13 +1394,59 @@ function genSewer(seed) {
     };
   for (const n of nodes) {
     if (n.kind === "pool") {
-      const pk = PACK.pool[Rn() < 0.5 ? 0 : 1],
-        // a pool room's dry floor is mostly the walkway along its walls
-        sx = n.hw - 1.5,
-        sz = n.hd - 1.5;
-      for (const type of pk) {
+      // a pool room's dry floor is mostly the walkway along its walls
+      const sx = n.hw - 1.5,
+        sz = n.hd - 1.5,
+        own = bodies.filter((b) => b.room === n.id),
+        here = () => spawns.filter((q) => q.node === n.id),
+        // the grid points of body b with water under them and room for a
+        // body of radius r, at least `m` in from its shore (every point
+        // within m reads water 1; none asked for when m is 0), and 1.5 m
+        // clear of what the room already holds
+        wetPts = (b, m, r) =>
+          bodyPts[b.id].filter((q) => {
+            if (waterAt(q.x, q.z) < 0.5 || fieldAt(q.x, q.z) < r) return false;
+            for (let k = 0; m > 0 && k < 16; k++)
+              for (const d of [m / 2, m])
+                if (waterAt(q.x + Math.sin(k * 0.3927) * d, q.z + Math.cos(k * 0.3927) * d) !== 1)
+                  return false;
+            return !here().some((o) => Math.hypot(o.x - q.x, o.z - q.z) < 1.5);
+          });
+      let siren = false;
+      if (Rn() < 0.5 && n.cross) {
+        // one siren at the larger body of the crossing, nearest the crossing
+        const big = [n.cross.a, n.cross.b].map((i) => bodies[i]).sort((a, b) => b.n - a.n)[0],
+          pts = wetPts(big, 1, WET.siren).sort(
+            (a, b) =>
+              Math.hypot(a.x - n.cross.x, a.z - n.cross.z) -
+              Math.hypot(b.x - n.cross.x, b.z - n.cross.z),
+          );
+        if (pts.length) {
+          put("siren", pts[0], n, n.kind);
+          siren = true;
+        }
+      }
+      if (!siren) {
+        // one eel or two, each in a different body, the crossing's two last
+        const want = 1 + (Rn() < 0.4 ? 1 : 0),
+          left = own.filter((b) => b.id !== n.cross?.a && b.id !== n.cross?.b),
+          rest = own.filter((b) => !left.includes(b));
+        for (let i = 0; i < want; i++) {
+          const from = left.length ? left : rest,
+            b = from.splice((Rn() * from.length) | 0, 1)[0];
+          if (!b) break;
+          const pts = wetPts(b, 1, WET.eel);
+          if (pts.length) put("eel", pts[(Rn() * pts.length) | 0], n, n.kind);
+        }
+      }
+      for (let i = 2 + ((Rn() * 2) | 0); i > 0; i--) {
         const o = dryIn(n, sx, sz);
-        if (o) put(type, o, n, n.kind);
+        if (o) put("rat", o, n, n.kind);
+      }
+      for (let i = 1 + (Rn() < 0.5 ? 1 : 0); i > 0; i--) {
+        // a bloater on any water point that holds it, in any of the room's bodies
+        const pts = own.flatMap((b) => wetPts(b, 0, WET.bloater));
+        if (pts.length) put("bloater", pts[(Rn() * pts.length) | 0], n, n.kind);
       }
     } else if (n.kind === "brood") {
       const sx = (n.hw - 3) * 0.7,
@@ -1443,6 +1506,30 @@ function genSewer(seed) {
         if (open(q)) add("rat", q);
       }
     }
+  }
+  // a gutter may hold a bloater at its most open water point
+  for (const b of bodies) {
+    if (b.room !== -1 || Rn() >= 0.35) continue;
+    let at = null,
+      fd = -1;
+    for (const q of bodyPts[b.id]) {
+      const f = fieldAt(q.x, q.z);
+      if (waterAt(q.x, q.z) === 1 && f > fd) {
+        at = q;
+        fd = f;
+      }
+    }
+    if (at && fd >= WET.bloater)
+      spawns.push({ type: "bloater", x: at.x, z: at.z, yaw: Rn() * TAU, node: -1, kind: "tunnel" });
+  }
+  // a grate may hold a drain grabber, 0.4 m out along its facing, which
+  // faces the way the grate does
+  for (const g of dress.grates) {
+    if (Rn() >= 1 / 3) continue;
+    const x = g.x + Math.sin(g.yaw) * 0.4,
+      z = g.z + Math.cos(g.yaw) * 0.4;
+    if (fieldAt(x, z) >= 0.35 && waterAt(x, z) === 0)
+      spawns.push({ type: "grabber", x, z, yaw: g.yaw, node: -1, kind: "tunnel" });
   }
   // the boss stands on the dry ring between the entrance and the centre
   // pool, facing the entrance

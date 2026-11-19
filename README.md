@@ -184,13 +184,20 @@ earlier ones.
   arrival hall and three more along the way, and a boss cavern with a moat and
   a centre pool. Water is shallow, slows the player, and can be walked around.
   The light is dim and green, with some flickering lamps, drips and an echo.
-  Only the part of the sewer that can be seen is drawn. Three D enemies exist
-  so far. The rat is quick, faster still in water, and cannot bite while it
-  swims. The drowned holds a manhole cover that stops every hit from the front
-  until heavy blows break it open; go round it. The brood mother keeps her
-  distance and sends out a rat every few seconds until she is killed. They hold
-  the brood rooms and tunnels. The pool rooms still hold the cave's husks and
-  spitters, the boss is still the Ossuary Warden, and D stays sealed in the
+  Only the part of the sewer that can be seen is drawn. Seven D enemies are built.
+  The rat is quick, faster still in water, and cannot bite while it swims. The
+  drowned holds a manhole cover that stops every hit from the front until
+  heavy blows break it open; go round it. The brood mother keeps her distance
+  and sends out a rat every few seconds until she is killed. They hold the
+  brood rooms and tunnels. The pool rooms hold either a siren or one or two
+  eels, with rats and bloaters. The siren waits in her pool, drags you in
+  when she catches you and sings you towards her; press dodge to break free.
+  An eel stays under, and every few seconds shocks the whole pool, so stay out
+  of the water when it glows. A bloater floats in the water and bursts into a
+  poison cloud when it dies, so kill it from range or step back.
+  Gutters in the tunnels may hold a bloater, and some tunnel grates hide a
+  drain grabber that reaches out and holds you until you mash dodge or beat it
+  back. The boss is still the Ossuary Warden, and D stays sealed in the
   published game until the crocodile boss is built.
 - **Menus:** class picker, controls menu with rebinding, mouse sensitivity and
   inverted look, and a How to play screen with the name colour key and combat
@@ -236,6 +243,7 @@ Screenshots go to `shots/`.
 | `tests/t21.mjs` | The Riftwalker's rift ends, crossing and Drop. Run in `smoke` mode |
 | `tests/t22.mjs` | The sewer: water, D opening and the save, the layout over many seeds, brick and water drawing, only drawing what is seen, screenshots. Run in `smoke` mode |
 | `tests/t23.mjs` | The D enemies: behaviour hooks, the rat, the drowned and the brood mother, their bodies, and where the sewer places them, with screenshots. Run in `smoke` mode |
+| `tests/t24.mjs` | The siren, eel, bloater and drain grabber: rules for enemies bound to water or a wall, the held player, each type, and where the sewer places them, with screenshots. Run in `smoke` mode |
 
 The touch scripts `t14` and `t15` run under emulated phones and tablets. Run
 one device with `DEVICE=pixel-9 SCRIPT=$PWD/tests/t14.mjs node test.mjs smoke`,

@@ -43,6 +43,10 @@ const G = {
   // the Riftwalker's open rift ends, oldest first, and its Drop holes
   rifts: [],
   holes: [],
+  // poison clouds left by bloaters, { x, z, r, t, tick }
+  clouds: [],
+  // the pools an eel has shocked, { body, room, t, dur }
+  shocks: [],
 };
 const keys = {},
   taps = {},
@@ -1175,6 +1179,24 @@ const wadeMul = (water, wade) => lerp(1, wade, sat(water));
 // at most `cap` of hers alive. She backs off while the player is between
 // `close` and `keep` m. A rat of hers gives `focus` and no tool charge.
 const BROOD = { every: 6, first: 3, cap: 4, keep: 7, close: 3, focus: 2 };
+// The bloater's poison cloud, left where it bursts: it hurts everything within
+// r of its middle (the player and every enemy) every `tick` s for `life` s.
+const CLOUD = { r: 1.5, life: 3, tick: 0.5, dmg: 4 };
+// The eel's shock: every `every` s of a hunt it glows for `glow` s and then
+// shocks everything standing in its body of water for `dmg` (and `post`
+// posture, for an enemy). The pool is drawn lit for `lit` s.
+const EEL = { every: 8, glow: 1.2, dmg: 22, post: 20, lit: 0.4 };
+// The siren: her lunge drags a caught player `drag` m past the shore into
+// her pool at `dragSpeed` m/s, hurting them `dps` a second, and she cannot
+// grab again for `grabCD` s after. Her song pulls the player toward her at
+// `pull` m/s, about half a walk, so walking away still wins.
+const SIREN = { drag: 2, grabCD: 6, pull: 2.6, dps: 8, dragSpeed: 5 };
+// The drain grabber: it strikes a player within `r` m and `arc` rad either side
+// of its grate's facing, stays shown `show` s after a strike or a hold, and
+// hides at once when it has taken `back` damage while shown. It cannot strike
+// again for `rearm` s after hiding. Its grip hurts `dps` a second and pulls the
+// player in at `speed` m/s.
+const GRAB = { r: 2.5, arc: 1.2, show: 2.5, back: 15, rearm: 4, dps: 6, speed: 4 };
 const EDEF = {
   husk: {
     name: "Husk",
@@ -1328,6 +1350,142 @@ const EDEF = {
         arc: 1.3,
         lunge: 1.2,
         trig: 2.3,
+      },
+    },
+  },
+  // D gate: a bloater, a swollen sac that floats in the sewer's water and
+  // cannot leave it (EBEH.bloater). It bumps, and when it bursts it leaves a
+  // poison cloud (CLOUD) that hurts whoever stands in it, enemies too.
+  bloater: {
+    name: "Bloater",
+    threat: 0,
+    hp: 20,
+    posture: 20,
+    speed: 1.2,
+    wade: 1.0,
+    turn: 3,
+    r: 0.4,
+    sight: 12,
+    cd: 1.4,
+    poise: 0,
+    top: 1.0,
+    bound: "water",
+    atks: {
+      bump: {
+        style: "thrust",
+        wind: 0.5,
+        act: 0.15,
+        rec: 0.6,
+        dmg: 5,
+        reach: 1.4,
+        arc: 2.0,
+        lunge: 0.6,
+        trig: 1.4,
+      },
+    },
+  },
+  // D gate: an eel, which lives under the water of one pool and comes up to
+  // bite whoever stands at the shore. Every EEL.every s of a hunt it glows and
+  // shocks its whole pool (EBEH.eel); it can be hit only while surfaced.
+  eel: {
+    name: "Eel",
+    threat: 1,
+    hp: 70,
+    posture: 60,
+    speed: 2.5,
+    wade: 2.0,
+    turn: 6,
+    r: 0.45,
+    sight: 14,
+    cd: 1.6,
+    poise: 1,
+    top: 1.0,
+    bound: "water",
+    atks: {
+      bite: {
+        style: "thrust",
+        wind: 0.45,
+        act: 0.12,
+        rec: 0.6,
+        dmg: 12,
+        reach: 2.2,
+        arc: 1.4,
+        lunge: 0.6,
+        trig: 2.2,
+      },
+    },
+  },
+  // D gate: a siren, who guards a pool room's crossing from the water and
+  // never leaves it. Her lunge grabs a player on the bank and drags them into
+  // her pool (held); her song pulls them toward her (EBEH.siren, SIREN).
+  siren: {
+    name: "Siren",
+    threat: 2,
+    hp: 150,
+    posture: 110,
+    speed: 3.2,
+    wade: 1.8,
+    turn: 5,
+    r: 0.6,
+    sight: 18,
+    cd: 2.0,
+    poise: 1,
+    top: 1.4,
+    bound: "water",
+    atks: {
+      lunge: {
+        kind: "grab",
+        style: "thrust",
+        wind: 0.7,
+        act: 0.35,
+        rec: 0.9,
+        dmg: 6,
+        reach: 4,
+        arc: 1.2,
+        trig: 5,
+        unb: true,
+      },
+      song: {
+        kind: "song",
+        style: "cast",
+        wind: 0.9,
+        act: 2.0,
+        rec: 0.8,
+        dmg: 0,
+        trig: 12,
+        minTrig: 3,
+      },
+    },
+  },
+  // D gate: a drain grabber, an arm that lives in a tunnel grate or drain and
+  // grabs a player who passes in front of it (held). It is hidden until it
+  // strikes and never moves, chases or takes a token (EBEH.grabber, GRAB).
+  grabber: {
+    name: "Drain Grabber",
+    threat: 1,
+    hp: 45,
+    posture: 40,
+    speed: 0,
+    turn: 0,
+    r: 0.35,
+    sight: 3,
+    cd: 4,
+    poise: 1,
+    top: 1.3,
+    bound: "wall",
+    ambush: true,
+    atks: {
+      grab: {
+        kind: "grab",
+        style: "thrust",
+        wind: 0.45,
+        act: 0.25,
+        rec: 0.8,
+        dmg: 6,
+        reach: 2.6,
+        trig: 2.5,
+        arc: 2.4,
+        unb: true,
       },
     },
   },
@@ -1578,6 +1736,7 @@ function makePlayer(id) {
     throwT: 0,
     gLine: 0,
     ddur: 0.42,
+    hold: null,
   };
 }
 function setClass(id) {
@@ -1679,6 +1838,8 @@ function makeEnemy(s) {
     // the last spot it may stand on, for a type whose footing is limited
     okx: s.x,
     okz: s.z,
+    // an ambush type starts out of sight
+    hidden: !!d.ambush,
   };
 }
 function spawnEnemies() {
@@ -1715,7 +1876,10 @@ function resetRun() {
   G.mines = [];
   G.rifts = [];
   G.holes = [];
+  G.clouds = [];
+  G.shocks = [];
   G.insp = null;
+  G.grabGrace = 0;
   G.bossDead = false;
   G.bossSeen = false;
   G.gate = null;
@@ -1841,13 +2005,17 @@ function respawn() {
     buf: null,
     buff: null,
     buffT: 0,
+    hold: null,
   });
+  G.grabGrace = 0;
   // the same cave again: its rubble has to come out of the field
   G.world.clearRocks();
   G.caveins = [];
   G.mines = [];
   G.rifts = [];
   G.holes = [];
+  G.clouds = [];
+  G.shocks = [];
   G.world.resolve(p, 0.6);
   G.projs = [];
   G.bombs = [];
@@ -1961,7 +2129,7 @@ function explode(x, z, r, dmg, post, c) {
   G.shake = Math.max(G.shake, r > 4.5 ? 0.9 : 0.45);
   SFX.slam();
   for (const e of G.enemies) {
-    if (e.dead || e.state === "fall") continue;
+    if (e.dead || e.state === "fall" || e.hidden) continue;
     if (Math.hypot(e.x - x, e.z - z) < r + e.r && G.world.los(x, z, e.x, e.z))
       hitEnemy(e, dmg, post, { src: "aoe", heavy: true, fx: x, fz: z });
   }
@@ -2015,10 +2183,11 @@ function seesNow(o) {
 // The nearest pack-mate of e that can see the player, within calling
 // distance, or null. e takes the player's position from it.
 function seeingMate(e) {
+  if (e.def.ambush) return null;
   let best = null,
     bd = PURSUIT.pack;
   for (const o of G.enemies) {
-    if (o === e || !seesNow(o)) continue;
+    if (o === e || !seesNow(o) || o.def.ambush) continue;
     const d = Math.hypot(o.x - e.x, o.z - e.z);
     if (d < bd) {
       bd = d;
@@ -2031,9 +2200,10 @@ function seeingMate(e) {
 // is idle or walking home, as long as the player is in its territory or e is
 // provoked. The wake-up runs through alertIn, like a first alert.
 function callPack(e) {
+  if (e.def.ambush) return;
   for (const o of G.enemies) {
     if (o === e || o.aware || o.dead || o.alertIn > 0) continue;
-    if (o.def.boss || o.def.dummy) continue;
+    if (o.def.boss || o.def.dummy || o.def.ambush) continue;
     if (o.state !== "idle" && o.state !== "return") continue;
     if (Math.hypot(o.x - e.x, o.z - e.z) >= PURSUIT.pack) continue;
     if (!inTerritory(o) && !(e.prov > 0)) continue;
@@ -2080,8 +2250,16 @@ function alertE(e, quiet, by) {
   }
   if (!quiet) SFX.alert();
   if (e.def.boss) G.bossSeen = true;
+  // an ambush type takes no part in a neighbour's wake-up, either way
+  if (e.def.ambush) return;
   for (const o of G.enemies)
-    if (o !== e && !o.aware && !o.dead && Math.hypot(o.x - e.x, o.z - e.z) < 12) {
+    if (
+      o !== e &&
+      !o.aware &&
+      !o.dead &&
+      !o.def.ambush &&
+      Math.hypot(o.x - e.x, o.z - e.z) < 12
+    ) {
       o.alertIn = 0.25 + Math.random() * 0.35;
       o.alertBy = e;
     }
@@ -2116,7 +2294,7 @@ function kill(e) {
     let b = null,
       bd = p.cls.ranged ? 22 : 13;
     for (const o of G.enemies)
-      if (!o.dead && o.aware && o.state !== "fall") {
+      if (!o.dead && o.aware && o.state !== "fall" && !o.hidden) {
         const d = Math.hypot(o.x - p.x, o.z - p.z);
         if (d < bd) {
           bd = d;
@@ -2177,11 +2355,12 @@ function blockHit(e, post) {
     stagger(e);
 }
 function hitEnemy(e, dmg, post, o = {}) {
-  if (e.dead || e.state === "fall") return;
+  // a hidden or safe enemy refuses a hit quietly: no sparks, sound or alert
+  if (e.dead || e.state === "fall" || e.hidden || e.safe) return;
   const p = G.player,
     c = p.cls;
   // the Riftwalker's trait: the first hit after coming out of a rift
-  if (p.riftBonus > 0) {
+  if (p.riftBonus > 0 && !o.dot) {
     dmg *= 1 + RIFT.bonus;
     p.riftBonus = 0;
   }
@@ -2235,7 +2414,10 @@ function hitEnemy(e, dmg, post, o = {}) {
   const dl = Math.hypot(dx, dz) || 1;
   dx /= dl;
   dz /= dl;
-  if (e.def.poise === 0) {
+  // o.dot: damage over time (a poison cloud's tick). It deals its damage and
+  // posture and can stagger or kill, but gives no knockback, flinch, hitstop,
+  // shake, focus or hit sound, like atk.dot in hurtPlayer.
+  if (e.def.poise === 0 && !o.dot) {
     const k = o.heavy ? 9 : 5;
     e.kx = dx * k;
     e.kz = dz * k;
@@ -2244,11 +2426,13 @@ function hitEnemy(e, dmg, post, o = {}) {
     e.x - dx * e.r * 0.6,
     1.0 * e.fig.o.sc + 0.2,
     e.z - dz * e.r * 0.6,
-    o.heavy ? 16 : 9,
+    o.dot ? 3 : o.heavy ? 16 : 9,
     mult > 1 ? AMBER : close ? WHITE : c.col,
     o.heavy ? 8 : 6,
   );
-  if (close) {
+  if (o.dot) {
+    // nothing for the player
+  } else if (close) {
     G.hitstop = Math.max(G.hitstop, o.heavy ? 0.1 : 0.055);
     G.shake = Math.max(G.shake, o.heavy ? 0.5 : 0.28);
     p.focus = Math.min(100, p.focus + (o.heavy ? 6 : 4));
@@ -2256,7 +2440,7 @@ function hitEnemy(e, dmg, post, o = {}) {
     G.shake = Math.max(G.shake, o.heavy ? 0.3 : 0.12);
     p.focus = Math.min(100, p.focus + (o.src === "aoe" ? 2 : 3));
   }
-  SFX.hit(o.heavy);
+  if (!o.dot) SFX.hit(o.heavy);
   if (o.heavy && o.src === "melee") PAD.rumble("heavy");
   if (e.hp <= 0) {
     kill(e);
@@ -2293,7 +2477,8 @@ function hitEnemy(e, dmg, post, o = {}) {
     return;
   }
   const flinch =
-    e.def.poise === 0 || (e.def.poise === 1 && o.heavy && e.state !== "wind");
+    !o.dot &&
+    (e.def.poise === 0 || (e.def.poise === 1 && o.heavy && e.state !== "wind"));
   if (flinch && e.state !== "act") {
     e.state = "hit";
     e.t = 0;
@@ -2307,7 +2492,7 @@ function hurtPlayer(dmg, e, atk) {
   if (p.state === "dead" || G.state !== "play" || G.trans) return "none";
   if (p.state === "execute" || p.state === "blink") return "none";
   if (p.iframe > 0) {
-    if (p.state === "dodge" && !p.pdUsed) {
+    if (p.state === "dodge" && !p.pdUsed && !atk.dot) {
       p.pdUsed = true;
       G.slowT = Math.max(G.slowT, 0.4);
       p.focus = Math.min(100, p.focus + 15);
@@ -2323,7 +2508,7 @@ function hurtPlayer(dmg, e, atk) {
     facing = Math.abs(angDiff(p.yaw, from)) < c.guardArc;
   const kdx = Math.sin(from),
     kdz = Math.cos(from);
-  if (p.state === "guard" && facing && (!atk.unb || fort)) {
+  if (p.state === "guard" && facing && !atk.dot && (!atk.unb || fort)) {
     if (p.guardT <= p.parryWin || fort) {
       SFX.parry();
       sparks(p.x + kdx * 0.7, 1.3, p.z + kdz * 0.7, 18, WHITE, 9, 0.35);
@@ -2370,30 +2555,123 @@ function hurtPlayer(dmg, e, atk) {
   p.hp -= dmg;
   p.flash = 1;
   G.flashRed = 0.6;
-  G.shake = Math.max(G.shake, 0.7);
-  G.hitstop = Math.max(G.hitstop, 0.06);
+  // a hold's tick, or any hit while held, neither throws the player nor
+  // changes their state
+  const soft = atk.dot || p.state === "held";
+  G.shake = Math.max(G.shake, atk.dot ? 0.3 : 0.7);
+  if (!atk.dot) G.hitstop = Math.max(G.hitstop, 0.06);
   SFX.hurt();
-  const kb = (atk.kb || (atk.unb ? 11 : 7)) * (armored ? 0.3 : 1);
-  p.kx = -kdx * kb;
-  p.kz = -kdz * kb;
-  sparks(p.x, 1.2, p.z, 10, RED, 5);
+  if (!soft) {
+    const kb = (atk.kb || (atk.unb ? 11 : 7)) * (armored ? 0.3 : 1);
+    p.kx = -kdx * kb;
+    p.kz = -kdz * kb;
+  }
+  sparks(p.x, 1.2, p.z, atk.dot ? 5 : 10, RED, 5);
   if (p.hp <= 0) {
     playerDie();
     return "hit";
   }
   PAD.rumble("hurt");
-  if (!armored) {
+  if (!armored && !soft) {
     p.state = "hit";
     p.t = 0;
     p.buf = null;
   }
   return "hit";
 }
+// ---- being held ----
+// A grabbing enemy takes the player with grabPlayer and sets its own state to
+// "hold"; the shared state switch has no case for it, so its hook drives it.
+// The player breaks free by pressing dodge, or when the time is up.
+const HOLD = { max: 2, mash: 0.35, safe: 0.4, grace: 1.5, tick: 0.5 };
+// o: { dps, tx, tz, speed }, damage per second and where to drag the player
+function grabPlayer(e, o) {
+  const p = G.player;
+  if (
+    G.state !== "play" ||
+    p.iframe > 0 ||
+    G.grabGrace > 0 ||
+    ["dead", "execute", "blink", "inspect", "grapple", "held"].includes(p.state)
+  )
+    return false;
+  p.state = "held";
+  p.hold = { by: e, t: 0, tick: 0, jolt: 0, dps: o.dps, tx: o.tx, tz: o.tz, speed: o.speed };
+  p.buf = null;
+  p.lock = null;
+  p.sprint = false;
+  SFX.hurt();
+  PAD.rumble("hurt");
+  return true;
+}
+// forgets the hold and puts a holder back to rec (it was in state "hold")
+function endHold() {
+  G.player.hold = null;
+  G.grabGrace = 0;
+  for (const e of G.enemies)
+    if (e.state === "hold") {
+      e.state = "rec";
+      e.t = 0;
+      e.token = false;
+      if (!e.atk) e.atk = Object.values(e.def.atks)[0];
+    }
+}
+function releaseHold() {
+  const p = G.player;
+  p.state = "free";
+  p.iframe = Math.max(p.iframe, HOLD.safe);
+  G.grabGrace = HOLD.grace;
+  p.hold = null;
+  p.buf = null;
+  // the press that broke free must not also dodge
+  taps[BIND.dodge] = false;
+  taps["T:dodge"] = false;
+  if (PAD_BIND.dodge) taps[PAD_BIND.dodge] = false;
+}
+function heldUpdate(dt) {
+  const p = G.player,
+    h = p.hold;
+  p.vx = p.vz = p.kx = p.kz = 0;
+  p.speed = p.dspeed = 0;
+  p.walk += dt * 6;
+  h.t += dt;
+  h.jolt = Math.max(0, h.jolt - dt * 6);
+  if (hit("dodge")) {
+    h.t += HOLD.mash;
+    h.jolt = 1;
+    SFX.whoosh(false);
+  }
+  const dx = h.tx - p.x,
+    dz = h.tz - p.z,
+    d = Math.hypot(dx, dz),
+    s = Math.min(d, h.speed * dt);
+  if (s > 0) {
+    p.x += (dx / d) * s;
+    p.z += (dz / d) * s;
+    G.world.resolve(p, p.r);
+  }
+  const by = h.by;
+  if (by && !by.dead) p.yaw = Math.atan2(by.x - p.x, by.z - p.z);
+  // a holder that is gone frees the player before any tick lands
+  if (!by || by.dead || by.state !== "hold") {
+    releaseHold();
+    return;
+  }
+  h.tick += dt;
+  // a small allowance, so that four ticks fit in the full hold
+  while (h.tick >= HOLD.tick - 1e-9 && p.state === "held") {
+    h.tick -= HOLD.tick;
+    const dmg = h.dps * HOLD.tick;
+    if (dmg > 0) hurtPlayer(dmg, by, { dmg, dot: true });
+  }
+  if (p.state !== "held") return;
+  if (h.t >= HOLD.max) releaseHold();
+}
 function playerDie() {
   const p = G.player;
   p.hp = 0;
   p.state = "dead";
   G.insp = null;
+  endHold();
   p.t = 0;
   p.lock = null;
   p.buff = null;
@@ -2410,7 +2688,7 @@ function nearestStaggered() {
   let b = null,
     bd = 3.7;
   for (const e of G.enemies)
-    if (!e.dead && e.state === "stagger") {
+    if (!e.dead && !e.hidden && e.state === "stagger") {
       const d = Math.hypot(e.x - p.x, e.z - p.z) - e.r;
       if (d < bd) {
         bd = d;
@@ -2425,7 +2703,7 @@ function pickLock(exclude) {
     bs = 1e9;
   const far = p.cls.ranged ? 34 : 24;
   for (const e of G.enemies) {
-    if (e.dead || e === exclude || e.state === "fall") continue;
+    if (e.dead || e === exclude || e.state === "fall" || e.hidden) continue;
     const d = Math.hypot(e.x - p.x, e.z - p.z);
     if (d > far) continue;
     const a = Math.abs(angDiff(cam.yaw, Math.atan2(e.x - p.x, e.z - p.z)));
@@ -2445,7 +2723,8 @@ function aimYaw(base, range = 4.8, cone = 1.1) {
   let best = null,
     bs = 1e9;
   for (const e of G.enemies) {
-    if (e.dead || e.state === "fall") continue;
+    // a safe enemy cannot be hurt, so the assist passes it over
+    if (e.dead || e.state === "fall" || e.hidden || e.safe) continue;
     const d = Math.hypot(e.x - p.x, e.z - p.z);
     if (d > range + e.r) continue;
     const a = Math.abs(angDiff(base, Math.atan2(e.x - p.x, e.z - p.z)));
@@ -2465,7 +2744,7 @@ function aimRanged() {
   let best = null,
     bs = 1;
   for (const e of G.enemies) {
-    if (e.dead || e.state === "fall") continue;
+    if (e.dead || e.state === "fall" || e.hidden || e.safe) continue;
     const d = Math.hypot(e.x - p.x, e.z - p.z);
     if (d > 36) continue;
     const ey = Math.atan2(e.x - p.x, e.z - p.z),
@@ -2798,6 +3077,8 @@ function grappleTarget() {
     ok = (e) =>
       e &&
       !e.dead &&
+      e.state !== "fall" &&
+      !e.hidden &&
       Math.hypot(e.x - p.x, e.z - p.z) <= 14 &&
       w.los(p.x, p.z, e.x, e.z);
   if (p.lock) return ok(p.lock) ? p.lock : null;
@@ -2817,7 +3098,7 @@ function grappleTarget() {
 // light enemies come to the Enforcer; heavy ones, the boss and the pinned
 // dummy pull the Enforcer to them
 function grappleLight(e) {
-  return !e.def.boss && !e.def.dummy && e.def.poise === 0;
+  return !e.def.boss && !e.def.dummy && !bound(e) && e.def.poise === 0;
 }
 function startGrapple() {
   const p = G.player,
@@ -2894,7 +3175,7 @@ function useSpecial(ix, iz, il) {
       let best = null,
         bd = 1e9;
       for (const e of G.enemies) {
-        if (e.dead || e.state === "fall") continue;
+        if (e.dead || e.state === "fall" || e.hidden) continue;
         const d = Math.hypot(e.x - p.x, e.z - p.z);
         if (
           d < 30 &&
@@ -3095,6 +3376,10 @@ function playerUpdate(dt) {
     inspectUpdate(dt);
     return;
   }
+  if (p.state === "held") {
+    heldUpdate(dt);
+    return;
+  }
   // a close-up lasts only while the player is in it: whatever moved them out
   // (a hit, a bomb going off) puts the camera back at once
   if (G.insp) closePlaque(true);
@@ -3165,6 +3450,7 @@ function playerUpdate(dt) {
   if (
     p.lock &&
     (p.lock.dead ||
+      p.lock.hidden ||
       Math.hypot(p.lock.x - p.x, p.lock.z - p.z) > (c.ranged ? 42 : 30))
   )
     p.lock = null;
@@ -3303,7 +3589,7 @@ function playerUpdate(dt) {
           const hx = Math.sin(p.yaw),
             hz = Math.cos(p.yaw);
           for (const e of G.enemies) {
-            if (e.dead || e.state === "fall") continue;
+            if (e.dead || e.state === "fall" || e.hidden) continue;
             const dx = e.x - p.x,
               dz = e.z - p.z,
               d = Math.hypot(dx, dz);
@@ -3363,6 +3649,7 @@ function playerUpdate(dt) {
           const e = G.enemies.find(
               (e) =>
                 !e.dead &&
+                !e.hidden &&
                 Math.hypot(e.x - p.x, e.z - p.z) < m.range + e.r &&
                 Math.abs(angDiff(p.yaw, Math.atan2(e.x - p.x, e.z - p.z))) <
                   m.arc / 2 + 0.2,
@@ -3425,7 +3712,7 @@ function playerUpdate(dt) {
         t < m.wind + m.act + 0.03
       ) {
         for (const e of G.enemies) {
-          if (e.dead || e.state === "fall" || p.hitSet.has(e)) continue;
+          if (e.dead || e.state === "fall" || e.hidden || p.hitSet.has(e)) continue;
           const dx = e.x - p.x,
             dz = e.z - p.z,
             d = Math.hypot(dx, dz);
@@ -3565,7 +3852,7 @@ function playerUpdate(dt) {
         let bx = e.x,
           bz = e.z;
         if (sapper) {
-          const heavy = e.def.boss || e.def.dummy,
+          const heavy = e.def.boss || e.def.dummy || bound(e),
             a = Math.atan2(e.x - p.x, e.z - p.z);
           if (!heavy) {
             let d = 0;
@@ -3592,7 +3879,7 @@ function playerUpdate(dt) {
           SFX.thud(true);
           SFX.mine();
         }
-        if (rift && (e.def.boss || e.def.dummy))
+        if (rift && (e.def.boss || e.def.dummy || bound(e)))
           // too heavy to drop: a tear snaps on it where it stands
           sparks(e.x, 1.2 * e.fig.o.sc, e.z, 26, c.col, 8, 0.5);
         if (e.def.boss) {
@@ -3616,14 +3903,14 @@ function playerUpdate(dt) {
           e.hp = 0;
           G.hitstop = 0.13;
           kill(e);
-          if (rift) {
+          if (rift && !bound(e)) {
             // the floor opens under it: it falls out of the roof over the
             // other end of a pair, or back onto the spot, and lands hard
             const [lx, lz] = dropSpot(e.x, e.z);
             dropEnemy(e, lx, lz, 0, 1, true);
             SFX.hole();
           }
-          if (sapper) {
+          if (sapper && !bound(e)) {
             const k = Math.hypot(bx - e.x, bz - e.z) / 0.4;
             const a = Math.atan2(bx - e.x, bz - e.z);
             e.kick = { vx: Math.sin(a) * k, vz: Math.cos(a) * k, t: 0.4 };
@@ -3802,7 +4089,10 @@ function eStep(e, dx, dz, spd, dt) {
 function setRoute(e, x, z) {
   if (G.routeN >= 2) return false;
   G.routeN++;
-  e.route = G.world.route(e.x, e.z, x, z, e.r) || [{ x, z }];
+  const fb = EBEH[e.type];
+  // a body held to its footing walks straight, sliding on it (eStep)
+  e.route =
+    fb && fb.foot ? [{ x, z }] : G.world.route(e.x, e.z, x, z, e.r) || [{ x, z }];
   e.rgx = x;
   e.rgz = z;
   e.ri = 0;
@@ -3956,9 +4246,11 @@ function enemyUpdate(e, dt) {
       e.alertBy = null;
     }
   }
+  // an ambush type notices nothing: its own rule decides when it strikes
   if (
     !e.aware &&
     alive &&
+    !d.ambush &&
     (d.boss || e.state !== "return" || inTerritory(e))
   ) {
     const front = Math.abs(angDiff(e.yaw, toP)) < 1.75,
@@ -4063,6 +4355,16 @@ function enemyUpdate(e, dt) {
       let ux = dx / (dist || 1),
         uz = dz / (dist || 1),
         aim = null;
+      // a type that cannot reach the player steers for a point of its own
+      // footing instead; it still turns to face the player (face, below)
+      const goal = b && b.goal ? b.goal(e, c) : null;
+      if (goal) {
+        const gx = goal.x - e.x,
+          gz = goal.z - e.z,
+          gd = Math.hypot(gx, gz);
+        ux = gd > 0.3 ? gx / gd : 0;
+        uz = gd > 0.3 ? gz / gd : 0;
+      }
       if (d.boss) {
         // the boss always knows where the player is; with rock in the way
         // it walks round, planning again at most twice a second
@@ -4126,6 +4428,8 @@ function enemyUpdate(e, dt) {
             SFX.tele(!!e.atk.unb);
           }
         } else eStep(e, ux, uz, d.speed * spdMul, dt);
+      } else if (goal) {
+        eStep(e, ux, uz, d.speed * spdMul, dt);
       } else {
         const ring = d.boss ? 6 : 4.6 + e.r;
         if (dist > ring + 1.2) eStep(e, ux, uz, d.speed * spdMul, dt);
@@ -4530,7 +4834,7 @@ function caveImpact(c) {
       fz: c.z,
     });
     // a stagger the crush earned by filling posture keeps its full length
-    if (!e.dead && !e.def.boss && e.state !== "stagger")
+    if (!e.dead && !e.def.boss && !e.hidden && !e.safe && e.state !== "stagger")
       stagger(e, CAVEIN.stag[e.type] || 1);
   }
   // mines under the ridge go off now, before the rock would bury their blast
@@ -4638,6 +4942,8 @@ function minesUpdate(dt) {
       if (
         !e.dead &&
         e.state !== "fall" &&
+        !e.hidden &&
+        !e.safe &&
         Math.hypot(e.x - m.x, e.z - m.z) < MINE.trig + e.r
       ) {
         boomMine(m);
@@ -4649,6 +4955,8 @@ function minesUpdate(dt) {
         if (
           !e.dead &&
           e.state !== "fall" &&
+          !e.hidden &&
+          !e.safe &&
           segDist(e.x, e.z, m.x, m.z, o.x, o.z) < e.r
         ) {
           boomMine(m);
@@ -4784,6 +5092,7 @@ function riftBodies(prev) {
     p.state !== "dead" &&
     p.state !== "execute" &&
     p.state !== "inspect" &&
+    p.state !== "held" &&
     !(p.riftCD > 0) &&
     riftMove(p, prev.p[0], prev.p[1], p.r)
   ) {
@@ -4800,7 +5109,8 @@ function riftBodies(prev) {
     SFX.cross();
   }
   for (const e of G.enemies) {
-    if (e.dead || e.def.boss || e.def.dummy || e.state === "fall") continue;
+    if (e.dead || e.def.boss || e.def.dummy || e.state === "fall" || bound(e) || e.hidden)
+      continue;
     if (e.rest > 0 || e.y > 0.3) continue;
     const q = prev.e.get(e);
     if (!q || !riftMove(e, q[0], q[1], e.r)) continue;
@@ -4921,6 +5231,34 @@ function landEnemy(e) {
     e.rest = e.dur + RIFT.rest;
   }
 }
+// Poison clouds: every CLOUD.tick the player and each living enemy within r
+// of the middle take CLOUD.dmg. The player's tick goes round guard, knock and
+// the perfect dodge (atk.dot); an enemy's is an aoe hit. A cloud goes after
+// CLOUD.life. Another bloater that bursts in one adds its own cloud, so the
+// loop runs over a copy.
+function cloudsUpdate(dt) {
+  if (!G.clouds.length) return;
+  const p = G.player;
+  for (const c of G.clouds.slice()) {
+    c.t += dt;
+    c.tick += dt;
+    while (c.tick >= CLOUD.tick - 1e-9) {
+      c.tick -= CLOUD.tick;
+      if (p.state !== "dead" && Math.hypot(p.x - c.x, p.z - c.z) < c.r)
+        hurtPlayer(CLOUD.dmg, null, { dmg: CLOUD.dmg, dot: true, px: c.x, pz: c.z });
+      for (const o of G.enemies.slice())
+        if (!o.dead && o.state !== "fall" && !o.hidden && Math.hypot(o.x - c.x, o.z - c.z) < c.r)
+          hitEnemy(o, CLOUD.dmg, 0, { src: "aoe", dot: true, fx: c.x, fz: c.z });
+    }
+  }
+  G.clouds = G.clouds.filter((c) => c.t < CLOUD.life);
+}
+// The pools an eel has shocked are drawn lit for EEL.lit s (drawShocks).
+function shocksUpdate(dt) {
+  if (!G.shocks.length) return;
+  for (const s of G.shocks) s.t += dt;
+  G.shocks = G.shocks.filter((s) => s.t < s.dur);
+}
 function holesUpdate(dt) {
   for (const h of G.holes) {
     h.t += dt;
@@ -4930,6 +5268,8 @@ function holesUpdate(dt) {
         !e.dead &&
         !e.def.boss &&
         !e.def.dummy &&
+        !bound(e) &&
+        !e.hidden &&
         e.state !== "fall" &&
         Math.hypot(e.x - h.x, e.z - h.z) < DROP.r + e.r,
     );
@@ -4992,7 +5332,13 @@ function projUpdate(dt) {
       }
     } else {
       for (const e of G.enemies) {
-        if (e.dead || e.state === "fall" || (pr.hitSet && pr.hitSet.has(e)))
+        if (
+          e.dead ||
+          e.state === "fall" ||
+          e.hidden ||
+          e.safe ||
+          (pr.hitSet && pr.hitSet.has(e))
+        )
           continue;
         if (Math.hypot(pr.x - e.x, pr.z - e.z) < e.r + 0.45 + (pr.rad || 0)) {
           if (pr.kind === "sticky") {
@@ -5028,17 +5374,17 @@ function separate() {
     es = G.enemies;
   for (let i = 0; i < es.length; i++) {
     const a = es[i];
-    if (a.dead || a.state === "fall") continue;
+    if (a.dead || a.state === "fall" || a.hidden) continue;
     for (let j = i + 1; j < es.length; j++) {
       const b = es[j];
-      if (b.dead || b.state === "fall") continue;
+      if (b.dead || b.state === "fall" || b.hidden) continue;
       const dx = b.x - a.x,
         dz = b.z - a.z,
         d = Math.hypot(dx, dz),
         m = a.r + b.r + 0.15;
       if (d < m && d > 1e-4) {
         const k = ((m - d) / d) * 0.5,
-          wa = a.def.boss ? 0 : b.def.boss ? 1 : 0.5;
+          wa = a.def.boss || bound(a) ? 0 : b.def.boss || bound(b) ? 1 : 0.5;
         a.x -= dx * k * wa * 2;
         a.z -= dz * k * wa * 2;
         b.x += dx * k * (1 - wa) * 2;
@@ -5058,7 +5404,7 @@ function separate() {
         m = a.r + p.r;
       if (d < m && d > 1e-4) {
         const k = (m - d) / d,
-          wp = a.def.poise ? 1 : 0.6;
+          wp = a.def.poise || bound(a) ? 1 : 0.6;
         p.x += dx * k * wp;
         p.z += dz * k * wp;
         a.x -= dx * k * (1 - wp);
@@ -5088,6 +5434,7 @@ function update(dt) {
     if (bd < bc.r) G.inBoss = true;
     else if (bd > bc.r + PURSUIT.bossPad) G.inBoss = false;
   }
+  if (G.grabGrace > 0) G.grabGrace = Math.max(0, G.grabGrace - dt);
   const prev = riftSnap();
   playerUpdate(dt);
   for (const e of G.enemies) enemyUpdate(e, dt);
@@ -5098,6 +5445,8 @@ function update(dt) {
   minesUpdate(dt);
   riftsUpdate(dt);
   holesUpdate(dt);
+  cloudsUpdate(dt);
+  shocksUpdate(dt);
   for (const q of G.pending) {
     q.t -= dt;
     if (q.t <= 0) {

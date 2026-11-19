@@ -39,11 +39,14 @@ is what you need to change the code without breaking it.
   sewer zone, its water, and D opening once E's boss is dead. Branch
   `feat/d-enemies` is project 2, built in two batches. Batch 1 added the
   per-type hooks and the rat, the drowned and the brood mother, which fill
-  the brood rooms and the tunnels. The siren, eel, bloater and drain grabber
-  (batch 2) and the crocodile boss (project 3) are not built. Until project 3
+  the brood rooms and the tunnels. Batch 2 (`feat/d-enemies-water`) added
+  the siren, eel, bloater and drain grabber, the rules for enemies bound to
+  water or a wall, a held player state, and their placement: sirens or eels
+  in pool rooms, bloaters in pools and gutters, grabbers at grates. Only the
+  crocodile boss (project 3) remains before D joins `LIVE_GRADES`. Until it
   lands, `LIVE_GRADES` holds only E, so the D portal stays sealed on the
-  published page. A D run made live by hand uses E's enemy types in pool
-  rooms and holds the E boss in the cavern. The design is in
+  published page. A D run made live by hand has no E type in it but the
+  Warden, which holds the cavern. The design is in
   `docs/superpowers/specs/2026-11-19-d-enemies-design.md` for the enemies and
   `docs/superpowers/specs/2026-11-18-sewer-d-gate-design.md` for the sewer.
   It has been checked by tests and screenshots only, never played by hand.
@@ -207,8 +210,31 @@ is what you need to change the code without breaking it.
   4 `rat`, and with chance 0.4 one `drowned`. A tunnel post (half the tunnels)
   holds a `drowned` with chance 0.4, else a pack of three `rat`: the post and
   two points 1.2 m either way along the tunnel, each kept only if dry and open
-  (`kind: "tunnel"`). Pool rooms still hold `PACK.pool`, E's husk and spitter,
-  until batch 2 gives them the siren and the eel.
+  (`kind: "tunnel"`). No E type spawns in D but the Warden.
+  - **Pool rooms.** `crossingOf(n)` (beside the spawn block, no draws) finds
+    the pair of the room's bodies whose nearest grid points are closest, when
+    that gap is at most `SEWER.pool.cross + 2`: `{ x, z, a, b }`, the midpoint
+    and the two body ids, kept on the node as `n.cross` (`null` outside pool
+    rooms). With chance 0.5 a pool room is a siren room: one `siren` at the
+    water point of the larger of `cross.a` and `cross.b` nearest the
+    crossing. Otherwise, or when no such point exists, it is an eel room: 1
+    `eel`, with chance 0.4 a second, each in a different body, bodies other
+    than the crossing's two first. A siren or eel stands at least 1 m in
+    from the shore (every point within 1 m reads water 1) and 1.5 m from
+    anything else the room holds. Either kind then gets 2 to 3 `rat` on dry
+    floor and 1 to 2 `bloater` on any water point that holds one (`waterAt`
+    at least 0.5 and `fieldAt` at least 0.4). Every pool-room spawn records
+    `kind: "pool"`.
+  - **Gutters and grates.** Each gutter body (`room` -1) holds, with chance
+    0.35, one `bloater` at its most open water point (`kind: "tunnel"`).
+    Each entry of `grates` holds, with chance a third, one `grabber` 0.4 m
+    out from the grate along its `yaw`, with that `yaw` (`kind: "tunnel"`),
+    kept only where `fieldAt` is at least the grabber's 0.35 and the floor is
+    dry. `makeEnemy` copies the spot and yaw into `hx`, `hz` and `hyaw`.
+  - Every water-bound spawn is on a point where `waterFoot` holds for its
+    radius (siren 0.6, eel 0.45, bloater 0.4), checked from the grid because
+    no enemy exists yet. All of these draws come last, so they move only the
+    spawns hash in t22.
 - **Pillars** are square brick piers in the field, so they block movement,
   sight, routes, shots and the camera like any wall. Pool, brood and rest
   rooms whose shorter half-size is at least `SEWER.pillarAt` (9 m, about
@@ -332,8 +358,8 @@ is what you need to change the code without breaking it.
   grades whose content is finished. `portalOpen(grade)`: E is always open;
   a higher grade is open when it is in `LIVE_GRADES` and the grade below is
   cleared. `hubPortals()` takes `open` from it. **D joins `LIVE_GRADES` only
-  when project 3 (the crocodile) lands**, because the Warden and E's enemies
-  must not appear in the published D. Tests add and remove it through
+  when project 3 (the crocodile) lands**, because the Warden must not appear
+  in the published D. Tests add and remove it through
   `DF.LIVE_GRADES`.
 
 - `G` is the single state object. `G.state` is one of `title`, `play`,
@@ -558,7 +584,32 @@ is what you need to change the code without breaking it.
 ### Player
 
 - State machine in `playerUpdate`: `free`, `guard`, `attack`, `dodge`, `hit`,
-  `gbreak`, `heal`, `execute`, `blink`, `grapple`, `inspect`, `dead`.
+  `gbreak`, `heal`, `execute`, `blink`, `grapple`, `inspect`, `held`, `dead`.
+- **`held`.** A grabbing enemy calls `grabPlayer(e, { dps, tx, tz, speed })`
+  and sets its own state to `hold`. It refuses (false) in the dodge's
+  invulnerability, during `G.grabGrace`, and when the player is `dead`,
+  `execute`, `blink`, `inspect`, `grapple` or already `held`. The player
+  becomes `held` with `p.hold` (`{ by, t, tick, jolt, dps, tx, tz, speed }`),
+  loses their lock and buffered press, and `heldUpdate` (in place of the rest
+  of `playerUpdate`) drags them to `(tx, tz)` at `speed` and turns them to the
+  holder. The numbers are in `HOLD`: the hold lasts `max` (2 s); each press of
+  dodge counts `mash` (0.35 s) towards that, so mashing dodge breaks free
+  early; every `tick` (0.5 s) it deals `dps * tick` through `hurtPlayer` with
+  `atk.dot`. It ends when the time is up or the holder dies or leaves
+  `hold` (that is checked before the tick, so a holder that is gone deals
+  nothing more): `releaseHold()` gives `HOLD.safe`
+  of invulnerability and starts `G.grabGrace` (`HOLD.grace`, 1.5 s, in which
+  nothing may grab again) and swallows the press that broke free so it does
+  not also dodge. `endHold()` (death) clears it and puts every holder back
+  to `rec`. A hold shows the "Break free" prompt and its own pose. `riftBodies`
+  skips a held player, and pausing does not end a hold. `resetRun` and
+  `respawn` clear `G.grabGrace`.
+- **`atk.dot`.** An attack with `dot: true` is damage over time. In
+  `hurtPlayer` it is no perfect dodge, parry or block (invulnerability still
+  stops it), and it gives no knock, hitstop or flinch, only a small shake and
+  sparks. Any hit on a held player also leaves their state alone. A `dot`
+  hit on an enemy (`hitEnemy`'s `o.dot`, the bloater's cloud) deals damage and
+  posture only: no knock, flinch, focus, hit sound or Riftwalker bonus.
 - `inspect` is a plaque close-up. `openPlaque(q)` sets it and `G.insp`
   (`{ q, k, dir, syms, stick }`, `k` running 0 to 1 over `INSPECT_T`), and
   `closePlaque(now)` ends it. `inspectUpdate` runs instead of the rest of
@@ -697,7 +748,9 @@ is what you need to change the code without breaking it.
     `aimYaw`, `aimRanged`, `explode`, the melee hit loop, the shot hit loop,
     the Starfall target, mines and tripwires, `separate`, `riftBodies` and
     `kill`'s relock.
-    A new way of hitting or targeting an enemy must skip it too.
+    A new way of hitting or targeting an enemy must skip it too, and must
+    skip a hidden enemy (`e.hidden`, see Enemies) as well; `grappleTarget`
+    and `nearestStaggered` skip both.
   - **Execution.** The enemy is killed, then dropped like a Drop (its body
     falls in the `dead` case of `enemyUpdate`) and lands in one blast
     (`DROP.exec`). The boss takes the execution in place; the dummy stands
@@ -710,7 +763,8 @@ is what you need to change the code without breaking it.
 ### Enemies
 
 - State machine in `enemyUpdate`: `idle`, `alert`, `chase`, `search`, `wind`,
-  `act`, `rec`, `hit`, `recoil`, `stagger`, `roar`, `return`, `dead`.
+  `act`, `rec`, `hit`, `recoil`, `stagger`, `roar`, `return`, `dead`, and
+  two more that only some enemies use: `fall` (Drop) and `hold` (a grab, below).
 - At most two non-boss enemies may attack at once. They claim a token with
   `takeToken`; the rest circle.
 - `poise` 0 flinches on any hit, 1 only on heavy hits, 2 never.
@@ -752,9 +806,41 @@ is what you need to change the code without breaking it.
 - **The boss** has none of the above. It keeps its 38 m and 30 m limits and
   its heal on return, and routes round rock when the line to the player is
   blocked.
+- **Bound types.** An `EDEF` entry with `bound: "water"` or `bound: "wall"`
+  is tied to a place. `bound(e)` reads it, and it is the one test for "heavy
+  like the boss" in the class tools: the Enforcer's grapple pulls the player
+  to it, and the Sapper's execution does not kick it. Its cave-in staggers
+  it like any enemy, but not while it is hidden or safe (and `caveImpact`
+  skips the forced stagger when a hook refused the hit). The Riftwalker's
+  rifts and Drop never take it, and
+  `separate` weights it like the boss, so other enemies cannot shove it.
+  Its footing is a `foot` hook:
+  - `waterFoot(e, x, z)` (bloater, eel, siren): `waterAt` at least 0.5 (the
+    shore), `fieldAt` at least `e.r`, and the point is in the enemy's own
+    body of water (`e.body`, read from where it first stood) or `bodyAt` is
+    -1, which is the shore between two grid points.
+  - `wallFoot(e, x, z)` (grabber): the post `hx`, `hz` and nowhere else.
+  - `setRoute` gives a type that has a `foot` hook one straight point instead
+    of a route, since the route grid knows nothing of water.
+- **Hidden and safe.** `e.hidden` is an enemy that is not in the fight: it is
+  not drawn, has no tag, cannot be locked, aimed at, hit (no flash, sound or
+  alert), caught in a blast, grappled, staggered or executed, and does not
+  separate or cross a rift. `makeEnemy` sets it for an `EDEF` entry with
+  `ambush: true`, and its own step turns it off. Everything that skips a
+  falling enemy skips a hidden one, and a lock drops the moment its enemy
+  turns hidden. `e.safe` is the lesser case: still drawn and lockable, but
+  not a target for damage (the eel under the water). `hitEnemy` refuses a
+  hit quietly, a player's shot flies on past it (so it neither eats the shot
+  nor sets off an `aoe` or sticky one), mines and tripwires ignore it, the
+  cave-in forces no stagger on it, and `aimYaw` and `aimRanged` pass it
+  over unless it is the locked target. An `ambush` type takes no
+  part in being woken or waking others: it is left out of `seeingMate`,
+  `callPack`, `alertE`'s neighbour wake and the sight wake-up, and its own
+  rule says when it acts.
 - **Water.** An `EDEF` entry may carry `wade`, a factor on its speed in
   water: below 1 slows it, above 1 speeds it. `wadeOf(def)` returns it, or
-  `WATER.slow` when the entry has none, and E's types have none. `eStep`
+  `WATER.slow` when the entry has none, and E's types have none (the bloater
+  is 1.0, the eel 2.0, the siren 1.8). `eStep`
   applies it (`wadeMul(waterAt(e.x, e.z), wadeOf(e.def))`), and `walkRoute`,
   charges and lunges go through `eStep`, so nothing needs a check in a state.
   A new way of moving an enemy must go through `eStep` too.
@@ -825,8 +911,17 @@ table runs exactly as before.
     step that `footOk` forbids, trying each axis alone so the body slides, and
     `keepFooting(e)` runs each update after every other mover (knockback,
     lunges, `separate`, rifts) for a type with a `foot` hook: it records a
-    spot the body may stand on, or puts it back on the last one. Nothing uses
-    it yet; it is there for the water-bound enemies of batch 2.
+    spot the body may stand on, or puts it back on the last one. When that
+    spot is gone too it searches rings 0.25 m apart out to 4 m. The bloater,
+    eel, siren (`waterFoot`) and grabber (`wallFoot`) use it.
+  - `goal(e, c)` runs in `chase` after `canAttack` and returns a point to
+    steer for in place of the player, or `null`. The enemy still faces the
+    player, walks to the point when it wants to attack, and otherwise waits
+    there and does not circle. `waterGoal` is the one in use: the footed point
+    nearest the player but no nearer than `e.r + p.r + 0.4`, from a 0.5 m
+    lattice within 12 m, looked at again every 0.5 s. With the player in the
+    water the points about as near as the best form a ring, and the one
+    nearest the enemy wins, so it stops on its own side.
 - **`EFIG`** maps a type to a function that returns its finished figure, which
   `makeEnemyFig` calls first. **`EPOSE`** maps a type to `{ pose(e) }`, which
   replaces the body of `poseEnemy` (the dummy still goes first), or to
@@ -861,6 +956,47 @@ table runs exactly as before.
   charge, beside the usual heal. She takes no
   attack token while she stands off. `respawn` rebuilds the enemies, so her
   rats are gone and her timer starts fresh.
+- **D effects** live in `07b_dfx.js`, which `07_render.js` calls each frame:
+  `drawClouds`, `drawShocks` and `drawSongs`. Each reads the game's list
+  (`G.clouds`, `G.shocks`, the singing sirens) and draws only effects
+  (`R.sprite`, `R.ring`, `R.flat`), so it is all additive and the sewer's
+  triangle budget is untouched. `resetRun` and `respawn` clear both lists.
+- **The bloater** (`bloater`, threat 0, `bound: "water"`) floats in a pool or
+  a gutter, slow (1.2) and soft, and waits at the shore nearest the player
+  (`goal`). It bumps for 5 at 1.4 m. When it dies (`death` hook) it leaves a
+  poison cloud in `G.clouds` (`CLOUD`: radius 1.5 m, 3 s, a tick every 0.5 s
+  for 4). `cloudsUpdate` ticks everything inside, the player (`hurtPlayer`
+  with `atk.dot`) and every enemy (`hitEnemy` with `o.dot`), so a cloud can
+  hurt the pack that is next to it. `drawClouds` (`07b_dfx.js`) draws it.
+- **The eel** (`eel`, threat 1, `bound: "water"`) lives in one body of water.
+  It sets `e.safe` unless it is biting, recovering, flinching, staggered or
+  glowing, so a hit only lands then. In a hunt, every `EEL.every` (8 s) it
+  glows for `EEL.glow` (1.2 s) and then shocks its whole pool (`eelShock`): 22
+  to the player standing in the water of its body, and 22 and 20 posture to
+  every other enemy in it but eels (`aoe`). Someone on the bank is safe. The
+  shock goes in `G.shocks` and `drawShocks` lights the pool for `EEL.lit`
+  (0.4 s). A hunt that ends starts the count again; an idle eel and a dead
+  one never glow.
+- **The siren** (`siren`, threat 2, `bound: "water"`) comes to the shore
+  nearest the player. She starts no attack without a clear line to the
+  player (`canAttack`). Her lunge (`kind: "grab"`, unblockable, reach 4,
+  never through a wall or pier) calls `grabPlayer` with a target `SIREN.drag` (2 m) past the shore into her pool,
+  at `SIREN.dragSpeed` (5 m/s) for `SIREN.dps` (8) a second (`sirenDrag`
+  finds the spot; she backs off along the line as she drags so the player
+  reaches the water). When the hold ends however it ended she cannot attack
+  for `SIREN.grabCD` (6 s) and goes back toward her post. Her song
+  (`kind: "song"`) pulls the player toward her at `SIREN.pull` (2.6 m/s,
+  about half a walk, so walking away wins) while she can see them, never into
+  her and never through a wall; a dodge breaks it. `drawSongs` draws it.
+- **The drain grabber** (`grabber`, threat 1, `bound: "wall"`, `ambush: true`)
+  is an arm in a tunnel grate, never moving, chasing or taking a token. It
+  waits `hidden` for a player within `GRAB.r` (2.5 m) and `GRAB.arc` (1.2 rad
+  either side) of its grate's facing in sight, then shows and strikes (the
+  red unblockable warning, then `grabPlayer` with `GRAB.dps` 6 and `GRAB.speed`
+  4 toward it). It stays shown `GRAB.show` (2.5 s) after a strike or a hold,
+  and hides at once once it has taken `GRAB.back` (15) damage while shown,
+  which also frees the player. It cannot strike again for `GRAB.rearm` (4 s)
+  after hiding. A heavy flinch or a kill frees the player too.
 
 ## Recipes
 
@@ -926,7 +1062,8 @@ The class picker and HUD read `CLASSES` and need no changes.
    trigger, label and return point all follow from the `hubPortals()` entry.
    Moving a gate is a change to that list.
 3. Give `EDEF` entries for its enemies, with `wade` where water matters, and
-   point its spawn packs at them. Until then a live grade runs on E's types.
+   point its spawn packs at them. Until then a live grade runs on E's types
+   (D has all but its boss, which is still the Warden).
 4. Extend `tests/t8.mjs` and `tests/t22.mjs`: t8's "sealed frames do nothing"
    step assumes only E is open, and t22 makes D live and cleared through `DF`.
 
@@ -988,9 +1125,22 @@ The class picker and HUD read `CLASSES` and need no changes.
   `SCRIPT=$PWD/tests/t23.mjs node test.mjs smoke`. It checks each hook, the rat,
   drowned and brood mother (the cover over every kind of hit, her timer and
   cap, her rats' rewards and post), their bodies in every state, and the
-  placement over seeds 1 to 12. Shots go to `shots/` (`t23-rat*`, `t23-drowned`,
+  placement over seeds 1 to 12 (brood rooms and tunnels; pool rooms are t24's).
+  Shots go to `shots/` (`t23-rat*`, `t23-drowned`,
   `t23-brood`, and `t23-fight-brood` and `t23-fight-tunnel`, which are the
   enemies awake in a real sewer): look at them.
+- Run `tests/t24.mjs` after any change to the shared rules for bound types,
+  hidden or safe enemies, the held state, or the bloater, eel, siren and
+  drain grabber, and after any change to where they are placed:
+  `SCRIPT=$PWD/tests/t24.mjs node test.mjs smoke`. It builds test types
+  (`__w`, `__b`, `__a`) inside each step and deletes them after, checks the
+  hooks on a real pool of D (seed 5), the hold, the cloud, the shock, the
+  song and drag, the grate, and over seeds 1 to 12 the placement (no E type
+  in D but the Warden, a siren or eels in each pool room and never both,
+  the siren near the crossing, eels in different bodies, every water-bound
+  spawn on its footing, grabbers at grates, bloaters only in water). Shots
+  go to `shots/t24-*`: look at them, above all `t24-fight-pool-siren` and
+  `t24-fight-pool-eel`, which are real pool rooms with everything awake.
 - Run `tests/t22.mjs` after any change to the sewer, water, `fieldFns`,
   `meshSink`, the world shader, `visiblePieces`, cleared grades or portal
   opening: `SCRIPT=$PWD/tests/t22.mjs node test.mjs smoke`. It makes D live
@@ -1070,13 +1220,26 @@ The class picker and HUD read `CLASSES` and need no changes.
 - Sewer decoration (brick heaps, plinths, ribs, pipes) blocks nothing, so a
   body can stand inside a heap.
 - The D portal is sealed on the published page by design, until the
-  crocodile lands. A D made live by hand fights the rat, drowned and brood
-  mother in tunnels and brood rooms, E's husk and spitter in pool rooms, and
-  the E boss in the cavern.
+  crocodile lands. A D made live by hand fights the D enemies everywhere (rat,
+  drowned and brood mother in brood rooms and tunnels, siren or eels with
+  rats and bloaters in pool rooms, bloaters in gutters, grabbers at grates)
+  and the Warden in the cavern.
 - The rat, the drowned and the brood mother are untested by hand. Their
   numbers (speed, health, the cover's angle, the brood timer, cap and
   distances, placement odds) and how they look were set by tests and
   screenshots only.
+- The bloater, eel, siren and drain grabber, the hold and their placement are
+  untested by hand. Set without a playtest: `CLOUD` (size, length, tick),
+  `EEL` (the 8 s count, the 1.2 s glow, 22 damage), `SIREN` (the song's
+  pull of 2.6 m/s, the 2 m drag, the 5 m/s drag speed, the 6 s cooldown),
+  `GRAB` (reach, arc, the 15 damage that drives it back, the 4 s rearm),
+  `HOLD` (the 2 s hold, 0.35 s per mash, the 1.5 s grace), the placement odds
+  (0.5 siren room, 0.4 second eel, 0.35 gutter bloater, a third of grates)
+  and how all of it looks. Whether the hold feels fair, and whether a siren
+  room is too hard with rats and bloaters in it, are the questions.
+- A hidden grabber is invisible until it strikes, and its grate is the only
+  sign. The grates are drawn for every tunnel, so a grate with no grabber
+  looks the same as one with one.
 - iPhones cannot run the file directly; they play at
   https://maxjlerman.github.io/dungeon-raze/.
 - Touch was checked only in Chromium device emulation. Fullscreen, the
@@ -1095,9 +1258,9 @@ The class picker and HUD read `CLASSES` and need no changes.
 
 1. Tune feel from the owner's playtest: timing windows, sensitivity, difficulty.
 2. Give the portal grades meaning: enemy difficulty and kill rewards per
-   grade, then open D to S. D's place and water are built (`feat/sewer`);
-   next are the other four D enemies (batch 2), then the crocodile boss,
-   then adding D to `LIVE_GRADES`. Revisit whether dying should send the player back
+   grade, then open D to S. D's place and water are built (`feat/sewer`) and
+   so are its enemies (`feat/d-enemies`, `feat/d-enemies-water`); next are
+   the crocodile boss, then adding D to `LIVE_GRADES`. Revisit whether dying should send the player back
    to the base once there are rewards to lose.
 3. Loot, inventory and an extraction loop. The owner asked for these early on
    and they were set aside to get combat playable first.

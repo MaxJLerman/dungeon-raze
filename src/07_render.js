@@ -273,6 +273,24 @@ function posePlayer(p) {
       A[2] = -0.6;
       B[2] = 0.6;
       break;
+    case "held": {
+      // seized: arms thrown up and fighting, the body twisting against the grip,
+      // and a jolt on each press that breaks it
+      const k = p.hold ? p.hold.jolt : 0,
+        sw = Math.sin(G.t * 15);
+      A[0] = -2.3 + sw * 0.3 - k * 0.5;
+      B[0] = -2.1 - sw * 0.3 - k * 0.5;
+      A[2] = -0.35 - k * 0.4;
+      B[2] = 0.35 + k * 0.4;
+      ch[0] = -0.2 - k * 0.3;
+      ch[1] = Math.sin(G.t * 11) * 0.3 + k * 0.4;
+      f.headN.r[0] = -0.25;
+      f.headN.r[1] = Math.sin(G.t * 13) * 0.3;
+      f.hips.p[1] = o.leg - 0.12;
+      f.legR.r[0] = 0.4 + sw * 0.25;
+      f.legL.r[0] = 0.4 - sw * 0.25;
+      break;
+    }
     case "gbreak":
       ch[0] = 0.7;
       A[2] = -0.9;
@@ -897,7 +915,7 @@ function render() {
   const cx = R.cam.x,
     cz = R.cam.z;
   for (const e of G.enemies) {
-    e.vis = Math.hypot(e.x - cx, e.z - cz) < 66;
+    e.vis = !e.hidden && Math.hypot(e.x - cx, e.z - cz) < 66;
     if (!e.vis) continue;
     poseEnemy(e);
     R.drawNode(e.fig.root, e.fig.rim);
@@ -906,6 +924,9 @@ function render() {
   drawMines();
   drawRifts();
   drawHoles();
+  drawClouds();
+  drawShocks();
+  drawSongs();
   // ---- fx ----
   if (p.state !== "dead") {
     R.blob(p.x, p.z, 0.8, 0.55);
