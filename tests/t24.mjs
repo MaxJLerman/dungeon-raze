@@ -46,8 +46,8 @@ const cls = (name, id, body) =>
 const field = (name, body) =>
   step(name, `DF.setClass("fighter"); DF.newRun(99); DF.show("play"); G.state = "play"; const p = G.player, w = G.world; G.enemies = [];
   const keep = () => { p.hp = p.maxHp; p.stam = p.maxStam; };
-  const spot = (dist, from = 0) => { for (let a = from; a < from + 6.3; a += 0.3) { const x = p.x + Math.sin(a) * dist, z = p.z + Math.cos(a) * dist;
-    if (w.fieldAt(x, z) >= 1 && w.los(p.x, p.z, x, z)) return { x, z, a }; } return null; };
+  const spot = (dist, from = 0, min = 1) => { for (let a = from; a < from + 6.3; a += 0.3) { const x = p.x + Math.sin(a) * dist, z = p.z + Math.cos(a) * dist;
+    if (w.fieldAt(x, z) >= min && w.los(p.x, p.z, x, z)) return { x, z, a }; } return null; };
   ${body}`);
 const draw = `const draw = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));`;
 
@@ -56,7 +56,8 @@ export default [
   step("bound is read from the definition, wallFoot holds the post", `
     const w = { ...DF.EDEF.husk, bound: "wall" };
     const a = { def: w }, b = { def: DF.EDEF.husk }, c = { hx: 3, hz: 4 };
-    const c1 = { bound: DF.bound(a), plain: !DF.bound(b), boss: !DF.bound({ def: DF.EDEF.warden }) };
+    const c1 = { bound: DF.bound(a), plain: !DF.bound(b), boss: !DF.bound({ def: DF.EDEF.warden }),
+      post: DF.wallFoot(c, 3, 4) === true, near: DF.wallFoot(c, 3.005, 4) === true, off: DF.wallFoot(c, 3.02, 4) === false && DF.wallFoot(c, 3, 3.98) === false };
     return { pass: Object.values(c1).every(Boolean) && typeof DF.waterGoal === "function" && typeof DF.waterFoot === "function", c1 };`),
   pool("a water-bound body stays in its own pool", `
     const out = {}, a = sh.a;
@@ -200,11 +201,27 @@ export default [
       DF.sim(1, () => { keep(); c.cd = 9; }); return { woke: o.aware || o.state !== "idle", state: o.state }; };
     const r = { control: run("rat", "rat"), amb: run("rat", "__a"), caller: run("__a", "rat") };
     return { pass: r.control.woke && !r.amb.woke && !r.caller.woke, r };`),
-  step("a type with none of the new flags plays as before", `
-    // the shipped types carry none of them, so every new condition reduces to the old one
-    const T = Object.entries(DF.EDEF).filter(([k, d]) => d.bound || d.ambush).map(([k]) => k);
-    const hooks = Object.entries(DF.EBEH).filter(([k, b]) => b.goal || b.foot).map(([k]) => k);
-    const flags = G.enemies.filter((e) => e.hidden || e.safe).length;
-    return { pass: T.length === 0 && hooks.length === 0 && flags === 0, T, hooks, flags };`),
+  field("husks and rats separate, take a hit and route as before", `
+    const q = spot(6, 0, 2.5) || spot(9, 0, 2.5) || spot(12, 0, 2.5); if (!q) return { pass: false, why: "no spot" };
+    const out = {}, p0 = { x: p.x, z: p.z };
+    // two unbound bodies overlapping share the push equally, whichever is first
+    for (const type of ["husk", "rat"]) {
+      p.x = p0.x; p.z = p0.z; const a = DF.makeEnemy({ type, x: q.x, z: q.z, yaw: 0, node: -1 }), b = DF.makeEnemy({ type, x: q.x + 0.2, z: q.z, yaw: 0, node: -1 });
+      G.enemies = [a, b]; const ax = a.x, bx = b.x; DF.separate();
+      out[type + "Sep"] = Math.abs((a.x - ax) + (b.x - bx)) < 1e-9 && Math.abs(Math.abs(a.x - ax) - Math.abs(b.x - bx)) < 1e-9 && a.x < ax && b.x > bx;
+      // the player is pushed by weight 0.6 (no poise) or 1, as the old rule gave
+      const c = DF.makeEnemy({ type, x: q.x, z: q.z, yaw: 0, node: -1 }); G.enemies = [c]; p.x = c.x + 0.3; p.z = c.z; p.state = "free"; const cx = c.x; DF.separate();
+      out[type + "Push"] = c.x < cx && !c.hidden && !c.safe;
+      // a hit lands: damage, flash, hunt, posture
+      const h = DF.makeEnemy({ type, x: q.x, z: q.z, yaw: 0, node: -1 }); G.enemies = [h]; const hp = h.hp; DF.hitEnemy(h, 5, 10, { src: "melee" });
+      out[type + "Hit"] = h.hp < hp && h.flash > 0 && h.aware && h.posture > 0;
+      out[type + "Flags"] = !h.hidden && !h.safe && !h.def.bound && !h.def.ambush;
+    }
+    // a route round a corner still has more than one point for both
+    const W = 16, H = 12, F = new Float32Array(17 * 13);
+    for (let j = 0; j <= H; j++) for (let i = 0; i <= W; i++) F[j * 17 + i] = j !== 6 ? 2 : i === 3 ? 0.8 : i === 12 || i === 13 ? 2 : -1;
+    const f = DF.fieldFns(F, 0, 0, W, H), real = G.world;
+    for (const type of ["husk", "rat"]) { G.world = f; G.routeN = 0; const e = DF.makeEnemy({ type, x: 3, z: 2, yaw: 0, node: -1 }); e.r = 0.9; DF.setRoute(e, 3, 10); G.world = real; out[type + "Route"] = e.route.length > 1; }
+    return { pass: Object.values(out).every(Boolean), out };`),
   step("the class is put back", `DF.setClass("fighter"); return { pass: true };`),
 ];

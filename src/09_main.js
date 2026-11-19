@@ -711,6 +711,7 @@ window.DF = {
   footOk,
   bound,
   waterFoot,
+  wallFoot,
   waterGoal,
   keepFooting,
   setRoute,
