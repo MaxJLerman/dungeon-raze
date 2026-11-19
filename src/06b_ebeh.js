@@ -1247,10 +1247,12 @@ function crocFree(o, ok) {
 // A chunk lands: the oldest heap gives way when rockCap stand, the rock goes
 // into the field, a player within CROC.fallR is hurt (unblockable; a
 // dodge's invulnerability avoids it), and nobody is left inside: each body
-// goes out from its line and is resolved, and one still in rock (a pocket
+// the rock reaches (it lowered fieldAt there below the body's radius) goes
+// out from its line and is resolved, and one still short of room (a pocket
 // between heaps, which resolve cannot climb out of) goes to the nearest
 // point with room for it, for a body with a foot hook (the crocodile) the
-// nearest it may stand on.
+// nearest it may stand on. A body the rock does not reach is not touched,
+// so one leaning on a wall elsewhere stays where it is.
 function crocChunkLand(w, k) {
   const p = G.player,
     stand = G.chunks.filter((q) => q.id);
@@ -1258,7 +1260,13 @@ function crocChunkLand(w, k) {
   const ux = Math.cos(k.yaw) * CROC_CHUNK_HL,
     uz = -Math.sin(k.yaw) * CROC_CHUNK_HL;
   Object.assign(k, { ax: k.x - ux, az: k.z - uz, bx: k.x + ux, bz: k.z + uz, t: 0 });
+  const bodies = [p, ...G.enemies].map((o) => ({ o, f: w.fieldAt(o.x, o.z) }));
   k.id = w.addRock(k.ax, k.az, k.bx, k.bz, CROC.rockR);
+  const reached = new Set();
+  for (const { o, f } of bodies) {
+    const f1 = w.fieldAt(o.x, o.z);
+    if (f1 < o.r && f1 < f - 1e-6) reached.add(o);
+  }
   if (p.state !== "dead" && Math.hypot(p.x - k.x, p.z - k.z) < CROC.fallR)
     hurtPlayer(CROC.fallDmg, null, { dmg: CROC.fallDmg, unb: true, px: k.x, pz: k.z });
   const out = (o, r) => {
@@ -1278,16 +1286,24 @@ function crocChunkLand(w, k) {
     o.z = cz + dz * need;
     w.resolve(o, r);
   };
-  const room = (r) => (x, z) => w.fieldAt(x, z) >= r;
-  out(p, p.r);
-  crocFree(p, room(p.r));
+  // resolve leaves a body a little short of its radius against a wall: that
+  // much is not being in rock
+  const room = (r) => (x, z) => w.fieldAt(x, z) >= r - 0.1;
+  if (reached.has(p)) {
+    out(p, p.r);
+    w.resolve(p, p.r);
+    crocFree(p, room(p.r));
+  }
   for (const o of G.enemies) {
     o.route = null;
-    if (o.dead || o.def.dummy || o.hidden || o.aloft || o.state === "fall") continue;
+    if (o.dead || o.def.dummy || o.hidden || o.aloft || o.state === "fall" || !reached.has(o)) continue;
     out(o, o.r);
+    w.resolve(o, o.r);
     if (!crocFree(o, (x, z) => w.fieldAt(x, z) >= o.r && footOk(o, x, z))) crocFree(o, room(o.r));
-    o.okx = o.x;
-    o.okz = o.z;
+    if (footOk(o, o.x, o.z)) {
+      o.okx = o.x;
+      o.okz = o.z;
+    }
   }
   sparks(k.x, 0.5, k.z, 30, [0.55, 0.5, 0.45], 6, 0.8, 0.22);
   G.shake = Math.max(G.shake, 0.8);

@@ -440,6 +440,9 @@ const markSteps = [
 // bolt() fires a player's shot into it from 4 m toward the centre; back(i) the same as a parried
 // plate thrown from mouth i.
 const tunnel = `${landed}
+  // no ceiling falls in these steps (a heap between a mouth and the player is cover from its plates);
+  // the ceiling has its own steps below
+  e.fallT = 1e9;
   const W = w.wallTunnels, mouthPt = (i) => { const m = W[i]; return { x: m.x + Math.sin(m.yaw) * C.mouthIn, z: m.z + Math.cos(m.yaw) * C.mouthIn, y: m.y }; };
   const leap = () => { DF.hitEnemy(e, 300, 0, {}); return until(() => e.mode === "tunnel", C.leapT + 0.5); };
   const plates = () => G.projs.filter((q) => q.src === e && q.plate);
@@ -784,6 +787,20 @@ const ceilingSteps = [
   const croc = { hp: e.hp, hp0, worst, mode: e.mode, rock: w.fieldAt(k.x, k.z) };
   return { pass: open.lost === C.fallDmg && open.clear >= p.r - 0.1 && open.rock < 0 && dodge.lost === 0 && dodge.clear >= p.r - 0.1 && guard.lost === C.fallDmg &&
     croc.hp === hp0 && croc.rock < 0 && croc.worst >= e.r - 1e-3, open, dodge, guard, croc };`),
+  kstep("a landing moves only what it reaches", `
+  e.marks = 0; away();
+  // a rat and the player each leaning on the cavern's wall, a little under their radius as resolve
+  // leaves a body there, and a chunk landing well away from both
+  const lean = (a, r) => { for (let d = B.r - 6; d < B.r + 3; d += 0.005) { const x = B.x + Math.sin(a) * d, z = B.z + Math.cos(a) * d; if (w.fieldAt(x, z) < r - 0.02) return { x, z }; } return null; };
+  const a0 = Math.atan2(p.x - B.x, p.z - B.z), rr = DF.EDEF.rat.r, rq = lean(a0 + 0.4, rr), pq = lean(a0 - 0.4, p.r);
+  const rat = DF.makeEnemy({ type: "rat", x: rq.x, z: rq.z, yaw: 0, node: -1 }); rat.x = rq.x; rat.z = rq.z; G.enemies.push(rat);
+  put(pq); const q = ringAt(10, a0 + Math.PI), k = drop(q.x, q.z);
+  // the landing itself, on bodies just where they were put
+  const r0 = { x: rat.x, z: rat.z }, p0 = { x: p.x, z: p.z }; DF.crocChunkLand(w, k);
+  const rm = Math.hypot(rat.x - r0.x, rat.z - r0.z), pm = Math.hypot(p.x - p0.x, p.z - p0.z);
+  const far = { rat: Math.hypot(rat.x - k.x, rat.z - k.z), p: Math.hypot(p.x - k.x, p.z - k.z) }, lean0 = { rat: w.fieldAt(r0.x, r0.z) - rr, p: w.fieldAt(p0.x, p0.z) - p.r };
+  G.enemies = G.enemies.filter((o) => o !== rat);
+  return { pass: !!k.id && far.rat > 8 && far.p > 8 && lean0.rat < 0 && lean0.p < 0 && rm === 0 && pm === 0, landed: !!k.id, far, lean0, rm, pm };`),
   kstep("at most rockCap heaps", `
   e.marks = 0; away();
   const a0 = Math.atan2(p.x - B.x, p.z - B.z), spots = [];
@@ -811,7 +828,10 @@ const ceilingSteps = [
     if (was !== "land" && e.mode === "land") ups++; was = e.mode;
     const near = (o) => G.chunks.map((k) => ({ d: +Math.hypot(k.x - o.x, k.z - o.z).toFixed(2), id: k.id, t: +k.t.toFixed(2), wat: +w.waterAt(k.x, k.z).toFixed(2) })).filter((k) => k.d < 5);
     if ((e.mode === "land" || e.mode === "dive") && !e.hidden && w.fieldAt(e.x, e.z) < e.r - 1e-3) bad.push({ i, mode: e.mode, state: e.state, f: w.fieldAt(e.x, e.z), wet: e.wet, wat: w.waterAt(e.x, e.z), ok: DF.footOk(e, e.x, e.z), okk: DF.footOk(e, e.okx, e.okz), near: near(e) });
-    if (w.fieldAt(p.x, p.z) < p.r - 0.1) pbad.push({ i, f: w.fieldAt(p.x, p.z), state: p.state, near: near(p), kx: p.kx, kz: p.kz, held: !!p.hold });
+    // the player: never inside rock, and a landing leaves them room (in a pocket between heaps
+    // resolve can leave a body short of its radius, as in any gap narrower than it)
+    const landed = G.chunks.some((k) => k.id && !k.seen && (k.seen = 1)), pf = w.fieldAt(p.x, p.z);
+    if (pf < 0 || (landed && pf < p.r - 0.1)) pbad.push({ i, f: pf, landed, state: p.state, near: near(p), held: !!p.hold });
     // the player keeps near it, so it keeps fighting
     if (i % 240 === 0 && e.mode === "land" && Math.hypot(p.x - e.x, p.z - e.z) > 6) { const a = Math.atan2(p.x - e.x, p.z - e.z), q = { x: e.x + Math.sin(a) * 3.5, z: e.z + Math.cos(a) * 3.5 };
       if (w.fieldAt(q.x, q.z) >= 1) put(q); } });

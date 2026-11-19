@@ -1233,12 +1233,16 @@ table runs exactly as before.
     a capsule `CROC_CHUNK_HL` (0.4 m) either side of the centre of radius
     `rockR`; a player within `CROC.fallR` (1.6 m) takes `CROC.fallDmg`
     (20) through `hurtPlayer`, unblockable (a dodge's invulnerability
-    avoids it); and every body is put out of the rock, out from its line
-    and `resolve`d, then, if still in rock (a pocket between heaps that
-    `resolve` cannot climb out of), moved to the nearest point with room
-    for it (`crocFree`, rings out to 10 m), for the crocodile the nearest
-    it may stand on. It never hurts an enemy. Its routes are dropped as
-    for a cave-in. The crocodile's own checks keep it out of rubble: a
+    avoids it); and every body the rock reaches (its `fieldAt` fell below
+    the body's radius as the rock went in) is put out of the rock, out
+    from its line and `resolve`d, then, if still short of room by more
+    than 0.1 m (a pocket between heaps that `resolve` cannot climb out
+    of), moved to the nearest point with room for it (`crocFree`, rings
+    out to 10 m), for the crocodile the nearest it may stand on, whose
+    `okx`/`okz` are set only on a spot `footOk` allows. A body the rock
+    does not reach is not touched, so one leaning on a wall elsewhere
+    stays put. It never hurts an enemy. Every route is dropped as for a
+    cave-in. The crocodile's own checks keep it out of rubble: a
     surfacing spot or its dry footing under rock is picked again
     (`under`, `rise`), the climb-out and the slam's footing come from
     `crocDry`, which needs room, and `keepFooting` puts it back on its
@@ -1442,11 +1446,14 @@ The class picker and HUD read `CLASSES` and need no changes.
   with the player a while beside the crossing), each `fallWarn` after it
   appears and into rock; one on the player hurts for `fallDmg` (a dodge
   avoids it, a guard does not) and leaves them out of the rock, and one
-  landing on the crocodile neither hurts it nor leaves it in rock; at
+  landing on the crocodile neither hurts it nor leaves it in rock; a
+  landing does not move a rat or the player leaning on the wall 35 m off
+  (`DF.crocChunkLand`); at
   most `rockCap` heaps, the oldest going first; over 60 s with heaps
   forced on its surfacing spots and their footing, its roll's target and
   drag line, its climb-out and on itself, it never stands in rock on
-  land, nor does the player; leaving and `respawn` clear the heaps and
+  land, and the player is never inside rock and has room after every
+  landing; leaving and `respawn` clear the heaps and
   leave other rock; its death leaves the landed heaps. Shots go to
   `shots/t25-croc-*` (idle, rear, bite, tail, roll), `t25-wake`,
   `t25-rise`, `t25-roll` (mid-roll), `t25-mouth-warn`,
@@ -1572,6 +1579,9 @@ The class picker and HUD read `CLASSES` and need no changes.
   head high over a rock 2.8 by 3.6 m, and like the Sapper's rubble it
   blocks sight and shots as a full wall. A player or enemy caught in a
   pocket between heaps as one lands is moved to the nearest open point.
+  Pushed into a gap between heaps narrower than its body by other means
+  (a drag, a knock), a body can stay wedged a little short of its radius,
+  as `resolve` leaves it in any such gap.
 - A hidden grabber is invisible until it strikes, and its grate is the only
   sign. The grates are drawn for every tunnel, so a grate with no grabber
   looks the same as one with one.
