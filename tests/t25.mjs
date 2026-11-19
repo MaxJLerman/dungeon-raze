@@ -288,21 +288,25 @@ const rollSteps = [
   return { pass: ended !== "held" && cd > 0 && wentIn && n < 3 * 60 && res.wet === false && res.water < 0.5 && res.mode === "land" && Math.abs(res.landT - res.want) < 0.02,
     ended, wentIn, ...res };`),
   rstep("a roll beside a wall or rubble", `
-  // rubble across the way from the player straight out to the moat, 6 m long
-  place(); const ids = [w.addRock(at(21.6, -3).x, at(21.6, -3).z, at(21.6, 3).x, at(21.6, 3).z, 0.4)];
-  try {
-    place(); const g = { x: p.x, z: p.z }, n = grab(), held = p.state === "held";
-    const t = held ? { x: p.hold.tx, z: p.hold.tz } : null, own = t && Math.hypot(t.x - g.x, t.z - g.z) < 0.01;
-    const tw = t && { water: w.waterAt(t.x, t.z), field: w.fieldAt(t.x, t.z), sight: w.los(g.x, g.z, t.x, t.z) };
-    DF.sim(H.max + 0.2, () => { if (p.state !== "held") return false; });
-    const f = { x: p.x, z: p.z }, field = w.fieldAt(f.x, f.z), toT = t && Math.hypot(f.x - t.x, f.z - t.z), toG = Math.hypot(f.x - g.x, f.z - g.z);
-    const okT = held && (own || (tw.water >= 0.5 && tw.field >= p.r && tw.sight));
-    // there, or on the straight way there when the hold ran out first: the way round is long
-    const L = t ? Math.hypot(t.x - g.x, t.z - g.z) : 0, k = L > 0.01 ? Math.max(0, Math.min(1, ((f.x - g.x) * (t.x - g.x) + (f.z - g.z) * (t.z - g.z)) / (L * L))) : 0;
-    const offLine = t ? Math.hypot(f.x - (g.x + (t.x - g.x) * k), f.z - (g.z + (t.z - g.z) * k)) : 0;
-    return { pass: held && okT && field >= p.r * 0.9 && (own ? toG < 0.35 : toT < 0.35 || (offLine < 0.2 && L - toT > H.max * C.dragSpeed - 0.5)),
-      held, own, tw, field, L, toT, toG, offLine, pr: p.r };
-  } finally { w.clearRocks(); }`),
+  // rubble across the way from the player straight out to the moat: 6 m long (the way round is
+  // too long for one hold) and 2 m long (dragged round it)
+  const run = (half) => {
+    w.addRock(at(21.6, -half).x, at(21.6, -half).z, at(21.6, half).x, at(21.6, half).z, 0.4);
+    try {
+      place(); const g = { x: p.x, z: p.z }, n = grab(), held = p.state === "held";
+      const t = held ? { x: p.hold.tx, z: p.hold.tz } : null, own = !!t && Math.hypot(t.x - g.x, t.z - g.z) < 0.01;
+      const tw = t && { water: w.waterAt(t.x, t.z), field: w.fieldAt(t.x, t.z), sight: w.los(g.x, g.z, t.x, t.z) };
+      DF.sim(H.max + 0.2, () => { if (p.state !== "held") return false; });
+      const f = { x: p.x, z: p.z }, field = w.fieldAt(f.x, f.z), toT = t && Math.hypot(f.x - t.x, f.z - t.z), toG = Math.hypot(f.x - g.x, f.z - g.z);
+      const okT = held && (own || (tw.water >= 0.5 && tw.field >= p.r && tw.sight));
+      const L = t ? Math.hypot(t.x - g.x, t.z - g.z) : 0;
+      // the target, or the player's own spot, and never inside rock
+      const ok = held && okT && L <= H.max * C.dragSpeed && field >= p.r * 0.9 && (own ? toG < 0.35 : toT < 0.35);
+      return { ok, held, own, tw, field, L, toT, toG };
+    } finally { w.clearRocks(); }
+  };
+  const long = run(3), short = run(1);
+  return { pass: long.ok && short.ok && long.own && !short.own, long, short, pr: p.r };`),
   rstep("dying in the roll resets it", `
   place(); grab(); const held = p.state; p.hp = 1; DF.sim(1); const dead = p.state;
   DF.respawn(); G.manual = true; const f = G.enemies.find((o) => o.type === "croc"); put(out); DF.sim(0.1, keep);

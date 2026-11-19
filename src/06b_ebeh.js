@@ -1036,14 +1036,17 @@ function crocRollStep(e, dt, c) {
   e.yaw = Math.atan2(p.x - e.x, p.z - e.z);
 }
 // Where the death roll drags the player: the water point nearest them that
-// they can be dragged to in a straight line (0.25 m lattice within 8 m, with
-// room for them all the way), then CROC.rollIn further along the same line,
-// walked back until it is water they can be dragged to the same way; the
-// player's own spot when there is no such point.
+// they can be dragged to in a straight line (0.25 m lattice, with room for
+// them all the way), then CROC.rollIn further along the same line, walked
+// back until it is water they can be dragged to the same way; the player's
+// own spot when there is no such point. Only water near enough that the
+// whole drag fits in one hold counts, so the player always gets there.
 function crocRollSpot(e, c) {
   const p = c.p,
     w = c.w,
     cand = [],
+    far = HOLD.max * CROC.dragSpeed - CROC.rollIn,
+    n = Math.floor(far / 0.25),
     // room for the player's body all along the line, so rock never stops
     // the drag short
     clear = (x, z) => {
@@ -1052,12 +1055,12 @@ function crocRollSpot(e, c) {
         if (w.fieldAt(lerp(p.x, x, i / n), lerp(p.z, z, i / n)) < p.r - 0.05) return false;
       return true;
     };
-  for (let i = -32; i <= 32; i++)
-    for (let j = -32; j <= 32; j++) {
+  for (let i = -n; i <= n; i++)
+    for (let j = -n; j <= n; j++) {
       const d = Math.hypot(i, j) * 0.25,
         x = p.x + i * 0.25,
         z = p.z + j * 0.25;
-      if (d <= 8 && w.waterAt(x, z) >= 0.5 && w.fieldAt(x, z) >= p.r) cand.push({ x, z, d });
+      if (d <= far && w.waterAt(x, z) >= 0.5 && w.fieldAt(x, z) >= p.r) cand.push({ x, z, d });
     }
   cand.sort((a, b) => a.d - b.d);
   const W = cand.find((q) => clear(q.x, q.z));

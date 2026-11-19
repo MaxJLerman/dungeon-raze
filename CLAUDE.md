@@ -1080,8 +1080,10 @@ table runs exactly as before.
     them, never into them, through `eStep`, drawn turning over and over.
     `crocRollSpot(e, c)`: the water point nearest the player that they can
     be dragged to in a straight line with room for their body all the way,
-    `CROC.rollIn` (2 m) further along that line, walked back until it is
-    such a point; the player's own spot when there is none. When the hold
+    and no further than `HOLD.max * CROC.dragSpeed - CROC.rollIn` (6 m), so
+    the whole drag fits in one hold; then `CROC.rollIn` (2 m) further along
+    that line, walked back until it is such a point; the player's own spot
+    when there is none. When the hold
     ends, however it ended, `e.rollCD = CROC.rollCD` (8 s), a holder still
     in `hold` goes to `rec`, and the `e.wet` climb-out walks it back onto
     dry floor (within 3 m, else 6 m) before the shared states run again.
@@ -1352,8 +1354,7 @@ The class picker and HUD read `CLASSES` and need no changes.
   s under, 7 m/s swimming, the 0.9 s warning, 18 burst damage, 10 s on land,
   3 s per stagger, spots 8 m apart and 4 m from the player, the roll's 12 a
   second, 4 m/s drag, 2 m into the water and 8 s cooldown) and how the wake,
-  warning and roll look. A drag target far round rubble can be out of
-  reach in the 2 s hold, which then ends on the way there.
+  warning and roll look.
 - A hidden grabber is invisible until it strikes, and its grate is the only
   sign. The grates are drawn for every tunnel, so a grate with no grabber
   looks the same as one with one.
