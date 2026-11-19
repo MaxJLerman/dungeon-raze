@@ -47,10 +47,10 @@ is what you need to change the code without breaking it.
   `LIVE_GRADES`. Until it lands, `LIVE_GRADES` holds only E, so the D portal
   stays sealed on the published page. The crocodile, Old Sluicejaw, has its
   body, numbers and place in the cavern's centre pool, in place of the
-  Warden; its modes (under the water, surfacing, land), death roll and 25%
-  marks are still to come, so for now it stands in its pool and fights
-  through the shared boss path. A D run made live by hand has no E type in
-  it. The design is in
+  Warden, and its fight cycle: it waits under until the player enters the
+  cavern, swims under, surfaces with a warning and fights on land. Its
+  death roll and 25% marks are still to come. A D run made live by hand has
+  no E type in it. The design is in
   `docs/superpowers/specs/2026-11-19-d-enemies-design.md` for the enemies,
   `docs/superpowers/specs/2026-11-18-sewer-d-gate-design.md` for the sewer
   and `docs/superpowers/specs/2026-11-19-crocodile-boss-design.md` for the
@@ -98,7 +98,7 @@ is what you need to change the code without breaking it.
   winding irrelevant.
 - Up to eight point lights per frame, chosen in `buildLights()` in
   `07_render.js`: the player's lamp first, then shrines, gate, flashes, the
-  boss, then the nearest crystals.
+  boss (not while it is hidden), then the nearest crystals.
 - `uToon` switches characters to three-step lighting. The world uses smooth
   wrapped lighting.
 - Effects go through `R.sprite`, `R.ribbon`, `R.ring` and `R.blob`. They are
@@ -851,7 +851,7 @@ is what you need to change the code without breaking it.
   over unless it is the locked target. An `ambush` type takes no
   part in being woken or waking others: it is left out of `seeingMate`,
   `callPack`, `alertE`'s neighbour wake and the sight wake-up, and its own
-  rule says when it acts.
+  rule says when it acts. No hidden enemy is woken by sight either.
 - **Water.** An `EDEF` entry may carry `wade`, a factor on its speed in
   water: below 1 slows it, above 1 speeds it. `wadeOf(def)` returns it, or
   `WATER.slow` when the entry has none, and E's types have none (the bloater
@@ -975,8 +975,9 @@ table runs exactly as before.
   attack token while she stands off. `respawn` rebuilds the enemies, so her
   rats are gone and her timer starts fresh.
 - **D effects** live in `07b_dfx.js`, which `07_render.js` calls each frame:
-  `drawClouds`, `drawShocks` and `drawSongs`. Each reads the game's list
-  (`G.clouds`, `G.shocks`, the singing sirens) and draws only effects
+  `drawClouds`, `drawShocks`, `drawSongs` and `drawWakes`. Each reads the
+  game's list (`G.clouds`, `G.shocks`, the singing sirens, the crocodile
+  under the water) and draws only effects
   (`R.sprite`, `R.ring`, `R.flat`), so it is all additive and the sewer's
   triangle budget is untouched. `resetRun` and `respawn` clear both lists.
 - **The bloater** (`bloater`, threat 0, `bound: "water"`) floats in a pool or
@@ -1018,9 +1019,9 @@ table runs exactly as before.
 - **Old Sluicejaw** (`croc`, threat 2, 800 health, `boss`, `arena`,
   `ownPhases`, `fell` "OLD SLUICEJAW FALLS") is D's boss, spawned in the
   cavern's centre pool. Its attacks: `rear` (kind `"rear"`, no `trig`: only
-  surfacing will start it), the bite chain `b1` to `b3`, `tail` (a sweep
-  all round) and `roll` (kind `"roll"`, the death roll). The kinds `rear` and `roll` are its own: until its `EBEH` hooks
-  land, their wind and act do nothing but run their time. Its body
+  surfacing starts it), the bite chain `b1` to `b3`, `tail` (a sweep
+  all round) and `roll` (kind `"roll"`, the death roll, whose act does
+  nothing yet). It has `wade` 1, so water does not slow it. Its body
   (`makeCrocFig`, `poseCroc`) is built from scratch, facing +Z: `f.spin` is
   the body's centre, `CROC_H` up, and turns it about its long axis (`r[2]`:
   the roll, on its back when dead) and round itself (`r[1]`: the tail
@@ -1029,6 +1030,50 @@ table runs exactly as before.
   tapering segments; `f.jaw` opens with positive `r[0]`; `f.body` is the
   trunk. `f.headN` and `f.weapon` are markers for the eye glints and the
   wind-up glow.
+  - **Modes.** `EBEH.croc.step` runs its fight in `e.mode`, with `e.modeT`
+    the time left in a mode, and returns true in every mode but `land`, so
+    the shared state machine runs only on land. The numbers are in `CROC`
+    (`06b_ebeh.js`). An undefined mode is a fresh crocodile and gets
+    `crocReset`. `wait`: hidden at its post; once `G.inBoss` it calls
+    `alertE` (the boss bar shows while it is `aware`) and goes `under` for
+    a time in `CROC.under`. `under`: hidden; it picks `e.spot` with
+    `crocPickSpot` and swims to it at `CROC.swim` along `crocPlan`'s path,
+    a search over `crocSwimNet` (water points 1 m apart with room for its
+    body, in joined pieces). A spot in water not joined to its own (the moat
+    and the centre pool) is reached by moving at once to that water's point
+    nearest it, so no wake crosses dry floor. Once there and its time is up
+    it goes `rise` for `CROC.warn`, hidden at the spot. Then it shows, and
+    `crocSurface` hits a player within `e.r + 0.8` for `CROC.burst` through
+    `hurtPlayer`, puts them `e.r + p.r + 0.3` clear (`resolve`d) and starts
+    `rear` in `wind`, with `e.wet` set and `e.landT = CROC.land`. `land`:
+    `landT` runs down but in `stagger`, and entering a stagger adds
+    `CROC.stagBonus`. At 0, in `chase` or `rec`, it goes `dive`: through
+    `eStep` to the nearest shore (4 s at most; a stagger puts it back in
+    `land`), then `under`. Leaving the cavern or dying, in any mode, and
+    the shared give-up (state `return`) call `crocReset`: full health,
+    `e.marks` 0, `wait`, hidden at its post, unaware, `G.bossSeen` false.
+  - `crocShores(e, w)` (cached on `e.shores`) is every water point on a
+    1 m lattice centred on the cavern with `fieldAt` at least `e.r` and dry
+    footing within 3 m (`crocDry`: a 0.5 m lattice in a clear line).
+    `crocPickSpot` takes, of those still clear of rubble and with dry
+    footing beside them, at least `CROC.minNew` from `e.lastSpot` and
+    `CROC.near` from the player, the nearest to the player. A spot that
+    rubble covers while it swims or rises is dropped and another picked.
+  - `crocFoot` (its `foot` hook): any point in `wait`, `under` and `rise`;
+    in `dive` room for its body; in `land` room for its body and dry floor
+    unless `e.wet`. While `e.wet` and in none of `wind`, `act`, `hold` or
+    `stagger`, the step walks it onto the nearest dry footing and clears it.
+  - The `rear` hooks: at the end of the wind a red warning ring goes down
+    `CROC_SLAM_AHEAD` (1 m) in front of the dry footing point nearest the
+    player within 3 m of the spot; over the act it moves there through
+    `eStep`, and at the end it hits the player within `atk.radius` of that
+    point in front of it, unblockable, unless the burst already hit them.
+  - `atkOk`: never `rear`; `b1` and `roll` only with the player within 1.2
+    rad of its facing; `tail` only past 1.9 rad. Its `chase` hook starts a
+    planned `tail` at once, without turning to face the player first.
+  - `drawWakes` (`07b_dfx.js`): under, a V of foam back from its heading
+    and bubbles over it; rising, bubbles boiling up and rings widening on
+    the water. Everything is drawn only where `waterAt` reads 0.5 or more.
 
 ## Recipes
 
@@ -1179,8 +1224,12 @@ The class picker and HUD read `CLASSES` and need no changes.
   holds one crocodile and no Warden over seeds 1 to 12, poses its body in
   every state and attack, and keeps a cavern frame with it drawn within
   cave 99's triangles (the renderer counts only the world's, so the test
-  adds the figure's). Shots go to `shots/t25-croc-*` (idle, rear, bite,
-  tail, roll): look at them.
+  adds the figure's). Then its modes on seed 5: waiting until the player
+  enters, nothing finding it under, the spot and warning, the burst on a
+  player on the spot, the land clock and the stagger bonus, the tail for a
+  player behind it, the reset on leaving and on `respawn`, and no spot in
+  rubble. Shots go to `shots/t25-croc-*` (idle, rear, bite, tail, roll),
+  `t25-wake` and `t25-rise`: look at them.
 - Run `tests/t22.mjs` after any change to the sewer, water, `fieldFns`,
   `meshSink`, the world shader, `visiblePieces`, cleared grades or portal
   opening: `SCRIPT=$PWD/tests/t22.mjs node test.mjs smoke`. It makes D live
@@ -1263,8 +1312,8 @@ The class picker and HUD read `CLASSES` and need no changes.
   crocodile lands. A D made live by hand fights the D enemies everywhere (rat,
   drowned and brood mother in brood rooms and tunnels, siren or eels with
   rats and bloaters in pool rooms, bloaters in gutters, grabbers at grates)
-  and Old Sluicejaw in the cavern, which until its modes land stands in its
-  pool and fights like any boss.
+  and Old Sluicejaw in the cavern, which has no death roll or 25% marks
+  yet.
 - The rat, the drowned and the brood mother are untested by hand. Their
   numbers (speed, health, the cover's angle, the brood timer, cap and
   distances, placement odds) and how they look were set by tests and
@@ -1278,6 +1327,11 @@ The class picker and HUD read `CLASSES` and need no changes.
   (0.5 siren room, 0.4 second eel, 0.35 gutter bloater, a third of grates)
   and how all of it looks. Whether the hold feels fair, and whether a siren
   room is too hard with rats and bloaters in it, are the questions.
+- Old Sluicejaw is untested by hand. Set without a playtest: `CROC` (3 to 5
+  s under, 7 m/s swimming, the 0.9 s warning, 18 burst damage, 10 s on land,
+  3 s per stagger, spots 8 m apart and 4 m from the player) and how the wake
+  and warning look. Under the water it swims a 1 m lattice, so a long way
+  round the moat can keep it under for several seconds past its time.
 - A hidden grabber is invisible until it strikes, and its grate is the only
   sign. The grates are drawn for every tunnel, so a grate with no grabber
   looks the same as one with one.

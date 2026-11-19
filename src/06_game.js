@@ -1667,6 +1667,8 @@ const EDEF = {
     hp: 800,
     posture: 160,
     speed: 3.4,
+    // not slowed in water: it goes in to dive and for the death roll
+    wade: 1,
     turn: 2.2,
     r: 1.3,
     sight: 30,
@@ -4342,11 +4344,13 @@ function enemyUpdate(e, dt) {
       e.alertBy = null;
     }
   }
-  // an ambush type notices nothing: its own rule decides when it strikes
+  // an ambush type notices nothing: its own rule decides when it strikes. A
+  // hidden enemy is never seen, so sight cannot wake one either
   if (
     !e.aware &&
     alive &&
     !d.ambush &&
+    !e.hidden &&
     (d.boss || e.state !== "return" || inTerritory(e))
   ) {
     const front = Math.abs(angDiff(e.yaw, toP)) < 1.75,

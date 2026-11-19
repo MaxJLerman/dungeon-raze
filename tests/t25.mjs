@@ -23,7 +23,7 @@ const croc = `window.__cd0 = window.__cd0 || cam.dist;
   const ca = a + Math.PI + 0.55; p.x = e.x + Math.sin(ca) * 6.5; p.z = e.z + Math.cos(ca) * 6.5; w.resolve(p, 0.6);
   p.yaw = cam.yaw = Math.atan2(e.x - p.x, e.z - p.z); cam.pitch = 0.28; cam.px = p.x; cam.pz = p.z; cam.dist = 2;
   e.yaw = cam.yaw + Math.PI + 1.0; p.fig.root.s = [0.0001, 0.0001, 0.0001];`;
-export default [
+const base = [
   step("atkOk leaves refused attacks out", `
   DF.newRun(99); DF.show("play"); G.state = "play"; G.enemies = [];
   reg({});
@@ -120,3 +120,122 @@ export default [
   cam.yaw = p.yaw; await draw(); const seen = e.vis;
   return { pass: seen && most + fig <= cap && fig < 12000, most, fig, cap, seen }; })()` },
 ];
+// ---- under, rising and on land ----
+// A D run (seed 5) with the cavern's own crocodile alone in it, fresh from makeEnemy, and helpers:
+// ringAt(r) a dry point r m from the centre, out a walkable point just outside the cavern, put(q)
+// the player there, keep() the player whole, until(f, sec) the steps simulated before f holds.
+const fight = `${dRun}
+  const s0 = w.spawns.find((q) => q.type === "croc"), C = DF.CROC; let e = DF.makeEnemy(s0); G.enemies = [e];
+  const ringAt = (r, a0 = 0) => { for (let k = 0; k < 64; k++) { const q = a0 + (k / 64) * Math.PI * 2, x = B.x + Math.sin(q) * r, z = B.z + Math.cos(q) * r;
+    if (w.waterAt(x, z) === 0 && w.fieldAt(x, z) >= 2) return { x, z, a: q }; } return null; };
+  const out = (() => { for (let k = 0; k < 256; k++) { const q = (k / 256) * Math.PI * 2, r = B.r + DF.PURSUIT.bossPad + 3, x = B.x + Math.sin(q) * r, z = B.z + Math.cos(q) * r;
+    if (w.fieldAt(x, z) >= 0.8) return { x, z }; } return null; })();
+  const put = (q) => { p.x = q.x; p.z = q.z; p.vx = p.vz = p.kx = p.kz = 0; p.state = "free"; cam.px = p.x; cam.pz = p.z; };
+  const keep = () => { p.hp = p.maxHp; p.stam = p.maxStam; };
+  const until = (f, sec, each) => DF.sim(sec, () => { if (f()) return false; keep(); if (each) each(); });
+  const bar = async () => { await draw(); return document.getElementById("boss").classList.contains("show"); };
+  const ring = ringAt(14);
+  // into the fight: a step outside (it settles into wait), then onto the ring
+  const begin = (q = ring) => { put(out); DF.sim(0.1, keep); put(q); DF.sim(1 / 60, keep); };`;
+const cstep = (name, body) => step(name, `${fight}\n${body}`);
+const crocSteps = [
+  cstep("it waits under until the player enters the cavern", `
+  put(out); DF.sim(0.5, keep);
+  const before = { mode: e.mode, hidden: e.hidden, aware: e.aware, bar: await bar(), inBoss: G.inBoss };
+  put(ring); DF.sim(0.2, keep);
+  const after = { mode: e.mode, hidden: e.hidden, aware: e.aware, bar: await bar(), inBoss: G.inBoss };
+  return { pass: !!out && before.mode === "wait" && before.hidden && !before.aware && !before.bar && !before.inBoss &&
+    after.inBoss && after.aware && after.bar && after.mode === "under" && after.hidden, before, after };`),
+  cstep("under it cannot be locked, hit or aimed at", `
+  begin(); const mode = e.mode, hp = e.hp;
+  p.yaw = cam.yaw = Math.atan2(e.x - p.x, e.z - p.z); const d = Math.hypot(e.x - p.x, e.z - p.z), base = cam.yaw + 0.3;
+  const lock = DF.pickLock(); DF.hitEnemy(e, 50, 0, {}); const aim = DF.aimYaw(base, d + 2, 1.2), hpAfter = e.hp;
+  // the same calls find it once it is up
+  e.hidden = false; const lockUp = DF.pickLock(), aimUp = DF.aimYaw(base, d + 2, 1.2); e.hidden = true;
+  return { pass: mode === "under" && lock !== e && hpAfter === hp && aim === base && lockUp === e && aimUp !== base, mode, d, lockNull: lock === null, hp, hpAfter, aim, base };`),
+  cstep("it surfaces at a new shore spot with a warning", `
+  // the player beside the moat, where the nearest shore is too near to come up at
+  const q = ringAt(19.5); put(out); DF.sim(0.1, keep);
+  put(q); const c = { p, w }, last = DF.crocPickSpot(e, c); e.lastSpot = last; DF.sim(1 / 60, keep);
+  const under = e.mode; until(() => e.mode === "rise", 25);
+  const s = e.spot, sp = s && { x: s.x, z: s.z, water: w.waterAt(s.x, s.z), fromLast: Math.hypot(s.x - last.x, s.z - last.z), fromP: Math.hypot(s.x - p.x, s.z - p.z) };
+  let hid = true; const n = until(() => e.mode !== "rise", 3, () => { if (!e.hidden) hid = false; });
+  const up = { mode: e.mode, hidden: e.hidden, state: e.state, rear: e.atk === e.def.atks.rear };
+  until(() => e.state !== "wind" && e.state !== "act", 3);
+  const dry = w.waterAt(e.x, e.z), st = e.state;
+  return { pass: under === "under" && !!s && sp.water >= 0.5 && sp.fromLast >= C.minNew && sp.fromP >= C.near && hid && Math.abs(n - C.warn * 60) <= 1 &&
+    up.mode === "land" && !up.hidden && up.state === "wind" && up.rear && dry < 0.5 && st === "rec", sp, n, hid, up, dry, st };`),
+  cstep("standing on the spot hurts and pushes clear", `
+  begin(); until(() => e.mode === "rise", 25);
+  const s = e.spot; put(s); p.yaw = 0; until(() => e.mode !== "rise", 3, () => { put(s); keep(); });
+  const lost = p.maxHp - p.hp, mode = e.mode; DF.sim(0.5);
+  const gap = Math.hypot(p.x - e.x, p.z - e.z);
+  return { pass: mode === "land" && Math.abs(lost - C.burst) < 0.01 && gap >= e.r + p.r, lost, gap, need: e.r + p.r, pstate: p.state };`),
+  cstep("land lasts CROC.land and a stagger keeps it up", `
+  // a passive player out of reach of harm: whole and untouchable
+  const safe = () => { p.iframe = 1; };
+  begin(); until(() => e.mode === "land", 25);
+  const n1 = until(() => e.mode !== "land", C.land + 3, safe), m1 = e.mode;
+  e = DF.makeEnemy(s0); G.enemies = [e]; begin(); until(() => e.mode === "land", 25);
+  let n2 = until(() => false, 5, safe); DF.stagger(e); const stag = e.state;
+  n2 += until(() => e.mode !== "land", C.land + C.stagBonus + 6, safe);
+  return { pass: n1 >= C.land * 60 - 1 && n1 <= (C.land + 3) * 60 && (m1 === "dive" || m1 === "under") && stag === "stagger" && n2 >= (C.land + C.stagBonus) * 60 && e.mode !== "land",
+    n1: n1 / 60, m1, n2: n2 / 60, m2: e.mode };`),
+  cstep("it turns its tail on a player behind it", `
+  begin(); until(() => e.mode === "land", 25); until(() => e.state === "chase", 3);
+  const at = (ang) => { put({ x: e.x + Math.sin(e.yaw + ang) * 3.5, z: e.z + Math.cos(e.yaw + ang) * 3.5 });
+    const dx = p.x - e.x, dz = p.z - e.z; return { p, w, dx, dz, dist: Math.hypot(dx, dz), toP: Math.atan2(dx, dz), alive: true }; };
+  const count = (c) => { const n = {}; for (let i = 0; i < 200; i++) { const a = DF.chooseAtk(e, c.dist, c); const k = a ? Object.keys(e.def.atks).find((x) => e.def.atks[x] === a) : "none"; n[k] = (n[k] || 0) + 1; } return n; };
+  const behind = count(at(Math.PI)), front = count(at(0));
+  // and from behind it starts the sweep without first turning round
+  at(Math.PI); e.state = "chase"; e.plan = null; e.cd = 0; let started = null;
+  until(() => e.state === "wind", 0.5); started = e.state === "wind" ? Object.keys(e.def.atks).find((x) => e.def.atks[x] === e.atk) : e.state;
+  return { pass: behind.tail === 200 && !front.tail && started === "tail", behind, front, started };`),
+  cstep("leaving the cavern resets it", `
+  begin(); until(() => e.mode === "land", 25); e.hp = e.def.hp * 0.7;
+  put(out); const n = until(() => e.mode === "wait", 1);
+  const left = { n, mode: e.mode, hp: e.hp, hidden: e.hidden, aware: e.aware, bar: await bar(), x: Math.hypot(e.x - e.hx, e.z - e.hz) };
+  put(ring); DF.sim(0.1, keep); const again = { mode: e.mode, aware: e.aware, bar: await bar() };
+  // a respawn mid-fight builds a fresh one
+  until(() => e.mode === "land", 25); e.hp = e.def.hp * 0.7; DF.respawn(); G.manual = true;
+  // it is set up on its first step near the cavern: from just outside, it waits
+  const f = G.enemies.find((o) => o.type === "croc"); put(out); DF.sim(0.1, keep);
+  const re = { mode: f.mode, hp: f.hp, hidden: f.hidden, bar: await bar() };
+  put(ring); DF.sim(0.1, keep); const re2 = { mode: f.mode, aware: f.aware };
+  return { pass: n < 60 && left.mode === "wait" && left.hp === e.def.hp && left.hidden && !left.aware && !left.bar && left.x < 0.01 &&
+    again.mode === "under" && again.aware && again.bar && re.mode === "wait" && re.hp === f.def.hp && re.hidden && !re.bar && re2.mode === "under" && re2.aware,
+    left, again, re, re2 };`),
+  cstep("it never surfaces into rubble", `
+  // rubble over the shores of every other eighth of the cavern, and over the ring beside them
+  const sh = DF.crocShores(e, w), ids = [], sect = (q) => Math.floor(((Math.atan2(q.x - B.x, q.z - B.z) + Math.PI) / (Math.PI * 2)) * 8) % 2;
+  for (const q of sh) if (sect(q) === 0) ids.push(w.addRock(q.x, q.z, q.x + (B.x - q.x) * 0.1, q.z + (B.z - q.z) * 0.1, 1.0));
+  const bad = []; let n = 0;
+  try {
+    for (let k = 0; k < 30; k++) {
+      const q = ringAt(8 + Math.random() * 12, Math.random() * 7); if (!q) continue; put(q);
+      e.lastSpot = Math.random() < 0.5 ? sh[(Math.random() * sh.length) | 0] : null;
+      const s = DF.crocPickSpot(e, { p, w }); n++;
+      let dry = false;
+      if (s) for (let x = -3; x <= 3 && !dry; x += 0.5) for (let z = -3; z <= 3 && !dry; z += 0.5)
+        if (Math.hypot(x, z) <= 3 && w.waterAt(s.x + x, s.z + z) < 0.5 && w.fieldAt(s.x + x, s.z + z) >= e.r) dry = true;
+      if (!s || w.fieldAt(s.x, s.z) < e.r || !dry) bad.push({ k, s, f: s && w.fieldAt(s.x, s.z), dry });
+    }
+  } finally { w.clearRocks(); }
+  return { pass: sh.length > 20 && n === 30 && bad.length === 0, shores: sh.length, rocks: ids.length, n, bad: bad.slice(0, 4) };`),
+  // for looking at: the wake in the moat, and the warning at a shore
+  { ...cstep("the wake under the moat, for looking at", `
+  const q = ringAt(17); begin(q); e.mode = "under"; e.hidden = true;
+  // in the moat beside the player, swimming round it
+  const a = Math.atan2(q.x - B.x, q.z - B.z), mx = B.x + Math.sin(a) * 23.3, mz = B.z + Math.cos(a) * 23.3;
+  e.x = mx; e.z = mz; e.spot = { x: B.x + Math.sin(a + 1.2) * 23.3, z: B.z + Math.cos(a + 1.2) * 23.3, body: w.bodyAt(mx, mz) }; e.modeT = 9; e.path = null;
+  DF.sim(0.4, keep); const moat = w.waterAt(e.x, e.z);
+  // the player stood aside (hidden) and the camera over the ring looking along the wake
+  p.yaw = cam.yaw = Math.atan2(e.x - p.x, e.z - p.z) - 0.25; cam.pitch = 0.55; p.fig.root.s = [0.0001, 0.0001, 0.0001];
+  return { pass: e.mode === "under" && moat >= 0.5 && e.speed > 1, moat, speed: e.speed };`), wait: 500, shot: "t25-wake" },
+  { ...cstep("the warning at a shore, for looking at", `
+  begin(); until(() => e.mode === "rise", 25); DF.sim(C.warn * 0.55, keep);
+  const s = e.spot, b = Math.atan2(p.x - s.x, p.z - s.z); put({ x: s.x + Math.sin(b) * 5, z: s.z + Math.cos(b) * 5 }); w.resolve(p, p.r);
+  p.yaw = cam.yaw = Math.atan2(s.x - p.x, s.z - p.z); cam.pitch = 0.5; p.fig.root.s = [0.0001, 0.0001, 0.0001];
+  return { pass: e.mode === "rise" && e.hidden, mode: e.mode };`), wait: 500, shot: "t25-rise" },
+];
+export default [...base, ...crocSteps];
