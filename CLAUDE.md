@@ -35,6 +35,14 @@ is what you need to change the code without breaking it.
   Riftwalker: paired rift ends that the player, regular enemies and shots
   pass through, and a Drop that sends a pack through the floor and out of
   the roof. No plaque is sealed now.
+- Branch `feat/sewer` is the first of three projects for the D gate: the
+  sewer zone, its water, and D opening once E's boss is dead. The D enemies
+  (project 2) and the crocodile boss (project 3) are not built. Until
+  project 2 lands, `LIVE_GRADES` holds only E, so the D portal stays sealed
+  on the published page. A D run made live by hand uses E's enemy types as
+  stand-ins and holds the E boss in the cavern. The design is in
+  `docs/superpowers/specs/2026-11-18-sewer-d-gate-design.md`. It has been
+  checked by tests and screenshots only, never played by hand.
 
 ## Rules of the build
 
@@ -83,6 +91,22 @@ is what you need to change the code without breaking it.
 - Effects go through `R.sprite`, `R.ribbon`, `R.ring` and `R.blob`. They are
   batched and drawn after the solid pass: blobs darken the ground, everything
   else is additive.
+- **Materials.** The world mesh has one material byte per vertex, a fourth
+  attribute (`aMat`, location 3). `MAT` in `03_world.js` names the values:
+  0 plain, `MAT.BRICK` 1, `MAT.WATER` 2. `meshSink` takes a `mat` argument on
+  `tri` and `triC` and returns `M` beside `P` and `C`. The cave and the hall
+  write 0 everywhere (`world.mat` is `null` or all zero), so they draw as they
+  always did. The fragment shader draws brick (courses, mortar, per-brick
+  shade, dark and missing bricks) and moving water from world position and
+  `uTime`, which `R.env.t` sets from the game clock. Missing and dark bricks
+  are the shader's, not geometry (the walls stay straight). A mesh with no
+  material reads plain.
+- `R.setWorld(pos, col, mat, pieces)` uploads the world and frees the one it
+  replaces. `R.drawWorld(ids)` draws the whole world when `ids` is `null` or
+  the world has no pieces, otherwise only those pieces (ranges of the
+  vertices). `R.stats` is `{ draws, tris }`, reset in `begin` each frame, so
+  `R.stats.tris` after a frame is what that frame drew. `R.boxVisible(box)`
+  tests `[x0, y0, z0, x1, y1, z1]` against the view of the current frame.
 - `R.nodePos(node, x, y, z)` returns a world position on a figure, valid after
   that figure has been drawn in the current frame.
 - `R.toScreen(x, y, z)` projects to CSS pixels for HUD elements.
@@ -114,15 +138,84 @@ is what you need to change the code without breaking it.
   In the cave, `ceilAt` is worked out from the field, so the ceiling the
   camera collides with drops near rubble while the drawn ceiling stays put.
 - Spawn packs are chosen by a chamber's distance from the start, in `PACKS`.
+- **Shared builders.** `planGraph(Rn, o)` makes the jittered grid of rooms, the
+  spanning tree and the loop edges; `linkGraph(nodes, edges, start, boss)`
+  sets adjacency and depth and returns the path; `marchWalls(F, minX, minZ, W,
+  H, seg)` runs marching squares and calls `seg` for each wall segment. `genWorld`
+  and `genSewer` both call them. They consume `Rn` in a fixed order, so a seed
+  gives the same cave as before the sewer. `tests/t22.mjs` holds hashes of
+  caves 1, 7 and 99 and fails if `genWorld` changes.
+- **Water.** A second layer on the field's grid, `Wt`, 0 dry to 1 water.
+  `world.waterAt(x, z)` reads it bilinearly like `fieldAt`, and is 0 off the
+  grid and in the cave and the hall. `world.bodyAt(x, z)` is the id of the
+  connected body of water at the nearest grid point, or -1. `world.bodies` lists
+  the bodies (`{ id, room, n, x, z }`: room id, grid points and a centre; empty in
+  the cave and hall). `fieldFns(F, minX, minZ, W, H, Wt)`
+  builds both. **Water blocks nothing.** It is not rock: collision, sight,
+  routes, shots and the camera ignore it. **Read water only through `waterAt`
+  and `bodyAt`.** Never test whether the world is the sewer to decide whether
+  something is wet; `genWorld`, `genHub` and `genSewer` all return both
+  functions, so no reader needs a zone check. `genSewer` also returns `F`,
+  `Wt` and `bodyIds` for tests; game code does not read them.
+- `world.grates` lists the grates and pipe mouths in tunnel walls
+  (`{ x, z, yaw, kind }`, `kind` being `"grate"` or `"drain"`, for the drain grabber), `world.wallTunnels` the boss
+  cavern's high wall outlets, and `world.shafts` its light shafts. All three
+  are arrays on every world, empty in the cave and hall.
+- **Pieces.** The sewer's mesh is cut at build time into `world.pieces`, one
+  per room and one per stretch of `SEWER.piece.runs` tunnel runs. A piece is
+  `{ first, count, box, sees, ... }`: a range of vertices, a bounding box and
+  the ids of the pieces visible from anywhere in it. `sees` is worked out with
+  `world.los` between sample points and errs generous, and neighbours are
+  always in it. `world.pieceGrid` and `world.pieceAt(x, z)` give the piece at a
+  point, or -1 outside every piece. The cave and hall have `pieces: null` and
+  are drawn whole.
+- `visiblePieces(w, cx, cz, px, pz, frustum = true)` returns the ids to draw:
+  what the camera's piece and the player's piece see, within the fog distance
+  (`SEWER.piece.fog / ENV_SEWER.fogD`) and, with `frustum`, inside the view
+  (`R.boxVisible`). With the camera outside every piece it falls back to the
+  player's piece and drops the view test (the camera can sit in rock).
+  It returns `null` for a world without pieces. `07_render.js` calls
+  `R.drawWorld(visiblePieces(...))` each frame. A test can pass `frustum`
+  false to get what a full turn of the camera could need. Measured budget:
+  cave 99 draws 81,835 triangles whole; the sewer's busiest frame over the
+  sampled walks was about 22,900. t22 fails if a sewer frame draws more than
+  cave 99.
+- **The sewer** (`genSewer(seed)` in `03c_sewer.js`, numbers in `SEWER`). It
+  uses `planGraph` and `linkGraph` on a 5 by 4 grid with a wider spacing, adds
+  an arrival hall beside the first corner and a boss cavern in the far corner,
+  and shapes the field from rounded rectangles for rooms and polylines of
+  straight runs and angled bends for tunnels (no noise, so walls stand
+  straight). The boss cavern has exactly one tunnel in. At least `SEWER.spurs`
+  rooms are dead ends and at least `SEWER.loopsMin` loops remain. Four rest
+  points: the arrival hall and three along the path, the last just before the
+  cavern. Rooms get a kind: `start`, `pool`, `brood`, `shrine` or `boss`; no
+  room is both pool and brood, and every spawn records its room kind. Rest
+  rooms hold no enemies. A run is about 1.5 times the walked length of E's.
+- Water in the sewer: pools in pool rooms (two to four separate bodies, a
+  crossing between two of them, dry walkways joining every entrance), a gutter
+  along some tunnels (never joined to a room's pools) and some brood rooms,
+  and the boss cavern's moat, centre pool and fall pools. The fall pools sit
+  within 6 m of the cavern wall, so the ring ten metres in from the edge stays
+  dry. A dry route joins every tunnel mouth of every room: no route is
+  forced through water.
+- The ceiling is brick, a vault that rises into rooms, and `ceilAt` follows it
+  so the camera collides with the arch. Ribs, pipes, grates, lamps, brick
+  heaps, pillar bases and the ladder in the arrival hall are drawn and block
+  nothing (`dressSewer`). The crumbled wall sections are the only irregular
+  field. Lamps are dim green lights, and some flicker (`lampFlicker(ph, t)`).
 
 ### Zones (`06_game.js`, `03b_hub.js`)
 
-- `G.zone` is `"hub"` for the hall or `"cave"`. `G.world` holds whichever
-  world is active, and nothing else is kept loaded.
+- `G.zone` is `"hub"` for the hall or `"cave"`, and stays `"cave"` for every
+  grade's run, the sewer included. `G.grade` says which. `G.world` holds
+  whichever world is active, and nothing else is kept loaded.
 - `enterHub(fromGrade)` builds the hall and puts the player at the start, or
-  in front of that grade's portal looking toward the middle of the hall. `enterCave(gradeId, seed)` records
-  `G.grade` and calls `newRun(seed)`. `newRun` still means "start a cave from
-  this seed" and is what the cave tests call.
+  in front of that grade's portal looking toward the middle of the hall. `enterCave(gradeId, seed)` calls
+  `newRun(seed, gradeId)`. `newRun(seed, grade = "E")` records `G.grade`, sets
+  the air from `ENV_GRADE[grade]` (the cave's when the grade has none), builds
+  the world with `WORLD_GEN[grade]` (`genWorld` when the grade has none), turns
+  the audio echo on for a world with `sewer: true` and starts the run. It is
+  what the cave and sewer tests call.
 - `genHub()` returns every field `genWorld` returns, with empty arrays where a
   field has no meaning, plus `hub: true`, `portals` and `dummySpot`. Keep it
   that way: code that reads `G.world` has no checks for the hall.
@@ -141,7 +234,14 @@ is what you need to change the code without breaking it.
 - `resetRun()` clears everything that must not cross a world swap. Add new
   per-run state there. It clears `G.inBoss`, the flag for the player being
   inside the boss chamber.
-- `R.env` (ambient and fog) is set per zone from `ENV_HUB` and `ENV_CAVE`.
+- `R.env` (ambient and fog) is set per zone from `ENV_HUB`, `ENV_CAVE` and, for
+  the sewer, `ENV_SEWER` (damp green-dark, thicker fog), through `ENV_GRADE`.
+  `setEnv` copies the preset.
+- The sewer's own game-side parts: `WATER` (`slow` 0.6 and `sink` 0.3), drips
+  from the roof (`dripsUpdate`, `G.drips`, only while `G.world.sewer`),
+  wading ripples and the wade sound, and `SFX.setEcho`, a short echo in
+  `04_audio.js` that is on only in the sewer. The hall and cave keep their
+  sound. `resetRun()` clears `G.drips`.
 - In the hall, focus and tool charges refill on their own, the minimap is
   hidden and the run timer does not advance.
 - Plaques. `hubPlaques()` lists `{ id, cls, x, z, yaw }` for the three plaques
@@ -153,6 +253,20 @@ is what you need to change the code without breaking it.
   and the glow brightens on unlock.
 
 ### Game state and time (`06_game.js`, `09_main.js`)
+
+- **Cleared grades.** `CLEARED` maps a class id to the grades its boss kill has
+  cleared, saved as `c` in `dungeon-raze.v2`. `clearGrade(grade, cls)` records
+  one (true when new), `gradeCleared(grade)` is true if any class cleared it,
+  and `resetCleared()` empties it. A saved `c` that is not an object loads as
+  nothing cleared. `kill` records the grade when a boss dies, and says "A new
+  gate has opened in the base." when that opens the next portal.
+- **Which gates are open.** `LIVE_GRADES` (in `03b_hub.js`) is the set of
+  grades whose content is finished. `portalOpen(grade)`: E is always open;
+  a higher grade is open when it is in `LIVE_GRADES` and the grade below is
+  cleared. `hubPortals()` takes `open` from it. **D joins `LIVE_GRADES` only
+  when project 2 (the D enemies) lands**, because E's enemies must not
+  appear in the published D. Tests add and remove it through
+  `DF.LIVE_GRADES`.
 
 - `G` is the single state object. `G.state` is one of `title`, `play`,
   `pause`, `dead`, `win`, `class`, `controls`, `howto`, and `show(state)`
@@ -383,6 +497,15 @@ is what you need to change the code without breaking it.
   `playerUpdate`. `camUpdate` blends to the plaque and ignores the mouse,
   and the pad does not turn the camera. `show()` closes it when the state
   leaves play, and `resetRun` and death clear it.
+- **Water.** `playerUpdate` multiplies the move by `wadeMul(waterAt, WATER.slow)`
+  after the knockback is added to the velocity, so walking, running, dodging
+  and attack lunges all slow by the same factor. A dodge keeps `p.ddur` and its
+  invulnerability, so it covers less ground in the same time. `p.dspeed` is
+  the speed before the wade; the sprint-attack check reads it, so a sprint
+  attack still starts the class dash while wading (`p.speed` is the slowed
+  speed). Wading draws the body sunk by `WATER.sink` scaled by `waterAt`
+  (`07_render.js`) and plays ripples and a wade sound. That depth is drawing
+  only: collision, hits, shots and the camera stay on the flat floor.
 - Presses are buffered for 0.3 seconds in `p.buf` so chained inputs feel
   responsive.
 - Melee attacks aim with `aimYaw`, which snaps to the lock target or a nearby
@@ -561,6 +684,12 @@ is what you need to change the code without breaking it.
 - **The boss** has none of the above. It keeps its 38 m and 30 m limits and
   its heal on return, and routes round rock when the line to the player is
   blocked.
+- **Water.** An `EDEF` entry may carry `wade`, a factor on its speed in
+  water: below 1 slows it, above 1 speeds it. `wadeOf(def)` returns it, or
+  `WATER.slow` when the entry has none, and E's types have none. `eStep`
+  applies it (`wadeMul(waterAt(e.x, e.z), wadeOf(e.def))`), and `walkRoute`,
+  charges and lunges go through `eStep`, so nothing needs a check in a state.
+  A new way of moving an enemy must go through `eStep` too.
 - **Movement.** In view, enemies steer straight at the player and slide
   along walls. Out of view they follow a route: `setRoute(e, x, z)` asks
   `world.route` (at most two per `update`, so callers retry when it returns
@@ -642,13 +771,20 @@ The class picker and HUD read `CLASSES` and need no changes.
 
 ### Open another portal
 
-1. Set `open: true` on its entry in `hubPortals()`. The frame, glow, trigger,
-   label and return point all follow from the entry. Moving a gate is the
-   same kind of change: give it a new position and `yaw`.
-2. Give `enterCave` something to do with the grade, for example pass settings
-   to `genWorld` and scale `EDEF` values. Today the grade only names the cave.
-3. Extend `tests/t8.mjs`: the "sealed frames do nothing" step assumes only
-   the first portal is open.
+1. Give the grade a generator in `WORLD_GEN` (`genWorld` for the cave,
+   `genSewer` for D) and, if its air differs, an entry in `ENV_GRADE`. A grade
+   with neither entry gets the cave. The new generator must return the same
+   shape as `genWorld` and `genHub`, including `waterAt`, `bodyAt`, `bodies`,
+   `grates`, `wallTunnels`, `shafts` and `pieces`.
+2. Add the grade to `LIVE_GRADES` in `03b_hub.js`, only when its enemies and
+   boss are finished. `portalOpen` then opens its frame once the grade below
+   is cleared (a boss kill saves that, see `CLEARED`). The frame, glow,
+   trigger, label and return point all follow from the `hubPortals()` entry.
+   Moving a gate is a change to that list.
+3. Give `EDEF` entries for its enemies, with `wade` where water matters, and
+   point its spawn packs at them. Until then a live grade runs on E's types.
+4. Extend `tests/t8.mjs` and `tests/t22.mjs`: t8's "sealed frames do nothing"
+   step assumes only E is open, and t22 makes D live and cleared through `DF`.
 
 ## Testing
 
@@ -703,6 +839,18 @@ The class picker and HUD read `CLASSES` and need no changes.
   It uses a phone with a fake pad. Shots of the fight and the Controls menu go
   to `shots/`:
   `DEVICE=oneplus-13 SCRIPT=$PWD/tests/t17.mjs node test.mjs smoke`.
+- Run `tests/t22.mjs` after any change to the sewer, water, `fieldFns`,
+  `meshSink`, the world shader, `visiblePieces`, cleared grades or portal
+  opening: `SCRIPT=$PWD/tests/t22.mjs node test.mjs smoke`. It makes D live
+  with `DF.LIVE_GRADES.add("D")` and starts a run with `DF.newRun(seed, "D")`.
+  It checks that `genWorld` is unchanged (hashes of caves 1, 7 and 99), water
+  in the player and enemy moves, D sealed and opened, the save, the layout
+  over many seeds, water bodies and dry routes, the boss cavern, the brick
+  and water materials, lamps, drips, the minimap, that culled frames draw
+  everything a full frame shows, and the triangle budget. It also writes
+  screenshots (`shots/t22-*.png`) of the cave, hall, sewer rooms, tunnels,
+  bends, the boss cavern and wading, which are the only check on whether the
+  sewer reads as brick and not as a brown cave: look at them.
 - Run `tests/t5.mjs` after any change to cave generation and `tests/t6.mjs`
   after any change to classes or combat rules.
 - Run `tests/t10.mjs` after any change to the HUD, enemy name tags or menus,
@@ -746,6 +894,20 @@ The class picker and HUD read `CLASSES` and need no changes.
 - The Riftwalker is untested by hand. Its numbers, the reach, how long ends
   stay open, the rest time and Drop's fall damage were set without a
   playtest. Nobody can see through a rift; ends are drawn as glowing slits.
+- The sewer is untested by hand. Its layout numbers, `WATER.slow`, the drip
+  and flicker rates, the echo and the look were set by tests and screenshots
+  only.
+- Water depth is drawing only: a body is drawn sunk by `WATER.sink`, while
+  hits, shots and the camera stay on the flat floor.
+- The sewer's frame rate on a real phone is unmeasured. The budget is
+  triangles drawn (at most what the whole of cave 99 draws), measured in
+  headless Chromium.
+- `visiblePieces` can miss a piece in a rare far, fogged view, because each
+  piece's `sees` list comes from sampled sight lines.
+- Sewer decoration (brick heaps, plinths, ribs, pipes) blocks nothing, so a
+  body can stand inside a heap.
+- The D portal is sealed on the published page by design, until the D
+  enemies land. A D made live by hand fights E's enemies and the E boss.
 - iPhones cannot run the file directly; they play at
   https://maxjlerman.github.io/dungeon-raze/.
 - Touch was checked only in Chromium device emulation. Fullscreen, the
@@ -764,7 +926,9 @@ The class picker and HUD read `CLASSES` and need no changes.
 
 1. Tune feel from the owner's playtest: timing windows, sensitivity, difficulty.
 2. Give the portal grades meaning: enemy difficulty and kill rewards per
-   grade, then open D to S. Revisit whether dying should send the player back
+   grade, then open D to S. D's place and water are built (`feat/sewer`);
+   next are the seven D enemies, then the crocodile boss, then adding D to
+   `LIVE_GRADES`. Revisit whether dying should send the player back
    to the base once there are rewards to lose.
 3. Loot, inventory and an extraction loop. The owner asked for these early on
    and they were set aside to get combat playable first.
