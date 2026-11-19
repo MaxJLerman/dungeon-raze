@@ -156,7 +156,7 @@ is what you need to change the code without breaking it.
   and `bodyAt`.** Never test whether the world is the sewer to decide whether
   something is wet; `genWorld`, `genHub` and `genSewer` all return both
   functions, so no reader needs a zone check. `genSewer` also returns `F`,
-  `Wt` and `bodyIds` for tests; game code does not read them.
+  `Wt`, `bodyIds` and `pillars` for tests; game code does not read them.
 - `world.grates` lists the grates and pipe mouths in tunnel walls
   (`{ x, z, yaw, kind }`, `kind` being `"grate"` or `"drain"`, for the drain grabber), `world.wallTunnels` the boss
   cavern's high wall outlets, and `world.shafts` its light shafts. All three
@@ -201,7 +201,15 @@ is what you need to change the code without breaking it.
   and the boss cavern's moat, centre pool and fall pools. The fall pools sit
   within 6 m of the cavern wall, so the ring ten metres in from the edge stays
   dry. A dry route joins every tunnel mouth of every room: no route is
-  forced through water.
+  forced through water. The rules the D enemies rely on, from the spec's
+  Water section: every pool is a box at least `SEWER.pool.min` (4 m)
+  across; a pool room's dry floor is at least 3 m wide from each pool to
+  the walls and between pools, but for the crossing, 2 to 3 m wide, that
+  every pool room has; a brood room holds at most one body of water, and
+  the arrival hall and rest rooms none; about a third of tunnels have a
+  gutter, and no gutter comes within 2 m of a room's water. A pool's shore
+  is drawn up to half a metre past the box painted on the grid, so pools
+  stand `edge` plus `grid` (3.5 m) in from the walls.
 - **The drawn shore is where `waterAt` reads 0.5.** `floorCell` splits the
   floor of each cell where `Wt` crosses 0.5 along the cell's sides, which is
   where the bilinear reading crosses it there. Inside the cell the bilinear
@@ -868,7 +876,8 @@ The class picker and HUD read `CLASSES` and need no changes.
   It checks that `genWorld` is unchanged (hashes of caves 1, 7 and 99), that
   `genSewer` is unchanged (hashes of the mesh, materials, `Wt`, spawns, pieces
   and dressing for seeds 1, 5 and 9; update them only for a change meant to
-  alter the sewer, and say so in the commit), water
+  alter the sewer, and say so in the commit), that the drawn shore is where
+  `waterAt` reads 0.5, the water rules above over twelve seeds, water
   in the player and enemy moves, D sealed and opened, the save, the layout
   over many seeds, water bodies and dry routes, the boss cavern, the brick
   and water materials, lamps, drips, the minimap, that every walkable point

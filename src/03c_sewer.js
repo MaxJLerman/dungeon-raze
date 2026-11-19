@@ -42,8 +42,10 @@ const SEWER = {
   // water. Pools in a pool room sit at least `edge` in from its walls, are
   // at least `min` across, and are parted by walkways at least `walk` wide
   // and one crossing `cross` wide. A side facing a wall may draw back by up
-  // to `shrink`.
-  pool: { edge: 3, walk: 3, cross: 2.5, min: 4, shrink: 1.5 },
+  // to `shrink`. The shore is drawn where the grid reads 0.5, which can sit
+  // up to `grid` past a pool's painted box, so walls and pillars stand that
+  // much further off to keep a walkway `walk` wide.
+  pool: { edge: 3, walk: 3, cross: 2.5, min: 4, shrink: 1.5, grid: 0.5 },
   gutterW: 1.45, // from a gutter's wall to its shore
   gutterP: 1 / 3, // the share of tunnels with a gutter
   gutterEnd: 1, // a tunnel's gutter stops this far outside every room's box
@@ -606,8 +608,8 @@ function genSewer(seed) {
   const poolLayouts = (n) => {
     const P = S.pool,
       onX = n.hw >= n.hd,
-      A = (onX ? n.hw : n.hd) - P.edge,
-      B = (onX ? n.hd : n.hw) - P.edge;
+      A = (onX ? n.hw : n.hd) - P.edge - P.grid,
+      B = (onX ? n.hd : n.hw) - P.edge - P.grid;
     // a pool from spans along the room's long axis (u) and short axis (v)
     const rect = ([u0, u1], [v0, v1]) =>
       onX
@@ -679,7 +681,7 @@ function genSewer(seed) {
           Math.max(r.x0 - c.x, 0, c.x - r.x1),
           Math.max(r.z0 - c.z, 0, c.z - r.z1),
         ) >=
-        S.pool.walk + S.pillarR,
+        S.pool.walk + S.pool.grid + S.pillarR,
     );
   for (const n of nodes) {
     if (n.kind === "pool") {
@@ -1293,6 +1295,7 @@ function genSewer(seed) {
     pieceGrid: cutUp.pieceGrid,
     pieceAt: cutUp.pieceAt,
     crumble,
+    pillars,
     pos: cutUp.pos,
     col: cutUp.col,
     mat: cutUp.mat,

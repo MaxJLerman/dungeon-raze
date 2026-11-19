@@ -14,7 +14,7 @@ export default [
   return { pass: JSON.stringify(got) === JSON.stringify(GOLD), got };`),
   // the sewer's mesh, materials, water, spawns, pieces and dressing for three
   // seeds: a change that only moves code must leave these as they are
-  step("genSewer is unchanged by moving code", `const GOLD = {"1":[2131035611,1635570288,-1101587512,768324173,-635115949,-928983629,-975957500],"5":[-1879733403,1244249168,-489759688,-1558580053,-1972915195,303596508,320828384],"9":[-1024072747,1090434160,1593504080,-1941855533,-1716636275,1255611922,1094484411]};
+  step("genSewer is unchanged by moving code", `const GOLD = {"1":[1128857759,-378057400,191397416,1843793420,-1720459667,375348432,-975957500],"5":[-1941083469,-479161032,588029304,1146299380,-421560960,-864940668,320828384],"9":[-2061947862,377159632,-1945127328,575945143,2073483729,-1481964460,1094484411]};
   const h = (a) => { let x = 0; for (let i = 0; i < a.length; i++) x = (x * 31 + Math.round(a[i] * 1000)) | 0; return x; };
   const hs = (s) => { let x = 0; for (let i = 0; i < s.length; i++) x = (x * 31 + s.charCodeAt(i)) | 0; return x; };
   const got = {}; for (const s of [1, 5, 9]) { const w = DF.genSewer(s);
@@ -127,6 +127,87 @@ export default [
         if (w.waterAt(x, z) >= 0.5 === d) continue; out.off++; const r = near(x, z, d);
         if (r > out.worst) { out.worst = r; out.at = { s, x: +x.toFixed(2), z: +z.toFixed(2), drawn: d, wet: +w.waterAt(x, z).toFixed(3), room: w.nodes.findIndex((n) => Math.abs(x - n.x) < n.hw + 1 && Math.abs(z - n.z) < n.hd + 1) }; } } } }
   return { pass: out.worst <= TOL && out.pts > 20000 && out.off < out.pts * 0.02, ...out, worst: +out.worst.toFixed(3) };`),
+  // The rules of the spec's Water section that the D enemies will rely on,
+  // over twelve seeds, measured on the water grid through waterAt and bodyAt
+  // and on the room rectangles.
+  ...[
+    // every pool is at least 4 m across at its narrowest (a pool is a box on
+    // the grid, so its narrowest is its shorter side, where waterAt reads 0.5)
+    ["every pool is at least 4 m across at its narrowest", `let least = 1e9;
+      for (const s of SEEDS) { const w = gen(s); for (const n of w.nodes) if (n.kind === "pool") for (const q of pools(w, n)) { const d = Math.min(q.x1 - q.x0, q.z1 - q.z0); least = Math.min(least, d);
+        if (!q.box || d < 4 - TOL) bad.push({ s, n: n.id, box: q.box, d: +d.toFixed(2) }); } }
+      return { pass: bad.length === 0, least: +least.toFixed(2), bad: bad.slice(0, 6) };`],
+    // a pool room's dry floor: at least 3 m from each pool to the room's wall
+    // and to a pillar that stands outside it, and between two pools either
+    // at least 3 m or a crossing of 2 to 3 m. (With today's room sizes no
+    // room is big enough for pillars, so pillars counts 0.)
+    ["dry walkways in pool rooms are at least 3 m wide", `const least = { wall: 1e9, pillar: 1e9, between: 1e9 }; let pillars = 0;
+      for (const s of SEEDS) { const w = gen(s); pillars += w.pillars.length; for (const n of w.nodes) { if (n.kind !== "pool") continue; const ps = pools(w, n);
+        for (const q of ps) { let wall = 1e9;
+          for (let t = 0; t <= 1; t += 1 / 64) for (const [x, z] of [[q.x0 + (q.x1 - q.x0) * t, q.z0], [q.x0 + (q.x1 - q.x0) * t, q.z1], [q.x0, q.z0 + (q.z1 - q.z0) * t], [q.x1, q.z0 + (q.z1 - q.z0) * t]]) wall = Math.min(wall, wallD(n, x, z));
+          least.wall = Math.min(least.wall, wall); if (wall < 3 - TOL) bad.push({ s, n: n.id, wall: +wall.toFixed(2) });
+          for (const c of w.pillars) { if (!inRect(n, c.x, c.z) || (c.x > q.x0 && c.x < q.x1 && c.z > q.z0 && c.z < q.z1)) continue; const d = gap(q, { x0: c.x, x1: c.x, z0: c.z, z1: c.z }) - DF.SEWER.pillarR;
+            least.pillar = Math.min(least.pillar, d); if (d < 3 - TOL) bad.push({ s, n: n.id, pillar: +d.toFixed(2) }); } }
+        for (let i = 0; i < ps.length; i++) for (let j = i + 1; j < ps.length; j++) { const d = gap(ps[i], ps[j]); least.between = Math.min(least.between, d); if (d < 2 - TOL) bad.push({ s, n: n.id, between: +d.toFixed(2) }); } } }
+      for (const k in least) least[k] = least[k] === 1e9 ? null : +least[k].toFixed(2);
+      return { pass: bad.length === 0, least, pillars, bad: bad.slice(0, 6) };`],
+    // each pool room has a crossing: two pools 2 to 3 m apart
+    ["each pool room has a crossing 2 to 3 m wide between two pools", `const widths = new Set();
+      for (const s of SEEDS) { const w = gen(s); for (const n of w.nodes) { if (n.kind !== "pool") continue; const ps = pools(w, n); let found = null;
+        for (let i = 0; i < ps.length; i++) for (let j = i + 1; j < ps.length; j++) { const d = gap(ps[i], ps[j]); if (d >= 2 - TOL && d <= 3 + TOL) found = d; }
+        if (found === null) bad.push({ s, n: n.id, pools: ps.length }); else widths.add(+found.toFixed(2)); } }
+      return { pass: bad.length === 0, widths: [...widths].sort(), bad: bad.slice(0, 6) };`],
+    ["brood rooms hold at most one body of water", `let rooms = 0, wet = 0;
+      for (const s of SEEDS) { const w = gen(s); for (const n of w.nodes) { if (n.kind !== "brood") continue; rooms++; const k = pools(w, n).length; if (k) wet++; if (k > 1) bad.push({ s, n: n.id, bodies: k }); } }
+      return { pass: bad.length === 0 && wet > 0, rooms, wet, bad: bad.slice(0, 6) };`],
+    // every point in the arrival hall and the rest rooms reads 0, edges included
+    ["the start room and rest rooms are dry", `let n0 = 0;
+      for (const s of SEEDS) { const w = gen(s), rest = new Set(w.shrines.map((q) => q.node));
+        for (const n of w.nodes) { if (n.kind !== "start" && !rest.has(n.id)) continue; n0++; if (n.kind !== "start" && n.kind !== "shrine") bad.push({ s, n: n.id, kind: n.kind });
+          let most = 0; for (let x = n.x - n.hw; x <= n.x + n.hw + 1e-9; x += 0.5) for (let z = n.z - n.hd; z <= n.z + n.hd + 1e-9; z += 0.5) most = Math.max(most, w.waterAt(x, z));
+          if (most > 0) bad.push({ s, n: n.id, kind: n.kind, most }); } }
+      return { pass: bad.length === 0 && n0 === SEEDS.length * 4, rooms: n0, bad: bad.slice(0, 6) };`],
+    // a tunnel has a gutter when, somewhere along it clear of every room, the
+    // floor half a metre from one wall reads as water. SEWER.gutterP is a
+    // third; a gutter that every point of its tunnel refuses (a short tunnel,
+    // or one beside another) is lost, so over twelve seeds the share must
+    // fall between 0.22 and 0.45
+    ["roughly one tunnel in three has a gutter", `let all = 0, wet = 0; const per = [];
+      for (const s of SEEDS) { const w = gen(s), b = w.boss, R = DF.SEWER.tunR - 0.5; let k = 0;
+        for (const e of w.edges) { all++; let has = false;
+          for (let i = 1; i < e.pts.length && !has; i++) { const a = e.pts[i - 1], c = e.pts[i], l = Math.hypot(c.x - a.x, c.z - a.z) || 1, nx = -(c.z - a.z) / l, nz = (c.x - a.x) / l;
+            if (w.nodes.some((n) => inRect(n, a.x, a.z, 2)) || Math.hypot(a.x - b.x, a.z - b.z) < b.r + 3) continue;
+            has = [-R, R].some((o) => { const x = a.x + nx * o, z = a.z + nz * o, id = w.bodyAt(x, z); return w.waterAt(x, z) >= 0.5 && id >= 0 && w.bodies[id].room === -1; }); }
+          if (has) { wet++; k++; } }
+        per.push(k); }
+      const share = wet / all; return { pass: share >= 0.22 && share <= 0.45, share: +share.toFixed(3), wet, all, per };`],
+    // a gutter is its own body, and no grid point of it is within 2 m of a
+    // room's water, so there is always dry floor between where waterAt reads
+    // 0.5 round the two
+    ["tunnel gutters never touch a room's pools", `let gutters = 0;
+      for (const s of SEEDS) { const w = gen(s), W1 = w.W + 1, home = new Map(), pts = new Map();
+        for (let j = 0; j <= w.H; j++) for (let i = 0; i <= w.W; i++) { const x = i + w.minX, z = j + w.minZ, id = w.bodyAt(x, z); if (id < 0 || w.waterAt(x, z) < 0.5) continue;
+          if (!pts.has(id)) pts.set(id, []); pts.get(id).push([i, j]); if (w.nodes.some((n) => inRect(n, x, z))) home.set(id, true); }
+        const roomWet = new Set(); for (const [id, ps] of pts) if (home.has(id)) for (const [i, j] of ps) roomWet.add(j * W1 + i);
+        for (const [id, ps] of pts) { if (home.has(id)) continue; gutters++;
+          for (const [i, j] of ps) { if (w.nodes.some((n) => inRect(n, i + w.minX, j + w.minZ, 1))) { bad.push({ s, id, at: [i + w.minX, j + w.minZ], why: "in a room" }); break; }
+            if ([[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]].some(([a, c]) => roomWet.has((j + c) * W1 + i + a))) { bad.push({ s, id, at: [i + w.minX, j + w.minZ], why: "beside a room's water" }); break; } } } }
+      return { pass: bad.length === 0 && gutters > 0, gutters, bad: bad.slice(0, 6) };`],
+  ].map(([name, body]) => step(name, `const SEEDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], TOL = 0.02, bad = [], gen = (s) => ((window.__sewers ||= {})[s] ||= DF.genSewer(s));
+    const inRect = (n, x, z, pad = 0) => Math.abs(x - n.x) <= n.hw + pad && Math.abs(z - n.z) <= n.hd + pad;
+    // how far a point is inside room n's rounded rectangle
+    const wallD = (n, x, z) => { const c = DF.SEWER.corner, qx = Math.abs(x - n.x) - (n.hw - c), qz = Math.abs(z - n.z) - (n.hd - c); return c - Math.hypot(Math.max(qx, 0), Math.max(qz, 0)) - Math.min(Math.max(qx, qz), 0); };
+    const gap = (a, b) => Math.hypot(Math.max(0, b.x0 - a.x1, a.x0 - b.x1), Math.max(0, b.z0 - a.z1, a.z0 - b.z1));
+    // each body of water in room n: its grid points, whether they fill their
+    // box, and the box where waterAt reads 0.5, stepped out from the middle of
+    // each side
+    const pools = (w, n) => { const by = new Map();
+      for (let z = Math.ceil(n.z - n.hd); z <= n.z + n.hd; z++) for (let x = Math.ceil(n.x - n.hw); x <= n.x + n.hw; x++) { if (w.waterAt(x, z) < 0.5) continue; const id = w.bodyAt(x, z);
+        const q = by.get(id) || { id, i0: x, i1: x, j0: z, j1: z, n: 0 }; q.i0 = Math.min(q.i0, x); q.i1 = Math.max(q.i1, x); q.j0 = Math.min(q.j0, z); q.j1 = Math.max(q.j1, z); q.n++; by.set(id, q); }
+      const out = (x, z, dx, dz) => { let t = 0; while (t < 2 && w.waterAt(x + dx * t, z + dz * t) >= 0.5) t += 0.005; return t; };
+      return [...by.values()].map((q) => { const mx = Math.round((q.i0 + q.i1) / 2), mz = Math.round((q.j0 + q.j1) / 2);
+        return { ...q, box: q.n === (q.i1 - q.i0 + 1) * (q.j1 - q.j0 + 1) && q.n === w.bodies[q.id].n, x0: q.i0 - out(q.i0, mz, -1, 0), x1: q.i1 + out(q.i1, mz, 1, 0), z0: q.j0 - out(mx, q.j0, 0, -1), z1: q.j1 + out(mx, q.j1, 0, 1) }; }); };
+    ${body}`)),
   step("a dry route joins every tunnel mouth of every room", `const bad = []; for (let s = 1; s <= 6; s++) { const w = DF.genSewer(s), Fd = w.F.map((f, k) => (w.Wt[k] > 0.5 ? -1 : f)), dry = DF.fieldFns(Fd, w.minX, w.minZ, w.W, w.H);
     for (const n of w.nodes) { if (n.kind === "boss") continue; const mids = w.edges.filter((e) => e.a === n.id || e.b === n.id).map((e) => e.pts[(e.pts.length / 2) | 0]);
       for (let i = 1; i < mids.length; i++) if (!dry.route(mids[0].x, mids[0].z, mids[i].x, mids[i].z, 0.6)) bad.push([s, n.id]); } }
