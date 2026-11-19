@@ -106,7 +106,7 @@ export default [
   ...view("rat", "a rat rearing half way through its wind-up, for looking at", `e.atk = e.def.atks.bite; e.state = "wind"; e.t = e.atk.wind * 0.5; return { pass: true };`, "t23-rat-rear"),
   ...view("rat", "a rat swimming, for looking at", `w.waterAt = () => 1; e.state = "chase"; e.speed = 4; e.walk = 1.1; return { pass: true };`, "t23-rat-swim"),
   // the same swim in a real pool of the sewer, where the water is drawn
-  { ...step("a rat swimming in a sewer pool, for looking at", `window.__cd0 = window.__cd0 || cam.dist; DF.LIVE_GRADES.add("D"); DF.newRun(5, "D"); DF.show("play"); G.state = "play"; DF.LIVE_GRADES.delete("D");
+  { ...step("a rat swimming in a sewer pool, for looking at", `window.__cd0 = window.__cd0 || cam.dist; DF.newRun(5, "D"); DF.show("play"); G.state = "play";
   const p = G.player, w = G.world; G.enemies = [];
   let at = null; for (let x = -200; x < 200 && !at; x += 1) for (let z = -200; z < 200; z += 1) if (w.waterAt(x, z) === 1 && w.waterAt(x + 2, z) === 1 && w.waterAt(x - 2, z) === 1 && w.waterAt(x, z + 2) === 1 && w.waterAt(x, z - 2) === 1 && w.waterAt(x + 4, z - 4) === 1 && w.fieldAt(x, z) > 2) { at = { x, z }; break; }
   if (!at) return { pass: false, why: "no pool" };
@@ -294,7 +294,7 @@ export default [
     return { pass: bad.length === 0 && three > 3 && drowned > 0, bad: bad.slice(0, 6), packs, three, drowned };`),
   // pool rooms hold the siren, eel and bloater now: t24 checks them
   // a brood room from its tunnel mouth, with everything awake and the player 8 m in
-  { ...step("a brood room with its enemies awake, for looking at", `window.__cd0 = window.__cd0 || cam.dist; DF.LIVE_GRADES.add("D"); DF.newRun(5, "D"); DF.show("play"); G.state = "play"; DF.LIVE_GRADES.delete("D");
+  { ...step("a brood room with its enemies awake, for looking at", `window.__cd0 = window.__cd0 || cam.dist; DF.newRun(5, "D"); DF.show("play"); G.state = "play";
   const w = G.world, p = G.player;
   const n = w.nodes.find((n) => n.kind === "brood" && G.enemies.some((e) => e.node === n.id && e.type === "brood")); if (!n) return { pass: false, why: "no brood room" };
   const nb = n.adj.map((j) => w.nodes[j]).sort((a, b) => a.depth - b.depth)[0], ed = w.edges.find((e) => (e.a === n.id && e.b === nb.id) || (e.b === n.id && e.a === nb.id));
@@ -304,9 +304,9 @@ export default [
   let awake = 0; for (const e of G.enemies) if (e.node === n.id) { DF.alertE(e, true); awake++; }
   return { pass: awake >= 3, awake, d: Math.hypot(mom.x - p.x, mom.z - p.z), room: n.id }; `), wait: 500, shot: "t23-fight-brood" },
   // a drowned in a tunnel, the player 5 m off
-  { ...step("a drowned in a tunnel, for looking at", `DF.LIVE_GRADES.add("D"); let w = null, d = null, seed = 0;
+  { ...step("a drowned in a tunnel, for looking at", `let w = null, d = null, seed = 0;
   for (seed = 1; seed <= 12 && !d; seed++) { DF.newRun(seed, "D"); w = G.world; d = G.enemies.find((e) => e.type === "drowned" && e.node === -1); }
-  seed--; DF.show("play"); G.state = "play"; DF.LIVE_GRADES.delete("D"); if (!d) return { pass: false, why: "no tunnel drowned" };
+  seed--; DF.show("play"); G.state = "play"; if (!d) return { pass: false, why: "no tunnel drowned" };
   const p = G.player; let best = null;
   for (let a = 0; a < 6.3; a += 0.1) { const x = d.x + Math.sin(a) * 5, z = d.z + Math.cos(a) * 5; if (w.fieldAt(x, z) >= 1.2 && w.los(x, z, d.x, d.z)) { best = { x, z, a }; break; } }
   if (!best) return { pass: false, why: "no spot" };

@@ -11,7 +11,7 @@ const step = (name, body) => ({
   try { ${body} } finally { drop(); } })()`,
 });
 // a D run (seed 5) with the player and the cavern's centre to hand
-const dRun = `DF.setClass("fighter"); DF.LIVE_GRADES.add("D"); DF.newRun(5, "D"); DF.LIVE_GRADES.delete("D"); DF.show("play"); G.state = "play";
+const dRun = `DF.setClass("fighter"); DF.newRun(5, "D"); DF.show("play"); G.state = "play";
   const p = G.player, w = G.world, B = w.boss; G.enemies = []; G.projs = [];`;
 // the crocodile on the cavern's dry ring, 16 m from the centre, three-quarters on to a camera
 // 6.5 m off whose player is hidden; the camera distance is put back by a later step
@@ -431,6 +431,33 @@ const markSteps = [
   const done = p.exDone, hp = e.hp; DF.sim(1 / 60, keep);
   return { pass: done && hpIn === 600 && hp === 600 && !early && n >= 0.62 * 60 && e.marks === 1 && e.mode === "leap",
     done, hpIn, hp, early, n: n / 60, marks: e.marks, mode: e.mode };`),
+];
+// ---- the whole of D ----
+// from the hall with E cleared, through the D portal into the sewer and onto the cavern's ring, where the
+// crocodile is hit to each mark as soon as it is up on land and then killed
+const runSteps = [
+  step("a full D run ends at the crocodile", `
+  DF.setClass("fighter"); DF.resetCleared(); DF.clearGrade("E", "fighter"); DF.enterHub(); DF.show("play"); G.state = "play";
+  let p = G.player; const q = G.world.portals.find((r) => r.grade === "D"), keep = () => { p.hp = p.maxHp; p.stam = p.maxStam; };
+  const until = (f, sec) => DF.sim(sec, () => { if (f()) return false; keep(); });
+  try {
+    p.x = q.x; p.z = q.z - 3; p.yaw = cam.yaw = 0; DF.keys[DF.BIND.fwd] = true;
+    DF.sim(4, () => G.zone === "hub" || !!G.trans); DF.keys[DF.BIND.fwd] = false;
+    p = G.player; const w = G.world, B = w.boss, e = G.enemies.find((o) => o.type === "croc");
+    const into = { open: q.open, grade: G.grade === "D", sewer: !!w.sewer, croc: !!e, done: !G.trans };
+    let ring = null; for (let k = 0; k < 64 && !ring; k++) { const a = (k / 64) * Math.PI * 2, x = B.x + Math.sin(a) * 14, z = B.z + Math.cos(a) * 14;
+      if (w.waterAt(x, z) === 0 && w.fieldAt(x, z) >= 2) ring = { x, z }; }
+    if (!e || !ring) return { pass: false, into, ring };
+    p.x = ring.x; p.z = ring.z; p.vx = p.vz = p.kx = p.kz = 0; cam.px = p.x; cam.pz = p.z;
+    const hps = [];
+    for (let k = 0; k < 4; k++) {
+      until(() => e.mode === "land" && !e.hidden, 70);
+      G.msgs = []; DF.hitEnemy(e, 500, 0, { heavy: true }); hps.push(e.hp); if (k < 3) DF.sim(1 / 60, keep);
+    }
+    await draw(); const text = document.getElementById("msgs").textContent;
+    const end = { dead: !!e.dead, bossDead: G.bossDead, cleared: DF.gradeCleared("D"), gate: !!G.gate, fell: text.includes("OLD SLUICEJAW FALLS"), newGate: text.includes("new gate") };
+    return { pass: Object.values(into).every(Boolean) && hps.slice(0, 3).join() === "600,400,200" && hps[3] <= 0 && end.dead && end.bossDead && end.cleared && end.gate && end.fell && !end.newGate, into, hps, end };
+  } finally { DF.keys[DF.BIND.fwd] = false; DF.resetCleared(); }`),
 ];
 // ---- the tunnel phase ----
 // Up on land, as for the marks. W is the cavern's wall tunnels, mouthPt(i) mouth i pulled CROC.mouthIn
@@ -972,4 +999,4 @@ const bloatSteps = [
   step("the player is put back once more", `if (window.__blob) DF.R.blob = window.__blob; window.__blob = null;
   G.player.fig.root.s = [1, 1, 1]; DF.newRun(99); return { pass: true };`),
 ];
-export default [...base, ...crocSteps, ...rollSteps, ...markSteps, ...tunnelSteps, ...ceilingSteps, ...bloatSteps];
+export default [...base, ...crocSteps, ...rollSteps, ...markSteps, ...runSteps, ...tunnelSteps, ...ceilingSteps, ...bloatSteps];

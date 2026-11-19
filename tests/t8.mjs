@@ -49,9 +49,21 @@ export default [
     msg: G.msgs.some((m) => m.text === "E-RANK GATE") };
   return { pass: Object.values(c).every(Boolean), c };`),
   step("sealed frames do nothing", `
-  DF.enterHub(); const p = G.player; let ok = true; cam.yaw = 0; DF.keys[DF.BIND.fwd] = true;
+  DF.resetCleared(); DF.enterHub(); const p = G.player; let ok = G.world.portals.map((q) => +q.open).join("") === "100000"; cam.yaw = 0; DF.keys[DF.BIND.fwd] = true;
   for (const q of G.world.portals.slice(1)) { p.x = q.x; p.z = q.z - 3; DF.sim(3); ok = ok && G.zone === "hub" && !G.trans; }
   DF.keys[DF.BIND.fwd] = false; return { pass: ok };`),
+  step("D opens once E is cleared", `
+  DF.resetCleared(); DF.enterHub(); const before = G.world.portals.map((q) => +q.open).join("");
+  DF.clearGrade("E", "fighter"); DF.enterHub(); const after = G.world.portals.map((q) => +q.open).join("");
+  let p = G.player; const q = G.world.portals[1]; cam.yaw = 0; p.x = q.x; p.z = q.z - 3; p.yaw = 0; DF.keys[DF.BIND.fwd] = true;
+  DF.sim(4, () => G.zone === "hub" || !!G.trans); DF.keys[DF.BIND.fwd] = false;
+  const c = { before: before === "100000", after: after === "110000", d: q.grade === "D" && q.open, zone: G.zone === "cave", grade: G.grade === "D",
+    sewer: !!G.world.sewer && G.enemies.some((e) => e.type === "croc"), done: !G.trans };
+  // the rest stay sealed with E cleared
+  DF.enterHub(); p = G.player; cam.yaw = 0; DF.keys[DF.BIND.fwd] = true; c.sealed = true;
+  for (const r of G.world.portals.slice(2)) { p.x = r.x; p.z = r.z - 3; DF.sim(3); c.sealed = c.sealed && !r.open && G.zone === "hub" && !G.trans; }
+  DF.keys[DF.BIND.fwd] = false; DF.resetCleared(); DF.enterHub();
+  return { pass: Object.values(c).every(Boolean), c, before, after };`),
   step("return to base", `
   DF.enterCave("E", 99); DF.enterHub(G.grade); const p = G.player, q = G.world.portals[0];
   const at = Math.hypot(p.x - q.x, p.z - (q.z - 3.5)) < 0.01 && Math.cos(p.yaw) < -0.5;
@@ -121,7 +133,8 @@ export default [
   step("hall screens", `${shown}
   const txt = (id) => document.getElementById(id).textContent.trim(), click = (id) => document.getElementById(id).click();
   const c = { play: txt("btnPlay") === "Enter the hall" };
-  DF.enterHub(); DF.show("pause"); c.hubPause = !shown("btnBase");
+  // the round trips above cleared E; with nothing cleared D's label reads Sealed in the next step
+  DF.resetCleared(); DF.enterHub(); DF.show("pause"); c.hubPause = !shown("btnBase");
   DF.enterCave("E", 99); DF.show("pause"); c.cavePause = shown("btnBase") && txt("btnBase") === "Return to base";
   click("btnBase"); c.fromPause = G.zone === "hub" && G.state === "play";
   DF.enterCave("E", 99); G.player.state = "dead"; G.player.hp = 0; G.player.t = 2; DF.show("play"); DF.sim(0.1); DF.show("dead");
@@ -154,10 +167,12 @@ export default [
   return { pass: G.zone === "cave" && at !== null && at >= 15.7, at };`),
   step("frames are solid", `
   DF.enterHub(); const p = G.player; cam.yaw = 0; DF.keys[DF.BIND.fwd] = true; const zs = [];
-  for (const q of G.world.portals.slice(1)) { p.x = q.x; p.z = q.z - 3; DF.sim(3); zs.push(+p.z.toFixed(2)); }
+  // an open D (E was cleared above) would take the player through; the sealed ones are walked into
+  const shut = G.world.portals.filter((q) => !q.open);
+  for (const q of shut) { p.x = q.x; p.z = q.z - 3; DF.sim(3); zs.push(+p.z.toFixed(2)); }
   DF.keys[DF.BIND.fwd] = false;
   // player radius is 0.45, so the body must stop at the frame's front face
-  return { pass: G.zone === "hub" && zs.every((z) => z <= 16.07), zs };`),
+  return { pass: G.zone === "hub" && shut.length >= 4 && zs.every((z) => z <= 16.07), zs };`),
   step("respawn in the hall is safe", `
   DF.enterHub(); let threw = false; try { DF.respawn(); } catch (e) { threw = true; }
   const p = G.player; return { pass: !threw && G.zone === "hub" && p.state === "free" && p.hp === p.maxHp && G.enemies.length === 1 };`),

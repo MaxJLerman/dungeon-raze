@@ -20,8 +20,9 @@ is what you need to change the code without breaking it.
   `feat/touch-controls`, tested under Chromium device emulation only. No
   phone has been played on yet.
 - The game starts in a base of operations: a built hall with six portal frames
-  graded E, D, C, B, A and S, and a training dummy. Only E is open and it leads
-  to the cave. Grades carry no difficulty or rewards yet; the owner wants
+  graded E, D, C, B, A and S, and a training dummy. E is always open and
+  leads to the cave. D leads to the sewer and opens once E's boss is dead.
+  C to S are sealed. Grades carry no difficulty or rewards yet; the owner wants
   enemy difficulty and kill rewards to scale by grade, with S the hardest.
 - Controller support was added on branch `feat/controller-support`, tested
   with a faked Gamepad API only. No real pad has been played yet.
@@ -42,25 +43,23 @@ is what you need to change the code without breaking it.
   the brood rooms and the tunnels. Batch 2 (`feat/d-enemies-water`) added
   the siren, eel, bloater and drain grabber, the rules for enemies bound to
   water or a wall, a held player state, and their placement: sirens or eels
-  in pool rooms, bloaters in pools and gutters, grabbers at grates. Only the
-  crocodile boss (project 3, branch `feat/crocodile`) remains before D joins
-  `LIVE_GRADES`. Until it is finished, `LIVE_GRADES` holds only E, so the D
-  portal stays sealed on the published page. Part one of the crocodile is
-  in: Old Sluicejaw has its body, numbers and place in the cavern's centre
+  in pool rooms, bloaters in pools and gutters, grabbers at grates. Project
+  3 is the crocodile boss, built in two parts. Part one (`feat/crocodile`)
+  gave Old Sluicejaw its body, numbers and place in the cavern's centre
   pool, in place of the Warden, and its fight cycle: it waits under until
   the player enters the cavern, swims under, surfaces with a warning and
   fights on land, where its death roll drags the player into the water. At
   75%, 50% and 25% of its health no hit takes it past the mark, and
-  reaching one breaks off what it is doing. Part two (branch
-  `feat/crocodile-2`) is under way: at a mark it now leaps into the
-  cavern's wall tunnels and throws spiked plates from one mouth after
-  another, then drops back into the water. Shots hurt it there up to a cap
-  per phase, and a parried plate knocks it down onto the ring, staggered.
-  Below half health chunks of the cavern's ceiling fall on the dry ring and
-  stay as rubble. Bloaters wash down the falls during the fight, and its
-  shadow shows under the light shafts while it is under. Only opening D
-  remains. A D run made live by hand has
-  no E type in it. The design is in
+  reaching one breaks off what it is doing. Part two (`feat/crocodile-2`)
+  added the rest: at a mark it leaps into the cavern's wall tunnels and
+  throws spiked plates from one mouth after another, then drops back into
+  the water. Shots hurt it there up to a cap per phase, and a parried plate
+  knocks it down onto the ring, staggered. Below half health chunks of the
+  cavern's ceiling fall on the dry ring and stay as rubble. Bloaters wash
+  down the falls during the fight, and its shadow shows under the light
+  shafts while it is under. With the crocodile finished, D is in
+  `LIVE_GRADES`: its portal opens in the hall once E's boss is dead, on the
+  published page too. A D run has no E type in it. The design is in
   `docs/superpowers/specs/2026-11-19-d-enemies-design.md` for the enemies,
   `docs/superpowers/specs/2026-11-18-sewer-d-gate-design.md` for the sewer
   and `docs/superpowers/specs/2026-11-19-crocodile-boss-design.md` for the
@@ -379,10 +378,9 @@ is what you need to change the code without breaking it.
 - **Which gates are open.** `LIVE_GRADES` (in `03b_hub.js`) is the set of
   grades whose content is finished. `portalOpen(grade)`: E is always open;
   a higher grade is open when it is in `LIVE_GRADES` and the grade below is
-  cleared. `hubPortals()` takes `open` from it. **D joins `LIVE_GRADES` only
-  when project 3 (the crocodile) is finished**, because a crocodile without
-  its tunnel phase must not appear in the published D. Tests add and remove it through
-  `DF.LIVE_GRADES`.
+  cleared. `hubPortals()` takes `open` from it. It holds E and D, so D opens
+  once E's boss is dead and C to S stay sealed. A test that takes D out
+  through `DF.LIVE_GRADES` puts it back before it ends.
 
 - `G` is the single state object. `G.state` is one of `title`, `play`,
   `pause`, `dead`, `win`, `class`, `controls`, `howto`, and `show(state)`
@@ -1361,15 +1359,18 @@ The class picker and HUD read `CLASSES` and need no changes.
    shape as `genWorld` and `genHub`, including `waterAt`, `bodyAt`, `bodies`,
    `grates`, `wallTunnels`, `shafts` and `pieces`.
 2. Add the grade to `LIVE_GRADES` in `03b_hub.js`, only when its enemies and
-   boss are finished. `portalOpen` then opens its frame once the grade below
-   is cleared (a boss kill saves that, see `CLEARED`). The frame, glow,
-   trigger, label and return point all follow from the `hubPortals()` entry.
+   boss are finished (D went in once the crocodile was). `portalOpen` then
+   opens its frame once the grade below is cleared (a boss kill saves that,
+   see `CLEARED`). The frame, glow, trigger, label and return point all
+   follow from the `hubPortals()` entry.
    Moving a gate is a change to that list.
 3. Give `EDEF` entries for its enemies, with `wade` where water matters, and
    point its spawn packs at them. Until then a live grade runs on E's types
    (D has its own types throughout, the crocodile in the cavern).
-4. Extend `tests/t8.mjs` and `tests/t22.mjs`: t8's "sealed frames do nothing"
-   step assumes only E is open, and t22 makes D live and cleared through `DF`.
+4. Extend `tests/t8.mjs` and `tests/t22.mjs`: t8's "D opens once E is
+   cleared" step expects E and D open with E cleared and the rest sealed,
+   "frames are solid" walks into the sealed frames only, and t22 takes D out
+   of `LIVE_GRADES` and back through `DF` to check a grade that is not live.
 
 ## Testing
 
@@ -1466,7 +1467,10 @@ The class picker and HUD read `CLASSES` and need no changes.
   roll with the player freed, hits all through a tunnel phase stop at the
   cap below that mark, the three fall at 600, 400 and 200 and then
   it dies and D is cleared, and an execution at a mark stops there and
-  plays out before it leaps. Then the tunnel phase: the leap to a mouth,
+  plays out before it leaps. Then a whole D run: from the hall with E
+  cleared, through the D portal into a sewer, onto the cavern's ring, hit
+  to each mark once it is up and killed, D cleared, the gate out open and
+  "OLD SLUICEJAW FALLS" shown. Then the tunnel phase: the leap to a mouth,
   the plan's counts, real plates hitting a pinned player for
   `CROC.plateDmg` (and the chip when guarding), the warning before each
   later mouth, the drop back into the water unhurt, nothing but shots
@@ -1523,8 +1527,8 @@ The class picker and HUD read `CLASSES` and need no changes.
   out of that shot): look at them.
 - Run `tests/t22.mjs` after any change to the sewer, water, `fieldFns`,
   `meshSink`, the world shader, `visiblePieces`, cleared grades or portal
-  opening: `SCRIPT=$PWD/tests/t22.mjs node test.mjs smoke`. It makes D live
-  with `DF.LIVE_GRADES.add("D")` and starts a run with `DF.newRun(seed, "D")`.
+  opening: `SCRIPT=$PWD/tests/t22.mjs node test.mjs smoke`. It starts a run
+  with `DF.newRun(seed, "D")`, which does not read `LIVE_GRADES`.
   It checks that `genWorld` is unchanged (hashes of caves 1, 7 and 99), that
   `genSewer` is unchanged (hashes of the mesh, materials, `Wt`, spawns, pieces
   and dressing for seeds 1, 5 and 9; update them only for a change meant to
@@ -1599,13 +1603,15 @@ The class picker and HUD read `CLASSES` and need no changes.
   checks six seeds.
 - Sewer decoration (brick heaps, plinths, ribs, pipes) blocks nothing, so a
   body can stand inside a heap.
-- The D portal is sealed on the published page by design, until the
-  crocodile lands. A D made live by hand fights the D enemies everywhere (rat,
-  drowned and brood mother in brood rooms and tunnels, siren or eels with
-  rats and bloaters in pool rooms, bloaters in gutters, grabbers at grates)
-  and Old Sluicejaw in the cavern, which leaps into its wall tunnels and
-  throws plates at each mark until a parried plate knocks it down, and
-  below half health its ceiling falls in on the ring.
+- D is open on the published page to anyone who has killed E's boss, and
+  none of it has been played by hand. It fights the D enemies everywhere
+  (rat, drowned and brood mother in brood rooms and tunnels, siren or eels
+  with rats and bloaters in pool rooms, bloaters in gutters, grabbers at
+  grates) and Old Sluicejaw in the cavern, which leaps into its wall
+  tunnels and throws plates at each mark until a parried plate knocks it
+  down, and below half health its ceiling falls in on the ring. Grades
+  still carry no difficulty or rewards, so clearing D gives nothing but
+  the record that it was cleared.
 - The rat, the drowned and the brood mother are untested by hand. Their
   numbers (speed, health, the cover's angle, the brood timer, cap and
   distances, placement odds) and how they look were set by tests and
@@ -1629,8 +1635,8 @@ The class picker and HUD read `CLASSES` and need no changes.
   warning and roll look, and the marks at a quarter of its health each.
   Whether a player in the water is punished too hard is a question. The
   tunnel phase's numbers (`leapT`, `mouthWarn`, `throwWind`, `throwGap`,
-  `linger`, `plateWait`, `dropT`, a plate's 14 damage at 15 m/s, the 100
-  cap) and its
+  `linger`, `plateWait`, `dropT`, `mouthIn`, a plate's 14 damage at 15
+  m/s, the 100 cap) and its
   look were set without a playtest. Knocked down, it lands on the first
   dry footing past the fall pool, right at the shore. At a mouth its tail is inside the outlet, so the throw
   reads as a toss of the head more than a tail whip. The falling
@@ -1678,9 +1684,9 @@ The class picker and HUD read `CLASSES` and need no changes.
 1. Tune feel from the owner's playtest: timing windows, sensitivity, difficulty.
 2. Give the portal grades meaning: enemy difficulty and kill rewards per
    grade, then open D to S. D's place and water are built (`feat/sewer`) and
-   so are its enemies (`feat/d-enemies`, `feat/d-enemies-water`) and part
-   one of the crocodile boss (`feat/crocodile`); its part two
-   (`feat/crocodile-2`) is under way, then D joins `LIVE_GRADES`. Revisit whether dying should send the player back
+   so are its enemies (`feat/d-enemies`, `feat/d-enemies-water`) and the
+   crocodile boss (`feat/crocodile`, `feat/crocodile-2`), and D is in
+   `LIVE_GRADES`. C is next. Revisit whether dying should send the player back
    to the base once there are rewards to lose.
 3. Loot, inventory and an extraction loop. The owner asked for these early on
    and they were set aside to get combat playable first.
