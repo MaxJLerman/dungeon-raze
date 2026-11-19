@@ -188,6 +188,12 @@ export default [
   arenaOf("brood", 9, "a brood mother sends rats while the hook conditions hold (control)", `DF.alertE(e, true); e.birthT = DF.BROOD.every - 0.1;
     DF.sim(1, keep); const n = G.enemies.filter((o) => o.mom === e).length;
     return { pass: n === 1, n };`),
+  arenaOf("brood", 9, "she holds no attack token while standing off", `DF.alertE(e, true); let tok = 0, steps = 0;
+    DF.sim(30, () => { keep(); steps++; if (e.token) tok++; });
+    return { pass: tok === 0 && steps >= 1800, tok, steps, d: Math.hypot(e.x - p.x, e.z - p.z) };`),
+  arenaOf("brood", 2, "a player at 2 m still draws a bite", `DF.alertE(e, true); e.cd = 0; let wind = false;
+    DF.sim(4, () => { keep(); if (e.state === "wind") wind = true; });
+    return { pass: wind, wind };`),
   arenaOf("brood", 9, "she sends nothing while staggered", `DF.alertE(e, true); e.birthT = DF.BROOD.every - 0.1; DF.stagger(e); e.dur = 3;
     DF.sim(1, keep); const n = G.enemies.filter((o) => o.mom === e).length;
     return { pass: n === 0 && e.state === "stagger", n, st: e.state };`),

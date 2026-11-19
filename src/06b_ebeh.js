@@ -89,9 +89,13 @@ EBEH.brood = {
     sparks(r.x, 0.3, r.z, 10, e.fig.eye, 4);
     return false;
   },
+  // she bites only when the player is on her, so she takes no token (one of
+  // the two attack slots) while she stands off
+  canAttack: (e, c) => c.dist <= BROOD.close + 0.5,
   // back away while the player is inside her keep distance but not on her
   chase(e, dt, c) {
     if (!(c.dist > BROOD.close && c.dist < BROOD.keep)) return false;
+    e.token = false;
     const ux = c.dx / c.dist,
       uz = c.dz / c.dist;
     e.yaw = turnTo(e.yaw, c.toP, e.def.turn * dt);
