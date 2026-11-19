@@ -14,8 +14,8 @@ export default [
   return { pass: JSON.stringify(got) === JSON.stringify(GOLD), got };`),
   // the sewer's mesh, materials, water, spawns, pieces and dressing for three
   // seeds: a change that only moves code must leave these as they are (last
-  // set when pillars were first placed)
-  step("genSewer is unchanged by moving code", `const GOLD = {"1":[986490649,-1408860584,53738536,1843793420,-123936664,2141902352,1529990366],"5":[-891507314,-1670134528,-565151880,1146299380,-1777763128,1120132332,-1321668637],"9":[530191366,651926704,1707797600,575945143,-5135603,1669052856,2124960222]};
+  // set when some pool rooms first placed their piers before their pools)
+  step("genSewer is unchanged by moving code", `const GOLD = {"1":[-275855559,-1212997896,1136128360,-1596691188,1775879867,-453188041,1529990366],"5":[-891507314,-1670134528,-565151880,1146299380,-1777763128,1120132332,-1321668637],"9":[607481708,1357864440,-929402080,1439275479,-215523777,-1493851340,-1179530068]};
   const h = (a) => { let x = 0; for (let i = 0; i < a.length; i++) x = (x * 31 + Math.round(a[i] * 1000)) | 0; return x; };
   const hs = (s) => { let x = 0; for (let i = 0; i < s.length; i++) x = (x * 31 + s.charCodeAt(i)) | 0; return x; };
   const got = {}; for (const s of [1, 5, 9]) { const w = DF.genSewer(s);
@@ -156,15 +156,19 @@ export default [
       for (const k in least) least[k] = least[k] === 1e9 ? null : +least[k].toFixed(2);
       return { pass: bad.length === 0 && pillars > 0 && least.pillar !== null && least.inPool !== null, least, pillars, bad: bad.slice(0, 6) };`],
     // Piers: in about two fight rooms in five (between a third and a half
-    // over twelve seeds), never in the arrival hall or the boss cavern. Each
+    // over twelve seeds), never in the arrival hall or the boss cavern. Some
+    // pool rooms place a pier before their pools, so at least a third of the
+    // pool rooms big enough for one (SEWER.pillarAt) have one; before that
+    // it was about a quarter over these seeds. Each
     // is rock at its centre and its field reads 0 along its faces, so the
     // wall drawn round it is its footprint; the walls drawn there and the top
     // of its plinth are read back from the mesh. It keeps 3 m to the room's
     // walls and to other piers, and either has no water within 3 m or water
     // all round it out to SEWER.pillarWet
-    ["piers stand in a third to a half of fight rooms, block, and are drawn where they stand", `const S = DF.SEWER, PH = S.pillarHS, B = S.pillarBase; let fights = 0, withP = 0, n2 = 0, piers = 0;
+    ["piers stand in a third to a half of fight rooms, block, and are drawn where they stand", `const S = DF.SEWER, PH = S.pillarHS, B = S.pillarBase; let fights = 0, withP = 0, n2 = 0, piers = 0; const pool = { rooms: 0, big: 0, withP: 0, bigP: 0 };
       for (const s of SEEDS) { const w = gen(s), P = w.pos;
         for (const n of w.nodes) { const mine = w.pillars.filter((c) => inRect(n, c.x, c.z)); if (n.kind === "pool" || n.kind === "brood") { fights++; if (mine.length) withP++; }
+          if (n.kind === "pool") { const big = Math.min(n.hw, n.hd) >= S.pillarAt; pool.rooms++; if (big) pool.big++; if (mine.length) { pool.withP++; if (big) pool.bigP++; } }
           if (mine.length > 1) n2++; if (mine.length && (n.kind === "start" || n.kind === "boss")) bad.push({ s, n: n.id, kind: n.kind }); }
         for (const c of w.pillars) { piers++; const n = w.nodes.find((n) => inRect(n, c.x, c.z)), why = [];
           if (!n) { bad.push({ s, c, why: "in no room" }); continue; }
@@ -184,8 +188,9 @@ export default [
           const e = PH + B.out; if ([c.x - e - x0, x1 - c.x - e, c.z - e - z0, z1 - c.z - e].some((d) => Math.abs(d) > 0.01)) why.push("plinth off its footprint");
           if (nw < 8 || off) why.push("walls off its footprint " + nw + " " + off);
           if (why.length) bad.push({ s, c, n: n.id, why }); } }
-      const share = withP / fights;
-      return { pass: bad.length === 0 && share >= 1 / 3 && share <= 0.5 && n2 > 0, share: +share.toFixed(3), fights, withP, pairs: n2, piers, bad: bad.slice(0, 6) };`],
+      const share = withP / fights, poolBig = pool.bigP / pool.big;
+      return { pass: bad.length === 0 && share >= 1 / 3 && share <= 0.5 && n2 > 0 && poolBig >= 1 / 3, share: +share.toFixed(3), fights, withP, pairs: n2, piers,
+        poolBig: +poolBig.toFixed(3), poolAll: +(pool.withP / pool.rooms).toFixed(3), pool, bad: bad.slice(0, 6) };`],
     // each pool room has a crossing: two pools 2 to 3 m apart
     ["each pool room has a crossing 2 to 3 m wide between two pools", `const widths = new Set();
       for (const s of SEEDS) { const w = gen(s); for (const n of w.nodes) { if (n.kind !== "pool") continue; const ps = pools(w, n); let found = null;
@@ -283,6 +288,12 @@ export default [
   const n = w.nodes.find((n) => n.kind === "brood" && mine(n).length === 2) || w.nodes.find((n) => mine(n).length === 2) || w.nodes.find((n) => mine(n).length);
   const [a] = mine(n), dx = a.x - n.x, dz = a.z - n.z, l = Math.hypot(dx, dz), x = n.x - (dz / l) * 2.5, z = n.z + (dx / l) * 2.5;
   return { ...look(x, z, Math.atan2(a.x - x, a.z - z), 0.12), n: n.id, kind: n.kind, piers: mine(n) };`), wait: 500, shot: "t22-pillars" },
+  // a pool room whose pier stands in a pool: from the dry ring by the wall
+  // nearest the pier, looking across the water at it
+  { ...sewer("a pier standing in a pool, for looking at", `const wet = (c) => [[2, 0], [-2, 0], [0, 2], [0, -2]].every(([a, b]) => w.waterAt(c.x + a, c.z + b) >= 0.5);
+  const n = w.nodes.find((n) => n.kind === "pool" && w.pillars.some((c) => Math.abs(c.x - n.x) < n.hw && Math.abs(c.z - n.z) < n.hd && wet(c)));
+  const c = w.pillars.find((c) => Math.abs(c.x - n.x) < n.hw && Math.abs(c.z - n.z) < n.hd && wet(c)), sz = c.z < n.z ? -1 : 1, sx = c.x < n.x ? 1 : -1, x = c.x + sx * 5, z = n.z + sz * (n.hd - 1.6);
+  return { ...look(x, z, Math.atan2(c.x - sx * 2.5 - x, c.z - z), 0.32), n: n.id, c, dry: w.waterAt(x, z) === 0 };`), wait: 500, shot: "t22-pier-wet" },
   // the boss cavern from its entrance, looking at the centre pool
   { ...sewer("the boss cavern, for looking at", `const b = w.boss, ent = w.nodes[w.path[w.path.length - 2]], a = Math.atan2(ent.x - b.x, ent.z - b.z);
   return look(b.x + Math.sin(a) * (b.r - 3), b.z + Math.cos(a) * (b.r - 3), a + Math.PI, 0.3);`), wait: 400, shot: "t22-boss" },

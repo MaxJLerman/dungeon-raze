@@ -202,15 +202,25 @@ is what you need to change the code without breaking it.
   three rooms in four) try a pair through the middle or one pier, near half way to the
   walls; the arrival hall and the boss cavern have none. A pier is
   `2 * pillarHS` (2 m) wide and centred on a grid point, so its faces lie on
-  grid lines and the wall drawn round it is its footprint. It is placed
-  after the water, round it: 3 m from the room's walls and other piers, out
-  of each tunnel's lane (`tunR` from the line from mouth to middle), clear
-  of the rest plinth, and either with no water within 3 m or inside a pool
-  with `pillarWet` (2 m) of water on every side, so it never leaves a sliver
-  of water or a narrow walkway. A spot that breaks a rule is passed over.
-  Most pool rooms have no pool big enough, so about two fight rooms in five
-  have piers, most of them brood rooms. The field and the vault dip to meet
-  a pier; `dressRooms` draws its plinth and capital and keeps arches clear.
+  grid lines and the wall drawn round it is its footprint. Every pier keeps
+  3 m from the room's walls and other piers, out of each tunnel's lane
+  (`tunR` from the line from mouth to middle), clear of the rest plinth,
+  and either with no water within 3 m or inside a pool with `pillarWet`
+  (2 m) of water on every side, so it never leaves a sliver of water or a
+  narrow walkway (`pierFits`). A spot that breaks a rule is passed over.
+  A pool room of that size, with chance `SEWER.poolPier.p` (0.3), places
+  its pier first (`poolPiers`): a spot where a pool can hold it, then the
+  layout from `poolLayouts` with the most water whose pool holds it with
+  `pillarWet` all round and whose walkways still join the mouths. Those
+  draws come from the room's own stream, so every other room lays out as
+  before. Any other room, and a pool room where that fails, places piers
+  after the water, round it. About 32% of pool rooms of that size have a
+  pier (18% before pool rooms placed theirs first), and every pool-room
+  pier stands in water. At `p` 1 it would be about 64%, but t22 holds the
+  share of fight rooms with piers to at most a half and brood rooms nearly
+  fill it, so `p` is held at 0.3 (exactly a half over t22's seeds). The
+  field and the vault dip to meet a pier; `dressRooms` draws its plinth and
+  capital and keeps arches clear.
 - Water in the sewer: pools in pool rooms (two to four separate bodies, a
   crossing between two of them, dry walkways joining every entrance), a gutter
   along some tunnels (never joined to a room's pools) and some brood rooms,
@@ -894,8 +904,9 @@ The class picker and HUD read `CLASSES` and need no changes.
   and dressing for seeds 1, 5 and 9; update them only for a change meant to
   alter the sewer, and say so in the commit), that the drawn shore is where
   `waterAt` reads 0.5, the water rules above and the pillar rules (their
-  share of rooms, that each blocks and is drawn on its footprint) over
-  twelve seeds, water
+  share of fight rooms, at least a third of the pool rooms big enough for
+  one, that each blocks and is drawn on its footprint) over twelve seeds,
+  water
   in the player and enemy moves, D sealed and opened, the save, the layout
   over many seeds, water bodies and dry routes, the boss cavern, the brick
   and water materials, lamps, drips, the minimap, that every walkable point
