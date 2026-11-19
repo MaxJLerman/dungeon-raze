@@ -1,12 +1,25 @@
 // D enemies: the behaviour hooks. Run with: SCRIPT=$PWD/tests/t23.mjs node test.mjs smoke
 const step = (name, body) => ({ name, eval: `(() => { const { G, cam } = DF; G.manual = true; ${body} })()` });
-// cave 99, every enemy gone, one husk 4 m in front of the player and facing them
-const arena = (name, body) => step(name, `DF.newRun(99); DF.show("play"); G.state = "play"; const p = G.player, w = G.world;
-  G.enemies = []; const e = DF.makeEnemy({ type: "husk", x: p.x, z: p.z + 4, yaw: Math.PI, node: -1 }); w.resolve(e, e.r); G.enemies.push(e);
+// cave 99, every enemy gone, one enemy of the given type `dist` m in front of the player and facing them
+const arenaOf = (type, dist, name, body) => step(name, `DF.newRun(99); DF.show("play"); G.state = "play"; const p = G.player, w = G.world;
+  G.enemies = []; const e = DF.makeEnemy({ type: "${type}", x: p.x, z: p.z + ${dist}, yaw: Math.PI, node: -1 }); w.resolve(e, e.r); G.enemies.push(e);
   if (w.fieldAt(e.x, e.z) < 1) return { pass: false, why: "arena not open floor" };
   const keep = () => { p.hp = p.maxHp; p.stam = p.maxStam; };
   const clear = () => { delete DF.EBEH.__t; delete DF.EDEF.__k; };
   ${body}`);
+const arena = (name, body) => arenaOf("husk", 4, name, body);
+// a lone enemy 2.6 m in front of a low camera, three-quarters on, for looking at. The camera
+// distance is shortened for the shot and put back by the step that follows.
+const view = (type, name, body, shot) => [
+  { ...step(name, `window.__cd0 = window.__cd0 || cam.dist; DF.newRun(99); DF.show("play"); G.state = "play"; const p = G.player, w = G.world;
+  G.enemies = []; const cy = 3.5, fx = Math.sin(cy), fz = Math.cos(cy), pit = 0.55;
+  p.yaw = cam.yaw = cy; cam.pitch = pit; cam.dist = 0.6; cam.cd = 0.6; cam.px = p.x; cam.pz = p.z;
+  const ex = p.x + (-fz) * 0.6 + fx * (2.6 - Math.cos(pit) * 0.6), ez = p.z + fx * 0.6 + fz * (2.6 - Math.cos(pit) * 0.6);
+  const e = DF.makeEnemy({ type: "${type}", x: ex, z: ez, yaw: cy - 1.0, node: -1 }); G.enemies.push(e); e.aware = true;
+  p.fig.root.s = [0.0001, 0.0001, 0.0001];
+  ${body}`), wait: 400, shot },
+  step("the camera and the player are put back", `cam.dist = window.__cd0; DF.newRun(99); return { pass: true };`),
+];
 export default [
   step("a type with no hooks has no entry", `return { pass: DF.EBEH && DF.EBEH.husk === undefined && DF.EBEH.brute === undefined && DF.EBEH.spitter === undefined && DF.EBEH.warden === undefined && typeof DF.EFIG === "object" && typeof DF.EPOSE === "object" };`),
   arena("step, chase and death hooks are called", `const n = { s: 0, c: 0, d: 0 };
@@ -69,4 +82,36 @@ export default [
     e.type = "__t"; G.projs.push({ x: e.x - 1, y: 1, z: e.z, vx: 20, vz: 0, life: 1, own: "p", dmg: 5, post: 0, kind: "bolt", c: [1, 1, 1] });
     DF.sim(0.2, keep); clear();
     return { pass: typeof seen.sx === "number" && seen.sx < seen.ex - 1 && Math.abs(seen.sz - seen.ez) < 0.2, seen };`),
+  arenaOf("rat", 1.2, "a rat cannot attack while swimming", `DF.alertE(e, true); e.cd = 0; const sw = new Set(), dr = new Set();
+    w.waterAt = () => 1; DF.sim(4, () => { keep(); sw.add(e.state); });
+    w.waterAt = () => 0; e.cd = 0; DF.sim(4, () => { keep(); dr.add(e.state); });
+    return { pass: !sw.has("wind") && dr.has("wind"), sw: [...sw], dr: [...dr] };`),
+  arenaOf("rat", 1.2, "a rat attacks at a shore reading of 0.5, not above", `DF.alertE(e, true); e.cd = 0; const seen = (v) => { const s = new Set(); e.cd = 0; w.waterAt = () => v; DF.sim(4, () => { keep(); s.add(e.state); }); return s.has("wind"); };
+    const at = seen(0.5), above = seen(0.51);
+    return { pass: at && !above, at, above };`),
+  step("a rat outpaces the player in water", `const best = Math.max(...Object.values(DF.CLASSES).map((c) => c.run)) * DF.WATER.slow, rat = DF.EDEF.rat.speed * DF.wadeOf(DF.EDEF.rat);
+    return { pass: rat > best, rat, best };`),
+  arenaOf("rat", 3, "the rat's body", `const f = e.fig; const out = {};
+    const finite = () => { let ok = true; (function rec(n) { for (const v of [...n.p, ...n.r, ...n.s]) if (!Number.isFinite(v)) ok = false; n.ch.forEach(rec); })(f.root); return ok; };
+    let threw = null, finiteAll = true;
+    for (const wet of [0, 1]) { w.waterAt = () => wet;
+      for (const st of ["idle", "alert", "chase", "search", "wind", "act", "rec", "hit", "recoil", "stagger", "roar", "return", "dead"]) {
+        e.state = st; e.t = 0.2; e.atk = e.def.atks.pounce; e.speed = 3; e.walk = 1.3;
+        try { DF.poseEnemy(e); if (!finite()) finiteAll = false; } catch (x) { threw = st + " " + wet + " " + x.message; } } }
+    return { pass: !!DF.EFIG.rat && Array.isArray(f.rim) && Array.isArray(f.eye) && threw === null && finiteAll, threw, finiteAll, rim: f.rim, eye: f.eye };`),
+  ...view("rat", "a rat running, for looking at", `e.state = "chase"; e.speed = e.def.speed; e.walk = 1.1; return { pass: true };`, "t23-rat"),
+  ...view("rat", "a rat rearing half way through its wind-up, for looking at", `e.atk = e.def.atks.bite; e.state = "wind"; e.t = e.atk.wind * 0.5; return { pass: true };`, "t23-rat-rear"),
+  ...view("rat", "a rat swimming, for looking at", `w.waterAt = () => 1; e.state = "chase"; e.speed = 4; e.walk = 1.1; return { pass: true };`, "t23-rat-swim"),
+  // the same swim in a real pool of the sewer, where the water is drawn
+  { ...step("a rat swimming in a sewer pool, for looking at", `window.__cd0 = window.__cd0 || cam.dist; DF.LIVE_GRADES.add("D"); DF.newRun(5, "D"); DF.show("play"); G.state = "play"; DF.LIVE_GRADES.delete("D");
+  const p = G.player, w = G.world; G.enemies = [];
+  let at = null; for (let x = -200; x < 200 && !at; x += 1) for (let z = -200; z < 200; z += 1) if (w.waterAt(x, z) === 1 && w.waterAt(x + 2, z) === 1 && w.waterAt(x - 2, z) === 1 && w.waterAt(x, z + 2) === 1 && w.waterAt(x, z - 2) === 1 && w.waterAt(x + 4, z - 4) === 1 && w.fieldAt(x, z) > 2) { at = { x, z }; break; }
+  if (!at) return { pass: false, why: "no pool" };
+  const cy = 1.2, pit = 0.55, fx = Math.sin(cy), fz = Math.cos(cy);
+  p.x = at.x - fx * 2.6 + fz * 0.6; p.z = at.z - fz * 2.6 - fx * 0.6;
+  p.yaw = cam.yaw = cy; cam.pitch = pit; cam.dist = 0.6; cam.cd = 0.6; cam.px = p.x; cam.pz = p.z;
+  const e = DF.makeEnemy({ type: "rat", x: at.x, z: at.z, yaw: cy - 1.0, node: -1 }); G.enemies.push(e); e.aware = true; e.state = "chase"; e.speed = 4; e.walk = 1.1;
+  p.fig.root.s = [0.0001, 0.0001, 0.0001];
+  return { pass: w.waterAt(e.x, e.z) === 1, at }; `), wait: 500, shot: "t23-rat-swim-sewer" },
+  step("the camera is put back", `cam.dist = window.__cd0; DF.newRun(99); return { pass: true };`),
 ];

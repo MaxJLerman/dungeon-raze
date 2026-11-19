@@ -43,3 +43,7 @@ function keepFooting(e) {
     e.z = e.okz;
   }
 }
+// The rat swims but cannot bite while it does: a reading of 0.5 is still shore.
+EBEH.rat = {
+  canAttack: (e) => G.world.waterAt(e.x, e.z) <= 0.5,
+};
