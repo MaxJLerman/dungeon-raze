@@ -1253,6 +1253,51 @@ const EDEF = {
       },
     },
   },
+  // D gate: a drowned guard behind a manhole cover. The cover stops every hit
+  // from the front (EBEH.drowned.hit): `guard` is its half-angle, `guardLight`
+  // the share of a light hit's posture that gets through. Heavy blows fill
+  // posture in full and break it open; the sides and back are bare.
+  drowned: {
+    name: "Drowned",
+    threat: 1,
+    hp: 90,
+    posture: 80,
+    speed: 2.4,
+    turn: 2.2,
+    r: 0.55,
+    sight: 14,
+    cd: 1.5,
+    poise: 1,
+    hunch: 0.25,
+    top: 2.0,
+    guard: 1.05,
+    guardLight: 0.25,
+    atks: {
+      bash: {
+        style: "thrust",
+        wind: 0.6,
+        act: 0.15,
+        rec: 0.6,
+        dmg: 12,
+        reach: 2.0,
+        arc: 1.6,
+        lunge: 1.0,
+        trig: 2.0,
+        kb: 14,
+      },
+      edge: {
+        style: "over",
+        wind: 0.8,
+        act: 0.16,
+        rec: 0.8,
+        dmg: 22,
+        reach: 2.4,
+        arc: 1.3,
+        lunge: 1.2,
+        trig: 2.3,
+      },
+    },
+  },
   brute: {
     name: "Brute",
     threat: 1,

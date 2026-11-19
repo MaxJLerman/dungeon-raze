@@ -226,3 +226,88 @@ function poseRat(e) {
   sinkInWater(f, e.x, e.z);
 }
 EPOSE.rat = { pose: poseRat };
+
+// ---- the drowned ----
+// A waterlogged guard. Built on makeFigure, so poseEnemy poses the body and
+// atkPose its attacks (they use the right arm). The left hand holds a round
+// manhole cover; EPOSE.drowned.after keeps that arm up, and the cover facing
+// forward whatever the chest and arm are doing. A cover disc's axis is its
+// local Y, so it is turned a quarter turn about X to face +Z.
+function makeDrownedFig() {
+  const f = makeFigure({
+    sc: 1.1,
+    w: 0.6,
+    th: 0.66,
+    d: 0.34,
+    hs: 0.3,
+    aw: 0.14,
+    al: 0.66,
+    body: C_(0x2c3330),
+    trim: C_(0x1a1f1d),
+    skin: C_(0x7f9582),
+    limb: C_(0x3a4640),
+    headPrim: "sph",
+  });
+  // ragged strips of cloth hanging off the belt
+  const rag = C_(0x232a27);
+  for (let i = -2; i <= 2; i++)
+    f.hips.add(part("box", rag, 0.1, 0.34 + (i & 1) * 0.12, 0.04, i * 0.11, -0.02 - ((i & 1) * 0.06 + 0.17) * 0.5, 0.15 - Math.abs(i) * 0.02));
+  f.hips.add(part("box", rag, 0.12, 0.4, 0.04, 0.15, -0.2, -0.17));
+  // lank weed hair, and a pale, sunken stare
+  const weed = C_(0x24372b);
+  for (let i = -2; i <= 2; i++)
+    f.headN.add(part("box", weed, 0.05, 0.3 + Math.abs(i) * 0.05, 0.05, i * 0.07, -0.08, -0.17)).r[0] = 0.15;
+  f.headN.add(part("box", weed, 0.3, 0.07, 0.26, 0, 0.17, -0.02));
+  // swollen hands
+  for (const h of [f.handR, f.handL]) h.add(part("sph", C_(0x8aa08c), 0.17, 0.17, 0.17, 0, -0.06, 0));
+  // the cover on the left hand: a rim of iron round a dished disc, a boss and
+  // two cross ribs, in a node that poseDrowned turns to face forward
+  const iron = C_(0x6a6e73),
+    dark = C_(0x44474c),
+    rustc = C_(0x7b6a58);
+  f.cover = f.handL.add(new Nd());
+  f.cover.add(part("cyl", dark, 0.86, 0.05, 0.86, 0, 0, 0));
+  const N = 14;
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * TAU,
+      seg = f.cover.add(part("box", iron, 0.2, 0.1, 0.07, Math.cos(a) * 0.4, 0.03, Math.sin(a) * 0.4));
+    seg.r[1] = -a + PI / 2;
+  }
+  f.cover.add(part("cyl", iron, 0.2, 0.1, 0.2, 0, 0.05, 0));
+  f.cover.add(part("box", rustc, 0.6, 0.06, 0.06, 0, 0.04, 0));
+  f.cover.add(part("box", rustc, 0.06, 0.06, 0.6, 0, 0.04, 0));
+  f.rim = [0.1, 0.18, 0.15];
+  f.eye = [0.5, 0.9, 0.8];
+  return finishFigure(f);
+}
+EFIG.drowned = makeDrownedFig;
+EPOSE.drowned = {
+  after(e) {
+    const f = e.fig,
+      lowered = e.state === "stagger" || e.state === "dead";
+    if (lowered) {
+      // the arm hangs limp and the cover dangles at the hand
+      f.armL.r[0] = 0.15;
+      f.armL.r[2] = 0.3;
+      f.cover.p = [0.12, -0.18, 0.04];
+      f.cover.r = [0, 0, PI / 2];
+      return;
+    }
+    // held up in front of the chest. Only X turns act on the way down to the
+    // hand, so they add: the cover is turned back by what the chest and arm
+    // have added, plus a quarter turn, to face +Z.
+    const up = -1.3 + Math.sin(G.t * 2 + e.ph) * 0.03,
+      tot = f.chest.r[0] + up,
+      ca = Math.cos(tot),
+      sa = Math.sin(tot),
+      // where the centre should sit from the hand, in world axes, turned back
+      // into the hand's frame (y' = y cos + z sin; z' = -y sin + z cos)
+      wx = -0.34,
+      wy = 0.16,
+      wz = 0.1;
+    f.armL.r[0] = up;
+    f.armL.r[2] = 0;
+    f.cover.p = [wx, wy * ca + wz * sa, -wy * sa + wz * ca];
+    f.cover.r = [PI / 2 - tot, 0, 0];
+  },
+};

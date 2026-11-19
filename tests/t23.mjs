@@ -113,5 +113,39 @@ export default [
   const e = DF.makeEnemy({ type: "rat", x: at.x, z: at.z, yaw: cy - 1.0, node: -1 }); G.enemies.push(e); e.aware = true; e.state = "chase"; e.speed = 4; e.walk = 1.1;
   p.fig.root.s = [0.0001, 0.0001, 0.0001];
   return { pass: w.waterAt(e.x, e.z) === 1, at }; `), wait: 500, shot: "t23-rat-swim-sewer" },
+  // ---- the drowned ----
+  arenaOf("drowned", 4, "front hits do nothing to the drowned", `const hp = e.def.hp, p0 = e.posture;
+    DF.hitEnemy(e, 20, 10, { src: "melee" });
+    return { pass: e.hp === 90 && hp === 90 && Math.abs(e.posture - p0 - 2.5) < 1e-6 && e.state !== "hit", hp: e.hp, post: e.posture };`),
+  arenaOf("drowned", 4, "a front heavy deals its full posture", `const p0 = e.posture;
+    DF.hitEnemy(e, 20, 10, { src: "melee", heavy: true });
+    return { pass: e.hp === 90 && Math.abs(e.posture - p0 - 10) < 1e-6, hp: e.hp, post: e.posture };`),
+  arenaOf("drowned", 4, "front heavies break it into a stagger", `let n = 0, hpOk = true;
+    while (e.state !== "stagger" && n < 8) { DF.hitEnemy(e, 20, 20, { src: "melee", heavy: true }); n++; if (e.state !== "stagger" && e.hp !== 90) hpOk = false; }
+    return { pass: e.state === "stagger" && n <= 4 && hpOk && e.hp === 90, n, hp: e.hp, st: e.state };`),
+  arenaOf("drowned", 4, "side and back hits land", `const out = {};
+    const at = (ang, d) => { e.state = "idle"; e.hp = 90; e.yaw = Math.PI; p.x = e.x + Math.sin(Math.PI + ang) * d; p.z = e.z + Math.cos(Math.PI + ang) * d; };
+    at(Math.PI, 3); DF.hitEnemy(e, 20, 10, { src: "melee" }); out.back = e.hp;
+    at(Math.PI / 2, 3); DF.hitEnemy(e, 20, 10, { src: "melee" }); out.side = e.hp;
+    at(-Math.PI / 2, 3); DF.hitEnemy(e, 20, 10, { src: "melee" }); out.side2 = e.hp;
+    return { pass: out.back < 90 && out.side < 90 && out.side2 < 90, out };`),
+  arenaOf("drowned", 4, "every pellet from the front is stopped", `const pz = { sx: e.x + Math.sin(e.yaw) * 1, sz: e.z + Math.cos(e.yaw) * 1 };
+    for (let i = 0; i < 5; i++) DF.hitEnemy(e, 8, 4, { src: "pellet", ...pz });
+    return { pass: e.hp === 90, hp: e.hp };`),
+  arenaOf("drowned", 4, "blasts and executions go round the cover", `const out = {};
+    DF.hitEnemy(e, 20, 10, { src: "aoe", fx: e.x + Math.sin(e.yaw) * 2, fz: e.z + Math.cos(e.yaw) * 2 }); out.aoe = e.hp;
+    e.hp = 90; DF.stagger(e); DF.hitEnemy(e, 20, 10, { src: "exec", heavy: true }); out.exec = e.hp;
+    return { pass: out.aoe < 90 && out.exec < 90, out };`),
+  arenaOf("drowned", 4, "the bash shoves the player", `p.state = "free"; p.iframe = 0; p.kx = p.kz = 0;
+    DF.hurtPlayer(12, e, DF.EDEF.drowned.atks.bash); const k = Math.hypot(p.kx, p.kz);
+    return { pass: Math.abs(k - 14) < 0.01, k };`),
+  arenaOf("drowned", 3, "the drowned's body", `const f = e.fig; const out = {};
+    const finite = () => { let ok = true; (function rec(n) { for (const v of [...n.p, ...n.r, ...n.s]) if (!Number.isFinite(v)) ok = false; n.ch.forEach(rec); })(f.root); return ok; };
+    let threw = null, finiteAll = true;
+    for (const st of ["idle", "alert", "chase", "search", "wind", "act", "rec", "hit", "recoil", "stagger", "roar", "return", "dead"]) for (const an of ["bash", "edge"]) {
+      e.state = st; e.t = 0.2; e.atk = e.def.atks[an]; e.speed = 2; e.walk = 1.3;
+      try { DF.poseEnemy(e); if (!finite()) finiteAll = false; } catch (x) { threw = st + " " + x.message; } }
+    return { pass: !!DF.EFIG.drowned && !!DF.EPOSE.drowned && Array.isArray(f.rim) && Array.isArray(f.eye) && threw === null && finiteAll, threw, finiteAll };`),
+  ...view("drowned", "a drowned with its cover up, for looking at", `cam.pitch = 0.12; e.yaw = cy + Math.PI - 0.45; e.x += fx * 1.2; e.z += fz * 1.2; e.state = "chase"; e.speed = e.def.speed; e.walk = 1.1; return { pass: true };`, "t23-drowned"),
   step("the camera is put back", `cam.dist = window.__cd0; DF.newRun(99); return { pass: true };`),
 ];

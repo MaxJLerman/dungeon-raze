@@ -47,3 +47,15 @@ function keepFooting(e) {
 EBEH.rat = {
   canAttack: (e) => G.world.waterAt(e.x, e.z) <= 0.5,
 };
+// The drowned's cover stops what comes at its front. A hit's origin is where a
+// shot started, else where a blast went off, else the player.
+EBEH.drowned = {
+  hit(e, dmg, post, o) {
+    if (o.src === "aoe" || o.src === "exec" || e.state === "stagger") return null;
+    const p = G.player,
+      ox = o.sx !== undefined ? o.sx : o.fx !== undefined ? o.fx : p.x,
+      oz = o.sz !== undefined ? o.sz : o.fz !== undefined ? o.fz : p.z;
+    if (Math.abs(angDiff(e.yaw, Math.atan2(ox - e.x, oz - e.z))) >= e.def.guard) return null;
+    return { dmg: 0, post: o.heavy ? post : post * e.def.guardLight, blocked: true };
+  },
+};
