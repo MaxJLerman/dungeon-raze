@@ -1631,7 +1631,7 @@ function newRun(seed, grade = "E") {
   G.seed = seed;
   G.world = (WORLD_GEN[grade] || genWorld)(seed);
   SFX.setEcho(!!G.world.sewer);
-  R.setWorld(G.world.pos, G.world.col, G.world.mat);
+  R.setWorld(G.world.pos, G.world.col, G.world.mat, G.world.pieces);
   resetRun();
   G.player = makePlayer(OPT.cls);
   G.checkpoint = G.world.shrines[0];
@@ -1645,7 +1645,7 @@ function enterHub(fromGrade = null) {
   setEnv(ENV_HUB);
   G.world = genHub();
   SFX.setEcho(!!G.world.sewer);
-  R.setWorld(G.world.pos, G.world.col, G.world.mat);
+  R.setWorld(G.world.pos, G.world.col, G.world.mat, G.world.pieces);
   resetRun();
   const p = (G.player = makePlayer(OPT.cls));
   const q = fromGrade && G.world.portals.find((o) => o.grade === fromGrade);

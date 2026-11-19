@@ -64,7 +64,7 @@ const R = (() => {
     fogD: 0.03,
     t: 0,
   };
-  const stats = { draws: 0 };
+  const stats = { draws: 0, tris: 0 };
 
   // aMat is the world's material byte (MAT in 03_world.js): 0 plain, 1 brick,
   // 2 water. Anything without one reads 0.
@@ -333,13 +333,15 @@ const R = (() => {
     gl.disable(gl.CULL_FACE);
     return true;
   }
-  function setWorld(pos, col, mat = null) {
+  // pieces, when given, are ranges of the mesh that drawWorld can draw alone
+  function setWorld(pos, col, mat = null, pieces = null) {
     // worlds are swapped on every portal trip, so free the one being replaced
     if (world) {
       gl.deleteVertexArray(world.vao);
       for (const b of world.bufs) gl.deleteBuffer(b);
     }
     world = mesh(pos, col, mat);
+    world.pieces = pieces;
   }
   function resize() {
     const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
@@ -404,8 +406,34 @@ const R = (() => {
     nA = 0;
     nD = 0;
     stats.draws = 0;
+    stats.tris = 0;
   }
-  function drawWorld() {
+  // Whether any of box [x0, y0, z0, x1, y1, z1] is inside the view: it is
+  // out only when all eight corners are past the same clip plane.
+  function boxVisible(b) {
+    let all = 63;
+    for (let c = 0; c < 8; c++) {
+      const x = b[c & 1 ? 3 : 0],
+        y = b[c & 2 ? 4 : 1],
+        z = b[c & 4 ? 5 : 2],
+        cx = VP[0] * x + VP[4] * y + VP[8] * z + VP[12],
+        cy = VP[1] * x + VP[5] * y + VP[9] * z + VP[13],
+        cz = VP[2] * x + VP[6] * y + VP[10] * z + VP[14],
+        cw = VP[3] * x + VP[7] * y + VP[11] * z + VP[15];
+      all &=
+        (cx < -cw ? 1 : 0) |
+        (cx > cw ? 2 : 0) |
+        (cy < -cw ? 4 : 0) |
+        (cy > cw ? 8 : 0) |
+        (cz < -cw ? 16 : 0) |
+        (cz > cw ? 32 : 0);
+      if (!all) return true;
+    }
+    return false;
+  }
+  // With ids null, or a world set without pieces, draws the whole world;
+  // otherwise only those pieces.
+  function drawWorld(ids = null) {
     if (!world) return;
     const u = lit.u;
     gl.uniformMatrix4fv(u.uM, false, ID);
@@ -414,8 +442,19 @@ const R = (() => {
     gl.uniform3f(u.uRim, 0, 0, 0);
     gl.uniform1f(u.uToon, 0);
     gl.bindVertexArray(world.vao);
-    gl.drawArrays(gl.TRIANGLES, 0, world.n);
-    stats.draws++;
+    if (!ids || !world.pieces) {
+      gl.drawArrays(gl.TRIANGLES, 0, world.n);
+      stats.draws++;
+      stats.tris += world.n / 3;
+      return;
+    }
+    for (const id of ids) {
+      const q = world.pieces[id];
+      if (!q.count) continue;
+      gl.drawArrays(gl.TRIANGLES, q.first, q.count);
+      stats.draws++;
+      stats.tris += q.count / 3;
+    }
   }
   const _L = new Float32Array(16);
   function walk(n, pm, rim) {
@@ -586,6 +625,7 @@ const R = (() => {
     setLights,
     begin,
     drawWorld,
+    boxVisible,
     drawNode,
     nodePos,
     sprite,

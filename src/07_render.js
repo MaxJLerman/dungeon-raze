@@ -889,7 +889,7 @@ function render() {
   R.env.t = G.t;
   buildLights();
   R.begin();
-  R.drawWorld();
+  R.drawWorld(visiblePieces(w, R.cam.x, R.cam.z, p.x, p.z));
   posePlayer(p);
   R.drawNode(p.fig.root, p.fig.rim);
   const cx = R.cam.x,

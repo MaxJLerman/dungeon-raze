@@ -179,4 +179,33 @@ export default [
   // the map blown up to four times its size, to see what is on it
   const m = document.getElementById("map"); m.style.cssText = "width:640px;height:640px;right:20px;top:20px";
   return look(n.x, n.z - n.hd * 0.4, 0, 0.3);`), wait: 500, shot: "t22-map" },
+  // culling: the sewer is cut into pieces, each with the pieces it can see
+  sewer("everything the camera can see is in a drawn piece", `const bad = [], cut = 2.146 / DF.ENV_SEWER.fogD; for (let k = 0; k < 30; k++) { const e = w.edges[k % w.edges.length], q = e.pts[(k * 7) % e.pts.length]; p.x = q.x; p.z = q.z; w.resolve(p, 0.6);
+    const cx = p.x - Math.sin(p.yaw) * 4, cz = p.z - Math.cos(p.yaw) * 4, ids = new Set(DF.visiblePieces(w, cx, cz, p.x, p.z, false) || []);
+    const need = new Set(); for (let x = p.x - 40; x < p.x + 40; x += 1.5) for (let z = p.z - 40; z < p.z + 40; z += 1.5) if (Math.hypot(x - cx, z - cz) <= cut && w.fieldAt(x, z) > 0.2 && w.los(p.x, p.z, x, z)) need.add(w.pieceAt(x, z));
+    need.delete(-1); for (const id of need) if (!ids.has(id)) bad.push([k, id]); }
+  return { pass: bad.length === 0 && w.pieces.length > 1, bad: bad.slice(0, 5), pieces: w.pieces.length };`),
+  sewer("the camera outside every piece still draws the player's pieces", `const ids = DF.visiblePieces(w, w.minX - 50, w.minZ - 50, w.spawn.x, w.spawn.z); return { pass: Array.isArray(ids) && ids.length > 0 };`),
+  step("the cave and hall still draw whole", `DF.newRun(99); return { pass: G.world.pieces === null && DF.visiblePieces(G.world, 0, 0, 0, 0) === null && DF.genHub().pieces === null };`),
+  // 20 points along the way to the boss in three seeds, two frames drawn at
+  // each: the most world triangles drawn in a frame stays within E cave 99's
+  // whole count
+  { name: "the sewer draws no more in a frame than the whole of E cave 99", eval: `(async () => { const { G, cam } = DF; G.manual = true;
+    DF.newRun(99); const cap = G.world.pos.length / 9, frame = () => new Promise((r) => requestAnimationFrame(() => r()));
+    DF.LIVE_GRADES.add("D"); let most = 0, at = null, fewest = 1e9;
+    for (const s of [2, 5, 9]) { DF.newRun(s, "D"); DF.show("play"); G.state = "play"; const w = G.world, p = G.player; for (const e of G.enemies) e.x += 500;
+      const r = [w.spawn, ...w.route(w.spawn.x, w.spawn.z, w.boss.x, w.boss.z, 0.6)], cum = [0];
+      for (let i = 1; i < r.length; i++) cum.push(cum[i - 1] + Math.hypot(r[i].x - r[i - 1].x, r[i].z - r[i - 1].z));
+      for (let k = 0; k < 20; k++) { const d = (cum[cum.length - 1] * (k + 0.5)) / 20; let i = 1; while (i < r.length - 1 && cum[i] < d) i++;
+        const a = r[i - 1], b = r[i], t = (d - cum[i - 1]) / (cum[i] - cum[i - 1] || 1);
+        p.x = a.x + (b.x - a.x) * t; p.z = a.z + (b.z - a.z) * t; p.yaw = Math.atan2(b.x - a.x, b.z - a.z);
+        cam.yaw = p.yaw; cam.pitch = 0.3; cam.px = p.x; cam.pz = p.z; await frame(); await frame();
+        const n = DF.R.stats.tris; if (n > most) { most = n; at = [s, k]; } fewest = Math.min(fewest, n); } }
+    return { pass: most <= cap && fewest > 0, most, cap, at, fewest }; })()` },
+  // walking round a bend where one tunnel piece hands on to the next: look
+  // for missing walls, floor or vault (the map back to its size first)
+  ...[0, 1, 2].map((k) => ({ ...sewer("round a bend " + (k + 1) + ", for looking at", `document.getElementById("map").style.cssText = ""; const e = w.edges.find((e) => e.bends.length >= 3 && !w.nodes.some((n) => Math.abs(e.bends[2].x - n.x) < n.hw + 6 && Math.abs(e.bends[2].z - n.z) < n.hd + 6)) || w.edges.find((e) => e.bends.length >= 3);
+    const c = e.bends[2], a = e.bends[1], b = e.bends[3] || w.nodes[e.b], yi = Math.atan2(c.x - a.x, c.z - a.z), yo = Math.atan2(b.x - c.x, b.z - c.z), k = ${k};
+    const yaw = k === 0 ? yi : k === 1 ? yi + DF.angDiff(yi, yo) / 2 : yo, x = k === 0 ? c.x - Math.sin(yi) * 6 : k === 1 ? c.x : c.x + Math.sin(yo) * 6, z = k === 0 ? c.z - Math.cos(yi) * 6 : k === 1 ? c.z : c.z + Math.cos(yo) * 6;
+    return { ...look(x, z, yaw, 0.2), piece: w.pieceAt(x, z) };`), wait: 500, shot: "t22-bend-" + (k + 1) })),
 ];

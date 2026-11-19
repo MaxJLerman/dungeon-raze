@@ -621,6 +621,7 @@ window.DF = {
   startTrans,
   genHub,
   genSewer,
+  visiblePieces,
   SEWER,
   SEWER_LAMP,
   lampFlicker,

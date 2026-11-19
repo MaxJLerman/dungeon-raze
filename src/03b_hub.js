@@ -396,6 +396,8 @@ function genHub(layout = hubPortals()) {
     wallTunnels: [],
     shafts: [],
     pieces: null,
+    pieceGrid: null,
+    pieceAt: () => -1,
     pos: new Float32Array(P),
     col: new Uint8Array(C),
     mat: null,
