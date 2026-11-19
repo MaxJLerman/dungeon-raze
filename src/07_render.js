@@ -897,7 +897,7 @@ function render() {
   const cx = R.cam.x,
     cz = R.cam.z;
   for (const e of G.enemies) {
-    e.vis = Math.hypot(e.x - cx, e.z - cz) < 66;
+    e.vis = !e.hidden && Math.hypot(e.x - cx, e.z - cz) < 66;
     if (!e.vis) continue;
     poseEnemy(e);
     R.drawNode(e.fig.root, e.fig.rim);

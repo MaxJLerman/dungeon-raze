@@ -26,6 +26,12 @@
 //   death(e)                     at the end of kill
 //   foot(e, x, z) -> bool        whether e may stand at (x, z); read through
 //                                footOk, enforced by eStep and keepFooting
+//   goal(e, c) -> {x,z} | null   in the chase case, after canAttack: a point to
+//                                steer for in place of the player (zero within
+//                                0.3 m of it). The enemy still turns to face the
+//                                player, a wanting enemy walks to the point,
+//                                one not attacking waits there and does not
+//                                circle; the attack choice is unchanged
 const EBEH = {};
 // True when e may stand at (x, z): always, for a type with no foot hook.
 function footOk(e, x, z) {
@@ -34,15 +40,73 @@ function footOk(e, x, z) {
 }
 // Run each update after every mover (knockback, lunges, separation, rifts)
 // for a living enemy whose type has a foot hook: remember a position it may
-// stand on, or put it back on the last one.
+// stand on, or put it back on the last one. When that spot is gone too (rock
+// rose on it), the nearest point it may stand on: rings 0.25 m apart out to
+// 4 m, 16 points each. None found leaves the body where it is.
 function keepFooting(e) {
   if (footOk(e, e.x, e.z)) {
     e.okx = e.x;
     e.okz = e.z;
-  } else {
+    return;
+  }
+  if (footOk(e, e.okx, e.okz)) {
     e.x = e.okx;
     e.z = e.okz;
+    return;
   }
+  for (let r = 0.25; r <= 4 + 1e-6; r += 0.25)
+    for (let k = 0; k < 16; k++) {
+      const a = (k / 16) * TAU,
+        x = e.x + Math.sin(a) * r,
+        z = e.z + Math.cos(a) * r;
+      if (footOk(e, x, z)) {
+        e.x = e.okx = x;
+        e.z = e.okz = z;
+        return;
+      }
+    }
+}
+// A type bound to water or to a wall: heavy to every class tool that moves an
+// enemy, and not pushed by other enemies.
+function bound(e) {
+  return !!e.def.bound;
+}
+// The foot rule of every water-bound type: water (0.5 is the shore), room for
+// its body, and its own body of water or the shore where there is none.
+function waterFoot(e, x, z) {
+  const w = G.world;
+  if (e.body === undefined) e.body = w.bodyAt(e.x, e.z);
+  if (w.waterAt(x, z) < 0.5 || w.fieldAt(x, z) < e.r) return false;
+  const b = w.bodyAt(x, z);
+  return b === e.body || b === -1;
+}
+// The foot rule of a wall-bound type: its post and nowhere else.
+function wallFoot(e, x, z) {
+  return Math.hypot(x - e.hx, z - e.hz) <= 0.01;
+}
+// The point of e's footing nearest the player, from a 0.5 m lattice (on the
+// world's multiples of 0.5, so it does not shift as e moves) within 12 m of
+// e. Cached on e.goal and looked at again every 0.5 s; e's own spot when
+// nothing is found.
+function waterGoal(e, c) {
+  if (e.goal && G.t - e.goalT < 0.5) return e.goal;
+  const p = c.p,
+    x0 = Math.ceil((e.x - 12) / 0.5) * 0.5,
+    z0 = Math.ceil((e.z - 12) / 0.5) * 0.5;
+  let best = null,
+    bd = 1e9;
+  for (let x = x0; x <= e.x + 12; x += 0.5)
+    for (let z = z0; z <= e.z + 12; z += 0.5) {
+      if (Math.hypot(x - e.x, z - e.z) > 12 || !footOk(e, x, z)) continue;
+      const d = Math.hypot(x - p.x, z - p.z);
+      if (d < bd) {
+        bd = d;
+        best = { x, z };
+      }
+    }
+  e.goal = best || { x: e.x, z: e.z };
+  e.goalT = G.t;
+  return e.goal;
 }
 // The rat swims but cannot bite while it does: a reading of 0.5 is still shore.
 EBEH.rat = {
