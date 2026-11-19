@@ -36,10 +36,9 @@ const SEWER = {
   // pools and stands in one of them: it tries this many pier spots (or
   // pairs), each against this many rounds of pool layouts. A room that does
   // not, or where none fits, places piers after its water as other rooms
-  // do. p is held down by the share of fight rooms with piers, at most a
-  // half, which brood rooms nearly fill (t22); at 1 about two in three
-  // pool rooms of this size would have a pier.
-  poolPier: { p: 0.3, sets: 24, tries: 8 },
+  // do. At 0.75 about half the pool rooms of this size have a pier; at 1
+  // about two in three would.
+  poolPier: { p: 0.75, sets: 24, tries: 8 },
   // the arrival hall, off the grid beside corner (0, 0)
   startD: 44,
   startHW: 9,

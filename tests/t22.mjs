@@ -14,8 +14,8 @@ export default [
   return { pass: JSON.stringify(got) === JSON.stringify(GOLD), got };`),
   // the sewer's mesh, materials, water, spawns, pieces and dressing for three
   // seeds: a change that only moves code must leave these as they are (last
-  // set when some pool rooms first placed their piers before their pools)
-  step("genSewer is unchanged by moving code", `const GOLD = {"1":[-275855559,-1212997896,1136128360,-1596691188,1775879867,-453188041,1529990366],"5":[-891507314,-1670134528,-565151880,1146299380,-1777763128,1120132332,-1321668637],"9":[607481708,1357864440,-929402080,1439275479,-215523777,-1493851340,-1179530068]};
+  // set when most big pool rooms placed their piers before their pools)
+  step("genSewer is unchanged by moving code", `const GOLD = {"1":[-1431275824,-1228683800,246235336,607675172,-449013164,-82002622,1529990366],"5":[-958529565,1429795960,-1035043016,-1166667044,800819374,608908786,-1321668637],"9":[857347738,-962631704,-1260107072,933463255,32012464,749723291,-865936057]};
   const h = (a) => { let x = 0; for (let i = 0; i < a.length; i++) x = (x * 31 + Math.round(a[i] * 1000)) | 0; return x; };
   const hs = (s) => { let x = 0; for (let i = 0; i < s.length; i++) x = (x * 31 + s.charCodeAt(i)) | 0; return x; };
   const got = {}; for (const s of [1, 5, 9]) { const w = DF.genSewer(s);
@@ -155,17 +155,17 @@ export default [
         for (let i = 0; i < ps.length; i++) for (let j = i + 1; j < ps.length; j++) { const d = gap(ps[i], ps[j]); least.between = Math.min(least.between, d); if (d < 2 - TOL) bad.push({ s, n: n.id, between: +d.toFixed(2) }); } } }
       for (const k in least) least[k] = least[k] === 1e9 ? null : +least[k].toFixed(2);
       return { pass: bad.length === 0 && pillars > 0 && least.pillar !== null && least.inPool !== null, least, pillars, bad: bad.slice(0, 6) };`],
-    // Piers: in about two fight rooms in five (between a third and a half
-    // over twelve seeds), never in the arrival hall or the boss cavern. Some
-    // pool rooms place a pier before their pools, so at least a third of the
-    // pool rooms big enough for one (SEWER.pillarAt) have one; before that
-    // it was about a quarter over these seeds. Each
+    // Piers: in about half of fight rooms (between a third and 0.6 over
+    // twelve seeds; 0.557 measured), never in the arrival hall or the boss
+    // cavern. Most pool rooms big enough for one (SEWER.pillarAt) place a
+    // pier before their pools, so at least 0.45 of them have one (0.551
+    // measured; about a quarter before that). Each
     // is rock at its centre and its field reads 0 along its faces, so the
     // wall drawn round it is its footprint; the walls drawn there and the top
     // of its plinth are read back from the mesh. It keeps 3 m to the room's
     // walls and to other piers, and either has no water within 3 m or water
     // all round it out to SEWER.pillarWet
-    ["piers stand in a third to a half of fight rooms, block, and are drawn where they stand", `const S = DF.SEWER, PH = S.pillarHS, B = S.pillarBase; let fights = 0, withP = 0, n2 = 0, piers = 0; const pool = { rooms: 0, big: 0, withP: 0, bigP: 0 };
+    ["piers stand in a third to 0.6 of fight rooms, block, and are drawn where they stand", `const S = DF.SEWER, PH = S.pillarHS, B = S.pillarBase; let fights = 0, withP = 0, n2 = 0, piers = 0; const pool = { rooms: 0, big: 0, withP: 0, bigP: 0 };
       for (const s of SEEDS) { const w = gen(s), P = w.pos;
         for (const n of w.nodes) { const mine = w.pillars.filter((c) => inRect(n, c.x, c.z)); if (n.kind === "pool" || n.kind === "brood") { fights++; if (mine.length) withP++; }
           if (n.kind === "pool") { const big = Math.min(n.hw, n.hd) >= S.pillarAt; pool.rooms++; if (big) pool.big++; if (mine.length) { pool.withP++; if (big) pool.bigP++; } }
@@ -189,7 +189,7 @@ export default [
           if (nw < 8 || off) why.push("walls off its footprint " + nw + " " + off);
           if (why.length) bad.push({ s, c, n: n.id, why }); } }
       const share = withP / fights, poolBig = pool.bigP / pool.big;
-      return { pass: bad.length === 0 && share >= 1 / 3 && share <= 0.5 && n2 > 0 && poolBig >= 1 / 3, share: +share.toFixed(3), fights, withP, pairs: n2, piers,
+      return { pass: bad.length === 0 && share >= 1 / 3 && share <= 0.6 && n2 > 0 && poolBig >= 0.45, share: +share.toFixed(3), fights, withP, pairs: n2, piers,
         poolBig: +poolBig.toFixed(3), poolAll: +(pool.withP / pool.rooms).toFixed(3), pool, bad: bad.slice(0, 6) };`],
     // each pool room has a crossing: two pools 2 to 3 m apart
     ["each pool room has a crossing 2 to 3 m wide between two pools", `const widths = new Set();
@@ -288,12 +288,15 @@ export default [
   const n = w.nodes.find((n) => n.kind === "brood" && mine(n).length === 2) || w.nodes.find((n) => mine(n).length === 2) || w.nodes.find((n) => mine(n).length);
   const [a] = mine(n), dx = a.x - n.x, dz = a.z - n.z, l = Math.hypot(dx, dz), x = n.x - (dz / l) * 2.5, z = n.z + (dx / l) * 2.5;
   return { ...look(x, z, Math.atan2(a.x - x, a.z - z), 0.12), n: n.id, kind: n.kind, piers: mine(n) };`), wait: 500, shot: "t22-pillars" },
-  // a pool room whose pier stands in a pool: from the dry ring by the wall
-  // nearest the pier, looking across the water at it
+  // a pool room whose pier stands in a pool: from dry floor 7 m off,
+  // looking across the water at it
   { ...sewer("a pier standing in a pool, for looking at", `const wet = (c) => [[2, 0], [-2, 0], [0, 2], [0, -2]].every(([a, b]) => w.waterAt(c.x + a, c.z + b) >= 0.5);
   const n = w.nodes.find((n) => n.kind === "pool" && w.pillars.some((c) => Math.abs(c.x - n.x) < n.hw && Math.abs(c.z - n.z) < n.hd && wet(c)));
-  const c = w.pillars.find((c) => Math.abs(c.x - n.x) < n.hw && Math.abs(c.z - n.z) < n.hd && wet(c)), sz = c.z < n.z ? -1 : 1, sx = c.x < n.x ? 1 : -1, x = c.x + sx * 5, z = n.z + sz * (n.hd - 1.6);
-  return { ...look(x, z, Math.atan2(c.x - sx * 2.5 - x, c.z - z), 0.32), n: n.id, c, dry: w.waterAt(x, z) === 0 };`), wait: 500, shot: "t22-pier-wet" },
+  const c = w.pillars.find((c) => Math.abs(c.x - n.x) < n.hw && Math.abs(c.z - n.z) < n.hd && wet(c));
+  // the dry spot 7 m from it with the most room behind it for the camera
+  let x = c.x, z = c.z, best = -1e9; for (let a = 0; a < 32; a++) { const u = Math.sin(a * Math.PI / 16), v = Math.cos(a * Math.PI / 16), qx = c.x + u * 7, qz = c.z + v * 7;
+    if (w.waterAt(qx, qz) > 0 || w.fieldAt(qx, qz) < 1) continue; const f = w.fieldAt(qx + u * 4, qz + v * 4); if (f > best) { best = f; x = qx; z = qz; } }
+  return { ...look(x, z, Math.atan2(c.x - x, c.z - z) + 0.3, 0.3), n: n.id, c, dry: w.waterAt(x, z) === 0 };`), wait: 500, shot: "t22-pier-wet" },
   // the boss cavern from its entrance, looking at the centre pool
   { ...sewer("the boss cavern, for looking at", `const b = w.boss, ent = w.nodes[w.path[w.path.length - 2]], a = Math.atan2(ent.x - b.x, ent.z - b.z);
   return look(b.x + Math.sin(a) * (b.r - 3), b.z + Math.cos(a) * (b.r - 3), a + Math.PI, 0.3);`), wait: 400, shot: "t22-boss" },

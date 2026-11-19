@@ -208,17 +208,16 @@ is what you need to change the code without breaking it.
   and either with no water within 3 m or inside a pool with `pillarWet`
   (2 m) of water on every side, so it never leaves a sliver of water or a
   narrow walkway (`pierFits`). A spot that breaks a rule is passed over.
-  A pool room of that size, with chance `SEWER.poolPier.p` (0.3), places
+  A pool room of that size, with chance `SEWER.poolPier.p` (0.75), places
   its pier first (`poolPiers`): a spot where a pool can hold it, then the
   layout from `poolLayouts` with the most water whose pool holds it with
   `pillarWet` all round and whose walkways still join the mouths. Those
   draws come from the room's own stream, so every other room lays out as
   before. Any other room, and a pool room where that fails, places piers
-  after the water, round it. About 32% of pool rooms of that size have a
-  pier (18% before pool rooms placed theirs first), and every pool-room
-  pier stands in water. At `p` 1 it would be about 64%, but t22 holds the
-  share of fight rooms with piers to at most a half and brood rooms nearly
-  fill it, so `p` is held at 0.3 (exactly a half over t22's seeds). The
+  after the water, round it. Over 40 seeds about 52% of pool rooms of that
+  size have a pier (18% before pool rooms placed theirs first; about 64% at
+  `p` 1), and every pool-room pier stands in water. About 56% of fight
+  rooms have piers. The
   field and the vault dip to meet a pier; `dressRooms` draws its plinth and
   capital and keeps arches clear.
 - Water in the sewer: pools in pool rooms (two to four separate bodies, a
@@ -904,8 +903,8 @@ The class picker and HUD read `CLASSES` and need no changes.
   and dressing for seeds 1, 5 and 9; update them only for a change meant to
   alter the sewer, and say so in the commit), that the drawn shore is where
   `waterAt` reads 0.5, the water rules above and the pillar rules (their
-  share of fight rooms, at least a third of the pool rooms big enough for
-  one, that each blocks and is drawn on its footprint) over twelve seeds,
+  share of fight rooms, a third to 0.6, at least 0.45 of the pool rooms
+  big enough for one, that each blocks and is drawn on its footprint) over twelve seeds,
   water
   in the player and enemy moves, D sealed and opened, the save, the layout
   over many seeds, water bodies and dry routes, the boss cavern, the brick
