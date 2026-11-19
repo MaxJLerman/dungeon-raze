@@ -51,6 +51,16 @@ const field = (name, body) =>
   ${body}`);
 const draw = `const draw = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));`;
 
+// cave 99, the Fighter, a husk (set to state "hold" by hand) as the holder; `mk(dx)` stands the player dx metres in front of it
+const hold = (name, body) =>
+  step(name, `DF.setClass("fighter"); DF.newRun(99); DF.show("play"); G.state = "play"; const p = G.player, w = G.world; G.projs = [];
+  const h0 = G.enemies.find((q) => q.type === "husk");
+  const mk = (dx = 2) => { const e = DF.makeEnemy({ type: "husk", x: h0.x, z: h0.z, yaw: h0.yaw, node: -1 }); G.enemies = [e]; e.state = "idle";
+    p.x = e.x + Math.sin(e.yaw) * dx; p.z = e.z + Math.cos(e.yaw) * dx; w.resolve(p, 0.6); p.yaw = Math.atan2(e.x - p.x, e.z - p.z); cam.px = p.x; cam.pz = p.z;
+    p.state = "free"; p.hp = p.maxHp; p.stam = p.maxStam; p.iframe = 0; p.kx = p.kz = 0; G.grabGrace = 0; return e; };
+  const grab = (e, o) => { e.state = "hold"; return DF.grabPlayer(e, { dps: 0, tx: p.x, tz: p.z, speed: 0, ...o }); };
+  ${body}`);
+
 export default [
   // ---- the helpers themselves ----
   step("bound is read from the definition, wallFoot holds the post", `
@@ -223,5 +233,103 @@ export default [
     const f = DF.fieldFns(F, 0, 0, W, H), real = G.world;
     for (const type of ["husk", "rat"]) { G.world = f; G.routeN = 0; const e = DF.makeEnemy({ type, x: 3, z: 2, yaw: 0, node: -1 }); e.r = 0.9; DF.setRoute(e, 3, 10); G.world = real; out[type + "Route"] = e.route.length > 1; }
     return { pass: Object.values(out).every(Boolean), out };`),
+  // ---- being held ----
+  hold("a hold lasts HOLD.max and lets go", `
+    const e = mk(); const ok = grab(e, { dps: 5 });
+    DF.sim(1.9); const mid = p.state, hasHold = !!p.hold && p.hold.by === e;
+    DF.sim(0.2);
+    const c = { ok, mid: mid === "held", hasHold, free: p.state === "free", safe: p.iframe > 0, grace: G.grabGrace > 0, gone: p.hold === null };
+    return { pass: Object.values(c).every(Boolean), c, state: p.state, iframe: p.iframe, grace: G.grabGrace };`),
+  hold("each dodge press cuts the hold by HOLD.mash", `
+    const run = (code) => { const e = mk(); grab(e, { dps: 0 }); let dodged = false, low = p.stam;
+      DF.sim(0.8, (i) => { if (i % 6 === 0 && i < 24) DF.taps[code] = true; if (p.state === "dodge") dodged = true; low = Math.min(low, p.stam); });
+      return { free: p.state === "free", dodged, stam: low === p.maxStam }; };
+    const k = run(DF.BIND.dodge), t = run("T:dodge");
+    const c = { kFree: k.free, kDodge: !k.dodged, kStam: k.stam, tFree: t.free, tDodge: !t.dodged, tStam: t.stam };
+    return { pass: Object.values(c).every(Boolean), c, k, t };`),
+  hold("a hold with no mashing is not cut short by other buttons", `
+    const e = mk(); grab(e, { dps: 0 });
+    DF.sim(1.5, (i) => { DF.taps[DF.BIND.light] = true; DF.taps[DF.BIND.heavy] = true; DF.taps[DF.BIND.tool] = true; DF.taps[DF.BIND.heal] = true; DF.taps[DF.BIND.special] = true; });
+    return { pass: p.state === "held" && p.hold.t > 1.4 && p.hold.t < 1.6, state: p.state, t: p.hold && p.hold.t };`),
+  hold("a hold drags the player", `
+    const e = mk(); let T = null;
+    for (let a = 0; a < 6.3 && !T; a += 0.3) { const x = p.x + Math.sin(a) * 3, z = p.z + Math.cos(a) * 3;
+      if (w.fieldAt(x, z) >= 1 && w.los(p.x, p.z, x, z) && Math.hypot(x - e.x, z - e.z) > 4) T = { x, z }; }
+    if (!T) return { pass: false, why: "no target" };
+    grab(e, { tx: T.x, tz: T.z, speed: 4 }); DF.sim(1);
+    const d = Math.hypot(p.x - T.x, p.z - T.z);
+    return { pass: d < 0.3 && p.state === "held", d };`),
+  hold("held damage ticks through hurtPlayer and ignores guard", `
+    const run = (pre) => { const e = mk(); p.state = pre; p.hp = p.maxHp; const hp0 = p.hp; const ok = grab(e, { dps: 10 }); DF.sim(2.2); return { ok, loss: hp0 - p.hp, state: p.state }; };
+    const a = run("free"), b = run("guard");
+    const c = { aTook: a.ok && Math.abs(a.loss - 20) <= 1, bTook: b.ok && Math.abs(b.loss - 20) <= 1, same: Math.abs(a.loss - b.loss) < 0.01 };
+    return { pass: Object.values(c).every(Boolean), c, a, b };`),
+  hold("a dot tick through guard and a perfect dodge window does neither", `
+    const e = mk(); p.state = "guard"; p.guardT = 0; const hp0 = p.hp;
+    const r = DF.hurtPlayer(4, e, { dmg: 4, dot: true });
+    const c = { hit: r === "hit" && hp0 - p.hp === 4, state: p.state === "guard", kb: p.kx === 0 && p.kz === 0 };
+    p.state = "dodge"; p.iframe = 0.3; p.pdUsed = false; const f0 = p.focus; const r2 = DF.hurtPlayer(4, e, { dmg: 4, dot: true });
+    c.none = r2 === "none" && p.focus === f0 && !p.pdUsed;
+    return { pass: Object.values(c).every(Boolean), c, r, r2 };`),
+  hold("the holder's death or stagger frees the player", `
+    const run = (how) => { const e = mk(); grab(e, { dps: 0 }); DF.sim(0.3); const was = p.state; how(e); DF.sim(1 / 60); return { was, now: p.state }; };
+    const k = run((e) => DF.kill(e)), s = run((e) => DF.stagger(e));
+    const c = { kHeld: k.was === "held", kFree: k.now === "free", sHeld: s.was === "held", sFree: s.now === "free" };
+    return { pass: Object.values(c).every(Boolean), c, k, s };`),
+  hold("no grab during a dodge or the grace, and one holder at a time", `
+    const e = mk(), o = DF.makeEnemy({ type: "husk", x: e.x, z: e.z, yaw: 0, node: -1 }); G.enemies = [e, o];
+    const c = {}; const g = (en) => { en.state = "hold"; return DF.grabPlayer(en, { dps: 0, tx: p.x, tz: p.z, speed: 0 }); };
+    p.iframe = 0.3; c.iframe = g(e) === false; p.iframe = 0;
+    for (const st of ["dead", "execute", "blink", "inspect", "grapple"]) { p.state = st; c[st] = g(e) === false; } p.state = "free";
+    G.state = "pause"; c.pause = g(e) === false; G.state = "play";
+    c.first = g(e) === true; c.second = g(o) === false && p.hold.by === e;
+    DF.releaseHold(); c.grace = G.grabGrace > 0 && g(e) === false;
+    DF.sim(DF.HOLD.grace + 0.1); p.iframe = 0; c.after = g(e) === true;
+    return { pass: Object.values(c).every(Boolean), c };`),
+  hold("a hit just before the grab leaves no knockback, and a grab may take a hit player", `
+    const e = mk(); DF.hurtPlayer(10, e, { dmg: 10 }); const was = p.state, kick = Math.hypot(p.kx, p.kz);
+    const ok = grab(e, { dps: 0 }); DF.sim(0.05);
+    return { pass: was === "hit" && kick > 1 && ok && p.state === "held" && p.kx === 0 && p.kz === 0 && p.vx === 0 && p.vz === 0, was, kick, ok, state: p.state };`),
+  hold("other hits land on a held player but do not free them", `
+    const e = mk(), o = DF.makeEnemy({ type: "husk", x: e.x + 3, z: e.z, yaw: 0, node: -1 }); G.enemies = [e, o]; grab(e, { dps: 0 });
+    const hp0 = p.hp; const r = DF.hurtPlayer(15, o, { dmg: 15 }); DF.sim(0.2);
+    return { pass: r === "hit" && hp0 - p.hp === 15 && p.state === "held" && p.kx === 0 && p.kz === 0, r, loss: hp0 - p.hp, state: p.state };`),
+  hold("dying while held ends the hold", `
+    const e = mk(); p.hp = 3; grab(e, { dps: 10 }); DF.sim(0.7);
+    const c = { dead: p.state === "dead", noHold: p.hold === null, rec: e.state === "rec", grace: G.grabGrace === 0 };
+    DF.respawn(); c.free = p.state === "free" && p.hold === null && G.grabGrace === 0;
+    return { pass: Object.values(c).every(Boolean), c, state: p.state, est: e.state };`),
+  hold("a new run clears a hold", `
+    const e = mk(); grab(e, { dps: 0 }); DF.sim(0.2); DF.newRun(99); const q = DF.G.player;
+    return { pass: q.state === "free" && q.hold === null && DF.G.grabGrace === 0 };`),
+  hold("a hold carries on through a pause menu", `
+    const e = mk(); grab(e, { dps: 0 }); DF.sim(0.5); const t0 = p.hold.t;
+    DF.show("pause"); DF.show("play"); G.state = "play";
+    return { pass: p.state === "held" && !!p.hold && p.hold.t === t0, state: p.state, t0 };`),
+  {
+    name: "the prompt names the dodge input while held",
+    eval: `(async () => { const { G, cam } = DF; G.manual = true; DF.setClass("fighter"); DF.newRun(99); DF.show("play"); G.state = "play";
+    const p = G.player, w = G.world; ${draw}
+    const h0 = G.enemies.find((q) => q.type === "husk"); const e = DF.makeEnemy({ type: "husk", x: h0.x, z: h0.z, yaw: h0.yaw, node: -1 }); G.enemies = [e];
+    p.x = e.x + Math.sin(e.yaw) * 2; p.z = e.z + Math.cos(e.yaw) * 2; w.resolve(p, 0.6); cam.px = p.x; cam.pz = p.z; cam.yaw = Math.atan2(e.x - p.x, e.z - p.z);
+    const el = document.getElementById("prompt"); await draw(); const before = el.textContent;
+    e.state = "hold"; DF.grabPlayer(e, { dps: 0, tx: p.x, tz: p.z, speed: 0 }); DF.sim(0.2); await draw();
+    const during = el.textContent, shown = el.style.display === "block", dodge = document.querySelector("#prompt kbd").textContent;
+    DF.releaseHold(); DF.sim(0.1); await draw(); const after = el.textContent;
+    return { pass: during.includes("Break free") && shown && dodge === DF.keyName(DF.BIND.dodge) && !before.includes("Break free") && !after.includes("Break free"), before, during, dodge, after }; })()`,
+  },
+  {
+    name: "a held player is drawn struggling",
+    eval: `(async () => { const { G, cam } = DF; G.manual = true; DF.setClass("fighter"); DF.newRun(99); DF.show("play"); G.state = "play";
+    const p = G.player, w = G.world; ${draw}
+    const h0 = G.enemies.find((q) => q.type === "husk"); const e = DF.makeEnemy({ type: "husk", x: h0.x, z: h0.z, yaw: h0.yaw, node: -1 }); G.enemies = [e];
+    p.x = e.x + Math.sin(e.yaw) * 2; p.z = e.z + Math.cos(e.yaw) * 2; w.resolve(p, 0.6); p.yaw = Math.atan2(e.x - p.x, e.z - p.z);
+    cam.px = p.x; cam.pz = p.z; cam.yaw = p.yaw + Math.PI; cam.pitch = 0.25;
+    e.state = "hold"; DF.grabPlayer(e, { dps: 0, tx: p.x, tz: p.z, speed: 0 }); DF.taps[DF.BIND.dodge] = true; DF.sim(0.3); await draw();
+    const f = p.fig; const arms = [f.armR.r[0], f.armL.r[0]];
+    const c = { armsUp: arms[0] < -1.2 && arms[1] < -1.2, held: p.state === "held" };
+    return { pass: Object.values(c).every(Boolean), c, arms }; })()`,
+    shot: "t24-held",
+  },
   step("the class is put back", `DF.setClass("fighter"); return { pass: true };`),
 ];

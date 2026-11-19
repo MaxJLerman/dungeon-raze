@@ -1578,6 +1578,7 @@ function makePlayer(id) {
     throwT: 0,
     gLine: 0,
     ddur: 0.42,
+    hold: null,
   };
 }
 function setClass(id) {
@@ -1716,6 +1717,7 @@ function resetRun() {
   G.rifts = [];
   G.holes = [];
   G.insp = null;
+  G.grabGrace = 0;
   G.bossDead = false;
   G.bossSeen = false;
   G.gate = null;
@@ -1841,7 +1843,9 @@ function respawn() {
     buf: null,
     buff: null,
     buffT: 0,
+    hold: null,
   });
+  G.grabGrace = 0;
   // the same cave again: its rubble has to come out of the field
   G.world.clearRocks();
   G.caveins = [];
@@ -2310,7 +2314,7 @@ function hurtPlayer(dmg, e, atk) {
   if (p.state === "dead" || G.state !== "play" || G.trans) return "none";
   if (p.state === "execute" || p.state === "blink") return "none";
   if (p.iframe > 0) {
-    if (p.state === "dodge" && !p.pdUsed) {
+    if (p.state === "dodge" && !p.pdUsed && !atk.dot) {
       p.pdUsed = true;
       G.slowT = Math.max(G.slowT, 0.4);
       p.focus = Math.min(100, p.focus + 15);
@@ -2326,7 +2330,7 @@ function hurtPlayer(dmg, e, atk) {
     facing = Math.abs(angDiff(p.yaw, from)) < c.guardArc;
   const kdx = Math.sin(from),
     kdz = Math.cos(from);
-  if (p.state === "guard" && facing && (!atk.unb || fort)) {
+  if (p.state === "guard" && facing && !atk.dot && (!atk.unb || fort)) {
     if (p.guardT <= p.parryWin || fort) {
       SFX.parry();
       sparks(p.x + kdx * 0.7, 1.3, p.z + kdz * 0.7, 18, WHITE, 9, 0.35);
@@ -2373,30 +2377,118 @@ function hurtPlayer(dmg, e, atk) {
   p.hp -= dmg;
   p.flash = 1;
   G.flashRed = 0.6;
-  G.shake = Math.max(G.shake, 0.7);
-  G.hitstop = Math.max(G.hitstop, 0.06);
+  // a hold's tick, or any hit while held, neither throws the player nor
+  // changes their state
+  const soft = atk.dot || p.state === "held";
+  G.shake = Math.max(G.shake, atk.dot ? 0.3 : 0.7);
+  if (!atk.dot) G.hitstop = Math.max(G.hitstop, 0.06);
   SFX.hurt();
-  const kb = (atk.kb || (atk.unb ? 11 : 7)) * (armored ? 0.3 : 1);
-  p.kx = -kdx * kb;
-  p.kz = -kdz * kb;
-  sparks(p.x, 1.2, p.z, 10, RED, 5);
+  if (!soft) {
+    const kb = (atk.kb || (atk.unb ? 11 : 7)) * (armored ? 0.3 : 1);
+    p.kx = -kdx * kb;
+    p.kz = -kdz * kb;
+  }
+  sparks(p.x, 1.2, p.z, atk.dot ? 5 : 10, RED, 5);
   if (p.hp <= 0) {
     playerDie();
     return "hit";
   }
   PAD.rumble("hurt");
-  if (!armored) {
+  if (!armored && !soft) {
     p.state = "hit";
     p.t = 0;
     p.buf = null;
   }
   return "hit";
 }
+// ---- being held ----
+// A grabbing enemy takes the player with grabPlayer and sets its own state to
+// "hold"; the shared state switch has no case for it, so its hook drives it.
+// The player breaks free by pressing dodge, or when the time is up.
+const HOLD = { max: 2, mash: 0.35, safe: 0.4, grace: 1.5, tick: 0.5 };
+// o: { dps, tx, tz, speed }, damage per second and where to drag the player
+function grabPlayer(e, o) {
+  const p = G.player;
+  if (
+    G.state !== "play" ||
+    p.iframe > 0 ||
+    G.grabGrace > 0 ||
+    ["dead", "execute", "blink", "inspect", "grapple", "held"].includes(p.state)
+  )
+    return false;
+  p.state = "held";
+  p.hold = { by: e, t: 0, tick: 0, jolt: 0, dps: o.dps, tx: o.tx, tz: o.tz, speed: o.speed };
+  p.buf = null;
+  p.lock = null;
+  p.sprint = false;
+  SFX.hurt();
+  PAD.rumble("hurt");
+  return true;
+}
+// forgets the hold and puts a holder back to rec (it was in state "hold")
+function endHold() {
+  G.player.hold = null;
+  G.grabGrace = 0;
+  for (const e of G.enemies)
+    if (e.state === "hold") {
+      e.state = "rec";
+      e.t = 0;
+      e.token = false;
+      if (!e.atk) e.atk = Object.values(e.def.atks)[0];
+    }
+}
+function releaseHold() {
+  const p = G.player;
+  p.state = "free";
+  p.iframe = Math.max(p.iframe, HOLD.safe);
+  G.grabGrace = HOLD.grace;
+  p.hold = null;
+  p.buf = null;
+  // the press that broke free must not also dodge
+  taps[BIND.dodge] = false;
+  taps["T:dodge"] = false;
+  if (PAD_BIND.dodge) taps[PAD_BIND.dodge] = false;
+}
+function heldUpdate(dt) {
+  const p = G.player,
+    h = p.hold;
+  p.vx = p.vz = p.kx = p.kz = 0;
+  p.speed = p.dspeed = 0;
+  p.walk += dt * 6;
+  h.t += dt;
+  h.jolt = Math.max(0, h.jolt - dt * 6);
+  if (hit("dodge")) {
+    h.t += HOLD.mash;
+    h.jolt = 1;
+    SFX.whoosh(false);
+  }
+  const dx = h.tx - p.x,
+    dz = h.tz - p.z,
+    d = Math.hypot(dx, dz),
+    s = Math.min(d, h.speed * dt);
+  if (s > 0) {
+    p.x += (dx / d) * s;
+    p.z += (dz / d) * s;
+    G.world.resolve(p, p.r);
+  }
+  const by = h.by;
+  if (by && !by.dead) p.yaw = Math.atan2(by.x - p.x, by.z - p.z);
+  h.tick += dt;
+  // a small allowance, so that four ticks fit in the full hold
+  while (h.tick >= HOLD.tick - 1e-9 && p.state === "held") {
+    h.tick -= HOLD.tick;
+    const dmg = h.dps * HOLD.tick;
+    if (dmg > 0) hurtPlayer(dmg, by, { dmg, dot: true });
+  }
+  if (p.state !== "held") return;
+  if (h.t >= HOLD.max || !by || by.dead || by.state !== "hold") releaseHold();
+}
 function playerDie() {
   const p = G.player;
   p.hp = 0;
   p.state = "dead";
   G.insp = null;
+  endHold();
   p.t = 0;
   p.lock = null;
   p.buff = null;
@@ -3097,6 +3189,10 @@ function playerUpdate(dt) {
   }
   if (p.state === "inspect") {
     inspectUpdate(dt);
+    return;
+  }
+  if (p.state === "held") {
+    heldUpdate(dt);
     return;
   }
   // a close-up lasts only while the player is in it: whatever moved them out
@@ -4805,6 +4901,7 @@ function riftBodies(prev) {
     p.state !== "dead" &&
     p.state !== "execute" &&
     p.state !== "inspect" &&
+    p.state !== "held" &&
     !(p.riftCD > 0) &&
     riftMove(p, prev.p[0], prev.p[1], p.r)
   ) {
@@ -5117,6 +5214,7 @@ function update(dt) {
     if (bd < bc.r) G.inBoss = true;
     else if (bd > bc.r + PURSUIT.bossPad) G.inBoss = false;
   }
+  if (G.grabGrace > 0) G.grabGrace = Math.max(0, G.grabGrace - dt);
   const prev = riftSnap();
   playerUpdate(dt);
   for (const e of G.enemies) enemyUpdate(e, dt);
