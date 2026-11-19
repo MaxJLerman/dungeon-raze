@@ -57,25 +57,80 @@ const R = (() => {
   const LP = new Float32Array(24),
     LC = new Float32Array(24),
     LR = new Float32Array(8);
-  const env = { amb: [0.1, 0.12, 0.16], fog: [0.02, 0.027, 0.04], fogD: 0.03 };
-  const stats = { draws: 0 };
+  // t is the game clock, for the water's motion
+  const env = {
+    amb: [0.1, 0.12, 0.16],
+    fog: [0.02, 0.027, 0.04],
+    fogD: 0.03,
+    t: 0,
+  };
+  const stats = { draws: 0, tris: 0 };
 
+  // aMat is the world's material byte (MAT in 03_world.js): 0 plain, 1 brick,
+  // 2 water. Anything without one reads 0.
   const VS_LIT = `#version 300 es
-  layout(location=0) in vec3 aPos; layout(location=1) in vec4 aCol;
-  uniform mat4 uVP, uM; uniform vec3 uTint;
-  out vec3 vW; out vec4 vC;
-  void main(){ vec4 w=uM*vec4(aPos,1.); vW=w.xyz; vC=vec4(aCol.rgb*aCol.rgb*uTint,aCol.a); gl_Position=uVP*w; }`;
+  layout(location=0) in vec3 aPos; layout(location=1) in vec4 aCol; layout(location=3) in float aMat;
+  uniform mat4 uVP, uM; uniform vec3 uTint,uCam;
+  out vec3 vW,vR; out vec4 vC; flat out float vMat;
+  void main(){ vec4 w=uM*vec4(aPos,1.); vW=w.xyz; vR=w.xyz-uCam; vC=vec4(aCol.rgb*aCol.rgb*uTint,aCol.a); vMat=floor(aMat*255.+.5); gl_Position=uVP*w; }`;
   const FS_LIT = `#version 300 es
   precision highp float;
-  in vec3 vW; in vec4 vC;
-  uniform vec3 uCam,uAmb,uFog,uEmis,uRim; uniform float uFogD,uToon;
+  in vec3 vW,vR; in vec4 vC; flat in float vMat;
+  uniform vec3 uCam,uAmb,uFog,uEmis,uRim; uniform float uFogD,uToon,uTime;
   uniform vec3 uLP[8]; uniform vec3 uLC[8]; uniform float uLR[8];
   out vec4 o;
+  float hash(vec2 p){ vec3 q=fract(vec3(p.xyx)*.1031); q+=dot(q,q.yzx+33.33); return fract((q.x+q.y)*q.z); }
+  float vnoise(vec2 p){ vec2 i=floor(p),f=fract(p); f=f*f*(3.-2.*f);
+    return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y); }
+  // Brick: courses 0.22 m high, bricks 0.5 m long, every other course half a
+  // brick along, mortar 0.025 m at 0.55, some bricks dark or missing. Returns
+  // the colour scale. A wall runs
+  // along its normal's horizontal tangent; a floor lies in xz. The normal is
+  // taken from camera-relative positions, and a wall measures from the middle
+  // of its 8 m square of ground, so that the tangent's rounding error is not
+  // multiplied by the distance from the origin. 8 m is a whole number of
+  // bricks, so a wall along x or z runs on unbroken across squares.
+  float brick(vec3 w,vec3 r){
+    vec3 n=normalize(cross(dFdx(r),dFdy(r)));
+    vec2 c=(floor(w.xz/8.)+.5)*8.;
+    vec2 q=abs(n.y)>0.7?w.xz:vec2(dot(w.xz-c,normalize(vec2(-n.z,n.x)+1e-6)),w.y);
+    float row=floor(q.y/0.22), u=q.x/0.5+0.5*mod(row,2.);
+    float d=min((0.5-abs(fract(u)-0.5))*0.5,(0.5-abs(fract(q.y/0.22)-0.5))*0.22);
+    float px=length(fwidth(q));
+    float m=1.-smoothstep(0.0125-px*0.5,0.0125+px*0.5,d);
+    m=mix(m,0.16,smoothstep(0.02,0.06,px));
+    // each brick's shade, hashed with its square so the pattern never repeats;
+    // a few are dark, and a few are missing: a hole shaded from its top edge
+    vec2 b=vec2(floor(u),row)+c*0.731;
+    float sh=1.+0.12*(hash(b)*2.-1.), k=hash(b.yx+17.3);
+    if(k>0.984) sh=0.2+0.16*(1.-fract(q.y/0.22));
+    else if(k>0.945) sh*=0.62;
+    return mix(sh,0.55,m);
+  }
+  // Water: the slope of slow ripples running with the flow, and how bright
+  // the streaks along it are at p.
+  const vec2 FLOW=vec2(0.9285,0.3714);
+  vec3 water(vec2 p,float t){
+    vec2 g=FLOW*cos(dot(p,FLOW)*2.3-t*1.1)*0.05
+      +vec2(-0.5,0.866)*cos(dot(p,vec2(-0.5,0.866))*3.9-t*1.4)*0.03
+      +vec2(0.259,-0.966)*cos(dot(p,vec2(0.259,-0.966))*6.1-t*2.)*0.02;
+    vec2 r=p*1.6-FLOW*t*0.5; float e=0.05, h0=vnoise(r);
+    g+=vec2(vnoise(r+vec2(e,0))-h0,vnoise(r+vec2(0,e))-h0)/e*0.05;
+    vec2 a=vec2(dot(p,FLOW)*0.5-t*0.45,dot(p,vec2(-FLOW.y,FLOW.x))*4.);
+    float s=smoothstep(0.62,0.92,vnoise(a))*(0.6+0.4*vnoise(a*vec2(0.3,1.)+7.3));
+    return vec3(g,s);
+  }
   void main(){
     vec3 n=normalize(cross(dFdx(vW),dFdy(vW)));
     vec3 vv=uCam-vW; float fd=length(vv); vec3 v=vv/max(fd,1e-4);
     if(dot(n,v)<0.) n=-n;
-    vec3 l=uAmb*(0.55+0.45*n.y);
+    vec3 base=vC.rgb; float glow=vC.a, wet=0.;
+    if(vMat>1.5){
+      vec3 wa=water(vW.xz,uTime);
+      n=normalize(vec3(-wa.x,1.,-wa.y));
+      glow+=0.12+0.5*wa.z; base*=1.+wa.z; wet=1.;
+    } else if(vMat>0.5) base*=brick(vW,vR);
+    vec3 l=uAmb*(0.55+0.45*n.y), sp=vec3(0.);
     for(int i=0;i<8;i++){
       vec3 d=uLP[i]-vW; float dist=length(d);
       float att=max(0.,1.-dist/uLR[i]); att*=att;
@@ -83,8 +138,10 @@ const R = (() => {
       float tn=nd>0.5?1.:(nd>0.1?0.55:0.16);
       nd=mix(nd*0.8+0.2,tn,uToon);
       l+=uLC[i]*att*nd;
+      if(wet>0.) sp+=uLC[i]*att*pow(max(dot(n,normalize(d/max(dist,1e-4)+v)),0.),60.);
     }
-    vec3 c=vC.rgb*l+vC.rgb*vC.a*2.4+uEmis;
+    vec3 c=base*l+base*glow*2.4+uEmis;
+    if(wet>0.) c+=sp*0.6+uAmb*0.5*pow(1.-max(dot(n,v),0.),4.);
     c+=uRim*pow(1.-max(dot(n,v),0.),2.5);
     c=c/(1.+c*0.55);
     c=pow(c,vec3(.4545));
@@ -125,7 +182,7 @@ const R = (() => {
     }
     return { p, u };
   }
-  function mesh(pos, col) {
+  function mesh(pos, col, mat) {
     const vao = gl.createVertexArray();
     gl.bindVertexArray(vao);
     const b = gl.createBuffer(),
@@ -141,6 +198,14 @@ const R = (() => {
       gl.bufferData(gl.ARRAY_BUFFER, col, gl.STATIC_DRAW);
       gl.enableVertexAttribArray(1);
       gl.vertexAttribPointer(1, 4, gl.UNSIGNED_BYTE, true, 0, 0);
+    }
+    if (mat) {
+      const m = gl.createBuffer();
+      bufs.push(m);
+      gl.bindBuffer(gl.ARRAY_BUFFER, m);
+      gl.bufferData(gl.ARRAY_BUFFER, mat, gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(3);
+      gl.vertexAttribPointer(3, 1, gl.UNSIGNED_BYTE, true, 0, 0);
     }
     gl.bindVertexArray(null);
     return { vao, n: pos.length / 3, bufs };
@@ -249,6 +314,8 @@ const R = (() => {
     lit = prog(VS_LIT, FS_LIT);
     fx = prog(VS_FX, FS_FX);
     buildPrims();
+    // a mesh with no material reads plain
+    gl.vertexAttrib1f(3, 0);
     fxVao = gl.createVertexArray();
     gl.bindVertexArray(fxVao);
     fxBuf = gl.createBuffer();
@@ -266,13 +333,15 @@ const R = (() => {
     gl.disable(gl.CULL_FACE);
     return true;
   }
-  function setWorld(pos, col) {
+  // pieces, when given, are ranges of the mesh that drawWorld can draw alone
+  function setWorld(pos, col, mat = null, pieces = null) {
     // worlds are swapped on every portal trip, so free the one being replaced
     if (world) {
       gl.deleteVertexArray(world.vao);
       for (const b of world.bufs) gl.deleteBuffer(b);
     }
-    world = mesh(pos, col);
+    world = mesh(pos, col, mat);
+    world.pieces = pieces;
   }
   function resize() {
     const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
@@ -330,14 +399,41 @@ const R = (() => {
     gl.uniform3fv(u.uAmb, env.amb);
     gl.uniform3fv(u.uFog, fg);
     gl.uniform1f(u.uFogD, env.fogD);
+    gl.uniform1f(u.uTime, env.t);
     gl.uniform3fv(u.uLP, LP);
     gl.uniform3fv(u.uLC, LC);
     gl.uniform1fv(u.uLR, LR);
     nA = 0;
     nD = 0;
     stats.draws = 0;
+    stats.tris = 0;
   }
-  function drawWorld() {
+  // Whether any of box [x0, y0, z0, x1, y1, z1] is inside the view: it is
+  // out only when all eight corners are past the same clip plane.
+  function boxVisible(b) {
+    let all = 63;
+    for (let c = 0; c < 8; c++) {
+      const x = b[c & 1 ? 3 : 0],
+        y = b[c & 2 ? 4 : 1],
+        z = b[c & 4 ? 5 : 2],
+        cx = VP[0] * x + VP[4] * y + VP[8] * z + VP[12],
+        cy = VP[1] * x + VP[5] * y + VP[9] * z + VP[13],
+        cz = VP[2] * x + VP[6] * y + VP[10] * z + VP[14],
+        cw = VP[3] * x + VP[7] * y + VP[11] * z + VP[15];
+      all &=
+        (cx < -cw ? 1 : 0) |
+        (cx > cw ? 2 : 0) |
+        (cy < -cw ? 4 : 0) |
+        (cy > cw ? 8 : 0) |
+        (cz < -cw ? 16 : 0) |
+        (cz > cw ? 32 : 0);
+      if (!all) return true;
+    }
+    return false;
+  }
+  // With ids null, or a world set without pieces, draws the whole world;
+  // otherwise only those pieces.
+  function drawWorld(ids = null) {
     if (!world) return;
     const u = lit.u;
     gl.uniformMatrix4fv(u.uM, false, ID);
@@ -346,8 +442,19 @@ const R = (() => {
     gl.uniform3f(u.uRim, 0, 0, 0);
     gl.uniform1f(u.uToon, 0);
     gl.bindVertexArray(world.vao);
-    gl.drawArrays(gl.TRIANGLES, 0, world.n);
-    stats.draws++;
+    if (!ids || !world.pieces) {
+      gl.drawArrays(gl.TRIANGLES, 0, world.n);
+      stats.draws++;
+      stats.tris += world.n / 3;
+      return;
+    }
+    for (const id of ids) {
+      const q = world.pieces[id];
+      if (!q.count) continue;
+      gl.drawArrays(gl.TRIANGLES, q.first, q.count);
+      stats.draws++;
+      stats.tris += q.count / 3;
+    }
   }
   const _L = new Float32Array(16);
   function walk(n, pm, rim) {
@@ -419,6 +526,16 @@ const R = (() => {
     pv(fxA, nA++, x - ax - bx, y - ay - by, z - az - bz, -1, -1, r, g, b, a);
     pv(fxA, nA++, x + ax + bx, y + ay + by, z + az + bz, 1, 1, r, g, b, a);
     pv(fxA, nA++, x - ax + bx, y - ay + by, z - az + bz, -1, 1, r, g, b, a);
+  }
+  // a soft disc of additive light lying flat at height y, s in radius
+  function flat(x, y, z, s, r, g, b, a) {
+    if (nA + 6 > FXMAX) return;
+    pv(fxA, nA++, x - s, y, z - s, -1, -1, r, g, b, a);
+    pv(fxA, nA++, x + s, y, z - s, 1, -1, r, g, b, a);
+    pv(fxA, nA++, x + s, y, z + s, 1, 1, r, g, b, a);
+    pv(fxA, nA++, x - s, y, z - s, -1, -1, r, g, b, a);
+    pv(fxA, nA++, x + s, y, z + s, 1, 1, r, g, b, a);
+    pv(fxA, nA++, x - s, y, z + s, -1, 1, r, g, b, a);
   }
   function blob(x, z, s, a) {
     if (nD + 6 > 8000) return;
@@ -508,9 +625,11 @@ const R = (() => {
     setLights,
     begin,
     drawWorld,
+    boxVisible,
     drawNode,
     nodePos,
     sprite,
+    flat,
     blob,
     ribbon,
     ring,

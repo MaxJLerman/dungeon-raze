@@ -12,6 +12,7 @@ const G = {
   parts: [],
   arcs: [],
   rings: [],
+  drips: [],
   ghosts: [],
   pending: [],
   kills: 0,
@@ -201,23 +202,50 @@ function actKey(a) {
 // `hidden` is always open.
 const UNLOCKED = new Set();
 function classOpen(id) {
-  return !!CLASSES[id] && (!CLASSES[id].hidden || UNLOCKED.has(id));
+  return Object.hasOwn(CLASSES, id) && (!CLASSES[id].hidden || UNLOCKED.has(id));
 }
 function pickable() {
   return CLASS_IDS.filter(classOpen);
 }
 // true when the class was locked until now
 function unlockClass(id) {
-  if (!CLASSES[id] || UNLOCKED.has(id)) return false;
+  if (!Object.hasOwn(CLASSES, id) || UNLOCKED.has(id)) return false;
   UNLOCKED.add(id);
   saveOpt();
   return true;
+}
+// Grades whose boss a class has beaten, saved under "c": class id to grade
+// ids. A gate opens when any class has cleared the one before it. No
+// prototype, so a saved key such as "__proto__" is only ever a key.
+const CLEARED = Object.create(null);
+// true when this class had not cleared the grade until now
+function clearGrade(grade, cls) {
+  if (!Object.hasOwn(CLASSES, cls) || !GRADE_IDS.includes(grade)) return false;
+  const list = CLEARED[cls] || (CLEARED[cls] = []);
+  if (list.includes(grade)) return false;
+  list.push(grade);
+  saveOpt();
+  return true;
+}
+function gradeCleared(grade) {
+  for (const id in CLEARED) if (CLEARED[id].includes(grade)) return true;
+  return false;
+}
+function resetCleared() {
+  for (const id in CLEARED) delete CLEARED[id];
+  saveOpt();
 }
 function saveOpt() {
   try {
     localStorage.setItem(
       "dungeon-raze.v2",
-      JSON.stringify({ b: BIND, p: PAD_BIND, o: OPT, u: [...UNLOCKED] }),
+      JSON.stringify({
+        b: BIND,
+        p: PAD_BIND,
+        o: OPT,
+        u: [...UNLOCKED],
+        c: CLEARED,
+      }),
     );
   } catch (e) {
     /* storage may be unavailable */
@@ -246,10 +274,19 @@ function loadOpt() {
         PAD_BIND[k] =
           d.p[k] === null || PAD_CODES.includes(d.p[k]) ? d.p[k] : DEFAULT_PAD[k];
     if (Array.isArray(d.u))
-      for (const id of d.u) if (CLASSES[id]) UNLOCKED.add(id);
+      for (const id of d.u) if (Object.hasOwn(CLASSES, id)) UNLOCKED.add(id);
+    // only known classes and grades; anything else in "c" is dropped
+    if (d.c && typeof d.c === "object" && !Array.isArray(d.c))
+      for (const id in d.c)
+        if (Object.hasOwn(CLASSES, id) && Array.isArray(d.c[id]))
+          for (const g of d.c[id])
+            if (typeof g === "string" && GRADE_IDS.includes(g)) {
+              const list = CLEARED[id] || (CLEARED[id] = []);
+              if (!list.includes(g)) list.push(g);
+            }
     if (d.o) {
       // a hidden class that is not unlocked falls back to the first open one
-      if (CLASSES[d.o.cls]) OPT.cls = classOpen(d.o.cls) ? d.o.cls : pickable()[0];
+      if (Object.hasOwn(CLASSES, d.o.cls)) OPT.cls = classOpen(d.o.cls) ? d.o.cls : pickable()[0];
       if (d.o.sens > 0.1 && d.o.sens < 5) OPT.sens = d.o.sens;
       OPT.invY = !!d.o.invY;
       const num = (v, lo, hi) => typeof v === "number" && v >= lo && v <= hi;
@@ -1129,6 +1166,11 @@ const MOVES = {
     ifr: 0.3,
   },
 };
+// Water wades the player and every enemy that has no `wade` of its own.
+// slow is the speed left at full depth; sink is for the look of the wading.
+const WATER = { slow: 0.6, sink: 0.3 };
+const wadeOf = (def) => (typeof def.wade === "number" ? def.wade : WATER.slow);
+const wadeMul = (water, wade) => lerp(1, wade, sat(water));
 const EDEF = {
   husk: {
     name: "Husk",
@@ -1402,7 +1444,9 @@ function makePlayer(id) {
     kx: 0,
     kz: 0,
     speed: 0,
+    dspeed: 0,
     walk: 0,
+    stride: 0,
     sprint: false,
     fig: makePlayerFig(id),
     flash: 0,
@@ -1528,7 +1572,13 @@ const ENV_CAVE = {
     fog: R.env.fog.slice(),
     fogD: R.env.fogD,
   },
-  ENV_HUB = { amb: [0.15, 0.17, 0.22], fog: [0.03, 0.035, 0.05], fogD: 0.014 };
+  ENV_HUB = { amb: [0.15, 0.17, 0.22], fog: [0.03, 0.035, 0.05], fogD: 0.014 },
+  // the sewer: damp and green-dark, with thicker fog than the cave
+  ENV_SEWER = { amb: [0.07, 0.11, 0.08], fog: [0.015, 0.03, 0.02], fogD: 0.032 };
+// How each grade builds its world and what its air is like. A grade not listed
+// gets the cave.
+const WORLD_GEN = { E: genWorld, D: genSewer },
+  ENV_GRADE = { D: ENV_SEWER };
 // Copies, so nothing that later adjusts R.env can change the presets.
 function setEnv(e) {
   R.env.amb = e.amb.slice();
@@ -1554,6 +1604,7 @@ function resetRun() {
   G.parts = [];
   G.arcs = [];
   G.rings = [];
+  G.drips = [];
   G.ghosts = [];
   G.msgs = [];
   G.pending = [];
@@ -1574,12 +1625,14 @@ function snapCam() {
   cam.pz = G.player.z;
 }
 // Starts a cave from a seed. Tests call this directly.
-function newRun(seed) {
+function newRun(seed, grade = "E") {
   G.zone = "cave";
-  setEnv(ENV_CAVE);
+  G.grade = grade;
+  setEnv(ENV_GRADE[grade] || ENV_CAVE);
   G.seed = seed;
-  G.world = genWorld(seed);
-  R.setWorld(G.world.pos, G.world.col);
+  G.world = (WORLD_GEN[grade] || genWorld)(seed);
+  SFX.setEcho(!!G.world.sewer);
+  R.setWorld(G.world.pos, G.world.col, G.world.mat, G.world.pieces);
   resetRun();
   G.player = makePlayer(OPT.cls);
   G.checkpoint = G.world.shrines[0];
@@ -1592,7 +1645,8 @@ function enterHub(fromGrade = null) {
   G.zone = "hub";
   setEnv(ENV_HUB);
   G.world = genHub();
-  R.setWorld(G.world.pos, G.world.col);
+  SFX.setEcho(!!G.world.sewer);
+  R.setWorld(G.world.pos, G.world.col, G.world.mat, G.world.pieces);
   resetRun();
   const p = (G.player = makePlayer(OPT.cls));
   const q = fromGrade && G.world.portals.find((o) => o.grade === fromGrade);
@@ -1610,8 +1664,7 @@ function enterHub(fromGrade = null) {
 }
 // Enters a freshly generated cave through the portal of the given grade.
 function enterCave(gradeId, seed = (Math.random() * 1e9) | 0 || 7) {
-  G.grade = gradeId;
-  newRun(seed);
+  newRun(seed, gradeId);
   say(GRADES[gradeId].name.toUpperCase(), "big", 3);
 }
 // Begins the fade into a cave. A cut swaps at once, for reduced motion.
@@ -1676,6 +1729,7 @@ function respawn() {
   G.projs = [];
   G.bombs = [];
   G.rings = [];
+  G.drips = [];
   G.pending = [];
   G.bossSeen = false;
   spawnEnemies();
@@ -1705,6 +1759,74 @@ function sparks(x, y, z, n, col, spd = 6, life = 0.4, size = 0.12) {
       g: 9,
     });
   }
+}
+// A splash on the water's face: droplets thrown up and two rings spreading.
+function splash(x, z, n = 14) {
+  const y = -WATER.sink + 0.03,
+    c = [0.55, 0.85, 0.8];
+  for (let i = 0; i < n && G.parts.length < 700; i++) {
+    const a = Math.random() * TAU,
+      v = 1.2 + Math.random() * 1.6;
+    G.parts.push({
+      x: x + Math.cos(a) * 0.2,
+      y,
+      z: z + Math.sin(a) * 0.2,
+      vx: Math.cos(a) * v,
+      vy: 2 + Math.random() * 2.2,
+      vz: Math.sin(a) * v,
+      t: 0,
+      life: 0.4 + Math.random() * 0.25,
+      size: 0.1,
+      c,
+      g: 11,
+      fl: y,
+    });
+  }
+  G.rings.push({ x, y: -WATER.sink, z, r: 1.5, t: 0, dur: 0.55, kind: "ripple", c });
+  G.rings.push({ x, y: -WATER.sink, z, r: 0.9, t: 0, dur: 0.4, kind: "ripple", c });
+}
+// Drips from the sewer's roof: they start at the ceiling within DRIP.range of
+// the player, more of them over water, fall, leave a ring and are gone.
+const DRIP = { range: 15, cap: 40, rate: 60, dry: 0.35, g: 9.8, near: 10, voice: 0.12 };
+function dripsUpdate(dt) {
+  const p = G.player,
+    w = G.world;
+  const want = DRIP.rate * dt;
+  for (let n = Math.floor(want) + (Math.random() < want % 1 ? 1 : 0); n > 0; n--) {
+    if (G.drips.length >= DRIP.cap) break;
+    const a = Math.random() * TAU,
+      d = DRIP.range * Math.sqrt(Math.random()),
+      x = p.x + Math.cos(a) * d,
+      z = p.z + Math.sin(a) * d;
+    if (w.fieldAt(x, z) < 0.3) continue;
+    if (w.waterAt(x, z) < 0.5 && Math.random() > DRIP.dry) continue;
+    G.drips.push({ x, y: w.ceilAt(x, z) - 0.05, z, vy: 0 });
+  }
+  const keep = [];
+  for (const q of G.drips) {
+    q.vy -= DRIP.g * dt;
+    q.y += q.vy * dt;
+    const wet = w.waterAt(q.x, q.z) > 0.5,
+      top = wet ? -WATER.sink : 0;
+    if (q.y > top) {
+      keep.push(q);
+      continue;
+    }
+    if (G.rings.length < 120)
+      G.rings.push({
+        x: q.x,
+        y: top,
+        z: q.z,
+        r: wet ? 0.45 : 0.3,
+        t: 0,
+        dur: 0.6,
+        kind: "ripple",
+        c: [0.55, 0.85, 0.8],
+      });
+    if (Math.hypot(q.x - p.x, q.z - p.z) < DRIP.near && Math.random() < DRIP.voice)
+      SFX.drip();
+  }
+  G.drips = keep;
 }
 function ghost(p) {
   G.ghosts.push({ x: p.x, z: p.z, t: 0, c: p.cls.col });
@@ -1880,11 +2002,17 @@ function kill(e) {
     p.lock = b;
   }
   if (e.def.boss) {
+    const grade = G.grade || "E";
+    const next = GRADE_IDS[GRADE_IDS.indexOf(grade) + 1];
+    const before = next ? portalOpen(next) : true;
+    clearGrade(grade, OPT.cls);
     G.bossDead = true;
     G.gate = { x: G.world.boss.x, z: G.world.boss.z, t: 0 };
     G.slowT = 1.2;
     say("THE WARDEN FALLS", "big", 4);
     say("A gate opens. Step through to leave.", "", 6);
+    if (next && !before && portalOpen(next))
+      say("A new gate has opened in the base.", "good", 6);
     SFX.win();
   }
 }
@@ -2271,6 +2399,10 @@ function startDodge(ix, iz, il, free) {
     SFX.blink();
     sparks(p.x, 1.1, p.z, 12, p.cls.col, 4, 0.4);
   } else SFX.dodge();
+  if (G.world.waterAt(p.x, p.z) > 0.5) {
+    splash(p.x, p.z);
+    SFX.wade(true);
+  }
   return true;
 }
 function startExecute(e) {
@@ -2475,7 +2607,7 @@ function inspectUpdate(dt) {
   const p = G.player,
     i = G.insp;
   p.vx = p.vz = 0;
-  p.speed = 0;
+  p.speed = p.dspeed = 0;
   if (!i) {
     p.state = "free";
     return;
@@ -2907,7 +3039,7 @@ function playerUpdate(dt) {
         return true;
       }
       return startMove(
-        wasSprint && p.speed > c.run * 0.8 ? c.dash : c.chain,
+        wasSprint && p.dspeed > c.run * 0.8 ? c.dash : c.chain,
         inYaw(),
       );
     }
@@ -3398,10 +3530,26 @@ function playerUpdate(dt) {
   // knockback + integrate
   p.kx = damp(p.kx, 0, 9, dt);
   p.kz = damp(p.kz, 0, 9, dt);
+  // dspeed is the speed before the wade, which the sprint attack reads
+  p.dspeed = Math.hypot(mvx, mvz);
+  const wade = wadeMul(G.world.waterAt(p.x, p.z), WATER.slow);
+  mvx *= wade;
+  mvz *= wade;
   p.x += (mvx + p.kx) * dt;
   p.z += (mvz + p.kz) * dt;
   p.speed = Math.hypot(mvx, mvz);
   p.walk += p.speed * dt * 2.1;
+  // each stride in water is a wade, not a step
+  const stride = Math.floor(p.walk / PI);
+  if (stride !== p.stride) {
+    p.stride = stride;
+    if (
+      p.speed > 1.5 &&
+      (p.state === "free" || p.state === "guard") &&
+      G.world.waterAt(p.x, p.z) > 0.5
+    )
+      SFX.wade();
+  }
   if (p.stamDelay > 0) p.stamDelay -= dt;
   else
     p.stam = Math.min(
@@ -3469,6 +3617,7 @@ function chooseAtk(e, dist) {
   return c[0];
 }
 function eStep(e, dx, dz, spd, dt) {
+  spd *= wadeMul(G.world.waterAt(e.x, e.z), wadeOf(e.def));
   e.x += dx * spd * dt;
   e.z += dz * spd * dt;
   e.speed = spd;
@@ -4770,8 +4919,9 @@ function update(dt) {
     q.x += q.vx * dt;
     q.y += q.vy * dt;
     q.z += q.vz * dt;
-    if (q.y < 0.05) {
-      q.y = 0.05;
+    const fl = q.fl === undefined ? 0.05 : q.fl;
+    if (q.y < fl) {
+      q.y = fl;
       q.vy *= -0.4;
       q.vx *= 0.6;
       q.vz *= 0.6;
@@ -4782,14 +4932,23 @@ function update(dt) {
   G.arcs = G.arcs.filter((a) => a.t < a.dur);
   for (const r of G.rings) r.t += dt;
   G.rings = G.rings.filter((r) => r.t < r.dur);
+  if (G.world.sewer) dripsUpdate(dt);
   for (const g of G.ghosts) g.t += dt;
   G.ghosts = G.ghosts.filter((g) => g.t < 0.35);
   if (G.gate) G.gate.t += dt;
-  // map discovery
+  // map discovery: a room with a half width and depth (the sewer's) is seen
+  // from anywhere in its rectangle and 3 m round it, a cave chamber within
+  // its radius and 3 m
   const p = G.player,
     w = G.world;
   for (const n of w.nodes)
-    if (!n.seen && Math.hypot(n.x - p.x, n.z - p.z) < n.r + 3) n.seen = true;
+    if (
+      !n.seen &&
+      (n.hw > 0
+        ? Math.abs(n.x - p.x) < n.hw + 3 && Math.abs(n.z - p.z) < n.hd + 3
+        : Math.hypot(n.x - p.x, n.z - p.z) < n.r + 3)
+    )
+      n.seen = true;
   for (const e of w.edges)
     if (!e.seen) {
       for (let i = 0; i < e.pts.length; i += 2) {

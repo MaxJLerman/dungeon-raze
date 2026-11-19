@@ -3,7 +3,30 @@ const SFX = (() => {
   let ac = null,
     master = null,
     nbuf = null,
+    wet = null,
+    echo = false,
     on = true;
+  // A short echo send off the master, for tunnels. Built with the context and
+  // faded by setEcho, so the flag can be set before audio has started.
+  function buildEcho() {
+    const send = ac.createGain(),
+      delay = ac.createDelay(1),
+      fb = ac.createGain(),
+      lp = ac.createBiquadFilter();
+    delay.delayTime.value = 0.18;
+    fb.gain.value = 0.35;
+    lp.type = "lowpass";
+    lp.frequency.value = 1800;
+    wet = ac.createGain();
+    wet.gain.value = echo ? 0.3 : 0;
+    master.connect(send);
+    send.connect(delay);
+    delay.connect(lp);
+    lp.connect(fb);
+    fb.connect(delay);
+    lp.connect(wet);
+    wet.connect(ac.destination);
+  }
   function init() {
     if (ac) {
       if (ac.state === "suspended") ac.resume().catch(() => {});
@@ -16,6 +39,7 @@ const SFX = (() => {
       master = ac.createGain();
       master.gain.value = 0.5;
       master.connect(ac.destination);
+      buildEcho();
       nbuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
       const d = nbuf.getChannelData(0);
       for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
@@ -94,6 +118,13 @@ const SFX = (() => {
   }
   return {
     init,
+    setEcho(v) {
+      echo = !!v;
+      if (wet) wet.gain.setTargetAtTime(echo ? 0.3 : 0, ac.currentTime, 0.05);
+    },
+    get echo() {
+      return echo;
+    },
     toggle() {
       on = !on;
       if (master) master.gain.value = on ? 0.5 : 0;
@@ -163,6 +194,15 @@ const SFX = (() => {
     blink() {
       noise(0.25, 3000, 300, 0.4, "bandpass", 2);
       tone(0.25, 1500, 300, 0.2, "sine");
+    },
+    // a foot through water; heavy for a splash
+    wade(heavy) {
+      noise(heavy ? 0.3 : 0.2, 700, 220, heavy ? 0.5 : 0.22, "bandpass", 1.1);
+      if (heavy) noise(0.14, 2600, 900, 0.25, "highpass", 0.7);
+    },
+    // a drop falling into water, in the far dark
+    drip() {
+      tone(0.12, 1500 + Math.random() * 700, 600, 0.12, "sine");
     },
     knife() {
       noise(0.1, 3000, 5000, 0.25, "highpass", 0.8);

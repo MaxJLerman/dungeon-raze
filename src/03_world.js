@@ -11,8 +11,29 @@ const CRY = {
 
 // Collision and line of sight over a walkable field sampled on a one-unit grid.
 // Shared by the cave and the hall so both collide the same way.
-function fieldFns(F, minX, minZ, W, H) {
+// Wt (optional) is water depth 0 to 1 on the same grid; ids (optional, passed to
+// bodyAt) is an Int16Array of water body ids. Water blocks nothing.
+function fieldFns(F, minX, minZ, W, H, Wt) {
   const W1 = W + 1;
+  function waterAt(x, z) {
+    if (!Wt) return 0;
+    const fx = x - minX,
+      fz = z - minZ;
+    if (fx < 0 || fz < 0 || fx >= W || fz >= H) return 0;
+    const i = fx | 0,
+      j = fz | 0,
+      u = fx - i,
+      v = fz - j,
+      k = j * W1 + i;
+    return lerp(lerp(Wt[k], Wt[k + 1], u), lerp(Wt[k + W1], Wt[k + W1 + 1], u), v);
+  }
+  function bodyAt(x, z, ids) {
+    if (!ids) return -1;
+    const i = Math.round(x - minX),
+      j = Math.round(z - minZ);
+    if (i < 0 || j < 0 || i > W || j > H) return -1;
+    return ids[j * W1 + i];
+  }
   function fieldAt(x, z) {
     const fx = x - minX,
       fz = z - minZ;
@@ -277,40 +298,63 @@ function fieldFns(F, minX, minZ, W, H) {
     rocks.clear();
     for (const q of all) repaint(q);
   }
-  return { fieldAt, resolve, los, route, addRock, removeRock, clearRocks };
+  return {
+    fieldAt,
+    resolve,
+    los,
+    route,
+    addRock,
+    removeRock,
+    clearRocks,
+    waterAt,
+    bodyAt,
+  };
 }
 // how far past a rock's capsule its points are kept as a distance estimate
 const ROCK_PAD = 3;
+// What the world shader draws on a triangle: 0 is plain, as the cave and the
+// hall are throughout.
+const MAT = { BRICK: 1, WATER: 2 };
 // Collects world triangles: positions as floats, colours square-root encoded
-// in bytes with the glow amount in the alpha byte.
+// in bytes with the glow amount in the alpha byte, and one material byte per
+// vertex. tri takes one colour for the face, triC one per corner.
 function meshSink() {
   const P = [],
-    C = [];
+    C = [],
+    M = [];
   const b8 = (v) => clamp(Math.sqrt(Math.max(v, 0)) * 255, 0, 255) | 0;
-  function tri(a, b, c, col, glow = 0) {
+  function tri(a, b, c, col, glow = 0, mat = 0) {
     P.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
     const r = b8(col[0]),
       g = b8(col[1]),
       bl = b8(col[2]),
       gl2 = (glow * 255) | 0;
     C.push(r, g, bl, gl2, r, g, bl, gl2, r, g, bl, gl2);
+    M.push(mat, mat, mat);
   }
-  return { P, C, tri };
+  // the same with a colour per corner, for shading that runs across a face
+  function triC(a, b, c, ca, cb, cc, glow = 0, mat = 0) {
+    P.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+    const g = (glow * 255) | 0;
+    for (const k of [ca, cb, cc]) C.push(b8(k[0]), b8(k[1]), b8(k[2]), g);
+    M.push(mat, mat, mat);
+  }
+  return { P, C, M, tri, triC };
 }
 
-function genWorld(seed) {
-  const Rn = rng(seed);
-  const GX = 4,
-    GZ = 4,
-    SP = 44;
+// Room graph: a jittered grid of rooms, a spanning tree and some loop edges.
+// Consumes Rn in a fixed order. Edges come back without pts. o = { GX, GZ, SP,
+// jit, rMin, rVar, startR, bossR, diagP, loopP, loopDiagP }.
+function planGraph(Rn, o) {
+  const { GX, GZ, SP } = o;
   const nodes = [];
   for (let gz = 0; gz < GZ; gz++)
     for (let gx = 0; gx < GX; gx++)
       nodes.push({
         id: nodes.length,
-        x: gx * SP + (Rn() - 0.5) * 20,
-        z: gz * SP + (Rn() - 0.5) * 20,
-        r: 8.5 + Rn() * 3.5,
+        x: gx * SP + (Rn() - 0.5) * o.jit,
+        z: gz * SP + (Rn() - 0.5) * o.jit,
+        r: o.rMin + Rn() * o.rVar,
         adj: [],
         depth: -1,
         seen: false,
@@ -318,9 +362,9 @@ function genWorld(seed) {
       });
   const start = nodes[0],
     boss = nodes[GX * GZ - 1];
-  start.r = 9.5;
+  start.r = o.startR;
   start.kind = "start";
-  boss.r = 16.5;
+  boss.r = o.bossR;
   boss.kind = "boss";
 
   // graph: spanning tree + extra edges for loops
@@ -330,7 +374,7 @@ function genWorld(seed) {
     for (let gx = 0; gx < GX; gx++) {
       if (gx < GX - 1) cand.push({ a: id(gx, gz), b: id(gx + 1, gz), w: Rn() });
       if (gz < GZ - 1) cand.push({ a: id(gx, gz), b: id(gx, gz + 1), w: Rn() });
-      if (gx < GX - 1 && gz < GZ - 1 && Rn() < 0.35) {
+      if (gx < GX - 1 && gz < GZ - 1 && Rn() < o.diagP) {
         if (Rn() < 0.5)
           cand.push({
             a: id(gx, gz),
@@ -358,12 +402,128 @@ function genWorld(seed) {
       par[ra] = rb;
       edges.push(c);
     } else if (
-      Rn() < (c.diag ? 0.6 : 0.5) &&
+      Rn() < (c.diag ? o.loopDiagP : o.loopP) &&
       c.a !== boss.id &&
       c.b !== boss.id
     )
       edges.push(c);
   }
+  return { nodes, edges, start, boss };
+}
+
+// Fills adj (in edge order) and depth by BFS from start, and returns the node
+// ids from start to boss. Uses no random numbers.
+function linkGraph(nodes, edges, start, boss) {
+  for (const e of edges) {
+    nodes[e.a].adj.push(e.b);
+    nodes[e.b].adj.push(e.a);
+  }
+  start.depth = 0;
+  const q = [start],
+    prev = {};
+  while (q.length) {
+    const n = q.shift();
+    for (const j of n.adj) {
+      const m = nodes[j];
+      if (m.depth < 0) {
+        m.depth = n.depth + 1;
+        prev[j] = n.id;
+        q.push(m);
+      }
+    }
+  }
+  const path = [];
+  for (let c = boss.id; c !== undefined; c = prev[c]) path.unshift(c);
+  return path;
+}
+
+// Calls seg(ax, az, bx, bz) once per wall segment where F crosses zero, over
+// the grid whose corner is (minX, minZ), W cells wide and H cells tall.
+function marchWalls(F, minX, minZ, W, H, seg) {
+  const W1 = W + 1;
+  for (let j = 0; j < H; j++)
+    for (let i = 0; i < W; i++) {
+      const k = j * W1 + i,
+        v0 = F[k],
+        v1 = F[k + 1],
+        v2 = F[k + W1 + 1],
+        v3 = F[k + W1];
+      const idx =
+        (v0 > 0 ? 1 : 0) |
+        (v1 > 0 ? 2 : 0) |
+        (v2 > 0 ? 4 : 0) |
+        (v3 > 0 ? 8 : 0);
+      if (idx === 0 || idx === 15) continue;
+      const x = i + minX,
+        z = j + minZ;
+      const e0 = () => [x + v0 / (v0 - v1), z],
+        e1 = () => [x + 1, z + v1 / (v1 - v2)],
+        e2 = () => [x + v3 / (v3 - v2), z + 1],
+        e3 = () => [x, z + v0 / (v0 - v3)];
+      const S = (p, q2) => seg(p[0], p[1], q2[0], q2[1]);
+      const ctr = (v0 + v1 + v2 + v3) / 4 > 0;
+      switch (idx) {
+        case 1:
+        case 14:
+          S(e3(), e0());
+          break;
+        case 2:
+        case 13:
+          S(e0(), e1());
+          break;
+        case 3:
+        case 12:
+          S(e3(), e1());
+          break;
+        case 4:
+        case 11:
+          S(e1(), e2());
+          break;
+        case 6:
+        case 9:
+          S(e0(), e2());
+          break;
+        case 7:
+        case 8:
+          S(e3(), e2());
+          break;
+        case 5:
+          if (ctr) {
+            S(e0(), e1());
+            S(e2(), e3());
+          } else {
+            S(e3(), e0());
+            S(e1(), e2());
+          }
+          break;
+        case 10:
+          if (ctr) {
+            S(e3(), e0());
+            S(e1(), e2());
+          } else {
+            S(e0(), e1());
+            S(e2(), e3());
+          }
+          break;
+      }
+    }
+}
+
+function genWorld(seed) {
+  const Rn = rng(seed);
+  const { nodes, edges, start, boss } = planGraph(Rn, {
+    GX: 4,
+    GZ: 4,
+    SP: 44,
+    jit: 20,
+    rMin: 8.5,
+    rVar: 3.5,
+    startR: 9.5,
+    bossR: 16.5,
+    diagP: 0.35,
+    loopP: 0.5,
+    loopDiagP: 0.6,
+  });
   const segs = [];
   for (const e of edges) {
     const A = nodes[e.a],
@@ -400,26 +560,8 @@ function genWorld(seed) {
         q = e.pts[i + 1];
       segs.push({ ax: p.x, az: p.z, bx: q.x, bz: q.z, r: (p.r + q.r) / 2 });
     }
-    A.adj.push(e.b);
-    B.adj.push(e.a);
   }
-  // BFS depth + path to boss
-  start.depth = 0;
-  const q = [start],
-    prev = {};
-  while (q.length) {
-    const n = q.shift();
-    for (const j of n.adj) {
-      const m = nodes[j];
-      if (m.depth < 0) {
-        m.depth = n.depth + 1;
-        prev[j] = n.id;
-        q.push(m);
-      }
-    }
-  }
-  const path = [];
-  for (let c = boss.id; c !== undefined; c = prev[c]) path.unshift(c);
+  const path = linkGraph(nodes, edges, start, boss);
 
   // ---- walkable field on a grid ----
   let minX = 1e9,
@@ -489,8 +631,17 @@ function genWorld(seed) {
           (vnoise(x * 0.63, z * 0.63) - 0.5) * 0.55,
       );
     }
-  const { fieldAt, resolve, los, route, addRock, removeRock, clearRocks } =
-    fieldFns(F, minX, minZ, W, H);
+  const {
+    fieldAt,
+    resolve,
+    los,
+    route,
+    addRock,
+    removeRock,
+    clearRocks,
+    waterAt,
+    bodyAt,
+  } = fieldFns(F, minX, minZ, W, H);
   const ceilRaw = (f) => 3.1 + 1.45 * Math.sqrt(Math.max(f + 0.5, 0));
   const ceilAt = (x, z) => ceilRaw(fieldAt(x, z));
   // ---- mesh ----
@@ -586,72 +737,7 @@ function genWorld(seed) {
       tri(a, c, d, mulc(rc, m * 0.88));
     }
   }
-  for (let j = 0; j < H; j++)
-    for (let i = 0; i < W; i++) {
-      const k = j * W1 + i,
-        v0 = F[k],
-        v1 = F[k + 1],
-        v2 = F[k + W1 + 1],
-        v3 = F[k + W1];
-      const idx =
-        (v0 > 0 ? 1 : 0) |
-        (v1 > 0 ? 2 : 0) |
-        (v2 > 0 ? 4 : 0) |
-        (v3 > 0 ? 8 : 0);
-      if (idx === 0 || idx === 15) continue;
-      const x = i + minX,
-        z = j + minZ;
-      const e0 = () => [x + v0 / (v0 - v1), z],
-        e1 = () => [x + 1, z + v1 / (v1 - v2)],
-        e2 = () => [x + v3 / (v3 - v2), z + 1],
-        e3 = () => [x, z + v0 / (v0 - v3)];
-      const S = (p, q2) => wall(p[0], p[1], q2[0], q2[1]);
-      const ctr = (v0 + v1 + v2 + v3) / 4 > 0;
-      switch (idx) {
-        case 1:
-        case 14:
-          S(e3(), e0());
-          break;
-        case 2:
-        case 13:
-          S(e0(), e1());
-          break;
-        case 3:
-        case 12:
-          S(e3(), e1());
-          break;
-        case 4:
-        case 11:
-          S(e1(), e2());
-          break;
-        case 6:
-        case 9:
-          S(e0(), e2());
-          break;
-        case 7:
-        case 8:
-          S(e3(), e2());
-          break;
-        case 5:
-          if (ctr) {
-            S(e0(), e1());
-            S(e2(), e3());
-          } else {
-            S(e3(), e0());
-            S(e1(), e2());
-          }
-          break;
-        case 10:
-          if (ctr) {
-            S(e3(), e0());
-            S(e1(), e2());
-          } else {
-            S(e0(), e1());
-            S(e2(), e3());
-          }
-          break;
-      }
-    }
+  marchWalls(F, minX, minZ, W, H, (ax, az, bx, bz) => wall(ax, az, bx, bz));
   // decor
   function cone(x, y0, z, rad, h, col, glow = 0, lx = 0, lz = 0) {
     const n = 5,
@@ -897,8 +983,18 @@ function genWorld(seed) {
     addRock,
     removeRock,
     clearRocks,
+    waterAt,
+    bodyAt,
+    bodies: [],
+    grates: [],
+    wallTunnels: [],
+    shafts: [],
+    pieces: null,
+    pieceGrid: null,
+    pieceAt: () => -1,
     pos: new Float32Array(P),
     col: new Uint8Array(C),
+    mat: null,
     lights,
     halos,
     shrines,

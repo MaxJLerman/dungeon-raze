@@ -5,7 +5,9 @@ mobile browser.
 You pick one of five classes and start in a base of operations: a hall with six
 portal frames graded E to S and a training dummy. The open portal leads to a
 procedurally generated cave of looping tunnels, where you kill the boss in the
-deepest chamber and return to the hall through the gate it opens.
+deepest chamber and return to the hall through the gate it opens. The next gate,
+D, leads to a sewer. It is built but sealed in the published game until its own
+enemies exist.
 
 This is a spike: it exists to find out whether the combat feels good. It is not
 a finished game, and nothing in it is balanced by hand yet.
@@ -124,8 +126,11 @@ earlier ones.
 | `index.tpl.html`     | Page shell: CSS, HUD elements, and the title, pause, class, controls, how to play, death and win screens |
 | `src/01_math.js`     | Math helpers, seeded random numbers, value noise, 4x4 matrices                              |
 | `src/02_gl.js`       | Renderer `R`: lit pass, additive effects pass, scene nodes `Nd`, primitive meshes           |
-| `src/03_world.js`    | `genWorld(seed)`: cave graph, walkable field, collision, world mesh, lights, spawns         |
+| `src/03_world.js`    | `genWorld(seed)`: cave graph, walkable field, collision, water layer, world mesh, lights, spawns; the room graph and wall builders it shares with the sewer |
 | `src/03b_hub.js`     | `genHub()`: the hall, its portal frames and the portal grades `GRADES`                      |
+| `src/03c_sewer.js`   | `genSewer(seed)`: the D gate's sewer: rooms, tunnels, water, floor, walls and vault       |
+| `src/03d_sewerdress.js` | `dressSewer()`: the sewer's ribs, lamps, grates, pipes, heaps, arrival, rest points and boss cavern set |
+| `src/03e_sewerview.js` | `sewerPieces()` and `visiblePieces()`: the sewer cut into pieces, and the pieces to draw each frame |
 | `src/04_audio.js`    | `SFX`: synthesized sound effects and ambient drone                                          |
 | `src/05_figures.js`  | Player and enemy figures, base pose, enemy attack poses                                     |
 | `src/06_game.js`     | Game state `G`, key bindings, classes, moves, combat rules, enemy AI, projectiles           |
@@ -164,7 +169,9 @@ earlier ones.
 - **Base of operations:** a built hall where every session starts. Six portal
   frames stand along the far wall in rank order, E to S. Only E is open; the
   rest are sealed until grades are given difficulty and rewards. Walking into
-  the open portal starts a new cave. The pause, death and win screens return
+  the open portal starts a new cave. The D frame opens once the boss of E has
+  been killed, but only in builds where D is marked live, which the published
+  game does not do yet. The pause, death and win screens return
   you to the hall. Three plaques hang on the left-hand wall; walk up to one and
   press Interact (G, or A / Cross) to look at it.
 - **Training dummy:** stands in the hall, takes every attack and ability, can
@@ -172,6 +179,13 @@ earlier ones.
   their own in the hall.
 - **Cave:** sixteen chambers on a jittered grid joined by winding tunnels, with
   extra tunnels so routes loop. A new layout every run. Shrines are checkpoints.
+- **Sewer (D gate):** about one and a half times the length of a cave. Brick
+  rooms and winding tunnels with dead ends and loops, a rest point in the
+  arrival hall and three more along the way, and a boss cavern with a moat and
+  a centre pool. Water is shallow, slows the player, and can be walked around.
+  The light is dim and green, with some flickering lamps, drips and an echo.
+  Only the part of the sewer that can be seen is drawn. It has no enemies of
+  its own yet; a D made live for testing uses the cave's enemies.
 - **Menus:** class picker, controls menu with rebinding, mouse sensitivity and
   inverted look, and a How to play screen with the name colour key and combat
   tips. How to play opens from the title and pause screens.
@@ -214,6 +228,7 @@ Screenshots go to `shots/`.
 | `tests/t19.mjs` | The plaques by touch on every device. Run in `hub` mode with `touch-all.mjs` |
 | `tests/t20.mjs` | Rock in the walkable field and the cave-in that uses it. Run in `smoke` mode |
 | `tests/t21.mjs` | The Riftwalker's rift ends, crossing and Drop. Run in `smoke` mode |
+| `tests/t22.mjs` | The sewer: water, D opening and the save, the layout over many seeds, brick and water drawing, only drawing what is seen, screenshots. Run in `smoke` mode |
 
 The touch scripts `t14` and `t15` run under emulated phones and tablets. Run
 one device with `DEVICE=pixel-9 SCRIPT=$PWD/tests/t14.mjs node test.mjs smoke`,
