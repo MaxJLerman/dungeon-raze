@@ -2502,6 +2502,8 @@ function hitEnemy(e, dmg, post, o = {}) {
   }
   e.hp -= dmg * mult;
   if (e.def.dummy) e.hp = e.def.hp;
+  // a type's least health after a hit, past every multiplier (the crocodile's marks)
+  if (bh && bh.hpFloor) e.hp = Math.max(e.hp, bh.hpFloor(e));
   noticeHit(e, post);
   const ox = o.fx !== undefined ? o.fx : p.x,
     oz = o.fz !== undefined ? o.fz : p.z;

@@ -44,13 +44,15 @@ is what you need to change the code without breaking it.
   water or a wall, a held player state, and their placement: sirens or eels
   in pool rooms, bloaters in pools and gutters, grabbers at grates. Only the
   crocodile boss (project 3, branch `feat/crocodile`) remains before D joins
-  `LIVE_GRADES`. Until it lands, `LIVE_GRADES` holds only E, so the D portal
-  stays sealed on the published page. The crocodile, Old Sluicejaw, has its
-  body, numbers and place in the cavern's centre pool, in place of the
-  Warden, and its fight cycle: it waits under until the player enters the
-  cavern, swims under, surfaces with a warning and fights on land, where
-  its death roll drags the player into the water. Its 25% marks are still
-  to come. A D run made live by hand has
+  `LIVE_GRADES`. Until it is finished, `LIVE_GRADES` holds only E, so the D
+  portal stays sealed on the published page. Part one of the crocodile is
+  in: Old Sluicejaw has its body, numbers and place in the cavern's centre
+  pool, in place of the Warden, and its fight cycle: it waits under until
+  the player enters the cavern, swims under, surfaces with a warning and
+  fights on land, where its death roll drags the player into the water. At
+  75%, 50% and 25% of its health no hit takes it past the mark, and
+  reaching one breaks off what it is doing and it dives. Part two, the
+  tunnel phase at each mark, remains. A D run made live by hand has
   no E type in it. The design is in
   `docs/superpowers/specs/2026-11-19-d-enemies-design.md` for the enemies,
   `docs/superpowers/specs/2026-11-18-sewer-d-gate-design.md` for the sewer
@@ -368,7 +370,7 @@ is what you need to change the code without breaking it.
   a higher grade is open when it is in `LIVE_GRADES` and the grade below is
   cleared. `hubPortals()` takes `open` from it. **D joins `LIVE_GRADES` only
   when project 3 (the crocodile) is finished**, because a crocodile without
-  its modes must not appear in the published D. Tests add and remove it through
+  its tunnel phase must not appear in the published D. Tests add and remove it through
   `DF.LIVE_GRADES`.
 
 - `G` is the single state object. `G.state` is one of `title`, `play`,
@@ -924,6 +926,10 @@ table runs exactly as before.
   - `atkOk(e, a, c)` runs in `chooseAtk(e, dist, c)` for each attack that
     passed the shared filters (trig, phase, minTrig); false leaves it out of
     the choice.
+  - `hpFloor(e)` runs in `hitEnemy` once the damage is taken off, after
+    every multiplier (ambush, backstab, berserk), and returns the least
+    health the hit may leave. A `hit` hook's cap alone does not hold past
+    those multipliers; this does. Only the crocodile has one (its marks).
   - `death(e)` runs at the end of `kill`.
   - `foot(e, x, z)` says whether `e` may stand at a point. Read it through
     `footOk(e, x, z)` (always true for a type with no hook). `eStep` refuses a
@@ -1051,8 +1057,8 @@ table runs exactly as before.
     `landT` runs down but in `stagger`, and entering a stagger adds
     `CROC.stagBonus`. At 0, in `chase` or `rec`, it goes `dive`: through
     `eStep` to the nearest shore (4 s at most; a stagger puts it back in
-    `land`), then `under`. Leaving the cavern or dying, in any mode, and
-    the shared give-up (state `return`) call `crocReset`: full health,
+    `land`), then `under` (`crocDive` starts it). Leaving the cavern or the
+    player dying, in any mode, and the shared give-up (state `return`) call `crocReset`: full health,
     `e.marks` 0, `wait`, hidden at its post, unaware, `G.bossSeen` false.
   - `crocShores(e, w)` (cached on `e.shores`) is every water point on a
     1 m lattice centred on the cavern with `fieldAt` at least `e.r` and dry
@@ -1092,6 +1098,25 @@ table runs exactly as before.
     and `roll` only with the player within 1.2 rad of its facing; `tail`
     only past 1.9 rad. Its `chase` hook starts a
     planned `tail` at once, without turning to face the player first.
+  - **The marks.** `e.marks` (0 to 3) is how many of its marks, at 75%,
+    50% and 25% of `def.hp`, it has passed; `crocNextMark(e)` is the next,
+    `def.hp * (1 - 0.25 * (marks + 1))`, or 0 once all three are. No hit
+    takes it past that: its `hit` hook caps the damage (posture lands
+    whole) and its `hpFloor` hook holds the health there after the
+    multipliers, so melee, shots, blasts, mines, clouds and the execution
+    (which goes through `hitEnemy`) all stop at the mark. At the start of
+    each `land` or `dive` step with the health at the mark, unless the
+    player is executing it (`p.state` `execute` with `p.exT` it), so the
+    execution plays out first: `e.marks++`, a hold of its ends through
+    `releaseHold()` (as if it ran out: `HOLD.safe` and the grace), a roll
+    ends with `e.rollCD = CROC.rollCD`, a stagger's posture empties, and
+    `crocDive` drops its attack and sends it to the shore and under. Once
+    all three are passed a hit can kill it, and `kill` clears D.
+  - **Part two** puts the tunnel phase where the dive at a mark is now:
+    leaps into `world.wallTunnels`, plates flung from the mouths with a
+    warning first, a cap on what shots take off in one tunnel phase, and a
+    parried plate that knocks it out onto the ring staggered. None of it is
+    built.
   - `drawWakes` (`07b_dfx.js`): under, a V of foam back from its heading
     and bubbles over it; rising, bubbles boiling up and rings widening on
     the water. Everything is drawn only where `waterAt` reads 0.5 or more.
@@ -1251,7 +1276,12 @@ The class picker and HUD read `CLASSES` and need no changes.
   player behind it, the reset on leaving and on `respawn`, and no spot in
   rubble. Then the death roll: the drag into the water and its damage,
   mashing free and the cooldown, climbing back out in the same land phase,
-  a drag target past rubble, and a death in the roll. Shots go to
+  a drag target past rubble, and a death in the roll. Then the marks: no
+  melee hit, cloud tick, blast, shot or berserk hit passes one, reaching one
+  breaks off a bite and dives with nothing landing after, ends a death
+  roll with the player freed, the three fall at 600, 400 and 200 and then
+  it dies and D is cleared, and an execution at a mark stops there and
+  plays out before it dives. Shots go to
   `shots/t25-croc-*` (idle, rear, bite, tail, roll), `t25-wake`,
   `t25-rise` and `t25-roll` (mid-roll): look at them.
 - Run `tests/t22.mjs` after any change to the sewer, water, `fieldFns`,
@@ -1336,7 +1366,8 @@ The class picker and HUD read `CLASSES` and need no changes.
   crocodile lands. A D made live by hand fights the D enemies everywhere (rat,
   drowned and brood mother in brood rooms and tunnels, siren or eels with
   rats and bloaters in pool rooms, bloaters in gutters, grabbers at grates)
-  and Old Sluicejaw in the cavern, which has no 25% marks yet.
+  and Old Sluicejaw in the cavern, which dives at each mark where part
+  two's tunnel phase will go.
 - The rat, the drowned and the brood mother are untested by hand. Their
   numbers (speed, health, the cover's angle, the brood timer, cap and
   distances, placement odds) and how they look were set by tests and
@@ -1350,11 +1381,12 @@ The class picker and HUD read `CLASSES` and need no changes.
   (0.5 siren room, 0.4 second eel, 0.35 gutter bloater, a third of grates)
   and how all of it looks. Whether the hold feels fair, and whether a siren
   room is too hard with rats and bloaters in it, are the questions.
-- Old Sluicejaw is untested by hand. Set without a playtest: `CROC` (3 to 5
+- The crocodile is untested by hand; every `CROC` number and its moveset
+  were set without a playtest: `CROC` (3 to 5
   s under, 7 m/s swimming, the 0.9 s warning, 18 burst damage, 10 s on land,
   3 s per stagger, spots 8 m apart and 4 m from the player, the roll's 12 a
   second, 4 m/s drag, 2 m into the water and 8 s cooldown) and how the wake,
-  warning and roll look.
+  warning and roll look, and the marks at a quarter of its health each.
 - A hidden grabber is invisible until it strikes, and its grate is the only
   sign. The grates are drawn for every tunnel, so a grate with no grabber
   looks the same as one with one.
@@ -1377,8 +1409,9 @@ The class picker and HUD read `CLASSES` and need no changes.
 1. Tune feel from the owner's playtest: timing windows, sensitivity, difficulty.
 2. Give the portal grades meaning: enemy difficulty and kill rewards per
    grade, then open D to S. D's place and water are built (`feat/sewer`) and
-   so are its enemies (`feat/d-enemies`, `feat/d-enemies-water`); next are
-   the crocodile boss, then adding D to `LIVE_GRADES`. Revisit whether dying should send the player back
+   so are its enemies (`feat/d-enemies`, `feat/d-enemies-water`) and part
+   one of the crocodile boss (`feat/crocodile`); next are its part two, the
+   tunnel phase, then adding D to `LIVE_GRADES`. Revisit whether dying should send the player back
    to the base once there are rewards to lose.
 3. Loot, inventory and an extraction loop. The owner asked for these early on
    and they were set aside to get combat playable first.

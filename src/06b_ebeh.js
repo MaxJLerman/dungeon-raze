@@ -27,6 +27,10 @@
 //                                in hitEnemy, after the Riftwalker bonus and
 //                                before the ambush multiplier; o carries sx
 //                                and sz (where a shot started) for a shot
+//   hpFloor(e) -> number         in hitEnemy, once the damage is taken off
+//                                after every multiplier (ambush, backstab,
+//                                berserk): the least health the hit may
+//                                leave. The crocodile's marks hold through it
 //   death(e)                     at the end of kill
 //   foot(e, x, z) -> bool        whether e may stand at (x, z); read through
 //                                footOk, enforced by eStep and keepFooting
@@ -516,8 +520,14 @@ EBEH.grabber = {
 //   land   up on the ring, surfacing in the rearing slam, for CROC.land s;
 //          the clock stops in a stagger, and each stagger adds stagBonus
 //   dive   up, walking to the nearest shore, then under again
-// Leaving the cavern or dying, in any mode, puts it back to wait at full
-// health (crocReset). Every number is a starting value for the playtest:
+// Leaving the cavern or the player dying, in any mode, puts it back to wait
+// at full health with no marks passed (crocReset).
+// The marks: e.marks of the three, at 75%, 50% and 25% of its health, are
+// passed. No hit takes it past the next (crocNextMark): its hit hook caps the
+// damage and hpFloor holds it past any multiplier. Reaching one, once the
+// player is not executing it, breaks off whatever it is doing, a hold
+// included, and it dives at once. Part two puts the tunnel phase there.
+// Every number is a starting value for the playtest:
 //   under     how long a spell under lasts, from and to, in s
 //   swim      its least speed under the water, m/s: it swims faster when
 //             that is what it takes to reach its spot in its time under
@@ -721,6 +731,28 @@ function crocPlan(e, w) {
     for (const k of net.pts[qu[h]].nb) if (prev[k] === -2) (prev[k] = qu[h]), qu.push(k);
   for (let k = prev[to]; k >= 0 && k !== from; k = prev[k]) e.path.unshift(net.pts[k]);
 }
+// The health below which no hit takes it until the next mark is passed: 75%,
+// 50% and 25% of its health, then 0 once all three are.
+function crocNextMark(e) {
+  return e.marks < 3 ? e.def.hp * (1 - 0.25 * (e.marks + 1)) : 0;
+}
+// Off to the nearest shore clear of rubble (dive), then under.
+function crocDive(e, w) {
+  let best = null,
+    bd = 1e9;
+  for (const s of crocShores(e, w)) {
+    const d = Math.hypot(s.x - e.x, s.z - e.z);
+    if (d < bd && w.fieldAt(s.x, s.z) >= e.r) (bd = d), (best = s);
+  }
+  e.mode = "dive";
+  e.modeT = 4;
+  e.spot = best || { x: e.x, z: e.z };
+  e.state = "chase";
+  e.atk = null;
+  e.plan = null;
+  e.token = false;
+  e.wet = false;
+}
 const crocUnderT = () => CROC.under[0] + Math.random() * (CROC.under[1] - CROC.under[0]);
 function crocUnder(e) {
   e.mode = "under";
@@ -780,6 +812,11 @@ function crocSurface(e, c) {
 }
 EBEH.croc = {
   foot: crocFoot,
+  // no hit takes it past the next mark; posture lands as it would
+  hit(e, dmg, post) {
+    return { dmg: Math.min(dmg, Math.max(0, e.hp - crocNextMark(e))), post };
+  },
+  hpFloor: crocNextMark,
   atkOk(e, a, c) {
     const A = e.def.atks;
     if (a === A.rear) return false;
@@ -808,6 +845,23 @@ EBEH.croc = {
     e.rollCD = Math.max(0, (e.rollCD || 0) - dt);
     // leaving the cavern or dying ends the fight, in every mode
     if (e.mode !== "wait" && (e.state === "return" || !G.inBoss || !c.alive)) crocReset(e);
+    // a mark reached, once an execution of it has played out: it lets go of
+    // a held player, drops its attack (a stagger too) and dives at once
+    if (
+      (e.mode === "land" || e.mode === "dive") &&
+      e.hp <= crocNextMark(e) &&
+      !(p.state === "execute" && p.exT === e)
+    ) {
+      e.marks++;
+      if (p.hold && p.hold.by === e) releaseHold();
+      if (e.rolling) {
+        e.rolling = false;
+        e.rollCD = CROC.rollCD;
+      }
+      if (e.state === "stagger") e.posture = 0;
+      crocDive(e, w);
+      return true;
+    }
     if (e.mode === "wait") {
       e.hidden = true;
       if (G.inBoss && c.alive) {
@@ -933,21 +987,7 @@ EBEH.croc = {
       }
     }
     if (e.landT <= 0 && (e.state === "chase" || e.state === "rec")) {
-      // back to the nearest shore, and under
-      let best = null,
-        bd = 1e9;
-      for (const s of crocShores(e, w)) {
-        const d = Math.hypot(s.x - e.x, s.z - e.z);
-        if (d < bd && w.fieldAt(s.x, s.z) >= e.r) (bd = d), (best = s);
-      }
-      e.mode = "dive";
-      e.modeT = 4;
-      e.spot = best || { x: e.x, z: e.z };
-      e.state = "chase";
-      e.atk = null;
-      e.plan = null;
-      e.token = false;
-      e.wet = false;
+      crocDive(e, w);
       return true;
     }
     return false;

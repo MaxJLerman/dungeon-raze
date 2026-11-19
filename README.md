@@ -7,7 +7,7 @@ portal frames graded E to S and a training dummy. The open portal leads to a
 procedurally generated cave of looping tunnels, where you kill the boss in the
 deepest chamber and return to the hall through the gate it opens. The next gate,
 D, leads to a sewer. It is built but sealed in the published game until its boss
-exists.
+is finished.
 
 This is a spike: it exists to find out whether the combat feels good. It is not
 a finished game, and nothing in it is balanced by hand yet.
@@ -197,8 +197,10 @@ earlier ones.
   poison cloud when it dies, so kill it from range or step back.
   Gutters in the tunnels may hold a bloater, and some tunnel grates hide a
   drain grabber that reaches out and holds you until you mash dodge or beat it
-  back. The boss is still the Ossuary Warden, and D stays sealed in the
-  published game until the crocodile boss is built.
+  back. The boss is Old Sluicejaw, a crocodile that swims the cavern's moat,
+  bursts out at the shore and death-rolls you into the water, and dives at
+  each quarter of its health; D stays sealed in the published game until its
+  tunnel phase is built.
 - **Menus:** class picker, controls menu with rebinding, mouse sensitivity and
   inverted look, and a How to play screen with the name colour key and combat
   tips. How to play opens from the title and pause screens.
@@ -244,6 +246,7 @@ Screenshots go to `shots/`.
 | `tests/t22.mjs` | The sewer: water, D opening and the save, the layout over many seeds, brick and water drawing, only drawing what is seen, screenshots. Run in `smoke` mode |
 | `tests/t23.mjs` | The D enemies: behaviour hooks, the rat, the drowned and the brood mother, their bodies, and where the sewer places them, with screenshots. Run in `smoke` mode |
 | `tests/t24.mjs` | The siren, eel, bloater and drain grabber: rules for enemies bound to water or a wall, the held player, each type, and where the sewer places them, with screenshots. Run in `smoke` mode |
+| `tests/t25.mjs` | Old Sluicejaw, the D boss: its body, place, modes, death roll and health marks, with screenshots. Run in `smoke` mode |
 
 The touch scripts `t14` and `t15` run under emulated phones and tablets. Run
 one device with `DEVICE=pixel-9 SCRIPT=$PWD/tests/t14.mjs node test.mjs smoke`,

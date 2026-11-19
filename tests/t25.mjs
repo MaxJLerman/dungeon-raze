@@ -319,4 +319,60 @@ const rollSteps = [
   p.yaw = cam.yaw = Math.atan2(e.x - p.x, e.z - p.z) - 0.9; cam.pitch = 0.4; cam.px = p.x; cam.pz = p.z;
   return { pass: p.state === "held" && e.state === "hold" && Math.abs(r1 - r0) > 0.5, pstate: p.state, estate: e.state, r0, r1 };`), wait: 500, shot: "t25-roll" },
 ];
-export default [...base, ...crocSteps, ...rollSteps];
+// ---- the 25% marks ----
+// up on land and done with its rearing slam, the player in front of it
+const landed = `begin(); until(() => e.mode === "land", 25); until(() => e.state === "chase", 3);
+  const H = DF.HOLD, front = (d) => put({ x: e.x + Math.sin(e.yaw) * d, z: e.z + Math.cos(e.yaw) * d });`;
+const mstep = (name, body) => cstep(name, `${landed}\n${body}`);
+const markSteps = [
+  mstep("no hit passes a mark", `
+  const post0 = e.posture; DF.hitEnemy(e, 500, 30, { heavy: true }); const melee = e.hp, post = e.posture - post0;
+  e.hp = 601; DF.hitEnemy(e, 50, 0, { dot: true }); const dot = e.hp;
+  e.hp = 601; DF.explode(e.x, e.z, 3, 50, 0, [1, 1, 1]); const blast = e.hp;
+  // a multiplier after the hook (berserk) still stops at the mark
+  e.hp = 601; p.buff = "berserk"; DF.hitEnemy(e, 50, 0, { src: "melee" }); p.buff = null; const berserk = e.hp;
+  // a shot
+  e.hp = 601; DF.hitEnemy(e, 50, 0, { src: "proj", sx: p.x, sz: p.z }); const shot = e.hp;
+  return { pass: melee === 600 && dot === 600 && blast === 600 && berserk === 600 && shot === 600 && post === 30 && !e.dead,
+    melee, dot, blast, berserk, shot, post };`),
+  mstep("a mark breaks off and dives", `
+  front(3); p.iframe = 0; e.yaw = Math.atan2(p.x - e.x, p.z - e.z);
+  e.state = "wind"; e.atk = e.def.atks.b1; e.t = e.atk.wind * 0.6; e.cd = 0;
+  DF.hitEnemy(e, 300, 0, {}); const hp = e.hp; DF.sim(1 / 60);
+  const next = { marks: e.marks, mode: e.mode, state: e.state, atk: e.atk };
+  const h0 = p.hp; let lost = 0;
+  DF.sim(5, () => { lost = Math.max(lost, h0 - p.hp); if (e.mode === "under") return false; });
+  return { pass: hp === 600 && next.marks === 1 && (next.mode === "dive" || next.mode === "under") && next.atk === null && lost === 0 && e.mode === "under",
+    hp, next, lost, mode: e.mode };`),
+  rstep("a mark ends the death roll", `
+  place(); grab(); const held = p.state;
+  e.hp = 601; DF.hitEnemy(e, 50, 0, {}); DF.sim(1 / 60);
+  const r = { pstate: p.state, hold: p.hold, iframe: p.iframe, grace: G.grabGrace, marks: e.marks, mode: e.mode, estate: e.state, rolling: e.rolling, rollCD: e.rollCD };
+  return { pass: held === "held" && r.pstate !== "held" && r.hold === null && r.iframe >= H.safe - 2 / 60 && r.grace > H.grace - 2 / 60 &&
+    r.marks === 1 && (r.mode === "dive" || r.mode === "under") && r.estate !== "hold" && !r.rolling && Math.abs(r.rollCD - C.rollCD) < 0.05, held, ...r };`),
+  mstep("the marks fall at 75, 50 and 25 and then it can die", `
+  const got = [];
+  try {
+    for (let k = 0; k < 3; k++) {
+      if (k) { until(() => e.mode === "under", 6); until(() => e.mode === "land", 25); }
+      const up = e.mode === "land" && !e.hidden;
+      DF.hitEnemy(e, 500, 0, { heavy: true }); const hp = e.hp; DF.sim(1 / 60, keep);
+      got.push({ up, hp, marks: e.marks, mode: e.mode });
+    }
+    until(() => e.mode === "under", 6); until(() => e.mode === "land", 25);
+    G.msgs = []; const hp = e.hp; DF.hitEnemy(e, 500, 0, { heavy: true }); await draw();
+    const text = document.getElementById("msgs").textContent;
+    const end = { hp, dead: !!e.dead, bossDead: G.bossDead, cleared: DF.gradeCleared("D"), fell: text.includes("OLD SLUICEJAW FALLS"), gate: text.includes("new gate") };
+    const want = [600, 400, 200];
+    const ok = got.length === 3 && got.every((q, k) => q.up && q.hp === want[k] && q.marks === k + 1 && (q.mode === "dive" || q.mode === "under"));
+    return { pass: ok && end.hp === 200 && end.dead && end.bossDead && end.cleared && end.fell && !end.gate, got, end };
+  } finally { DF.resetCleared(); G.bossDead = false; }`),
+  mstep("an execution at a mark", `
+  front(2.5); e.hp = 610; DF.stagger(e); DF.startExecute(e);
+  let early = false, n = 0, hpIn = null;
+  DF.sim(2, () => { if (p.state !== "execute") return false; n++; keep(); if (p.exDone && hpIn === null) hpIn = e.hp; if (e.marks !== 0 || e.mode !== "land") early = true; });
+  const done = p.exDone, hp = e.hp; DF.sim(1 / 60, keep);
+  return { pass: done && hpIn === 600 && hp === 600 && !early && n >= 0.62 * 60 && e.marks === 1 && (e.mode === "dive" || e.mode === "under"),
+    done, hpIn, hp, early, n: n / 60, marks: e.marks, mode: e.mode };`),
+];
+export default [...base, ...crocSteps, ...rollSteps, ...markSteps];
