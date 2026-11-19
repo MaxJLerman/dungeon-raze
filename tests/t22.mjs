@@ -14,8 +14,9 @@ export default [
   return { pass: JSON.stringify(got) === JSON.stringify(GOLD), got };`),
   // the sewer's mesh, materials, water, spawns, pieces and dressing for three
   // seeds: a change that only moves code must leave these as they are (last
-  // set when most big pool rooms placed their piers before their pools)
-  step("genSewer is unchanged by moving code", `const GOLD = {"1":[-1431275824,-1228683800,246235336,607675172,-449013164,-82002622,1529990366],"5":[-958529565,1429795960,-1035043016,-1166667044,800819374,608908786,-1321668637],"9":[857347738,-962631704,-1260107072,933463255,32012464,749723291,-865936057]};
+  // set when brood rooms and tunnels got their D enemies; the mesh, materials,
+  // water, pieces and dressing values did not move then)
+  step("genSewer is unchanged by moving code", `const GOLD = {"1":[-1431275824,-1228683800,246235336,607675172,1102444081,-82002622,1529990366],"5":[-958529565,1429795960,-1035043016,-1166667044,-307525205,608908786,-1321668637],"9":[857347738,-962631704,-1260107072,933463255,-1268144331,749723291,-865936057]};
   const h = (a) => { let x = 0; for (let i = 0; i < a.length; i++) x = (x * 31 + Math.round(a[i] * 1000)) | 0; return x; };
   const hs = (s) => { let x = 0; for (let i = 0; i < s.length; i++) x = (x * 31 + s.charCodeAt(i)) | 0; return x; };
   const got = {}; for (const s of [1, 5, 9]) { const w = DF.genSewer(s);

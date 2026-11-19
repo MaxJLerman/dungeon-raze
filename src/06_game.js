@@ -1171,6 +1171,10 @@ const MOVES = {
 const WATER = { slow: 0.6, sink: 0.3 };
 const wadeOf = (def) => (typeof def.wade === "number" ? def.wade : WATER.slow);
 const wadeMul = (water, wade) => lerp(1, wade, sat(water));
+// The brood mother: a rat every `every` s (the first `first` s into a hunt),
+// at most `cap` of hers alive. She backs off while the player is between
+// `close` and `keep` m. A rat of hers gives `focus` and no tool charge.
+const BROOD = { every: 6, first: 3, cap: 4, keep: 7, close: 3, focus: 2 };
 const EDEF = {
   husk: {
     name: "Husk",
@@ -1208,6 +1212,122 @@ const EDEF = {
         lunge: 4.6,
         trig: 5.6,
         minTrig: 3.2,
+      },
+    },
+  },
+  // D gate: a swarming sewer rat. It is quick, especially in water, and cannot
+  // bite while swimming (EBEH.rat.canAttack).
+  rat: {
+    name: "Rat",
+    threat: 0,
+    hp: 18,
+    posture: 20,
+    speed: 5.2,
+    turn: 8,
+    r: 0.35,
+    sight: 14,
+    cd: 1.1,
+    poise: 0,
+    hunch: 0,
+    top: 0.9,
+    wade: 1.6,
+    atks: {
+      bite: {
+        style: "thrust",
+        wind: 0.4,
+        act: 0.12,
+        rec: 0.45,
+        dmg: 7,
+        reach: 1.6,
+        arc: 1.6,
+        lunge: 0.8,
+        trig: 1.7,
+      },
+      pounce: {
+        style: "thrust",
+        wind: 0.55,
+        act: 0.22,
+        rec: 0.6,
+        dmg: 10,
+        reach: 1.6,
+        arc: 1.2,
+        lunge: 3.6,
+        trig: 4.4,
+        minTrig: 2.4,
+      },
+    },
+  },
+  // D gate: a brood mother. She keeps back and sends out rats on a timer
+  // (EBEH.brood, BROOD); a rat of hers gives little back when it dies.
+  brood: {
+    name: "Brood Mother",
+    threat: 1,
+    hp: 110,
+    posture: 90,
+    speed: 2.6,
+    turn: 3,
+    r: 0.8,
+    sight: 15,
+    cd: 1.8,
+    poise: 1,
+    hunch: 0,
+    top: 1.5,
+    atks: {
+      bite: {
+        style: "thrust",
+        wind: 0.75,
+        act: 0.18,
+        rec: 0.8,
+        dmg: 18,
+        reach: 2.4,
+        arc: 1.6,
+        lunge: 0.8,
+        trig: 2.4,
+      },
+    },
+  },
+  // D gate: a drowned guard behind a manhole cover. The cover stops every hit
+  // from the front (EBEH.drowned.hit): `guard` is its half-angle, `guardLight`
+  // the share of a light hit's posture that gets through. Heavy blows fill
+  // posture in full and break it open; the sides and back are bare.
+  drowned: {
+    name: "Drowned",
+    threat: 1,
+    hp: 90,
+    posture: 80,
+    speed: 2.4,
+    turn: 2.2,
+    r: 0.55,
+    sight: 14,
+    cd: 1.5,
+    poise: 1,
+    hunch: 0.25,
+    top: 2.0,
+    guard: 1.05,
+    guardLight: 0.25,
+    atks: {
+      bash: {
+        style: "thrust",
+        wind: 0.6,
+        act: 0.15,
+        rec: 0.6,
+        dmg: 12,
+        reach: 2.0,
+        arc: 1.6,
+        lunge: 1.0,
+        trig: 2.0,
+        kb: 14,
+      },
+      edge: {
+        style: "over",
+        wind: 0.8,
+        act: 0.16,
+        rec: 0.8,
+        dmg: 22,
+        reach: 2.4,
+        arc: 1.3,
+        lunge: 1.2,
+        trig: 2.3,
       },
     },
   },
@@ -1556,6 +1676,9 @@ function makeEnemy(s) {
     told: false,
     // seconds left in which a hit makes it ignore its leash
     prov: 0,
+    // the last spot it may stand on, for a type whose footing is limited
+    okx: s.x,
+    okz: s.z,
   };
 }
 function spawnEnemies() {
@@ -1983,8 +2106,9 @@ function kill(e) {
   e.y = 0;
   G.kills++;
   const p = G.player;
-  p.focus = Math.min(100, p.focus + 6);
-  if (Math.random() < 0.4) p.tool = Math.min(p.cls.tool.max, p.tool + 1);
+  p.focus = Math.min(100, p.focus + (e.born ? BROOD.focus : 6));
+  // the roll is taken for every enemy, so E's draws are as they were
+  if (Math.random() < 0.4 && !e.born) p.tool = Math.min(p.cls.tool.max, p.tool + 1);
   SFX.kill();
   sparks(e.x, e.def.top * 0.5, e.z, 26, e.fig.eye, 7, 0.7, 0.14);
   if (p.lock === e) {
@@ -2015,6 +2139,42 @@ function kill(e) {
       say("A new gate has opened in the base.", "good", 6);
     SFX.win();
   }
+  const b = EBEH[e.type];
+  if (b && b.death) b.death(e);
+}
+// What any hit does to the one it lands on, before damage and knock: it
+// flashes, hunts (past the leash), learns where the player is and fills
+// posture. Shared by hitEnemy and blockHit so the two cannot drift apart.
+function noticeHit(e, post) {
+  const p = G.player;
+  e.flash = 1;
+  // a hit always starts a hunt, even past the leash
+  if (!e.def.boss && !e.def.dummy) e.prov = PURSUIT.provoke;
+  alertE(e, true);
+  if (!e.def.boss && !e.def.dummy) {
+    // a hit tells the enemy where it came from
+    e.lsx = p.x;
+    e.lsz = p.z;
+    e.lvx = e.lvz = 0;
+    if (e.state === "search") {
+      e.sub = "go";
+      e.route = null;
+      e.fails = 0;
+    }
+  }
+  if (e.state !== "stagger") {
+    e.posture += post * (e.state === "wind" ? 1.25 : 1);
+    e.postT = 0;
+  }
+}
+// A hit a type's hook refused: no damage, no knock, no flinch, no hitstop and
+// no focus. It still counts as an attack on the enemy.
+function blockHit(e, post) {
+  noticeHit(e, post);
+  sparks(e.x, 1.0 * e.fig.o.sc + 0.2, e.z, 7, WHITE, 5, 0.25);
+  SFX.block();
+  if (e.state !== "stagger" && e.state !== "roar" && e.posture >= e.def.posture)
+    stagger(e);
 }
 function hitEnemy(e, dmg, post, o = {}) {
   if (e.dead || e.state === "fall") return;
@@ -2024,6 +2184,16 @@ function hitEnemy(e, dmg, post, o = {}) {
   if (p.riftBonus > 0) {
     dmg *= 1 + RIFT.bonus;
     p.riftBonus = 0;
+  }
+  // a type's own say over the hit: change what lands, or refuse it
+  const bh = EBEH[e.type];
+  if (bh && bh.hit) {
+    const r = bh.hit(e, dmg, post, o);
+    if (r) {
+      if (r.blocked) return blockHit(e, r.post);
+      dmg = r.dmg;
+      post = r.post;
+    }
   }
   let mult = 1;
   const close = o.src === "melee" || o.src === "blink" || o.src === "exec";
@@ -2057,25 +2227,7 @@ function hitEnemy(e, dmg, post, o = {}) {
   }
   e.hp -= dmg * mult;
   if (e.def.dummy) e.hp = e.def.hp;
-  e.flash = 1;
-  // a hit always starts a hunt, even past the leash
-  if (!e.def.boss && !e.def.dummy) e.prov = PURSUIT.provoke;
-  alertE(e, true);
-  if (!e.def.boss && !e.def.dummy) {
-    // a hit tells the enemy where it came from
-    e.lsx = p.x;
-    e.lsz = p.z;
-    e.lvx = e.lvz = 0;
-    if (e.state === "search") {
-      e.sub = "go";
-      e.route = null;
-      e.fails = 0;
-    }
-  }
-  if (e.state !== "stagger") {
-    e.posture += post * (e.state === "wind" ? 1.25 : 1);
-    e.postT = 0;
-  }
+  noticeHit(e, post);
   const ox = o.fx !== undefined ? o.fx : p.x,
     oz = o.fz !== undefined ? o.fz : p.z;
   let dx = e.x - ox,
@@ -2221,7 +2373,7 @@ function hurtPlayer(dmg, e, atk) {
   G.shake = Math.max(G.shake, 0.7);
   G.hitstop = Math.max(G.hitstop, 0.06);
   SFX.hurt();
-  const kb = (atk.unb ? 11 : 7) * (armored ? 0.3 : 1);
+  const kb = (atk.kb || (atk.unb ? 11 : 7)) * (armored ? 0.3 : 1);
   p.kx = -kdx * kb;
   p.kz = -kdz * kb;
   sparks(p.x, 1.2, p.z, 10, RED, 5);
@@ -3384,14 +3536,15 @@ function playerUpdate(dt) {
         G.shake = 1;
         G.flashWhite = 0.6;
         p.hp = Math.min(p.maxHp, p.hp + 10);
-        p.focus = Math.min(100, p.focus + 12);
+        // a rat a brood mother sent out gives what it gives when killed
+        p.focus = Math.min(100, p.focus + (e.born ? BROOD.focus : 12));
         const sniper = p.clsId === "enforcer",
           sapper = p.clsId === "sapper",
           rift = p.clsId === "riftwalker";
         if (sniper) {
           // a tracer all the way to the target, and a sticky bomb back
           SFX.gun(true);
-          p.tool = Math.min(c.tool.max, p.tool + 1);
+          if (!e.born) p.tool = Math.min(c.tool.max, p.tool + 1);
         }
         G.arcs.push({
           lance: true,
@@ -3618,6 +3771,26 @@ function chooseAtk(e, dist) {
 }
 function eStep(e, dx, dz, spd, dt) {
   spd *= wadeMul(G.world.waterAt(e.x, e.z), wadeOf(e.def));
+  const b = EBEH[e.type];
+  if (b && b.foot) {
+    // a body held to its footing: the whole step, else along x or along z,
+    // else none; speed and walk reflect the step taken
+    const mx = dx * spd * dt,
+      mz = dz * spd * dt;
+    let sx = 0,
+      sz = 0;
+    if (b.foot(e, e.x + mx, e.z + mz)) {
+      sx = mx;
+      sz = mz;
+    } else if (b.foot(e, e.x + mx, e.z)) sx = mx;
+    else if (b.foot(e, e.x, e.z + mz)) sz = mz;
+    e.x += sx;
+    e.z += sz;
+    const moved = Math.hypot(sx, sz);
+    e.speed = dt > 0 ? moved / dt : 0;
+    e.walk += (moved * 2.0) / e.fig.o.sc;
+    return;
+  }
   e.x += dx * spd * dt;
   e.z += dz * spd * dt;
   e.speed = spd;
@@ -3818,6 +3991,10 @@ function enemyUpdate(e, dt) {
   const face = (rate) => {
     e.yaw = turnTo(e.yaw, toP, rate * dt);
   };
+  // a type's hooks, and what they are told (built only for a type with some)
+  const b = EBEH[e.type],
+    c = b ? { p, w, dx, dz, dist, toP, alive } : null;
+  if (b && b.step && b.step(e, dt, c)) return;
   switch (e.state) {
     case "idle":
       // shoved off the post, for example by one walking past: go back
@@ -3881,6 +4058,8 @@ function enemyUpdate(e, dt) {
         toSearch(e);
         break;
       }
+      if (b && b.chase && b.chase(e, dt, c)) break;
+      const mayAtk = !(b && b.canAttack) || b.canAttack(e, c);
       let ux = dx / (dist || 1),
         uz = dz / (dist || 1),
         aim = null;
@@ -3923,7 +4102,8 @@ function enemyUpdate(e, dt) {
           dist < 17 &&
           dist > 3 &&
           Math.abs(angDiff(e.yaw, toP)) < 0.5 &&
-          w.los(e.x, e.z, p.x, p.z)
+          w.los(e.x, e.z, p.x, p.z) &&
+          mayAtk
         ) {
           e.atk = d.atks.shot;
           e.state = "wind";
@@ -3934,7 +4114,8 @@ function enemyUpdate(e, dt) {
       }
       if (e.cd <= 0 && !e.plan) e.plan = chooseAtk(e, dist);
       if (e.plan && dist < (e.plan.minTrig || 0)) e.plan = null;
-      const want = e.plan && e.cd <= 0 && (e.token || takeToken(e));
+      if (!mayAtk) e.token = false;
+      const want = e.plan && e.cd <= 0 && mayAtk && (e.token || takeToken(e));
       if (want) {
         if (dist <= e.plan.trig + e.r * 0.3) {
           if (Math.abs(angDiff(e.yaw, toP)) < 0.7) {
@@ -4068,7 +4249,13 @@ function enemyUpdate(e, dt) {
             kind: "warn",
             c: RED,
           });
-        }
+        } else if (
+          a.kind &&
+          a.kind !== "charge" &&
+          b &&
+          b.wind
+        )
+          b.wind(e, c);
       }
       break;
     }
@@ -4130,6 +4317,9 @@ function enemyUpdate(e, dt) {
           hurtPlayer(a.dmg, e, a);
           if (e.state !== "act") break;
         }
+      } else if (a.kind !== "shot" && a.kind !== "volley" && b && b.act) {
+        b.act(e, dt, c);
+        if (e.state !== "act") break;
       }
       if (k >= 1) {
         e.state = "rec";
@@ -4815,7 +5005,12 @@ function projUpdate(dt) {
             pr.life = -1;
             break;
           }
-          hitEnemy(e, pr.dmg, pr.post, { src: pr.kind, heavy: pr.heavy });
+          hitEnemy(e, pr.dmg, pr.post, {
+            src: pr.kind,
+            heavy: pr.heavy,
+            sx: pr.x - pr.vx * 0.05,
+            sz: pr.z - pr.vz * 0.05,
+          });
           if (pr.hitSet) pr.hitSet.add(e);
           else {
             pr.life = -1;
@@ -4912,6 +5107,9 @@ function update(dt) {
   }
   G.pending = G.pending.filter((q) => q.t > 0);
   separate();
+  for (const e of G.enemies)
+    if (!e.dead && e.state !== "fall" && EBEH[e.type] && EBEH[e.type].foot)
+      keepFooting(e);
   G.enemies = G.enemies.filter((e) => !e.gone);
   for (const q of G.parts) {
     q.t += dt;
