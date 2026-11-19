@@ -1569,6 +1569,7 @@ const EDEF = {
   warden: {
     name: "The Ossuary Warden",
     boss: true,
+    fell: "THE WARDEN FALLS",
     threat: 2,
     hp: 620,
     posture: 140,
@@ -1845,7 +1846,7 @@ function makeEnemy(s) {
 function spawnEnemies() {
   G.enemies = [];
   for (const s of G.world.spawns) {
-    if (s.type === "warden" && G.bossDead) continue;
+    if (G.bossDead && EDEF[s.type] && EDEF[s.type].boss) continue;
     G.enemies.push(makeEnemy(s));
   }
 }
@@ -2311,7 +2312,7 @@ function kill(e) {
     G.bossDead = true;
     G.gate = { x: G.world.boss.x, z: G.world.boss.z, t: 0 };
     G.slowT = 1.2;
-    say("THE WARDEN FALLS", "big", 4);
+    say(e.def.fell, "big", 4);
     say("A gate opens. Step through to leave.", "", 6);
     if (next && !before && portalOpen(next))
       say("A new gate has opened in the base.", "good", 6);
@@ -2446,7 +2447,7 @@ function hitEnemy(e, dmg, post, o = {}) {
     kill(e);
     return;
   }
-  if (e.def.boss && e.phase === 1 && e.hp < e.def.hp * 0.5) {
+  if (e.def.boss && !e.def.ownPhases && e.phase === 1 && e.hp < e.def.hp * 0.5) {
     e.phase = 2;
     e.state = "roar";
     e.t = 0;
@@ -4037,13 +4038,15 @@ function playerUpdate(dt) {
 }
 
 // ---- enemies ----
-function chooseAtk(e, dist) {
-  const c = [];
+function chooseAtk(e, dist, ctx) {
+  const c = [],
+    b = EBEH[e.type];
   for (const k in e.def.atks) {
     const a = e.def.atks[k];
     if (a.trig === undefined) continue;
     if (a.p2 && e.phase < 2) continue;
     if (dist < (a.minTrig || 0)) continue;
+    if (b && b.atkOk && !b.atkOk(e, a, ctx)) continue;
     c.push(a);
   }
   if (!c.length) return null;
@@ -4334,7 +4337,9 @@ function enemyUpdate(e, dt) {
     }
     case "chase": {
       if (
-        d.boss
+        d.arena
+          ? !alive || !G.inBoss
+          : d.boss
           ? !alive || dist > 38 || Math.hypot(e.x - e.hx, e.z - e.hz) > 30
           : huntOver(e)
       ) {
@@ -4414,7 +4419,7 @@ function enemyUpdate(e, dt) {
         }
         break;
       }
-      if (e.cd <= 0 && !e.plan) e.plan = chooseAtk(e, dist);
+      if (e.cd <= 0 && !e.plan) e.plan = chooseAtk(e, dist, c);
       if (e.plan && dist < (e.plan.minTrig || 0)) e.plan = null;
       if (!mayAtk) e.token = false;
       const want = e.plan && e.cd <= 0 && mayAtk && (e.token || takeToken(e));

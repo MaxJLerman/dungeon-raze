@@ -12,6 +12,10 @@
 //   canAttack(e, c) -> bool      false keeps chase from starting an attack
 //                                (melee or shot) and from taking a token;
 //                                e.plan is kept
+//   atkOk(e, a, c) -> bool       in chooseAtk, for each attack that passed the
+//                                shared filters (trig, phase, minTrig): false
+//                                leaves attack a out of the choice. c is the
+//                                hook argument, null for a type with no hooks
 //   wind(e, c)                   once, as wind turns to act, for an atk.kind
 //                                the shared code does not know (not shot,
 //                                volley, slam or charge)

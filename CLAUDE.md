@@ -803,6 +803,13 @@ is what you need to change the code without breaking it.
   enemy hit in that time still flinches, so it can pass through `hit` and one
   step of `chase` while unaware. `chase` sends an unaware regular enemy
   straight home.
+- **Boss flags on `EDEF`.** `arena: true` makes a boss's chase give up only
+  when the player is dead or out of the boss chamber (`!G.inBoss`), in place
+  of the 38 m and 30 m limits. `ownPhases: true` skips `hitEnemy`'s
+  half-health phase change and roar, for a boss with its own phases.
+  `fell` is the big message `kill` shows for a boss (the Warden's is
+  "THE WARDEN FALLS"; a boss type needs one). `spawnEnemies` leaves out any
+  `boss` type once `G.bossDead`. `tests/t25.mjs` covers these and `atkOk`.
 - **The boss** has none of the above. It keeps its 38 m and 30 m limits and
   its heal on return, and routes round rock when the line to the player is
   blocked.
@@ -905,6 +912,9 @@ table runs exactly as before.
     and, **for a shot only, `sx` and `sz`, where it started**: `projUpdate`
     passes them and nothing else reads them. A hit hook that needs a facing
     uses the shot's start, else the blast, else the player.
+  - `atkOk(e, a, c)` runs in `chooseAtk(e, dist, c)` for each attack that
+    passed the shared filters (trig, phase, minTrig); false leaves it out of
+    the choice.
   - `death(e)` runs at the end of `kill`.
   - `foot(e, x, z)` says whether `e` may stand at a point. Read it through
     `footOk(e, x, z)` (always true for a type with no hook). `eStep` refuses a

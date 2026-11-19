@@ -707,6 +707,7 @@ window.DF = {
   posePlayer,
   poseEnemy,
   EBEH,
+  chooseAtk,
   BROOD,
   CLOUD,
   EEL,
