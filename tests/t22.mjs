@@ -121,6 +121,7 @@ export default [
   const a = e0.pts[k0 - 1], b = e0.pts[k0 + 1]; return look(a.x, a.z, Math.atan2(b.x - a.x, b.z - a.z), 0.22);`), wait: 400, shot: "t22-tunnel" },
   // a pool room from its walkway, looking across the water
   { ...sewer("a pool room, for looking at", `const n = w.nodes.find((n) => n.kind === "pool"); return look(n.x, n.z - n.hd * 0.4, 0, 0.42);`), wait: 400, shot: "t22-pool" },
+  { ...sewer("a brood room, for looking at", `const n = w.nodes.find((n) => n.kind === "brood"); return { ...look(n.x, n.z - n.hd * 0.4, 0, 0.42), n: n.id };`), wait: 400, shot: "t22-brood" },
   // the boss cavern from its entrance, looking at the centre pool
   { ...sewer("the boss cavern, for looking at", `const b = w.boss, ent = w.nodes[w.path[w.path.length - 2]], a = Math.atan2(ent.x - b.x, ent.z - b.z);
   return look(b.x + Math.sin(a) * (b.r - 3), b.z + Math.cos(a) * (b.r - 3), a + Math.PI, 0.3);`), wait: 400, shot: "t22-boss" },
