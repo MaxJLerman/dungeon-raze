@@ -580,6 +580,9 @@ EBEH.grabber = {
 //   fallDmg   what that does to them
 //   rockR     the radius of the rubble it leaves (a short capsule)
 //   rockCap   how many heaps stand at once; a new one brings the oldest down
+// and for the bloaters down the falls:
+//   bloatEvery how often one washes down a fall while the fight is on, in s
+//   bloatCap   how many of them may be alive at once
 const CROC = {
   under: [3, 5],
   swim: 7,
@@ -612,6 +615,8 @@ const CROC = {
   fallDmg: 20,
   rockR: 1.4,
   rockCap: 5,
+  bloatEvery: 14,
+  bloatCap: 2,
 };
 // the rearing slam's hit is centred this far in front of it
 const CROC_SLAM_AHEAD = 1;
@@ -729,8 +734,10 @@ function crocReset(e) {
     safe: false,
     tun: null,
     fallT: crocFallT(),
+    bloatT: CROC.bloatEvery,
   });
   crocClearChunks(G.world);
+  crocClearBloats();
   G.bossSeen = false;
 }
 // The water it swims under: points 1 m apart over the cavern with room for
@@ -1319,6 +1326,62 @@ function crocCeiling(e, dt, c) {
   e.fallT = q ? crocFallT() : 0.5;
   if (q) crocDropChunk(q.x, q.z);
 }
+// ---- bloaters down the falls ----
+// While the fight is on, every CROC.bloatEvery s a bloater washes down one of
+// the wall tunnels' falls into the pool under it, if fewer than CROC.bloatCap
+// of them are alive. It is a normal bloater (its cloud hurts the crocodile
+// too, through the hit hook and the floor) but for two flags: e.fromFall, and
+// e.inArena, which keeps it in the hunt while the player is in the cavern
+// (huntOver, alertE, its sight). A reset takes them all away, quietly.
+// Where a bloater comes down under wall tunnel m: the water point nearest the
+// foot of its fall (as drawSewerSet draws it) where waterFoot holds for a
+// bloater made there, on rings 0.25 m apart out to 4 m; null when none.
+function crocFallSpot(w, m) {
+  const r = EDEF.bloater.r,
+    d = SEWER.mouthOut + 1.1,
+    x0 = m.x + Math.sin(m.yaw) * d,
+    z0 = m.z + Math.cos(m.yaw) * d,
+    ok = (x, z) => w.waterAt(x, z) >= 0.5 && w.fieldAt(x, z) >= r && w.bodyAt(x, z) >= 0;
+  if (ok(x0, z0)) return { x: x0, z: z0 };
+  for (let k = 0.25; k <= 4 + 1e-6; k += 0.25)
+    for (let i = 0, n = Math.max(12, Math.ceil(k * 8)); i < n; i++) {
+      const a = (i / n) * TAU,
+        x = x0 + Math.sin(a) * k,
+        z = z0 + Math.cos(a) * k;
+      if (ok(x, z)) return { x, z };
+    }
+  return null;
+}
+// One bloater down the fall of a random wall tunnel (or tunnel i), hunting
+// at once; null when no fall has room for it.
+function crocBloat(e, w, i) {
+  const W = w.wallTunnels;
+  if (!W.length) return null;
+  const m = W[i === undefined ? (Math.random() * W.length) | 0 : i],
+    q = crocFallSpot(w, m);
+  if (!q) return null;
+  const b = makeEnemy({ type: "bloater", x: q.x, z: q.z, yaw: m.yaw, node: e.node });
+  b.inArena = true;
+  b.fromFall = true;
+  G.enemies.push(b);
+  alertE(b, true);
+  splash(q.x, q.z, 20);
+  return b;
+}
+// Each step of the fight: the next one comes down when its time is up.
+function crocBloats(e, dt, c) {
+  if ((e.bloatT -= dt) > 0) return;
+  e.bloatT = CROC.bloatEvery;
+  if (G.enemies.filter((o) => o.fromFall && !o.dead).length < CROC.bloatCap) crocBloat(e, c.w);
+}
+// Every bloater from the falls away, alive or dead: no cloud, no reward and
+// no kill. Each is marked dead and gone too, so a lock or a bomb on one lets
+// go of it.
+function crocClearBloats() {
+  if (!G.enemies) return;
+  for (const o of G.enemies) if (o.fromFall) Object.assign(o, { dead: true, gone: true, state: "dead", hidden: true });
+  G.enemies = G.enemies.filter((o) => !o.fromFall);
+}
 EBEH.croc = {
   foot: crocFoot,
   // its death leaves the heaps that have landed, and no chunk still to fall
@@ -1364,7 +1427,10 @@ EBEH.croc = {
     e.rollCD = Math.max(0, (e.rollCD || 0) - dt);
     // leaving the cavern or dying ends the fight, in every mode
     if (e.mode !== "wait" && (e.state === "return" || !G.inBoss || !c.alive)) crocReset(e);
-    if (e.mode !== "wait") crocCeiling(e, dt, c);
+    if (e.mode !== "wait") {
+      crocCeiling(e, dt, c);
+      crocBloats(e, dt, c);
+    }
     // a mark reached, once an execution of it has played out: it lets go of
     // a held player, drops its attack (a stagger too) and leaps at once
     if (

@@ -537,15 +537,21 @@ const R = (() => {
     pv(fxA, nA++, x + s, y, z + s, 1, 1, r, g, b, a);
     pv(fxA, nA++, x - s, y, z + s, -1, 1, r, g, b, a);
   }
-  function blob(x, z, s, a) {
+  // a soft dark disc on the ground, s in radius; with yaw and len, stretched
+  // len times along the heading yaw (an ellipse), and at height y
+  function blob(x, z, s, a, yaw = 0, len = 1, y = 0.12) {
     if (nD + 6 > 8000) return;
-    const y = 0.12;
-    pv(fxD, nD++, x - s, y, z - s, -1, -1, a, a, a, 1);
-    pv(fxD, nD++, x + s, y, z - s, 1, -1, a, a, a, 1);
-    pv(fxD, nD++, x + s, y, z + s, 1, 1, a, a, a, 1);
-    pv(fxD, nD++, x - s, y, z - s, -1, -1, a, a, a, 1);
-    pv(fxD, nD++, x + s, y, z + s, 1, 1, a, a, a, 1);
-    pv(fxD, nD++, x - s, y, z + s, -1, 1, a, a, a, 1);
+    const ux = Math.sin(yaw) * s * len,
+      uz = Math.cos(yaw) * s * len,
+      vx = Math.cos(yaw) * s,
+      vz = -Math.sin(yaw) * s,
+      c = (i, j) => pv(fxD, nD++, x + vx * i + ux * j, y, z + vz * i + uz * j, i, j, a, a, a, 1);
+    c(-1, -1);
+    c(1, -1);
+    c(1, 1);
+    c(-1, -1);
+    c(1, 1);
+    c(-1, 1);
   }
   // ribbon: pts(i)->[x,y,z] inner/outer supplied by callback f(t, side) ; alpha(t)
   function ribbon(segs, f, r, g, b, alphaFn) {

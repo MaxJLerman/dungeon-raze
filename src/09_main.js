@@ -723,6 +723,8 @@ window.DF = {
   crocCrossing,
   crocDropChunk,
   crocChunkLand,
+  crocBloat,
+  crocFallSpot,
   drawMouths,
   grappleTarget,
   nearestStaggered,

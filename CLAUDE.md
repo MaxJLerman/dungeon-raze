@@ -57,8 +57,9 @@ is what you need to change the code without breaking it.
   another, then drops back into the water. Shots hurt it there up to a cap
   per phase, and a parried plate knocks it down onto the ring, staggered.
   Below half health chunks of the cavern's ceiling fall on the dry ring and
-  stay as rubble. Bloaters down the falls and its shadow remain. A D
-  run made live by hand has
+  stay as rubble. Bloaters wash down the falls during the fight, and its
+  shadow shows under the light shafts while it is under. Only opening D
+  remains. A D run made live by hand has
   no E type in it. The design is in
   `docs/superpowers/specs/2026-11-19-d-enemies-design.md` for the enemies,
   `docs/superpowers/specs/2026-11-18-sewer-d-gate-design.md` for the sewer
@@ -112,7 +113,9 @@ is what you need to change the code without breaking it.
   wrapped lighting.
 - Effects go through `R.sprite`, `R.ribbon`, `R.ring` and `R.blob`. They are
   batched and drawn after the solid pass: blobs darken the ground, everything
-  else is additive.
+  else is additive. `R.blob(x, z, s, a, yaw, len, y)` takes an optional
+  heading, a stretch along it (an ellipse `len` times as long as wide) and
+  a height (0.12 by default).
 - **Materials.** The world mesh has one material byte per vertex, a fourth
   attribute (`aMat`, location 3). `MAT` in `03_world.js` names the values:
   0 plain, `MAT.BRICK` 1, `MAT.WATER` 2. `meshSink` takes a `mat` argument on
@@ -824,6 +827,15 @@ is what you need to change the code without breaking it.
   enemy hit in that time still flinches, so it can pass through `hit` and one
   step of `chase` while unaware. `chase` sends an unaware regular enemy
   straight home.
+- **`e.inArena`** is an instance flag for an enemy that is part of the boss's
+  fight; only the crocodile's fall bloaters set it. The boss-chamber rule
+  does not hold it: `alertE` wakes it there, `huntOver` does not end its
+  hunt for `G.inBoss` and, while the player is in the chamber, not for the
+  leash either; while the player is in the chamber it knows where they are
+  (the sight memory treats it as seeing them, without calling the pack),
+  so it never loses them or searches; and `hitEnemy`'s `held` (no ambush
+  bonus) does not apply to it. With the player out of the chamber it is a
+  regular enemy. A type or enemy without it is unchanged.
 - **Boss flags on `EDEF`.** `arena: true` makes a boss's chase give up only
   when the player is dead or out of the boss chamber (`!G.inBoss`), in place
   of the 38 m and 30 m limits. `ownPhases: true` skips `hitEnemy`'s
@@ -1013,8 +1025,8 @@ table runs exactly as before.
   `drawDust`, and for each plate in flight `drawPlate`. Each reads the
   game's list (`G.clouds`, `G.shocks`, the singing sirens, the crocodile
   under the water or in its tunnels, `G.chunks`) and draws only effects
-  (`R.sprite`, `R.ring`, `R.flat`), so it is all additive and the sewer's
-  triangle budget is untouched. `resetRun` and `respawn` clear both lists.
+  (`R.sprite`, `R.ring`, `R.flat`, and `R.blob` for shadows), so the
+  sewer's triangle budget is untouched. `resetRun` and `respawn` clear both lists.
 - **The bloater** (`bloater`, threat 0, `bound: "water"`) floats in a pool or
   a gutter, slow (1.2) and soft, and waits at the shore nearest the player
   (`goal`). It bumps for 5 at 1.4 m. When it dies (`death` hook) it leaves a
@@ -1096,8 +1108,8 @@ table runs exactly as before.
     `return`) call `crocReset`: full health, `e.marks` 0, `wait`, hidden at
     its post, unaware, not aloft or safe, `y` 0, no `e.tun`, `G.bossSeen`
     false, and every chunk of the falling ceiling gone with its rock (by
-    id, so a cave-in standing elsewhere stays). Plates already thrown fly
-    on.
+    id, so a cave-in standing elsewhere stays), and every fall bloater
+    taken out of `G.enemies` (below). Plates already thrown fly on.
   - `crocShores(e, w)` (cached on `e.shores`) is every water point on a
     1 m lattice centred on the cavern with `fieldAt` at least `e.r` and dry
     footing within 3 m (`crocDry`: a 0.5 m lattice in a clear line).
@@ -1254,9 +1266,30 @@ table runs exactly as before.
     `drawChunks` (`07_render.js`) draws the rock falling over the last
     0.3 s and the heap, built by the cave-in's `makeRubble` with wider
     rows (`CHUNK_ROWS`).
+  - **Bloaters down the falls** (`crocBloats`, run by its step in every
+    mode but `wait`). Every `CROC.bloatEvery` (14 s, `e.bloatT`, set by
+    `crocReset`) one comes down if fewer than `CROC.bloatCap` (2) fall
+    bloaters are alive; the timer starts again either way. `crocBloat(e,
+    w, i)` makes it under wall tunnel `i` (a random one when not given):
+    at `crocFallSpot(w, m)`, the point nearest the foot of the mouth's fall
+    (`SEWER.mouthOut + 1.1` out from the mouth, where `drawSewerSet` draws
+    it landing), on rings 0.25 m apart out to 4 m, with `waterAt` at least
+    0.5, `fieldAt` at least the bloater's radius and `bodyAt` a body, so
+    `waterFoot` holds for it there. It is a normal bloater from `makeEnemy`
+    with `e.fromFall` and `e.inArena` (see Enemies) set, woken at once
+    (`alertE`, quiet), with a splash. Its cloud hurts the crocodile like
+    any hit, through its `hit` hook and floor. `crocClearBloats`, called by
+    `crocReset`, takes every fall bloater, alive or dead, out of
+    `G.enemies`, marked `dead` and `gone` so a lock or a bomb on one lets
+    go: no cloud, no reward, no kill. Its death leaves them; `respawn`
+    rebuilds the enemies without them.
   - `drawWakes` (`07b_dfx.js`): under, a V of foam back from its heading
     and bubbles over it; rising, bubbles boiling up and rings widening on
-    the water. Everything is drawn only where `waterAt` reads 0.5 or more.
+    the water. The foam and bubbles are drawn only where `waterAt` reads
+    0.5 or more. Under, within a shaft's `r` of its centre
+    (`world.shafts`), its shadow: one `R.blob` 0.75 m wide stretched 3.4
+    times along its heading, 0.6 m back of its middle, on the water (or
+    at the usual height where it is dry).
 
 ## Recipes
 
@@ -1454,11 +1487,23 @@ The class picker and HUD read `CLASSES` and need no changes.
   drag line, its climb-out and on itself, it never stands in rock on
   land, and the player is never inside rock and has room after every
   landing; leaving and `respawn` clear the heaps and
-  leave other rock; its death leaves the landed heaps. Shots go to
+  leave other rock; its death leaves the landed heaps. Then the fall
+  bloaters: over 45 s of fight with the player across the cavern from the
+  falls (further than a bloater sees), exactly two come down, the first
+  at `bloatEvery`, each a bloater on its footing in water within 6 m of a
+  mouth and of the wall, aware, `inArena` and hunting throughout, never
+  more than `bloatCap`; one killed is replaced at the next tick; a plain
+  bloater there is not woken; one popped beside it on land takes it down
+  over the cloud's ticks, and from just above a mark to the mark exactly;
+  leaving takes them all out with no cloud, kill, focus or tool charge
+  and drops a lock on one, and `respawn` leaves none. Then the shadow:
+  under at a shaft one more blob is drawn in a frame than out of every
+  shaft, along its heading, and none while it rises. Shots go to
   `shots/t25-croc-*` (idle, rear, bite, tail, roll), `t25-wake`,
   `t25-rise`, `t25-roll` (mid-roll), `t25-mouth-warn`,
   `t25-mouth-throw`, `t25-knock` (falling, knocked down) and
-  `t25-ceiling` (a warning, a chunk falling and a heap): look at them.
+  `t25-ceiling` (a warning, a chunk falling and a heap) and
+  `t25-shadow` (under at a shaft): look at them.
 - Run `tests/t22.mjs` after any change to the sewer, water, `fieldFns`,
   `meshSink`, the world shader, `visiblePieces`, cleared grades or portal
   opening: `SCRIPT=$PWD/tests/t22.mjs node test.mjs smoke`. It makes D live
@@ -1581,7 +1626,19 @@ The class picker and HUD read `CLASSES` and need no changes.
   pocket between heaps as one lands is moved to the nearest open point.
   Pushed into a gap between heaps narrower than its body by other means
   (a drag, a knock), a body can stay wedged a little short of its radius,
-  as `resolve` leaves it in any such gap.
+  as `resolve` leaves it in any such gap. A bloater comes down the falls
+  every 14 s with at most 2 alive (`bloatEvery`, `bloatCap`), set without
+  a playtest; while the player is in the cavern they know where the
+  player is and never give up, but they are slow (1.2 m/s) and bound to
+  the water they came down into. Whether their clouds are a real way to
+  hurt the crocodile is a question.
+- The crocodile's shadow shows only within a shaft's `r` of its centre,
+  and the shafts stand over the dry ring (`dressBoss` keeps every shaft
+  dry to `r` + 0.6 m), so as the sewer is generated it never shows in a
+  fight: over seeds 1 to 12, water with room for its body is at least
+  1.34 m past `r` from every shaft (1.95 `r` at the least). t25 places it
+  under a shaft by hand. Shafts over water, or a wider rule, are the
+  owner's call.
 - A hidden grabber is invisible until it strikes, and its grate is the only
   sign. The grates are drawn for every tunnel, so a grate with no grabber
   looks the same as one with one.

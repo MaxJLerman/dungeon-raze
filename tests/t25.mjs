@@ -872,4 +872,73 @@ const ceilingSteps = [
   return { pass: !!h && G.chunks.length === 3 && !kw.id && !kf.id, n: G.chunks.length };`), wait: 500, shot: "t25-ceiling" },
   step("the player is put back again", `G.player.fig.root.s = [1, 1, 1]; DF.newRun(99); return { pass: true };`),
 ];
-export default [...base, ...crocSteps, ...rollSteps, ...markSteps, ...tunnelSteps, ...ceilingSteps];
+// ---- bloaters down the falls, and the shadow ----
+// live() the fall bloaters alive; far side: the dry ring across the cavern from its wall tunnels.
+const falls = `const W = w.wallTunnels, live = () => G.enemies.filter((o) => o.fromFall && !o.dead);
+  const fa = Math.atan2(W.reduce((s, m) => s + m.x - B.x, 0), W.reduce((s, m) => s + m.z - B.z, 0)), farSide = ringAt(12, fa + Math.PI);`;
+const bloatSteps = [
+  cstep("bloaters wash down the falls", `${falls}
+  const vals = C.bloatEvery === 14 && C.bloatCap === 2;
+  begin(farSide);
+  const seen = new Map(); let most = 0, hunt = true, why = null, far = 0;
+  // the player stands on the far side: knocked off it (a passive player is knocked about, out
+  // through the entrance in time), they go back
+  const tick = (i) => { keep(); if (p.state !== "held" && Math.hypot(p.x - farSide.x, p.z - farSide.z) > 3) put(farSide);
+    for (const o of G.enemies) if (o.fromFall && !seen.has(o))
+      seen.set(o, { at: i, wall: +(B.r - Math.hypot(o.x - B.x, o.z - B.z)).toFixed(2), mouth: +Math.min(...W.map((m) => Math.hypot(o.x - m.x, o.z - m.z))).toFixed(2),
+        wet: w.waterAt(o.x, o.z), foot: DF.waterFoot(o, o.x, o.z), aware: o.aware, inArena: o.inArena, type: o.type });
+    const l = live(); most = Math.max(most, l.length);
+    for (const o of l) { far = Math.max(far, Math.hypot(o.x - p.x, o.z - p.z));
+      if (G.inBoss && (!o.aware || o.state === "return" || o.state === "idle")) { hunt = false; why = why || { i, state: o.state, aware: o.aware, sub: o.sub }; } } };
+  DF.sim(45, tick);
+  const n45 = seen.size, at = [...seen.values()].map((s) => s.at);
+  // one killed: another comes down within bloatEvery
+  DF.hitEnemy([...seen.keys()][0], 999, 0, {}); DF.sim(C.bloatEvery + 0.5, tick);
+  const all = [...seen.values()], bad = all.filter((s) => s.type !== "bloater" || s.wall > 6 || s.mouth > 6 || s.wet < 0.5 || !s.foot || !s.aware || !s.inArena);
+  // a plain bloater there takes no notice in the cavern, as before
+  const q = [...seen.keys()][1], pb = DF.makeEnemy({ type: "bloater", x: q.x, z: q.z, yaw: 0, node: -1 }); DF.alertE(pb, true);
+  const sight = DF.EDEF.bloater.sight * DF.PURSUIT.seeMul;
+  return { pass: vals && !!farSide && n45 === 2 && Math.abs(at[0] - C.bloatEvery * 60) <= 2 && all.length === 3 && most <= C.bloatCap && bad.length === 0 && hunt && far > sight && !pb.aware && e.mode !== "wait",
+    vals, n45, at, n: all.length, most, hunt, why, far: +far.toFixed(1), sight, plain: pb.aware, mode: e.mode, bad: bad.slice(0, 3), first: all[0] };`),
+  mstep("a cloud beside it hurts it", `
+  e.landT = 60; const at = { x: e.x, z: e.z }, D = DF.CLOUD;
+  const pin = () => { keep(); if (e.mode === "land") { e.x = e.okx = at.x; e.z = e.okz = at.z; } };
+  const pop = () => { const b = DF.crocBloat(e, w); b.x = e.x + 0.9; b.z = e.z; DF.hitEnemy(b, 999, 0, {}); return b; };
+  e.hp = 700; const b = pop(), cloud = G.clouds.length; DF.sim(D.life + 0.2, pin); const lost = 700 - e.hp;
+  // just above the mark: the cloud takes it down to the mark and no further
+  e.hp = 606; let lo = e.hp; pop(); DF.sim(D.life + 0.2, () => { pin(); lo = Math.min(lo, e.hp); });
+  return { pass: b.dead && cloud === 1 && lost > 0 && lost % D.dmg === 0 && lost <= D.dmg * (D.life / D.tick + 1) && lo === 600 && e.marks === 1, dead: b.dead, cloud, lost, lo, marks: e.marks, mode: e.mode };`),
+  cstep("leaving removes them", `${falls}
+  begin(); const a = DF.crocBloat(e, w), b = DF.crocBloat(e, w); DF.sim(0.5, keep);
+  // one dead and still lying there, one alive and locked
+  DF.hitEnemy(b, 999, 0, {}); G.clouds = []; p.lock = a;
+  const before = { n: G.enemies.filter((o) => o.fromFall).length, aware: a.aware, dead: b.dead };
+  const kills = G.kills, focus = p.focus, tool = p.tool;
+  put(out); const n = until(() => e.mode === "wait", 1); DF.sim(0.3, keep);
+  const after = { n: G.enemies.filter((o) => o.fromFall).length, clouds: G.clouds.length, kills: G.kills - kills, focus: p.focus - focus, tool: p.tool - tool, lock: p.lock === a, gone: a.dead && !G.enemies.includes(a) };
+  // a respawn leaves none either
+  begin(); DF.crocBloat(e, w); const n1 = live().length; DF.respawn(); G.manual = true; const n2 = G.enemies.filter((o) => o.fromFall).length;
+  return { pass: before.n === 2 && before.aware && before.dead && n < 60 && after.n === 0 && after.clouds === 0 && after.kills === 0 && after.focus === 0 && after.tool === 0 && !after.lock && after.gone && n1 === 1 && n2 === 0,
+    before, after, n, n1, n2 };`),
+  cstep("its shadow shows under a shaft", `
+  // the blobs of the last whole frame drawn (each frame starts with R.begin)
+  begin(); const h = w.shafts[0], real = DF.R.blob, rb = DF.R.begin; let frames = [[]];
+  DF.R.begin = (...a) => { frames.push([]); return rb(...a); };
+  DF.R.blob = (...a) => { frames[frames.length - 1].push(a); return real(...a); };
+  try {
+    const at = async (x, z) => { Object.assign(e, { mode: "under", hidden: true, x, z, yaw: 0.7, modeT: 1e6, speed: 0 }); frames = [[]]; await draw(); return frames[frames.length - 1]; };
+    const under = await at(h.x, h.z), away = await at(B.x, B.z);
+    const extra = under.filter((a) => a[4] === 0.7 && a[5] > 1);
+    // rising, it is not drawn
+    e.mode = "rise"; e.modeT = C.warn; e.spot = { x: h.x, z: h.z }; frames = [[]]; await draw(); const rise = frames[frames.length - 1].filter((a) => a[4] === 0.7).length;
+    return { pass: !!h && under.length === away.length + 1 && extra.length === 1 && rise === 0, shafts: w.shafts.length, under: under.length, away: away.length, extra, rise };
+  } finally { DF.R.blob = real; DF.R.begin = rb; }`),
+  { ...cstep("its shadow under a shaft, for looking at", `
+  begin(); const h = w.shafts[0], a = Math.atan2(B.x - h.x, B.z - h.z) + 0.6;
+  Object.assign(e, { mode: "under", hidden: true, x: h.x, z: h.z, yaw: a + 1.2, modeT: 1e6, speed: 0 });
+  put({ x: h.x - Math.sin(a) * 4.5, z: h.z - Math.cos(a) * 4.5 }); w.resolve(p, p.r);
+  p.yaw = cam.yaw = Math.atan2(h.x - p.x, h.z - p.z); cam.pitch = 0.6; cam.px = p.x; cam.pz = p.z; p.fig.root.s = [0.0001, 0.0001, 0.0001];
+  return { pass: true };`), wait: 500, shot: "t25-shadow" },
+  step("the player is put back once more", `G.player.fig.root.s = [1, 1, 1]; DF.newRun(99); return { pass: true };`),
+];
+export default [...base, ...crocSteps, ...rollSteps, ...markSteps, ...tunnelSteps, ...ceilingSteps, ...bloatSteps];

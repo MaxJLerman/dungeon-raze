@@ -200,6 +200,14 @@ function drawWakes() {
           z = e.z + Math.cos(h * 7) * 0.7;
         if (wet(x, z)) R.sprite(x, wl + ph * 0.15, z, 0.1 + ph * 0.08, 0.8, 0.95, 0.9, 0.9 * (1 - ph));
       }
+      // under a shaft's light its dark shape shows: a long shadow along its
+      // heading, a little back of its middle for the tail, on the water (or
+      // the floor, where there is no water to lie on)
+      for (const h of w.shafts) {
+        if (Math.hypot(e.x - h.x, e.z - h.z) >= h.r) continue;
+        R.blob(e.x - fx * 0.6, e.z - fz * 0.6, 0.75, 0.85, e.yaw, 3.4, wet(e.x, e.z) ? wl + 0.02 : 0.12);
+        break;
+      }
       continue;
     }
     // rising: k runs 0 to 1 over the warning

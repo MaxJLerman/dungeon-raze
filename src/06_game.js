@@ -2268,13 +2268,14 @@ function inTerritory(e) {
 }
 // True when a regular enemy should stop hunting: the player is in the boss
 // chamber or dead, or it is past its leash and no recent hit is keeping it
-// out there. A hit never overrides the boss chamber.
+// out there. A hit never overrides the boss chamber. One that is part of the
+// boss's fight (e.inArena: a bloater down the crocodile's falls) hunts on in
+// the boss chamber, with no leash while the player is in it, as the arena
+// boss does.
 function huntOver(e) {
-  return (
-    G.inBoss ||
-    G.player.state === "dead" ||
-    (e.prov <= 0 && Math.hypot(e.x - e.hx, e.z - e.hz) > leashOf(e))
-  );
+  if (G.player.state === "dead") return true;
+  if (e.inArena) return !G.inBoss && e.prov <= 0 && Math.hypot(e.x - e.hx, e.z - e.hz) > leashOf(e);
+  return G.inBoss || (e.prov <= 0 && Math.hypot(e.x - e.hx, e.z - e.hz) > leashOf(e));
 }
 // A regular enemy that is hunting and can see the player right now.
 function seesNow(o) {
@@ -2335,8 +2336,9 @@ function giveUp(e) {
 // the player; otherwise the enemy starts from where the player is now.
 function alertE(e, quiet, by) {
   if (e.aware || e.dead) return;
-  // nothing but the boss takes notice of a player in the boss chamber
-  if (G.inBoss && !e.def.boss) return;
+  // nothing but the boss and its fight takes notice of a player in the boss
+  // chamber
+  if (G.inBoss && !e.def.boss && !e.inArena) return;
   e.aware = true;
   const src = by || G.player;
   e.lsx = by ? by.lsx : src.x;
@@ -2479,7 +2481,7 @@ function hitEnemy(e, dmg, post, o = {}) {
   const back = Math.abs(angDiff(e.yaw, Math.atan2(p.x - e.x, p.z - e.z))) > 2.1;
   // An enemy that the boss chamber rule keeps from waking is not caught off
   // guard: without this every hit on it would be an ambush.
-  const held = G.inBoss && !e.def.boss;
+  const held = G.inBoss && !e.def.boss && !e.inArena;
   if (
     !e.aware &&
     !held &&
@@ -4370,16 +4372,19 @@ function enemyUpdate(e, dt) {
       rad = front ? d.sight : p.sprint ? 7.5 : p.state === "attack" ? 0 : 3.0;
     if (dist < rad && w.los(e.x, e.z, p.x, p.z)) alertE(e);
   }
-  // sight memory, in every state, for a regular enemy that is hunting
+  // sight memory, in every state, for a regular enemy that is hunting. One
+  // in the boss's fight knows where the player is in the boss chamber, as
+  // the boss does, so it never loses them there
   if (e.aware && !d.boss) {
-    if (canSee(e)) {
+    const sees = canSee(e);
+    if (sees || (e.inArena && G.inBoss && alive)) {
       e.lsx = p.x;
       e.lsz = p.z;
       e.lvx = p.vx;
       e.lvz = p.vz;
       e.lost = 0;
       e.told = false;
-      callPack(e);
+      if (sees) callPack(e);
     } else {
       e.lost += dt;
       // a pack-mate that can see the player says where they are
