@@ -518,15 +518,17 @@ EBEH.grabber = {
 //          entry; it rises once it is there and its time under is up
 //   rise   hidden at e.spot for CROC.warn s: the warning (drawWakes)
 //   land   up on the ring, surfacing in the rearing slam, for CROC.land s;
-//          the clock stops in a stagger, and each stagger adds stagBonus
+//          the clock stops in a stagger, and each stagger adds stagBonus;
+//          a player in the water out of its reach for CROC.reachT ends it
 //   dive   up, walking to the nearest shore, then under again
 // Leaving the cavern or the player dying, in any mode, puts it back to wait
 // at full health with no marks passed (crocReset).
 // The marks: e.marks of the three, at 75%, 50% and 25% of its health, are
 // passed. No hit takes it past the next (crocNextMark): its hit hook caps the
-// damage and hpFloor holds it past any multiplier. Reaching one, once the
-// player is not executing it, breaks off whatever it is doing, a hold
-// included, and it dives at once. Part two puts the tunnel phase there.
+// damage and hpFloor holds it past any multiplier (crocFloor). Reaching one,
+// once the player is not executing it, breaks off whatever it is doing, a
+// hold included, and it dives at once; until it is under, no hit takes it
+// below that mark. Part two puts the tunnel phase there.
 // Every number is a starting value for the playtest:
 //   under     how long a spell under lasts, from and to, in s
 //   swim      its least speed under the water, m/s: it swims faster when
@@ -541,6 +543,10 @@ EBEH.grabber = {
 //   dragSpeed how fast it drags a caught player, m/s
 //   rollIn    how far past the shore into the water it drags them
 //   rollCD    how long after a roll, however it ended, before it rolls again
+//   reachT    how long it stays up with the player in the water out of its
+//             reach before it dives to come up at them
+//   wetDry    for a player in the water, how far from dry footing a spot it
+//             comes up at may be (the climb-out's furthest reach)
 const CROC = {
   under: [3, 5],
   swim: 7,
@@ -554,6 +560,8 @@ const CROC = {
   dragSpeed: 4,
   rollIn: 2,
   rollCD: 8,
+  reachT: 3,
+  wetDry: 6,
 };
 // the rearing slam's hit is centred this far in front of it
 const CROC_SLAM_AHEAD = 1;
@@ -599,19 +607,28 @@ function crocShores(e, w) {
 // Where it comes up next: of the shores still clear of rubble and with dry
 // footing beside them, at least CROC.minNew from the last spot and CROC.near
 // from the player, the nearest to the player; null when there is none.
+// With the player in the water the water is its ground: any point of its
+// swim net with dry footing within CROC.wetDry (so it can climb out), at any
+// distance from the player and any but the last spot (1 m apart on the
+// lattice), so it comes up under or beside them. Such a spot is a new object
+// carrying R, the reach of its dry footing check.
 function crocPickSpot(e, c) {
   const w = c.w || G.world,
     p = c.p,
     L = e.lastSpot,
+    wet = w.waterAt(p.x, p.z) >= 0.5,
     cand = [];
-  for (const s of crocShores(e, w)) {
+  for (const s of wet ? crocSwimNet(e, w).pts : crocShores(e, w)) {
     if (w.fieldAt(s.x, s.z) < e.r) continue;
-    if (L && Math.hypot(s.x - L.x, s.z - L.z) < CROC.minNew) continue;
+    if (L && Math.hypot(s.x - L.x, s.z - L.z) < (wet ? 0.5 : CROC.minNew)) continue;
     const d = Math.hypot(s.x - p.x, s.z - p.z);
-    if (d >= CROC.near) cand.push({ s, d });
+    if (wet || d >= CROC.near) cand.push({ s, d });
   }
   cand.sort((a, b) => a.d - b.d);
-  for (const q of cand) if (crocDry(e, w, q.s.x, q.s.z, q.s.x, q.s.z)) return q.s;
+  const R = wet ? CROC.wetDry : 3;
+  for (const q of cand)
+    if (crocDry(e, w, q.s.x, q.s.z, q.s.x, q.s.z, R))
+      return wet ? { x: q.s.x, z: q.s.z, body: w.bodyAt(q.s.x, q.s.z), R } : q.s;
   return null;
 }
 // Its footing: room for its body, and on land dry floor unless it is in the
@@ -657,6 +674,8 @@ function crocReset(e) {
     stagd: false,
     rolling: false,
     rollCD: 0,
+    markDive: false,
+    outT: 0,
   });
   G.bossSeen = false;
 }
@@ -736,8 +755,15 @@ function crocPlan(e, w) {
 function crocNextMark(e) {
   return e.marks < 3 ? e.def.hp * (1 - 0.25 * (e.marks + 1)) : 0;
 }
-// Off to the nearest shore clear of rubble (dive), then under.
-function crocDive(e, w) {
+// The least health a hit may leave (its hit hook and hpFloor): the next mark,
+// but while the dive a mark started is under way, the mark just passed, so
+// no second mark passes before it has been under.
+function crocFloor(e) {
+  return e.mode === "dive" && e.markDive ? e.def.hp * (1 - 0.25 * e.marks) : crocNextMark(e);
+}
+// Off to the nearest shore clear of rubble (dive), then under. mark: the
+// dive a mark started.
+function crocDive(e, w, mark = false) {
   let best = null,
     bd = 1e9;
   for (const s of crocShores(e, w)) {
@@ -745,6 +771,7 @@ function crocDive(e, w) {
     if (d < bd && w.fieldAt(s.x, s.z) >= e.r) (bd = d), (best = s);
   }
   e.mode = "dive";
+  e.markDive = mark;
   e.modeT = 4;
   e.spot = best || { x: e.x, z: e.z };
   e.state = "chase";
@@ -777,6 +804,7 @@ function crocSurface(e, c) {
   e.landT = CROC.land;
   e.wet = true;
   e.stagd = false;
+  e.outT = 0;
   e.yaw = Math.atan2(p.x - e.x, p.z - e.z);
   splash(e.x, e.z, 30);
   sparks(e.x, 0.2, e.z, 16, [0.55, 0.85, 0.8], 6, 0.6);
@@ -814,9 +842,9 @@ EBEH.croc = {
   foot: crocFoot,
   // no hit takes it past the next mark; posture lands as it would
   hit(e, dmg, post) {
-    return { dmg: Math.min(dmg, Math.max(0, e.hp - crocNextMark(e))), post };
+    return { dmg: Math.min(dmg, Math.max(0, e.hp - crocFloor(e))), post };
   },
-  hpFloor: crocNextMark,
+  hpFloor: crocFloor,
   atkOk(e, a, c) {
     const A = e.def.atks;
     if (a === A.rear) return false;
@@ -859,7 +887,7 @@ EBEH.croc = {
         e.rollCD = CROC.rollCD;
       }
       if (e.state === "stagger") e.posture = 0;
-      crocDive(e, w);
+      crocDive(e, w, true);
       return true;
     }
     if (e.mode === "wait") {
@@ -909,7 +937,7 @@ EBEH.croc = {
       }
       if (e.modeT > 0) return true;
       // rubble on the ring beside it since it was picked: another spot
-      if (!crocDry(e, w, e.spot.x, e.spot.z, e.spot.x, e.spot.z)) {
+      if (!crocDry(e, w, e.spot.x, e.spot.z, e.spot.x, e.spot.z, e.spot.R || 3)) {
         e.spot = null;
         return true;
       }
@@ -986,7 +1014,18 @@ EBEH.croc = {
         return true;
       }
     }
-    if (e.landT <= 0 && (e.state === "chase" || e.state === "rec")) {
+    // the player in the water beyond the reach of every attack it starts
+    // (the least: its lunges stop at the shore) for CROC.reachT, its attacks
+    // and recoveries included: it gives up the land phase and dives, to come
+    // up at them
+    let reach = 1e9;
+    for (const k in e.def.atks) {
+      const a = e.def.atks[k];
+      if (a.trig !== undefined) reach = Math.min(reach, a.reach);
+    }
+    if (!st && c.alive && w.waterAt(p.x, p.z) >= 0.5 && c.dist > reach + p.r) e.outT += dt;
+    else e.outT = 0;
+    if ((e.state === "chase" || e.state === "rec") && (e.landT <= 0 || e.outT >= CROC.reachT)) {
       crocDive(e, w);
       return true;
     }
@@ -1001,9 +1040,12 @@ EBEH.croc = {
       a = Math.atan2(c.p.x - q.x, c.p.z - q.z);
     e.rx = q.x;
     e.rz = q.z;
+    // the hit lands where the ring is, wherever the player goes
+    e.rhx = q.x + Math.sin(a) * CROC_SLAM_AHEAD;
+    e.rhz = q.z + Math.cos(a) * CROC_SLAM_AHEAD;
     G.rings.push({
-      x: q.x + Math.sin(a) * CROC_SLAM_AHEAD,
-      z: q.z + Math.cos(a) * CROC_SLAM_AHEAD,
+      x: e.rhx,
+      z: e.rhz,
       r: e.atk.radius,
       t: 0,
       dur: e.atk.act,
@@ -1020,11 +1062,13 @@ EBEH.croc = {
       gz = e.rz - e.z,
       gd = Math.hypot(gx, gz);
     if (gd > 0.02) eStep(e, gx / gd, gz / gd, gd / Math.max(a.act - e.t, dt), dt);
-    e.yaw = turnTo(e.yaw, Math.atan2(p.x - e.x, p.z - e.z), e.def.turn * dt);
+    // it comes down facing its ring, and the hit is centred on the ring
+    const hx = e.rhx,
+      hz = e.rhz;
+    if (Math.hypot(hx - e.x, hz - e.z) > 0.05)
+      e.yaw = turnTo(e.yaw, Math.atan2(hx - e.x, hz - e.z), e.def.turn * dt);
     if (e.t < a.act || e.hitDone) return;
     e.hitDone = true;
-    const hx = e.x + Math.sin(e.yaw) * CROC_SLAM_AHEAD,
-      hz = e.z + Math.cos(e.yaw) * CROC_SLAM_AHEAD;
     SFX.slam();
     G.shake = 1;
     G.rings.push({ x: hx, z: hz, r: a.radius, t: 0, dur: 0.45, kind: "shock", c: RED });

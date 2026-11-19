@@ -121,7 +121,8 @@ is what you need to change the code without breaking it.
   replaces. `R.drawWorld(ids)` draws the whole world when `ids` is `null` or
   the world has no pieces, otherwise only those pieces (ranges of the
   vertices). `R.stats` is `{ draws, tris }`, reset in `begin` each frame, so
-  `R.stats.tris` after a frame is what that frame drew. `R.boxVisible(box)`
+  `R.stats.tris` after a frame is the world triangles that frame drew (figures
+  count toward `draws` only, effects toward neither). `R.boxVisible(box)`
   tests `[x0, y0, z0, x1, y1, z1]` against the view of the current frame.
 - `R.nodePos(node, x, y, z)` returns a world position on a figure, valid after
   that figure has been drawn in the current frame.
@@ -678,7 +679,8 @@ is what you need to change the code without breaking it.
 - The Enforcer. Pistol chain (`e1` to `e3`), shotgun heavy (`eshot`, pellets),
   a slide dash, a sniper execution from `e.r + 4.5` that gives back a tool
   charge. The sticky bomb (tool) is a projectile that becomes an entry in
-  `G.bombs`; it rides its enemy, falls to the floor if the enemy dies and
+  `G.bombs`; it rides its enemy, falls to the floor where it is if the
+  enemy dies or turns hidden (the crocodile going under) and
   blows after `STICKY.t`, hurting the player for `STICKY.self` of its damage
   in range and in sight. The grapple (ability) yanks a light enemy (poise 0,
   not boss or dummy) with `e.yank`, or pulls the player to a heavier one in
@@ -1055,7 +1057,12 @@ table runs exactly as before.
     `hurtPlayer`, puts them `e.r + p.r + 0.3` clear (`resolve`d) and starts
     `rear` in `wind`, with `e.wet` set and `e.landT = CROC.land`. `land`:
     `landT` runs down but in `stagger`, and entering a stagger adds
-    `CROC.stagBonus`. At 0, in `chase` or `rec`, it goes `dive`: through
+    `CROC.stagBonus`. With the player in the water (`waterAt` 0.5 or more)
+    and further than the least `reach` of its attacks with a `trig` (the
+    bite's 3.6, since its lunges stop at the shore) plus `p.r`, `e.outT`
+    counts up, through its attacks and recoveries but not a stagger, and is
+    0 otherwise. At `landT` 0 or `outT` `CROC.reachT` (3 s), in `chase` or
+    `rec`, it goes `dive`: through
     `eStep` to the nearest shore (4 s at most; a stagger puts it back in
     `land`), then `under` (`crocDive` starts it). Leaving the cavern or the
     player dying, in any mode, and the shared give-up (state `return`) call `crocReset`: full health,
@@ -1065,17 +1072,24 @@ table runs exactly as before.
     footing within 3 m (`crocDry`: a 0.5 m lattice in a clear line).
     `crocPickSpot` takes, of those still clear of rubble and with dry
     footing beside them, at least `CROC.minNew` from `e.lastSpot` and
-    `CROC.near` from the player, the nearest to the player. A spot that
-    rubble covers while it swims or rises is dropped and another picked.
+    `CROC.near` from the player, the nearest to the player. With the player
+    in the water the water is its ground: it takes the `crocSwimNet` point
+    nearest the player, at any distance from them and any but the last
+    spot, with dry footing within `CROC.wetDry` (6 m, the climb-out's
+    reach), so it comes up under or beside them and the burst lands. Such a
+    spot is a new object with `R` 6, the radius its rise-time rubble check
+    uses (3 for a shore). A spot that rubble covers while it swims or rises
+    is dropped and another picked.
   - `crocFoot` (its `foot` hook): any point in `wait`, `under` and `rise`;
     in `dive` room for its body; in `land` room for its body and dry floor
     unless `e.wet`. While `e.wet` and in none of `wind`, `act`, `hold` or
     `stagger`, the step walks it onto the nearest dry footing and clears it.
   - The `rear` hooks: at the end of the wind a red warning ring goes down
     `CROC_SLAM_AHEAD` (1 m) in front of the dry footing point nearest the
-    player within 3 m of the spot; over the act it moves there through
-    `eStep`, and at the end it hits the player within `atk.radius` of that
-    point in front of it, unblockable, unless the burst already hit them.
+    player within 3 m of the spot, centred on `e.rhx`, `e.rhz`; over the
+    act it moves there through `eStep` and turns to the ring, and at the
+    end it hits the player within `atk.radius` of the ring's centre,
+    unblockable, unless the burst already hit them.
   - **The death roll** (`crocRollAct`, `crocRollStep`, `crocRollSpot`).
     Over the act it lunges through `eStep` until it is against the player,
     and a player in reach, in its arc and in sight takes `atk.dmg` through
@@ -1100,8 +1114,12 @@ table runs exactly as before.
     planned `tail` at once, without turning to face the player first.
   - **The marks.** `e.marks` (0 to 3) is how many of its marks, at 75%,
     50% and 25% of `def.hp`, it has passed; `crocNextMark(e)` is the next,
-    `def.hp * (1 - 0.25 * (marks + 1))`, or 0 once all three are. No hit
-    takes it past that: its `hit` hook caps the damage (posture lands
+    `def.hp * (1 - 0.25 * (marks + 1))`, or 0 once all three are.
+    `crocFloor(e)` is the least health a hit may leave: the next mark, but
+    in a `dive` a mark started (`e.markDive`, set by `crocDive(e, w, true)`)
+    the mark just passed, so no second mark passes before it has been
+    under (a stagger that turns that dive back into `land` ends it). No hit
+    takes it past the floor: its `hit` hook caps the damage (posture lands
     whole) and its `hpFloor` hook holds the health there after the
     multipliers, so melee, shots, blasts, mines, clouds and the execution
     (which goes through `hitEnemy`) all stop at the mark. At the start of
@@ -1272,14 +1290,18 @@ The class picker and HUD read `CLASSES` and need no changes.
   cave 99's triangles (the renderer counts only the world's, so the test
   adds the figure's). Then its modes on seed 5: waiting until the player
   enters, nothing finding it under, the spot and warning, the burst on a
-  player on the spot, the land clock and the stagger bonus, the tail for a
+  player on the spot, the rearing slam landing on its ring and not past
+  it, a player standing in the centre pool hit over a cycle and a minute
+  (it comes up at them and leaves land early), a sticky bomb dropping off
+  as it goes under, the land clock and the stagger bonus, the tail for a
   player behind it, the reset on leaving and on `respawn`, and no spot in
   rubble. Then the death roll: the drag into the water and its damage,
   mashing free and the cooldown, climbing back out in the same land phase,
   a drag target past rubble, and a death in the roll. Then the marks: no
   melee hit, cloud tick, blast, shot or berserk hit passes one, reaching one
   breaks off a bite and dives with nothing landing after, ends a death
-  roll with the player freed, the three fall at 600, 400 and 200 and then
+  roll with the player freed, hits in a mark's dive stop at that mark,
+  the three fall at 600, 400 and 200 and then
   it dies and D is cleared, and an execution at a mark stops there and
   plays out before it dives. Shots go to
   `shots/t25-croc-*` (idle, rear, bite, tail, roll), `t25-wake`,
@@ -1385,8 +1407,11 @@ The class picker and HUD read `CLASSES` and need no changes.
   were set without a playtest: `CROC` (3 to 5
   s under, 7 m/s swimming, the 0.9 s warning, 18 burst damage, 10 s on land,
   3 s per stagger, spots 8 m apart and 4 m from the player, the roll's 12 a
-  second, 4 m/s drag, 2 m into the water and 8 s cooldown) and how the wake,
+  second, 4 m/s drag, 2 m into the water and 8 s cooldown, the 3 s before
+  it leaves land for a player in the water out of its reach, and coming up
+  under a player in the water at any spot but the last) and how the wake,
   warning and roll look, and the marks at a quarter of its health each.
+  Whether a player in the water is punished too hard is a question.
 - A hidden grabber is invisible until it strikes, and its grate is the only
   sign. The grates are drawn for every tunnel, so a grate with no grabber
   looks the same as one with one.

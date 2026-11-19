@@ -4806,7 +4806,8 @@ function bombsUpdate(dt) {
   const p = G.player,
     w = G.world;
   for (const b of G.bombs) {
-    if (b.e && b.e.dead) {
+    // its enemy dead or gone hidden (under the water): it drops where it is
+    if (b.e && (b.e.dead || b.e.hidden)) {
       b.e = null;
       b.y = 0.4;
     }

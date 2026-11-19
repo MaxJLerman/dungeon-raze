@@ -171,6 +171,45 @@ const crocSteps = [
   const lost = p.maxHp - p.hp, mode = e.mode; DF.sim(0.5);
   const gap = Math.hypot(p.x - e.x, p.z - e.z);
   return { pass: mode === "land" && Math.abs(lost - C.burst) < 0.01 && gap >= e.r + p.r, lost, gap, need: e.r + p.r, pstate: p.state };`),
+  cstep("the rearing slam lands on its warning ring", `
+  // the player beside the ring as the act starts, across the way it faces, so that turning to
+  // them would move the hit: just outside is not hit, just inside is
+  const run = (inside) => {
+    e = DF.makeEnemy(s0); G.enemies = [e]; begin(); until(() => e.mode === "land", 25);
+    until(() => e.state !== "wind", 3);
+    const st = e.state, hx = e.rhx, hz = e.rhz, r = e.atk.radius;
+    const warn = G.rings.find((g) => g.kind === "warn" && Math.abs(g.x - hx) < 1e-9 && Math.abs(g.z - hz) < 1e-9);
+    const fx = Math.sin(e.yaw), fz = Math.cos(e.yaw), d = inside ? r - 0.4 : r + 0.4, q = { x: hx - fz * d, z: hz + fx * d };
+    put(q); p.iframe = 0; let lost = 0, h = p.hp;
+    DF.sim(e.atk.act + 0.1, () => { put(q); if (p.hp < h) lost += h - p.hp; p.hp = p.maxHp; h = p.hp; if (e.state !== "act") return false; });
+    return { st, ring: !!warn, at: Math.hypot(q.x - hx, q.z - hz), r, lost, done: e.state !== "act" };
+  };
+  const outside = run(false), inn = run(true);
+  return { pass: outside.st === "act" && outside.ring && outside.done && outside.at > outside.r && outside.lost === 0 &&
+    inn.st === "act" && inn.ring && inn.done && inn.at < inn.r && Math.abs(inn.lost - e.def.atks.rear.dmg) < 0.01, outside, inn };`),
+  cstep("the centre pool is no safe spot", `
+  // a player standing still in the middle of the centre pool, for one cycle: under, up, under
+  const q = { x: B.x, z: B.z }; begin(q);
+  const wet = w.waterAt(p.x, p.z);
+  let lost = 0, h = p.hp, up = 0, land = 0, cyc = false;
+  const n = DF.sim(30, () => { if (p.hp < h) lost += h - p.hp; p.hp = p.maxHp; h = p.hp; p.stam = p.maxStam;
+    if (e.mode === "land") land++; if (land && e.mode === "under") { cyc = true; return false; } });
+  const one = { lost, land: land / 60, cyc };
+  // and over a minute it keeps coming up at them
+  lost = 0; h = p.hp; let ups = 0, was = e.mode;
+  DF.sim(60, () => { if (p.hp < h) lost += h - p.hp; p.hp = p.maxHp; h = p.hp; p.stam = p.maxStam;
+    if (e.mode === "land" && was !== "land") ups++; was = e.mode; });
+  return { pass: wet >= 0.5 && one.cyc && one.lost > 0 && one.land < C.land && ups >= 3 && lost >= 2 * C.burst, wet, one, minute: { lost, ups } };`),
+  cstep("a sticky bomb on it drops off as it goes under", `
+  begin(); until(() => e.mode === "land", 25); until(() => e.state === "chase", 3);
+  // a bomb on its back with the fuse held off, then it dives
+  G.bombs = [{ x: e.x, y: 1.1, z: e.z, e, ox: 0, oz: 0, t: 60 }]; const b = G.bombs[0];
+  DF.sim(0.2, keep); const rode = b.e === e && Math.hypot(b.x - e.x, b.z - e.z) < 1e-6;
+  e.landT = 0; until(() => e.hidden, 6); DF.sim(1 / 60, keep);
+  const at = { x: b.x, z: b.z }, off = { e: b.e, y: b.y, hidden: e.hidden };
+  DF.sim(1, keep); const still = Math.hypot(b.x - at.x, b.z - at.z), moved = Math.hypot(e.x - at.x, e.z - at.z);
+  G.bombs = [];
+  return { pass: rode && off.hidden && off.e === null && off.y === 0.4 && still === 0 && moved > 0.5, rode, off: { ...off, e: !!off.e }, still, moved };`),
   cstep("land lasts CROC.land and a stagger keeps it up", `
   // a passive player out of reach of harm: whole and untouchable
   const safe = () => { p.iframe = 1; };
@@ -350,6 +389,19 @@ const markSteps = [
   const r = { pstate: p.state, hold: p.hold, iframe: p.iframe, grace: G.grabGrace, marks: e.marks, mode: e.mode, estate: e.state, rolling: e.rolling, rollCD: e.rollCD };
   return { pass: held === "held" && r.pstate !== "held" && r.hold === null && r.iframe >= H.safe - 2 / 60 && r.grace > H.grace - 2 / 60 &&
     r.marks === 1 && (r.mode === "dive" || r.mode === "under") && r.estate !== "hold" && !r.rolling && Math.abs(r.rollCD - C.rollCD) < 0.05, held, ...r };`),
+  mstep("a mark's dive passes no second mark", `
+  // a mark reached on land: it dives, and hits while it walks to the water stop at that mark
+  DF.hitEnemy(e, 300, 0, {}); DF.sim(1 / 60, keep);
+  const m0 = { marks: e.marks, mode: e.mode, hp: e.hp };
+  const seen = []; let n = 0;
+  if (e.mode === "dive") { DF.hitEnemy(e, 500, 0, { heavy: true }); seen.push(e.hp); n++; }
+  DF.sim(5, () => { keep(); if (e.mode !== "dive") return false; DF.hitEnemy(e, 150, 0, {}); seen.push(e.hp); n++;
+    DF.hitEnemy(e, 50, 0, { dot: true }); seen.push(e.hp); if (e.marks !== 1) seen.push("marks " + e.marks); });
+  const under = { mode: e.mode, marks: e.marks, hp: e.hp };
+  // up again, the next mark is open
+  until(() => e.mode === "land", 25); DF.hitEnemy(e, 500, 0, { heavy: true }); const next = e.hp;
+  return { pass: m0.marks === 1 && m0.mode === "dive" && m0.hp === 600 && n >= 1 && seen.every((v) => v === 600) &&
+    under.mode === "under" && under.marks === 1 && under.hp === 600 && next === 400, m0, n, bad: seen.filter((v) => v !== 600).slice(0, 4), under, next };`),
   mstep("the marks fall at 75, 50 and 25 and then it can die", `
   const got = [];
   try {
