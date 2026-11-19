@@ -5490,7 +5490,10 @@ function projUpdate(dt) {
           e.state === "fall" ||
           e.hidden ||
           e.safe ||
-          (pr.hitSet && pr.hitSet.has(e))
+          (pr.hitSet && pr.hitSet.has(e)) ||
+          // a plate parried back flies up to the mouth it came from, over
+          // everything on the floor between
+          (pr.plate && e !== pr.src)
         )
           continue;
         if (Math.hypot(pr.x - e.x, pr.z - e.z) < e.r + 0.45 + (pr.rad || 0)) {
@@ -5501,6 +5504,15 @@ function projUpdate(dt) {
           }
           if (pr.aoe) {
             explode(pr.x, pr.z, pr.aoe, pr.dmg, pr.post, pr.c);
+            // a burst passes over one up in the wall, so the shot that
+            // struck it lands its damage on it itself
+            if (e.aloft)
+              hitEnemy(e, pr.dmg, pr.post * (G.player.cls.blastPost || 1), {
+                src: "aoe",
+                heavy: true,
+                fx: pr.x,
+                fz: pr.z,
+              });
             pr.life = -1;
             break;
           }

@@ -886,13 +886,17 @@ is what you need to change the code without breaking it.
   or by the reach tear or blink, caught in a blast, cloud or eel shock,
   grappled, executed, dropped, crossed through a rift, set off a mine or
   wire, struck or pushed by a cave-in or a Drop's landing, or separated, and
-  a sticky bomb on it drops off. `hitEnemy` itself does not skip it. Types
-  that never set it are unchanged.
+  a sticky bomb on it drops off. `hitEnemy` itself does not skip it. A
+  bursting shot (`aoe`, the Mage's orb) that strikes it still bursts, and
+  since the burst passes over it, the shot loop hits it with the shot's
+  damage as an `aoe` hit. Types that never set it are unchanged.
 - **Falling shots.** A shot with `vy` falls by it each step to no lower
   than its `yTo` (`projUpdate`), or, with `vy` above 0, climbs to no
   higher; the crocodile's plates use it. A parried one is set to climb
   back to its `src`'s height (`vy` 0 when the source is dead). Only the
-  drawn height changes: hits are on the flat floor as for every shot.
+  drawn height changes: hits are on the flat floor as for every shot. A
+  parried plate (`plate` on an `own "p"` shot) passes every enemy but its
+  `src`, since it flies back up to the mouth over what stands below.
 - **Water.** An `EDEF` entry may carry `wade`, a factor on its speed in
   water: below 1 slows it, above 1 speeds it. `wadeOf(def)` returns it, or
   `WATER.slow` when the entry has none, and E's types have none (the bloater
@@ -1217,7 +1221,9 @@ table runs exactly as before.
     mouth, for at most `CROC.plateWait` (4 s) past the linger, so a parry
     from across the cavern still knocks it down. A parried plate can still
     arrive after it has moved on (a parry late in that wait, or a plate
-    bent by a rift), and is then only a hit.
+    bent by a rift), and is then only a hit. A parried plate hits nothing
+    on its way back but the crocodile, so a fall bloater at the shore on
+    its line does not eat it.
     `poseCrocUp` (`05b_dbodies.js`) draws
     it lying in the outlet, `CROC_PERCH` out from the wall on the outlet's
     floor with its head over the lip, crouching with the head drawn aside
@@ -1475,14 +1481,16 @@ The class picker and HUD read `CLASSES` and need no changes.
   `CROC.plateDmg` (and the chip when guarding), the warning before each
   later mouth, the drop back into the water unhurt, nothing but shots
   reaching it at a mouth (melee, a blast, the grapple, lock, `aimYaw`,
-  execution, Drop, a mine, a cave-in, `separate`; a bolt and `aimRanged`
-  still do), and the reset on leaving mid phase with a plate in flight.
+  execution, Drop, a mine, a cave-in, `separate`; a bolt, the Mage's orb
+  and `aimRanged` still do), and the reset on leaving mid phase with a
+  plate in flight.
   Then shots and the knock-down: a bolt hurts it at a mouth and passes
   through it hidden; with berserk and a shot every step two phases each
   lose exactly `CROC.tunCap`, stop above the next mark and add no
   posture; a plate reaches a player right under the mouth; a parried
   plate climbs back to the mouth and knocks it down onto dry floor of the
-  ring, staggered, and so does a real parry 30 m from the mouth; a
+  ring, staggered, and so does a real parry 30 m from the mouth, and one
+  with a fall bloater on its line, which it passes unhurt; a
   parried plate from a mouth it has left only hurts it, and none after
   the knock-down changes anything; it waits at its mouth for a plate
   parried back from it, and a plate of its own that never arrives holds
@@ -1655,6 +1663,12 @@ The class picker and HUD read `CLASSES` and need no changes.
   player is and never give up, but they are slow (1.2 m/s) and bound to
   the water they came down into. Whether their clouds are a real way to
   hurt the crocodile is a question.
+- At a mouth, an ordinary player shot is stopped by a bloater on its line,
+  because shots hit in 2D. Only a parried plate passes over it.
+- From the 50% mark, a heap stops plates and shots like a wall, including a
+  parried plate on its way back to the mouth.
+- Fall bloaters give full kill rewards, one every 14 s, for as long as the
+  fight lasts. Whether that is too generous is a playtest question.
 - The crocodile's shadow shows in water within `CROC.shadowR` (5 m) of a
   shaft, full out to 3.5 m (`CROC_SHADOW_FADE`); both were set without a
   playtest. The shafts stand over the dry ring, so the water in reach is

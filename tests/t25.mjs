@@ -447,7 +447,7 @@ const runSteps = [
     const into = { open: q.open, grade: G.grade === "D", sewer: !!w.sewer, croc: !!e, done: !G.trans };
     let ring = null; for (let k = 0; k < 64 && !ring; k++) { const a = (k / 64) * Math.PI * 2, x = B.x + Math.sin(a) * 14, z = B.z + Math.cos(a) * 14;
       if (w.waterAt(x, z) === 0 && w.fieldAt(x, z) >= 2) ring = { x, z }; }
-    if (!e || !ring) return { pass: false, into, ring };
+    if (!e || !ring) return { pass: false, seed: G.seed, into, ring };
     p.x = ring.x; p.z = ring.z; p.vx = p.vz = p.kx = p.kz = 0; cam.px = p.x; cam.pz = p.z;
     const hps = [];
     for (let k = 0; k < 4; k++) {
@@ -456,7 +456,7 @@ const runSteps = [
     }
     await draw(); const text = document.getElementById("msgs").textContent;
     const end = { dead: !!e.dead, bossDead: G.bossDead, cleared: DF.gradeCleared("D"), gate: !!G.gate, fell: text.includes("OLD SLUICEJAW FALLS"), newGate: text.includes("new gate") };
-    return { pass: Object.values(into).every(Boolean) && hps.slice(0, 3).join() === "600,400,200" && hps[3] <= 0 && end.dead && end.bossDead && end.cleared && end.gate && end.fell && !end.newGate, into, hps, end };
+    return { pass: Object.values(into).every(Boolean) && hps.slice(0, 3).join() === "600,400,200" && hps[3] <= 0 && end.dead && end.bossDead && end.cleared && end.gate && end.fell && !end.newGate, seed: G.seed, into, hps, end };
   } finally { DF.keys[DF.BIND.fwd] = false; DF.resetCleared(); }`),
 ];
 // ---- the tunnel phase ----
@@ -584,8 +584,14 @@ const tunnelSteps = [
   clean(); const toC = Math.atan2(w.boss.x - e.x, w.boss.z - e.z), sx = e.x + Math.sin(toC) * 4, sz = e.z + Math.cos(toC) * 4;
   G.projs.push({ x: sx, y: 1.2, z: sz, vx: -Math.sin(toC) * 30, vz: -Math.cos(toC) * 30, life: 2, own: "p", dmg: 10, post: 5, kind: "bolt", c: [1, 1, 1] });
   DF.sim(0.3, watch); const shot = flashed;
+  // and the Mage's orb, which bursts on what it strikes, lands its damage on it too
+  clean(); G.rings = []; const hpO = e.hp; let burst = false;
+  G.projs.push({ x: sx, y: 1.2, z: sz, vx: -Math.sin(toC) * 16, vz: -Math.cos(toC) * 16, life: 1.6, own: "p", dmg: 26, post: 30, kind: "orb", aoe: 3.6, heavy: true, c: [1, 1, 1] });
+  DF.sim(0.4, () => { watch(); if (G.rings.some((g) => g.kind === "shock" && Math.hypot(g.x - e.x, g.z - e.z) < 2)) burst = true; });
+  const orb = { flashed, lost: hpO - e.hp, burst };
   const reached = Object.keys(r).filter((k) => r[k]);
-  return { pass: reached.length === 0 && !locked && swung && ar && shot && e.mode === "tunnel" && e.aloft, reached, r, locked, swung, ar, shot, gap: Math.hypot(p.x - e.x, p.z - e.z), mode: e.mode };`),
+  return { pass: reached.length === 0 && !locked && swung && ar && shot && orb.flashed && orb.lost === 26 && orb.burst && e.mode === "tunnel" && e.aloft,
+    reached, r, locked, swung, ar, shot, orb, gap: Math.hypot(p.x - e.x, p.z - e.z), mode: e.mode };`),
   tstep("leaving mid phase resets it", `
   leap(); until(() => plates().length > 0, 10);
   const fly = plates()[0], had = plates().length;
@@ -647,6 +653,20 @@ const tunnelSteps = [
     r.mode === "land" && r.state === "stagger" && r.y === 0 && !r.aloft && !r.safe && !r.hidden && r.knocked === true && r.landT === C.land &&
     r.water < 0.5 && r.field >= e.r && r.fromC < B.r && r.lost > 0 && r.lost <= C.tunCap,
     rf: rf && { kind: rf.kind, plate: rf.plate, mouth: rf.mouth, i0 }, tR: tR / 60, rose, ys: ys.filter((_, k) => k % 6 === 0).map((y) => +y.toFixed(2)), r };`),
+  tstep("a parried plate passes a fall bloater on its way back", `
+  // a bloater down the falls under the mouth waits at the shore nearest the player, on the plate's line
+  leap(); const i0 = e.tun.list[0]; e.tun.n[0] = 1; const q = view(i0); put(q);
+  const b = DF.crocBloat(e, w, i0), bhp = b && b.hp;
+  let rf = null, minD = 1e9, stayed = true;
+  DF.keys[DF.BIND.guard] = true;
+  DF.sim(8, () => { keep(); p.x = q.x; p.z = q.z; p.kx = p.kz = 0; p.yaw = cam.yaw = Math.atan2(e.x - p.x, e.z - p.z); p.guardT = 0;
+    if (e.mode === "tunnel" && (e.tun.k !== 0 || e.tun.sub !== "show")) stayed = false;
+    if (!rf) rf = G.projs.find((pr) => pr.src === e && pr.plate && pr.own === "p") || null;
+    if (rf && rf.life > 0 && G.projs.includes(rf) && !b.dead) minD = Math.min(minD, Math.hypot(rf.x - b.x, rf.z - b.z) - b.r - 0.45);
+    if (e.mode === "land") return false; });
+  DF.keys[DF.BIND.guard] = false;
+  return { pass: !!b && !!rf && minD < 0 && !b.dead && b.hp === bhp && stayed && e.mode === "land" && e.state === "stagger" && e.tun.knocked === true,
+    bloat: !!b, rf: !!rf, minD, stayed, bdead: b && b.dead, bhp, bhpNow: b && b.hp, mode: e.mode, state: e.state, knocked: e.tun && e.tun.knocked };`),
   tstep("one knock-down per phase and only at its mouth", `
   leap(); two(1, 1); const i0 = e.tun.list[0], i1 = e.tun.list[1];
   e.tun.t = 0; until(() => e.tun.k === 1 && e.tun.sub === "show", 5); e.tun.t = 99;
