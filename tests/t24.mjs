@@ -8,10 +8,10 @@ const step = (name, body) => ({
 });
 // a real sewer pool (D, seed 5): a bound enemy "__w" at the deepest point of the largest pool, and
 // `P`, dry floor three metres past the shore along the nearest heading with such a spot
-const pool = (name, body, cls = "fighter") =>
+const pool = (name, body, cls = "fighter", T = "__w") =>
   step(name, `DF.setClass("${cls}"); DF.LIVE_GRADES.add("D"); DF.newRun(5, "D"); DF.LIVE_GRADES.delete("D"); DF.show("play"); G.state = "play";
   const p = G.player, w = G.world; G.enemies = []; G.projs = [];
-  DF.EDEF.__w = { ...DF.EDEF.rat, bound: "water", hp: 9999 }; DF.EBEH.__w = { foot: DF.waterFoot };
+  if ("${T}" === "__w") { DF.EDEF.__w = { ...DF.EDEF.rat, bound: "water", hp: 9999 }; DF.EBEH.__w = { foot: DF.waterFoot }; }
   const keep = () => { p.hp = p.maxHp; p.stam = p.maxStam; };
   const big = w.bodies.filter((b) => w.nodes[b.room] && w.nodes[b.room].kind === "pool").sort((a, b) => b.n - a.n)[0];
   if (!big) return { pass: false, why: "no pool body" };
@@ -21,7 +21,7 @@ const pool = (name, body, cls = "fighter") =>
     let m = 99; for (let k = 0; k < 8; k++) { let d = 0; while (d < 12 && w.waterAt(x + Math.sin(k * 0.785) * d, z + Math.cos(k * 0.785) * d) >= 0.5) d += 0.5; m = Math.min(m, d); }
     if (m > bd) { bd = m; at = { x, z }; } }
   if (!at) return { pass: false, why: "no deep point" };
-  const e = DF.makeEnemy({ type: "__w", x: at.x, z: at.z, yaw: 0, node: -1 }); e.hx = e.x; e.hz = e.z; G.enemies.push(e);
+  const e = DF.makeEnemy({ type: "${T}", x: at.x, z: at.z, yaw: 0, node: -1 }); e.hx = e.x; e.hz = e.z; G.enemies.push(e);
   // the shore along the nearest heading with open dry floor three metres past it, in sight
   let sh = null;
   for (let k = 0; k < 48; k++) { const a = (k / 48) * Math.PI * 2, sx = Math.sin(a), sz = Math.cos(a); let s = 0;
@@ -49,6 +49,28 @@ const field = (name, body) =>
   const spot = (dist, from = 0, min = 1) => { for (let a = from; a < from + 6.3; a += 0.3) { const x = p.x + Math.sin(a) * dist, z = p.z + Math.cos(a) * dist;
     if (w.fieldAt(x, z) >= min && w.los(p.x, p.z, x, z)) return { x, z, a }; } return null; };
   ${body}`);
+// the push checks of "a water-bound body stays in its own pool", shared with the bloater
+const STAYS = `
+    const out = {}, a = sh.a;
+    out.start = foot();
+    DF.eStep(e, Math.sin(a), Math.cos(a), 10, 1); out.step = foot();
+    // taken to the shore and a little over it: the step that would leave the water is refused
+    e.x = at.x; e.z = at.z; DF.eStep(e, Math.sin(a), Math.cos(a), 1, sh.s * 2); out.over = foot();
+    e.x = at.x; e.z = at.z; e.okx = e.x; e.okz = e.z; e.kx = 40 * Math.sin(a); e.kz = 40 * Math.cos(a); DF.sim(0.3, keep); out.kick = foot();
+    e.x = at.x; e.z = at.z; e.okx = e.x; e.okz = e.z; e.kx = 40; e.kz = 0; DF.sim(0.3, keep); out.kickX = foot();
+    // a second enemy pushed into it
+    for (const first of [true, false]) {
+      e.x = at.x; e.z = at.z; e.okx = e.x; e.okz = e.z; e.kx = e.kz = 0;
+      const o = DF.makeEnemy({ type: "husk", x: e.x + Math.sin(sh.a) * 0.5, z: e.z + Math.cos(sh.a) * 0.5, yaw: 0, node: -1 });
+      G.enemies = first ? [e, o] : [o, e]; const x0 = e.x, z0 = e.z; DF.separate(); const moved = D(e, { x: x0, z: z0 });
+      DF.sim(1 / 60, keep); out["push" + first] = foot() && moved < 0.01; out["moved" + first] = moved; }
+    // the player is shoved with weight 1: the enemy keeps its place
+    G.enemies = [e]; e.x = at.x; e.z = at.z; p.x = e.x + 0.3; p.z = e.z; p.state = "free"; const p0 = D(p, e); DF.separate();
+    out.player = D(e, at) < 0.01 && D(p, e) >= e.r + p.r - 0.01 && D(p, e) > p0;
+    return { pass: out.start && out.step && out.over && out.kick && out.kickX && out.pushtrue && out.pushfalse && out.player, out, shore: sh.s, deep: bd };`;
+// the player 2.5 m short of the bloater at `at` and to its right, the camera behind the player looking down on both
+const SHOTCAM = `const a = 2.4, fx = Math.sin(a), fz = Math.cos(a), rx = -fz, rz = fx; cam.yaw = a; cam.pitch = 0.5;
+    p.x = at.x - fx * 2.5 + rx * 1.4; p.z = at.z - fz * 2.5 + rz * 1.4; w.resolve(p, 0.6); p.yaw = a; p.state = "free"; cam.px = p.x; cam.pz = p.z; DF.sim(0.3);`;
 const draw = `const draw = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));`;
 
 // cave 99, the Fighter, a husk (set to state "hold" by hand) as the holder; `mk(dx)` stands the player dx metres in front of it
@@ -69,24 +91,7 @@ export default [
     const c1 = { bound: DF.bound(a), plain: !DF.bound(b), boss: !DF.bound({ def: DF.EDEF.warden }),
       post: DF.wallFoot(c, 3, 4) === true, near: DF.wallFoot(c, 3.005, 4) === true, off: DF.wallFoot(c, 3.02, 4) === false && DF.wallFoot(c, 3, 3.98) === false };
     return { pass: Object.values(c1).every(Boolean) && typeof DF.waterGoal === "function" && typeof DF.waterFoot === "function", c1 };`),
-  pool("a water-bound body stays in its own pool", `
-    const out = {}, a = sh.a;
-    out.start = foot();
-    DF.eStep(e, Math.sin(a), Math.cos(a), 10, 1); out.step = foot();
-    // taken to the shore and a little over it: the step that would leave the water is refused
-    e.x = at.x; e.z = at.z; DF.eStep(e, Math.sin(a), Math.cos(a), 1, sh.s * 2); out.over = foot();
-    e.x = at.x; e.z = at.z; e.okx = e.x; e.okz = e.z; e.kx = 40 * Math.sin(a); e.kz = 40 * Math.cos(a); DF.sim(0.3, keep); out.kick = foot();
-    e.x = at.x; e.z = at.z; e.okx = e.x; e.okz = e.z; e.kx = 40; e.kz = 0; DF.sim(0.3, keep); out.kickX = foot();
-    // a second enemy pushed into it
-    for (const first of [true, false]) {
-      e.x = at.x; e.z = at.z; e.okx = e.x; e.okz = e.z; e.kx = e.kz = 0;
-      const o = DF.makeEnemy({ type: "husk", x: e.x + Math.sin(sh.a) * 0.5, z: e.z + Math.cos(sh.a) * 0.5, yaw: 0, node: -1 });
-      G.enemies = first ? [e, o] : [o, e]; const x0 = e.x, z0 = e.z; DF.separate(); const moved = D(e, { x: x0, z: z0 });
-      DF.sim(1 / 60, keep); out["push" + first] = foot() && moved < 0.01; out["moved" + first] = moved; }
-    // the player is shoved with weight 1: the enemy keeps its place
-    G.enemies = [e]; e.x = at.x; e.z = at.z; p.x = e.x + 0.3; p.z = e.z; p.state = "free"; const p0 = D(p, e); DF.separate();
-    out.player = D(e, at) < 0.01 && D(p, e) >= e.r + p.r - 0.01 && D(p, e) > p0;
-    return { pass: out.start && out.step && out.over && out.kick && out.kickX && out.pushtrue && out.pushfalse && out.player, out, shore: sh.s, deep: bd };`),
+  pool("a water-bound body stays in its own pool", STAYS),
   pool("a cave-in across its pool leaves it on water outside the rubble", `
     // thrown from the dry floor through the enemy
     DF.startCaveIn(e.x, e.z); DF.sim(2, keep);
@@ -331,5 +336,100 @@ export default [
     return { pass: Object.values(c).every(Boolean), c, arms }; })()`,
     shot: "t24-held",
   },
+  // ---- the bloater ----
+  pool("a bloater stays in water", STAYS, "fighter", "bloater"),
+  step("a bloater in a gutter follows the player along the tunnel without leaving it", `
+    DF.setClass("fighter"); DF.LIVE_GRADES.add("D"); DF.newRun(5, "D"); DF.LIVE_GRADES.delete("D"); DF.show("play"); G.state = "play";
+    const p = G.player, w = G.world; G.enemies = []; G.projs = [];
+    // a tunnel gutter (a body with no room) with a straight run: its water points ordered along the long axis,
+    // and for each metre of the run a dry spot 2.8 m to the side
+    const tries = [];
+    for (const b of w.bodies.filter((q) => q.room === -1 && q.n >= 30)) {
+      const pts = []; for (let x = b.x - 40; x <= b.x + 40; x += 0.5) for (let z = b.z - 40; z <= b.z + 40; z += 0.5) if (w.waterAt(x, z) >= 0.5 && w.bodyAt(x, z) === b.id) pts.push([x, z]);
+      for (let k = 0; k < 16; k++) {
+        const a = (k / 16) * Math.PI, ux = Math.sin(a), uz = Math.cos(a), nx = uz, nz = -ux;
+        const us = pts.map((q) => q[0] * ux + q[1] * uz), lo = Math.min(...us);
+        for (const dir of [1, -1]) {
+          const path = []; let ok = true;
+          for (let t = 0; t <= 6.001 && ok; t += 0.5) {
+            const u = dir > 0 ? lo + 0.3 + t : Math.max(...us) - 0.3 - t, sl = pts.filter((q, i) => Math.abs(us[i] - u) <= 0.5);
+            if (!sl.length) { ok = false; break; }
+            const c = [sl.reduce((m, q) => m + q[0], 0) / sl.length, sl.reduce((m, q) => m + q[1], 0) / sl.length];
+            let sp = null; for (const sd of [1, -1]) { const x = c[0] + nx * sd * 2.8, z = c[1] + nz * sd * 2.8; if (w.waterAt(x, z) === 0 && w.fieldAt(x, z) >= 0.6 && w.los(c[0], c[1], x, z)) { sp = { x, z }; break; } }
+            if (!sp) ok = false; else path.push({ c, sp });
+          }
+          if (ok) tries.push({ b, path, pts });
+        }
+      }
+    }
+    if (!tries.length) return { pass: false, why: "no straight gutter run" };
+    const run = tries[0], first = run.path[0];
+    // it starts on the water point with room for its body nearest the start of the run
+    const st = run.pts.filter((q) => w.fieldAt(q[0], q[1]) >= 0.5).sort((q, o) => Math.hypot(q[0] - first.c[0], q[1] - first.c[1]) - Math.hypot(o[0] - first.c[0], o[1] - first.c[1]))[0];
+    const e = DF.makeEnemy({ type: "bloater", x: st[0], z: st[1], yaw: 0, node: -1 }); e.hx = e.x; e.hz = e.z; G.enemies = [e];
+    const place = (i) => { const f = Math.min(1, i / 600) * (run.path.length - 1), j = Math.min(run.path.length - 2, Math.floor(f)), k = f - j, A = run.path[j].sp, B = run.path[j + 1].sp;
+      p.x = A.x + (B.x - A.x) * k; p.z = A.z + (B.z - A.z) * k; p.hp = p.maxHp; p.stam = p.maxStam; };
+    place(0); DF.alertE(e, true); e.state = "chase";
+    let bad = 0, jump = 0, last = { x: e.x, z: e.z }, total = 0;
+    DF.sim(10, (i) => { place(i); const d = Math.hypot(e.x - last.x, e.z - last.z); jump = Math.max(jump, d); total += d; last = { x: e.x, z: e.z }; if (!DF.waterFoot(e, e.x, e.z)) bad++; });
+    const c = { alive: !e.dead, foot: bad === 0, moved: total >= 2, smooth: jump <= 0.5 };
+    return { pass: Object.values(c).every(Boolean), c, bad, jump, total, n: run.path.length, body: run.b.id };`),
+  pool("its burst leaves a cloud that hurts everyone in it", `
+    // the player and a rat one metre from the burst, on the other sides of it; the rat is held on its spot (a free
+    // one is knocked out of the cloud and runs for the player), so the test is the cloud's damage
+    const r = DF.makeEnemy({ type: "rat", x: e.x - 1, z: e.z, yaw: 0, node: -1 }); r.hx = r.x; r.hz = r.z; G.enemies.push(r);
+    p.x = e.x + 1; p.z = e.z; p.state = "free"; cam.px = p.x; cam.pz = p.z; p.iframe = 0;
+    keep(); const hp0 = p.hp; let hurt = false; DF.kill(e);
+    const made = G.clouds.length === 1 && G.clouds[0].r === DF.CLOUD.r;
+    DF.sim(3, () => { r.cd = 99; r.x = r.hx; r.z = r.hz; if (p.state === "hit") hurt = true; });
+    const loss = hp0 - p.hp, ideal = DF.CLOUD.dmg * 6;
+    DF.sim(0.2, () => { r.cd = 99; r.x = r.hx; r.z = r.hz; });
+    const c = { made, player: Math.abs(loss - ideal) <= DF.CLOUD.dmg, never: !hurt, rat: r.dead || r.hp <= 0, gone: G.clouds.length === 0 };
+    return { pass: Object.values(c).every(Boolean), c, loss, ideal, rat: r.hp };`, "fighter", "bloater"),
+  pool("the cloud ignores guard", `
+    const run = (guard) => { G.enemies = []; G.clouds = []; p.x = e.x + 1; p.z = e.z; p.yaw = Math.atan2(e.x - p.x, e.z - p.z); p.state = guard ? "guard" : "free"; p.iframe = 0; p.guardT = 5; keep(); const hp0 = p.hp;
+      G.clouds.push({ x: e.x, z: e.z, r: DF.CLOUD.r, t: 0, tick: 0 }); let st = true;
+      DF.sim(3.2, () => { p.stam = p.maxStam; if (guard) { p.state = "guard"; p.yaw = Math.atan2(e.x - p.x, e.z - p.z); DF.keys[DF.BIND.guard] = true; } if (p.state === "hit" || p.state === "gbreak") st = false; });
+      DF.keys[DF.BIND.guard] = false; return { loss: hp0 - p.hp, st }; };
+    const a = run(false), b = run(true);
+    const c = { took: a.loss >= DF.CLOUD.dmg * 5 && a.loss <= DF.CLOUD.dmg * 7, same: Math.abs(a.loss - b.loss) < 0.01, still: a.st && b.st };
+    return { pass: Object.values(c).every(Boolean), c, a, b };`, "fighter", "bloater"),
+  pool("it can be hit from the bank", `
+    // the player on dry floor just past the shore, the bloater awake: it comes to the shore, in reach of a light attack
+    const P2 = { x: e.x + Math.sin(sh.a) * (sh.s + 0.7), z: e.z + Math.cos(sh.a) * (sh.s + 0.7) };
+    if (w.waterAt(P2.x, P2.z) !== 0 || w.fieldAt(P2.x, P2.z) < 0.6) return { pass: false, why: "no dry bank", P2 };
+    p.x = P2.x; p.z = P2.z; cam.px = p.x; cam.pz = p.z; DF.alertE(e, true); e.state = "chase";
+    const range = DF.MOVES[p.cls.chain].range; let t = null;
+    DF.sim(10, (i) => { keep(); if (D(e, p) <= range) { t = i / 60; return false; } });
+    const hp0 = e.hp; DF.hitEnemy(e, 5, 5, { src: "melee" });
+    const c = { near: t !== null, hurt: e.hp < hp0, foot: foot() };
+    return { pass: Object.values(c).every(Boolean), c, t, range, d: D(e, p) };`, "fighter", "bloater"),
+  pool("a cloud can burst another bloater", `
+    const b2 = DF.makeEnemy({ type: "bloater", x: e.x + 1, z: e.z, yaw: 0, node: -1 }); b2.hx = b2.x; b2.hz = b2.z; G.enemies.push(b2);
+    p.x = e.x - 6; p.z = e.z - 6; keep(); DF.kill(e); let max = G.clouds.length;
+    DF.sim(3, () => { keep(); b2.x = b2.hx; b2.z = b2.hz; max = Math.max(max, G.clouds.length); });
+    return { pass: b2.dead && max === 2, dead: b2.dead, hp: b2.hp, max };`, "fighter", "bloater"),
+  { name: "the bloater, one on the water", eval: `(() => { const { G, cam } = DF; G.manual = true; DF.setClass("fighter"); DF.LIVE_GRADES.add("D"); DF.newRun(5, "D"); DF.LIVE_GRADES.delete("D"); DF.show("play"); G.state = "play";
+    const p = G.player, w = G.world; G.enemies = []; G.projs = [];
+    const big = w.bodies.filter((b) => w.nodes[b.room] && w.nodes[b.room].kind === "pool").sort((a, b) => b.n - a.n)[0];
+    let at = null, bd = -1; for (let x = big.x - 25; x <= big.x + 25; x += 0.5) for (let z = big.z - 25; z <= big.z + 25; z += 0.5) {
+      if (w.waterAt(x, z) !== 1 || w.bodyAt(x, z) !== big.id || w.fieldAt(x, z) < 1) continue;
+      let m = 99; for (let k = 0; k < 8; k++) { let d = 0; while (d < 12 && w.waterAt(x + Math.sin(k * 0.785) * d, z + Math.cos(k * 0.785) * d) >= 0.5) d += 0.5; m = Math.min(m, d); }
+      if (m > bd) { bd = m; at = { x, z }; } }
+    const e = DF.makeEnemy({ type: "bloater", x: at.x, z: at.z, yaw: 0, node: -1 }); e.hx = e.x; e.hz = e.z; G.enemies = [e];
+    ${SHOTCAM}
+    e.yaw = a + 2.6; DF.sim(0.2);
+    return { pass: true, at, bd }; })()`, wait: 400, shot: "t24-bloater" },
+  { name: "the cloud a moment after a burst", eval: `(() => { const { G, cam } = DF; G.manual = true; DF.setClass("fighter"); DF.LIVE_GRADES.add("D"); DF.newRun(5, "D"); DF.LIVE_GRADES.delete("D"); DF.show("play"); G.state = "play";
+    const p = G.player, w = G.world; G.enemies = []; G.projs = [];
+    const big = w.bodies.filter((b) => w.nodes[b.room] && w.nodes[b.room].kind === "pool").sort((a, b) => b.n - a.n)[0];
+    let at = null, bd = -1; for (let x = big.x - 25; x <= big.x + 25; x += 0.5) for (let z = big.z - 25; z <= big.z + 25; z += 0.5) {
+      if (w.waterAt(x, z) !== 1 || w.bodyAt(x, z) !== big.id || w.fieldAt(x, z) < 1) continue;
+      let m = 99; for (let k = 0; k < 8; k++) { let d = 0; while (d < 12 && w.waterAt(x + Math.sin(k * 0.785) * d, z + Math.cos(k * 0.785) * d) >= 0.5) d += 0.5; m = Math.min(m, d); }
+      if (m > bd) { bd = m; at = { x, z }; } }
+    const e = DF.makeEnemy({ type: "bloater", x: at.x, z: at.z, yaw: 0, node: -1 }); e.hx = e.x; e.hz = e.z; G.enemies = [e];
+    ${SHOTCAM}
+    DF.kill(e); DF.sim(0.8, () => { p.hp = p.maxHp; });
+    return { pass: G.clouds.length === 1, n: G.clouds.length }; })()`, wait: 400, shot: "t24-cloud" },
   step("the class is put back", `DF.setClass("fighter"); return { pass: true };`),
 ];

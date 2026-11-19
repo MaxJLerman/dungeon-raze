@@ -706,6 +706,7 @@ window.DF = {
   poseEnemy,
   EBEH,
   BROOD,
+  CLOUD,
   EFIG,
   EPOSE,
   makeEnemy,

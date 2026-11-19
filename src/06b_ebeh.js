@@ -184,3 +184,12 @@ EBEH.brood = {
     return true;
   },
 };
+// The bloater floats in water and cannot leave it (foot), waits at the shore
+// nearest the player (goal) and bursts into a poison cloud when it dies.
+EBEH.bloater = {
+  foot: waterFoot,
+  goal: waterGoal,
+  death(e) {
+    G.clouds.push({ x: e.x, z: e.z, r: CLOUD.r, t: 0, tick: 0 });
+  },
+};

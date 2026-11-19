@@ -354,3 +354,158 @@ EPOSE.brood = {
     s.em[2] = s.em0[2] + g * 0.6;
   },
 };
+
+// ---- the bloater ----
+// A swollen sac that floats on the water, pale green-grey and veined, with a
+// small blind head on its front and stub limbs. The chest origin is the middle
+// of the sac, so a uniform scale of the chest swells it about that point. The
+// veins are flattened beads set on the ellipsoid: each is turned so that its
+// local Z points out of the sac and its long local Y runs along a meridian.
+function makeBloaterFig() {
+  const f = makeFigure({
+    sc: 1,
+    leg: 0.3,
+    w: 0.9,
+    th: 0.8,
+    d: 0.9,
+    hs: 0.26,
+    aw: 0.09,
+    al: 0.3,
+    lw: 0.1,
+    body: C_(0xb3c48a),
+    trim: C_(0x5d6b56),
+    skin: C_(0xc4cf9a),
+    limb: C_(0x8f9f70),
+    headPrim: "sph",
+  });
+  const RX = 0.47,
+    RY = 0.4,
+    RZ = 0.45;
+  const slab = f.chest.ch.find((n) => n !== f.torso && n.prim === "box");
+  if (slab) f.chest.ch.splice(f.chest.ch.indexOf(slab), 1);
+  f.torso.prim = "sph";
+  f.torso.s = [RX * 2, RY * 2, RZ * 2];
+  f.torso.p = [0, 0, 0];
+  // a blind little head on the front, and stub arms and legs at the sides
+  f.headN.p = [0, 0.1, 0.4];
+  f.head.s = [0.24, 0.22, 0.24];
+  f.armR.p = [-0.46, -0.02, 0.06];
+  f.armL.p = [0.46, -0.02, 0.06];
+  f.legR.p = [-0.15, -0.3, 0.05];
+  f.legL.p = [0.15, -0.3, 0.05];
+  // veins: dark, in a ring of meridians with a twist each, and a few blotches
+  const vein = C_(0x2c4a2c),
+    blot = C_(0x7d8f45);
+  const bead = (col, a, el, sx, sy, tw) => {
+    const nx = Math.sin(a) * Math.cos(el),
+      ny = Math.sin(el),
+      nz = Math.cos(a) * Math.cos(el),
+      n = chestPart(col, sx, sy, nx * RX * 0.97, ny * RY * 0.97, nz * RZ * 0.97);
+    n.r = [-el, a, tw];
+  };
+  const chestPart = (col, sx, sy, x, y, z) => f.chest.add(part("sph", col, sx, sy, 0.03, x, y, z));
+  const N = 11;
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * TAU + 0.3,
+      el = ((i * 5) % 7) / 7 * 1.1 - 0.4,
+      tw = Math.sin(i * 2.7) * 0.8;
+    bead(vein, a, el, 0.07, 0.34 + (i % 3) * 0.1, tw);
+    // a branch off it
+    bead(vein, a + 0.25, el + 0.2, 0.05, 0.2, tw + 1.1);
+  }
+  for (let i = 0; i < 6; i++)
+    bead(blot, i * 1.05 + 0.5, ((i * 3) % 5) / 5 * 1.2 - 0.5, 0.16 + (i % 2) * 0.06, 0.12, i);
+  f.rim = [0.2, 0.28, 0.16];
+  f.eye = [0.7, 1, 0.35];
+  return finishFigure(f);
+}
+EFIG.bloater = makeBloaterFig;
+// Floats and bobs, and swells and shrinks with a pulse that quickens as its
+// hp falls. A wind-up swells it and a bump throws it forward. A death pops it
+// (the cloud takes over).
+function poseBloater(e) {
+  const f = e.fig,
+    d = e.def,
+    FLOAT = -0.02,
+    low = sat(1 - e.hp / d.hp),
+    mv = sat(e.speed / d.speed);
+  // the pulse phase advances by the frame time at the current rate
+  const dt = e.pt === undefined ? 0 : Math.min(0.1, Math.max(0, G.t - e.pt));
+  e.pt = G.t;
+  e.pph = (e.pph || e.ph || 0) + dt * (2.2 + 7 * low);
+  let sw = 1 + (0.035 + 0.05 * low) * Math.sin(e.pph),
+    pitch = 0.12 * mv,
+    roll = 0,
+    tg = 0.06 + 0.04 * low,
+    tr = 0.02,
+    tb = 0,
+    rise = 0,
+    arms = 0.25 + Math.sin(G.t * 1.7 + e.ph) * 0.12;
+  const bob = Math.sin(G.t * 1.5 + e.ph) * 0.045 + Math.sin(G.t * 2.3 + e.ph * 2) * 0.02;
+  switch (e.state) {
+    case "wind": {
+      const k = sat(e.t / e.atk.wind);
+      sw *= 1 + 0.22 * k;
+      pitch = -0.35 * k;
+      tg += 0.16 * k;
+      tr += 0.1 * k;
+      arms = 0.25 + 0.7 * k;
+      break;
+    }
+    case "act":
+      pitch = 0.55;
+      sw *= 1.12;
+      tg += 0.2;
+      arms = -0.4;
+      break;
+    case "rec": {
+      const k = smooth(sat(e.t / e.atk.rec));
+      pitch = lerp(0.4, 0, k);
+      sw *= lerp(0.92, 1, k);
+      break;
+    }
+    case "hit":
+    case "recoil": {
+      const k = 1 - sat(e.t / 0.32);
+      sw *= 1 - 0.18 * k;
+      roll = 0.3 * k;
+      break;
+    }
+    case "stagger": {
+      const pu = 0.5 + 0.5 * Math.sin(G.t * 10);
+      roll = Math.sin(G.t * 5) * 0.18;
+      sw *= 1 + 0.08 * pu;
+      tr = 0.45 + 0.3 * pu;
+      tg += 0.3 + 0.15 * pu;
+      break;
+    }
+    case "dead": {
+      // a quick swell, a pop, and nothing left but the cloud
+      const k = sat(e.t / 0.12);
+      sw *= 1 + 0.5 * k;
+      tr += 0.8 * k;
+      tg += 1.0 * k;
+      tb += 0.4 * k;
+      if (e.t > 0.12) sw = 0.001;
+      break;
+    }
+  }
+  f.root.p[0] = e.x;
+  f.root.p[1] = e.y + FLOAT + bob + rise;
+  f.root.p[2] = e.z;
+  f.root.r[0] = 0;
+  f.root.r[1] = e.yaw;
+  f.root.r[2] = roll;
+  f.hips.p[1] = 0;
+  f.chest.r[0] = pitch;
+  f.chest.s = [sw, sw, sw];
+  f.armR.r[0] = f.armL.r[0] = -0.2;
+  f.armR.r[2] = -arms;
+  f.armL.r[2] = arms;
+  f.legR.r[2] = -0.2;
+  f.legL.r[2] = 0.2;
+  f.legR.r[0] = f.legL.r[0] = Math.sin(G.t * 2.1 + e.ph) * 0.15;
+  f.headN.r[0] = -pitch * 0.5;
+  setEm(f, tr + e.flash * 0.7, tg + e.flash * 0.7, tb + e.flash * 0.5);
+}
+EPOSE.bloater = { pose: poseBloater };

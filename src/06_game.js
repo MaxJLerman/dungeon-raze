@@ -43,6 +43,8 @@ const G = {
   // the Riftwalker's open rift ends, oldest first, and its Drop holes
   rifts: [],
   holes: [],
+  // poison clouds left by bloaters, { x, z, r, t, tick }
+  clouds: [],
 };
 const keys = {},
   taps = {},
@@ -1175,6 +1177,9 @@ const wadeMul = (water, wade) => lerp(1, wade, sat(water));
 // at most `cap` of hers alive. She backs off while the player is between
 // `close` and `keep` m. A rat of hers gives `focus` and no tool charge.
 const BROOD = { every: 6, first: 3, cap: 4, keep: 7, close: 3, focus: 2 };
+// The bloater's poison cloud, left where it bursts: it hurts everything within
+// r of its middle (the player and every enemy) every `tick` s for `life` s.
+const CLOUD = { r: 1.5, life: 3, tick: 0.5, dmg: 4 };
 const EDEF = {
   husk: {
     name: "Husk",
@@ -1328,6 +1333,37 @@ const EDEF = {
         arc: 1.3,
         lunge: 1.2,
         trig: 2.3,
+      },
+    },
+  },
+  // D gate: a bloater, a swollen sac that floats in the sewer's water and
+  // cannot leave it (EBEH.bloater). It bumps, and when it bursts it leaves a
+  // poison cloud (CLOUD) that hurts whoever stands in it, enemies too.
+  bloater: {
+    name: "Bloater",
+    threat: 0,
+    hp: 20,
+    posture: 20,
+    speed: 1.2,
+    wade: 1.0,
+    turn: 3,
+    r: 0.4,
+    sight: 12,
+    cd: 1.4,
+    poise: 0,
+    top: 1.0,
+    bound: "water",
+    atks: {
+      bump: {
+        style: "thrust",
+        wind: 0.5,
+        act: 0.15,
+        rec: 0.6,
+        dmg: 5,
+        reach: 1.4,
+        arc: 2.0,
+        lunge: 0.6,
+        trig: 1.4,
       },
     },
   },
@@ -1716,6 +1752,7 @@ function resetRun() {
   G.mines = [];
   G.rifts = [];
   G.holes = [];
+  G.clouds = [];
   G.insp = null;
   G.grabGrace = 0;
   G.bossDead = false;
@@ -1852,6 +1889,7 @@ function respawn() {
   G.mines = [];
   G.rifts = [];
   G.holes = [];
+  G.clouds = [];
   G.world.resolve(p, 0.6);
   G.projs = [];
   G.bombs = [];
@@ -5040,6 +5078,28 @@ function landEnemy(e) {
     e.rest = e.dur + RIFT.rest;
   }
 }
+// Poison clouds: every CLOUD.tick the player and each living enemy within r
+// of the middle take CLOUD.dmg. The player's tick goes round guard, knock and
+// the perfect dodge (atk.dot); an enemy's is an aoe hit. A cloud goes after
+// CLOUD.life. Another bloater that bursts in one adds its own cloud, so the
+// loop runs over a copy.
+function cloudsUpdate(dt) {
+  if (!G.clouds.length) return;
+  const p = G.player;
+  for (const c of G.clouds.slice()) {
+    c.t += dt;
+    c.tick += dt;
+    while (c.tick >= CLOUD.tick - 1e-9) {
+      c.tick -= CLOUD.tick;
+      if (p.state !== "dead" && Math.hypot(p.x - c.x, p.z - c.z) < c.r)
+        hurtPlayer(CLOUD.dmg, null, { dmg: CLOUD.dmg, dot: true, px: c.x, pz: c.z });
+      for (const o of G.enemies.slice())
+        if (!o.dead && o.state !== "fall" && !o.hidden && Math.hypot(o.x - c.x, o.z - c.z) < c.r)
+          hitEnemy(o, CLOUD.dmg, 0, { src: "aoe", fx: c.x, fz: c.z });
+    }
+  }
+  G.clouds = G.clouds.filter((c) => c.t < CLOUD.life);
+}
 function holesUpdate(dt) {
   for (const h of G.holes) {
     h.t += dt;
@@ -5225,6 +5285,7 @@ function update(dt) {
   minesUpdate(dt);
   riftsUpdate(dt);
   holesUpdate(dt);
+  cloudsUpdate(dt);
   for (const q of G.pending) {
     q.t -= dt;
     if (q.t <= 0) {
