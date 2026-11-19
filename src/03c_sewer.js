@@ -1337,48 +1337,84 @@ function genSewer(seed) {
   });
 
   // ---- spawns ----
+  // pool rooms keep the E stand-ins until the D enemies for them are built;
+  // brood rooms and tunnels hold D's own
   const PACK = {
     pool: [
       ["husk", "spit"],
       ["husk", "husk", "spit"],
     ],
-    brood: [
-      ["brute", "husk"],
-      ["brute", "husk", "husk"],
-    ],
   };
-  const spawns = [];
-  for (const n of nodes) {
-    if (n.kind !== "pool" && n.kind !== "brood") continue;
-    const pk = PACK[n.kind][Rn() < 0.5 ? 0 : 1],
-      // a pool room's dry floor is mostly the walkway along its walls
-      sx = n.kind === "pool" ? n.hw - 1.5 : (n.hw - 3) * 0.7,
-      sz = n.kind === "pool" ? n.hd - 1.5 : (n.hd - 3) * 0.7;
-    for (const type of pk) {
-      let o = null;
+  const spawns = [],
+    // a dry open spot in room n, up to 40 draws, or null
+    dryIn = (n, sx, sz) => {
       for (let t = 0; t < 40; t++) {
         const q = {
           x: n.x + (Rn() * 2 - 1) * sx,
           z: n.z + (Rn() * 2 - 1) * sz,
         };
         resolve(q, 1.2);
-        if (fieldAt(q.x, q.z) >= 1 && waterAt(q.x, q.z) === 0) {
-          o = q;
-          break;
+        if (fieldAt(q.x, q.z) >= 1 && waterAt(q.x, q.z) === 0) return q;
+      }
+      return null;
+    },
+    put = (type, o, n, kind) =>
+      spawns.push({ type, x: o.x, z: o.z, yaw: Rn() * TAU, node: n.id, kind }),
+    // where a player comes into room n: the tunnel mouth of the edge to its
+    // neighbour of lowest depth (the first point of that tunnel outside the room)
+    entryOf = (n) => {
+      const nb = n.adj.map((j) => nodes[j]).sort((a, b) => a.depth - b.depth)[0],
+        e = edges.find(
+          (e) => (e.a === n.id && e.b === nb.id) || (e.b === n.id && e.a === nb.id),
+        ),
+        pts = e.a === n.id ? e.pts : e.pts.slice().reverse();
+      let m = pts[0];
+      for (const q of pts) {
+        m = q;
+        if (Math.abs(q.x - n.x) >= n.hw || Math.abs(q.z - n.z) >= n.hd) break;
+      }
+      return m;
+    };
+  for (const n of nodes) {
+    if (n.kind === "pool") {
+      const pk = PACK.pool[Rn() < 0.5 ? 0 : 1],
+        // a pool room's dry floor is mostly the walkway along its walls
+        sx = n.hw - 1.5,
+        sz = n.hd - 1.5;
+      for (const type of pk) {
+        const o = dryIn(n, sx, sz);
+        if (o) put(type, o, n, n.kind);
+      }
+    } else if (n.kind === "brood") {
+      const sx = (n.hw - 3) * 0.7,
+        sz = (n.hd - 3) * 0.7,
+        en = entryOf(n);
+      // the brood mother takes the farthest of 12 dry spots from the entry
+      let far = null,
+        fd = -1;
+      for (let i = 0; i < 12; i++) {
+        const o = dryIn(n, sx, sz);
+        if (o && Math.hypot(o.x - en.x, o.z - en.z) > fd) {
+          far = o;
+          fd = Math.hypot(o.x - en.x, o.z - en.z);
         }
       }
-      if (o)
-        spawns.push({
-          type,
-          x: o.x,
-          z: o.z,
-          yaw: Rn() * TAU,
-          node: n.id,
-          kind: n.kind,
-        });
+      if (far) put("brood", far, n, n.kind);
+      for (let i = 2 + ((Rn() * 3) | 0); i > 0; i--) {
+        const o = dryIn(n, sx, sz);
+        if (o) put("rat", o, n, n.kind);
+      }
+      if (Rn() < 0.4) {
+        const o = dryIn(n, sx, sz);
+        if (o) put("drowned", o, n, n.kind);
+      }
     }
   }
-  const keep = boss.r + PURSUIT.bossPad;
+  const keep = boss.r + PURSUIT.bossPad,
+    open = (q) => {
+      resolve(q, 1);
+      return fieldAt(q.x, q.z) >= 1 && waterAt(q.x, q.z) === 0;
+    };
   for (const e of edges) {
     if (Rn() > 0.5) continue;
     const A = nodes[e.a],
@@ -1389,16 +1425,24 @@ function genSewer(seed) {
     // a tunnel post stays out of every room and out of the boss cavern's pad
     if (roomAt(m.x, m.z, 2) || Math.hypot(m.x - boss.x, m.z - boss.z) < keep)
       continue;
-    resolve(m, 1);
-    if (fieldAt(m.x, m.z) < 1 || waterAt(m.x, m.z) > 0) continue;
-    spawns.push({
-      type: "husk",
-      x: m.x,
-      z: m.z,
-      yaw: Math.atan2(far.x - m.x, far.z - m.z),
-      node: -1,
-      kind: "tunnel",
-    });
+    if (!open(m)) continue;
+    const yaw = Math.atan2(far.x - m.x, far.z - m.z),
+      add = (type, q) =>
+        spawns.push({ type, x: q.x, z: q.z, yaw, node: -1, kind: "tunnel" });
+    if (Rn() < 0.4) add("drowned", m);
+    else {
+      // a pack of three rats: the post and a point 1.2 m either way along the tunnel
+      const a = e.pts[Math.max(0, mi - 1)],
+        b = e.pts[Math.min(e.pts.length - 1, mi + 1)],
+        l = Math.hypot(b.x - a.x, b.z - a.z) || 1,
+        ux = (b.x - a.x) / l,
+        uz = (b.z - a.z) / l;
+      add("rat", m);
+      for (const s of [-1, 1]) {
+        const q = { x: m.x + ux * 1.2 * s, z: m.z + uz * 1.2 * s };
+        if (open(q)) add("rat", q);
+      }
+    }
   }
   // the boss stands on the dry ring between the entrance and the centre
   // pool, facing the entrance

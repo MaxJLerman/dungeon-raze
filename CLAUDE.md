@@ -36,13 +36,17 @@ is what you need to change the code without breaking it.
   pass through, and a Drop that sends a pack through the floor and out of
   the roof. No plaque is sealed now.
 - Branch `feat/sewer` is the first of three projects for the D gate: the
-  sewer zone, its water, and D opening once E's boss is dead. The D enemies
-  (project 2) and the crocodile boss (project 3) are not built. Until
-  project 2 lands, `LIVE_GRADES` holds only E, so the D portal stays sealed
-  on the published page. A D run made live by hand uses E's enemy types as
-  stand-ins and holds the E boss in the cavern. The design is in
-  `docs/superpowers/specs/2026-11-18-sewer-d-gate-design.md`. It has been
-  checked by tests and screenshots only, never played by hand.
+  sewer zone, its water, and D opening once E's boss is dead. Branch
+  `feat/d-enemies` is project 2, built in two batches. Batch 1 added the
+  per-type hooks and the rat, the drowned and the brood mother, which fill
+  the brood rooms and the tunnels. The siren, eel, bloater and drain grabber
+  (batch 2) and the crocodile boss (project 3) are not built. Until project 3
+  lands, `LIVE_GRADES` holds only E, so the D portal stays sealed on the
+  published page. A D run made live by hand uses E's enemy types in pool
+  rooms and holds the E boss in the cavern. The design is in
+  `docs/superpowers/specs/2026-11-19-d-enemies-design.md` for the enemies and
+  `docs/superpowers/specs/2026-11-18-sewer-d-gate-design.md` for the sewer.
+  It has been checked by tests and screenshots only, never played by hand.
 
 ## Rules of the build
 
@@ -195,7 +199,15 @@ is what you need to change the code without breaking it.
   points: the arrival hall and three along the path, the last just before the
   cavern. Rooms get a kind: `start`, `pool`, `brood`, `shrine` or `boss`; no
   room is both pool and brood, and every spawn records its room kind. Rest
-  rooms hold no enemies. A run is about 1.5 times the walked length of E's.
+  rooms hold no enemies. **Spawns** are drawn at the end of `genSewer`, from
+  `Rn`, after everything else, so they never move the layout. A brood room
+  holds one `brood` at the farthest of 12 dry spots from its entry (the first
+  point outside the room of the tunnel to its neighbour of lowest depth), 2 to
+  4 `rat`, and with chance 0.4 one `drowned`. A tunnel post (half the tunnels)
+  holds a `drowned` with chance 0.4, else a pack of three `rat`: the post and
+  two points 1.2 m either way along the tunnel, each kept only if dry and open
+  (`kind: "tunnel"`). Pool rooms still hold `PACK.pool`, E's husk and spitter,
+  until batch 2 gives them the siren and the eel. A run is about 1.5 times the walked length of E's.
 - **Pillars** are square brick piers in the field, so they block movement,
   sight, routes, shots and the camera like any wall. Pool, brood and rest
   rooms whose shorter half-size is at least `SEWER.pillarAt` (9 m, about
@@ -319,8 +331,8 @@ is what you need to change the code without breaking it.
   grades whose content is finished. `portalOpen(grade)`: E is always open;
   a higher grade is open when it is in `LIVE_GRADES` and the grade below is
   cleared. `hubPortals()` takes `open` from it. **D joins `LIVE_GRADES` only
-  when project 2 (the D enemies) lands**, because E's enemies must not
-  appear in the published D. Tests add and remove it through
+  when project 3 (the crocodile) lands**, because the Warden and E's enemies
+  must not appear in the published D. Tests add and remove it through
   `DF.LIVE_GRADES`.
 
 - `G` is the single state object. `G.state` is one of `title`, `play`,
@@ -771,6 +783,70 @@ is what you need to change the code without breaking it.
   around the screen centre and `world.los` from the player is clear. The box
   is tall because the resting camera looks down, so an enemy straight ahead
   sits above the centre. The HUD only reads enemies; looking never wakes one.
+### Enemy behaviours (`06b_ebeh.js`, `05b_dbodies.js`)
+
+The shared state machine is left alone for E. A D type adds what it needs
+through three tables, keyed by its type name, and a type with no entry in a
+table runs exactly as before.
+
+- **`EBEH`** holds optional hooks per type. The header of `06b_ebeh.js` lists
+  them with their arguments; `c` is what `enemyUpdate` already worked out
+  (`{ p, w, dx, dz, dist, toP, alive }`).
+  - `step(e, dt, c)` runs each awake step, before the state switch, and true
+    skips the switch. `chase(e, dt, c)` runs in `chase` before the shared
+    steering and true means it handled the step.
+  - `canAttack(e, c)` false stops `chase` starting an attack, melee or shot,
+    and taking a token.
+  - `wind(e, c)` and `act(e, dt, c)` run for an `atk.kind` the shared code
+    does not know.
+  - `hit(e, dmg, post, o)` runs in `hitEnemy` after the Riftwalker bonus and
+    before the ambush multiplier. It returns `null` to let the hit land, or
+    `{ dmg, post, blocked }` to change it; `blocked` hands the hit to
+    `blockHit`, which counts it as an attack (`noticeHit`: flash, hunt, last
+    seen, posture) but gives no damage, knock, flinch, hitstop or focus. Both
+    share `noticeHit`, so they cannot drift apart. `o` is the options object
+    of the hit and carries `src`, `heavy`, `fx` and `fz` (a blast's centre)
+    and, **for a shot only, `sx` and `sz`, where it started**: `projUpdate`
+    passes them and nothing else reads them. A hit hook that needs a facing
+    uses the shot's start, else the blast, else the player.
+  - `death(e)` runs at the end of `kill`.
+  - `foot(e, x, z)` says whether `e` may stand at a point. Read it through
+    `footOk(e, x, z)` (always true for a type with no hook). `eStep` refuses a
+    step that `footOk` forbids, trying each axis alone so the body slides, and
+    `keepFooting(e)` runs each update after every other mover (knockback,
+    lunges, `separate`, rifts) for a type with a hook: it records a spot the
+    body may stand on, or puts it back on the last one. Nothing uses it yet; it
+    is there for the water-bound enemies of batch 2.
+- **`EFIG`** maps a type to a function that returns its finished figure, which
+  `makeEnemyFig` calls first. **`EPOSE`** maps a type to `{ pose(e) }`, which
+  replaces the body of `poseEnemy` (the dummy still goes first), or to
+  `{ after(e) }`, called at the end of `poseEnemy` just before the glow. Both
+  live in `05b_dbodies.js`.
+- **`atk.kb`** on an `EDEF` attack sets the knockback speed that `hurtPlayer`
+  gives the player, in place of the default of 7. The drowned's bash uses 14.
+- **The rat** (`rat`, threat 0) is small, quick (5.2, `wade` 1.6, so about 8.3 in
+  water) and soft. It swims but cannot attack while `waterAt` reads above 0.5
+  (`EBEH.rat.canAttack`; 0.5 is still the shore). It bites, or pounces from
+  range. A rat sent out by a brood mother is a rat in every way but kill
+  rewards (below).
+- **The drowned** (`drowned`, threat 1) carries a manhole cover. Its hit hook
+  stops every hit within `guard` (1.05 rad) of its facing, in melee, shots and
+  pellets: a light hit gives `guardLight` (a quarter) of its posture, a heavy
+  hit all of it, and heavies break it open into a stagger. A blast (`aoe`), an
+  execution and a staggered drowned ignore the cover, and so do hits from the
+  sides and back. Its bash shoves the player (`kb` 14); its edge is a slower,
+  harder overhead.
+- **The brood mother** (`brood`, threat 1) keeps `BROOD.keep` (7 m) from the
+  player and backs off from inside it, down to `BROOD.close` (3 m), where she
+  stands her ground and bites. While hunting and in a state where she is up
+  (`BROOD_STATES`), every `BROOD.every` (6 s) she sends out a rat behind her,
+  away from the player, up to `BROOD.cap` (4) alive at once; the first goes
+  `BROOD.first` (3 s) into a hunt. She sends nothing when she is staggered,
+  falling, unaware or the player is in the boss chamber. A sent-out rat has
+  `mom` (her) and `born`, shares her post (so it returns to her room), and
+  gives `BROOD.focus` (2) focus and no tool charge when it dies. She takes no
+  attack token while she stands off. `respawn` rebuilds the enemies, so her
+  rats are gone and her timer starts fresh.
 - `EDEF.dummy` is the training dummy. Its `dummy: true` flag is honoured in
   nine places: `makeEnemy` (always aware, so no ambush bonus and its bar
   shows), `enemyUpdate` (pinned in place, no AI), `hitEnemy` (health restored
@@ -819,10 +895,17 @@ The class picker and HUD read `CLASSES` and need no changes.
    `trig` can start a sequence; one without can only be reached through
    another's `chain`.
    `unb: true` makes it unblockable and shows the red warning.
-2. Add a figure in `makeEnemyFig`, with `f.rim` and `f.eye`.
-3. Reference the type name in `PACKS` in `03_world.js`.
+2. Add a figure in `makeEnemyFig`, with `f.rim` and `f.eye`. A D type puts
+   its figure in `EFIG` and its pose in `EPOSE` (`05b_dbodies.js`) instead.
+3. Reference the type name in `PACKS` in `03_world.js`, or, for the sewer, in
+   the spawn block at the end of `genSewer`.
 4. An attack with special movement needs a `kind` and handling in the `wind`
    and `act` cases of `enemyUpdate`. See `slam`, `charge`, `shot`, `volley`.
+   A D type does this through the `wind` and `act` hooks in `EBEH`.
+5. Behaviour that only this type has (a rule on when it may attack, a hit it
+   refuses, ground it may not stand on, something it does each step) is a hook
+   in `EBEH` (`06b_ebeh.js`), not a branch in `enemyUpdate`. Anything that
+   moves the type must go through `eStep`.
 
 ### Open another portal
 
@@ -894,6 +977,14 @@ The class picker and HUD read `CLASSES` and need no changes.
   It uses a phone with a fake pad. Shots of the fight and the Controls menu go
   to `shots/`:
   `DEVICE=oneplus-13 SCRIPT=$PWD/tests/t17.mjs node test.mjs smoke`.
+- Run `tests/t23.mjs` after any change to `06b_ebeh.js`, the D enemies, their
+  bodies or where the sewer places them:
+  `SCRIPT=$PWD/tests/t23.mjs node test.mjs smoke`. It checks each hook, the rat,
+  drowned and brood mother (the cover over every kind of hit, her timer and
+  cap, her rats' rewards and post), their bodies in every state, and the
+  placement over seeds 1 to 12. Shots go to `shots/` (`t23-rat*`, `t23-drowned`,
+  `t23-brood`, and `t23-fight-brood` and `t23-fight-tunnel`, which are the
+  enemies awake in a real sewer): look at them.
 - Run `tests/t22.mjs` after any change to the sewer, water, `fieldFns`,
   `meshSink`, the world shader, `visiblePieces`, cleared grades or portal
   opening: `SCRIPT=$PWD/tests/t22.mjs node test.mjs smoke`. It makes D live
@@ -972,8 +1063,14 @@ The class picker and HUD read `CLASSES` and need no changes.
   checks six seeds.
 - Sewer decoration (brick heaps, plinths, ribs, pipes) blocks nothing, so a
   body can stand inside a heap.
-- The D portal is sealed on the published page by design, until the D
-  enemies land. A D made live by hand fights E's enemies and the E boss.
+- The D portal is sealed on the published page by design, until the
+  crocodile lands. A D made live by hand fights the rat, drowned and brood
+  mother in tunnels and brood rooms, E's husk and spitter in pool rooms, and
+  the E boss in the cavern.
+- The rat, the drowned and the brood mother are untested by hand. Their
+  numbers (speed, health, the cover's angle, the brood timer, cap and
+  distances, placement odds) and how they look were set by tests and
+  screenshots only.
 - iPhones cannot run the file directly; they play at
   https://maxjlerman.github.io/dungeon-raze/.
 - Touch was checked only in Chromium device emulation. Fullscreen, the
@@ -993,7 +1090,7 @@ The class picker and HUD read `CLASSES` and need no changes.
 1. Tune feel from the owner's playtest: timing windows, sensitivity, difficulty.
 2. Give the portal grades meaning: enemy difficulty and kill rewards per
    grade, then open D to S. D's place and water are built (`feat/sewer`);
-   next are the seven D enemies, then the crocodile boss, then adding D to
+   next are the other four D enemies (batch 2), then the crocodile boss, then adding D to
    `LIVE_GRADES`. Revisit whether dying should send the player back
    to the base once there are rewards to lose.
 3. Loot, inventory and an extraction loop. The owner asked for these early on

@@ -6,8 +6,8 @@ You pick one of five classes and start in a base of operations: a hall with six
 portal frames graded E to S and a training dummy. The open portal leads to a
 procedurally generated cave of looping tunnels, where you kill the boss in the
 deepest chamber and return to the hall through the gate it opens. The next gate,
-D, leads to a sewer. It is built but sealed in the published game until its own
-enemies exist.
+D, leads to a sewer. It is built but sealed in the published game until its boss
+exists.
 
 This is a spike: it exists to find out whether the combat feels good. It is not
 a finished game, and nothing in it is balanced by hand yet.
@@ -184,8 +184,14 @@ earlier ones.
   arrival hall and three more along the way, and a boss cavern with a moat and
   a centre pool. Water is shallow, slows the player, and can be walked around.
   The light is dim and green, with some flickering lamps, drips and an echo.
-  Only the part of the sewer that can be seen is drawn. It has no enemies of
-  its own yet; a D made live for testing uses the cave's enemies.
+  Only the part of the sewer that can be seen is drawn. Three D enemies exist
+  so far. The rat is quick, faster still in water, and cannot bite while it
+  swims. The drowned holds a manhole cover that stops every hit from the front
+  until heavy blows break it open; go round it. The brood mother keeps her
+  distance and sends out a rat every few seconds until she is killed. They hold
+  the brood rooms and tunnels. The pool rooms still hold the cave's husks and
+  spitters, the boss is still the Ossuary Warden, and D stays sealed in the
+  published game until the crocodile boss is built.
 - **Menus:** class picker, controls menu with rebinding, mouse sensitivity and
   inverted look, and a How to play screen with the name colour key and combat
   tips. How to play opens from the title and pause screens.
@@ -228,6 +234,7 @@ Screenshots go to `shots/`.
 | `tests/t19.mjs` | The plaques by touch on every device. Run in `hub` mode with `touch-all.mjs` |
 | `tests/t20.mjs` | Rock in the walkable field and the cave-in that uses it. Run in `smoke` mode |
 | `tests/t21.mjs` | The Riftwalker's rift ends, crossing and Drop. Run in `smoke` mode |
+| `tests/t23.mjs` | The D enemies: behaviour hooks, the rat, the drowned and the brood mother, their bodies, and where the sewer places them, with screenshots. Run in `smoke` mode |
 | `tests/t22.mjs` | The sewer: water, D opening and the save, the layout over many seeds, brick and water drawing, only drawing what is seen, screenshots. Run in `smoke` mode |
 
 The touch scripts `t14` and `t15` run under emulated phones and tablets. Run

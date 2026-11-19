@@ -242,5 +242,53 @@ export default [
   ...view("brood", "a brood mother with two rats beside her, for looking at", `e.x += fx * 1.4; e.z += fz * 1.4; e.yaw = cy + Math.PI - 1.3; e.state = "chase"; e.speed = 0; e.walk = 1.1;
     for (const s of [-1, 1]) { const r = DF.makeEnemy({ type: "rat", x: e.x + (-fz) * s * 2.3 - fx * 0.8, z: e.z + fx * s * 2.3 - fz * 0.8, yaw: e.yaw + s * 0.3, node: -1 }); r.state = "chase"; r.aware = true; r.speed = 0; r.walk = 0.4 + s; G.enemies.push(r); }
     return { pass: true };`, "t23-brood"),
+  // ---- placement in the sewer ----
+  step("brood rooms hold one brood mother and only D types", `const bad = [], D = ["rat", "drowned", "brood"];
+    for (let s = 1; s <= 12; s++) { const w = DF.genSewer(s);
+      for (const n of w.nodes) if (n.kind === "brood") { const k = w.spawns.filter((q) => q.node === n.id && q.type === "brood").length; if (k !== 1) bad.push({ s, room: n.id, k }); }
+      for (const q of w.spawns) if ((q.kind === "brood" || q.kind === "tunnel") && !D.includes(q.type)) bad.push({ s, type: q.type, kind: q.kind }); }
+    return { pass: bad.length === 0, bad: bad.slice(0, 6) };`),
+  step("brood rooms hold 2 to 4 rats and at most one drowned", `const bad = []; let rooms = 0, drowned = 0;
+    for (let s = 1; s <= 12; s++) { const w = DF.genSewer(s);
+      for (const n of w.nodes) if (n.kind === "brood") { rooms++; const r = w.spawns.filter((q) => q.node === n.id && q.type === "rat").length, d = w.spawns.filter((q) => q.node === n.id && q.type === "drowned").length; drowned += d;
+        if (r < 2 || r > 4 || d > 1) bad.push({ s, room: n.id, r, d }); } }
+    return { pass: bad.length === 0 && rooms > 8 && drowned > 0 && drowned < rooms, bad: bad.slice(0, 6), rooms, drowned };`),
+  step("the brood mother stands in her room on dry open floor", `const bad = []; let n0 = 0;
+    for (let s = 1; s <= 12; s++) { const w = DF.genSewer(s);
+      for (const n of w.nodes) if (n.kind === "brood") { n0++; const sp = w.spawns.filter((q) => q.node === n.id), m = sp.find((q) => q.type === "brood");
+        if (Math.abs(m.x - n.x) > n.hw || Math.abs(m.z - n.z) > n.hd || w.waterAt(m.x, m.z) !== 0 || w.fieldAt(m.x, m.z) < 1) bad.push({ s, room: n.id }); } }
+    return { pass: bad.length === 0 && n0 > 8, bad: bad.slice(0, 6), n0 };`),
+  step("tunnel rat packs are three or fewer and together", `const bad = []; let packs = 0, three = 0, drowned = 0;
+    for (let s = 1; s <= 12; s++) { const w = DF.genSewer(s), rats = w.spawns.filter((q) => q.kind === "tunnel" && q.type === "rat"); drowned += w.spawns.filter((q) => q.kind === "tunnel" && q.type === "drowned").length;
+      const left = rats.slice();
+      while (left.length) { const a = left.shift(), pack = [a, ...left.filter((q) => Math.hypot(q.x - a.x, q.z - a.z) < 6)]; for (const q of pack.slice(1)) left.splice(left.indexOf(q), 1);
+        packs++; if (pack.length === 3) three++;
+        if (pack.length > 3 || pack.some((q) => pack.some((r) => Math.hypot(q.x - r.x, q.z - r.z) > 3))) bad.push({ s, n: pack.length }); } }
+    return { pass: bad.length === 0 && three > 3 && drowned > 0, bad: bad.slice(0, 6), packs, three, drowned };`),
+  step("pool rooms still hold the E stand-ins, two or three on dry open floor", `const bad = []; let rooms = 0;
+    for (let s = 1; s <= 12; s++) { const w = DF.genSewer(s);
+      for (const n of w.nodes) if (n.kind === "pool") { rooms++; const sp = w.spawns.filter((q) => q.node === n.id);
+        if (sp.length < 2 || sp.length > 3 || sp.some((q) => q.kind !== "pool" || !["husk", "spit"].includes(q.type) || w.fieldAt(q.x, q.z) < 1 || w.waterAt(q.x, q.z) !== 0)) bad.push({ s, room: n.id, types: sp.map((q) => q.type) }); } }
+    return { pass: bad.length === 0 && rooms > 8, bad: bad.slice(0, 6), rooms };`),
+  // a brood room from its tunnel mouth, with everything awake and the player 8 m in
+  { ...step("a brood room with its enemies awake, for looking at", `window.__cd0 = window.__cd0 || cam.dist; DF.LIVE_GRADES.add("D"); DF.newRun(5, "D"); DF.show("play"); G.state = "play"; DF.LIVE_GRADES.delete("D");
+  const w = G.world, p = G.player;
+  const n = w.nodes.find((n) => n.kind === "brood" && G.enemies.some((e) => e.node === n.id && e.type === "brood")); if (!n) return { pass: false, why: "no brood room" };
+  const nb = n.adj.map((j) => w.nodes[j]).sort((a, b) => a.depth - b.depth)[0], ed = w.edges.find((e) => (e.a === n.id && e.b === nb.id) || (e.b === n.id && e.a === nb.id));
+  const pts = ed.a === n.id ? ed.pts : ed.pts.slice().reverse(); let mouth = pts[0]; for (const q of pts) { mouth = q; if (Math.abs(q.x - n.x) >= n.hw || Math.abs(q.z - n.z) >= n.hd) break; }
+  const mom = G.enemies.find((e) => e.node === n.id && e.type === "brood"), a = Math.atan2(mom.x - mouth.x, mom.z - mouth.z);
+  p.x = mouth.x + Math.sin(a) * 8; p.z = mouth.z + Math.cos(a) * 8; w.resolve(p, 0.6); p.yaw = cam.yaw = Math.atan2(mom.x - p.x, mom.z - p.z); cam.pitch = 0.35; cam.px = p.x; cam.pz = p.z; cam.cd = 5.6;
+  let awake = 0; for (const e of G.enemies) if (e.node === n.id) { DF.alertE(e, true); awake++; }
+  return { pass: awake >= 3, awake, d: Math.hypot(mom.x - p.x, mom.z - p.z), room: n.id }; `), wait: 500, shot: "t23-fight-brood" },
+  // a drowned in a tunnel, the player 5 m off
+  { ...step("a drowned in a tunnel, for looking at", `DF.LIVE_GRADES.add("D"); let w = null, d = null, seed = 0;
+  for (seed = 1; seed <= 12 && !d; seed++) { DF.newRun(seed, "D"); w = G.world; d = G.enemies.find((e) => e.type === "drowned" && e.node === -1); }
+  seed--; DF.show("play"); G.state = "play"; DF.LIVE_GRADES.delete("D"); if (!d) return { pass: false, why: "no tunnel drowned" };
+  const p = G.player; let best = null;
+  for (let a = 0; a < 6.3; a += 0.1) { const x = d.x + Math.sin(a) * 5, z = d.z + Math.cos(a) * 5; if (w.fieldAt(x, z) >= 1.2 && w.los(x, z, d.x, d.z)) { best = { x, z, a }; break; } }
+  if (!best) return { pass: false, why: "no spot" };
+  p.x = best.x; p.z = best.z; p.yaw = cam.yaw = Math.atan2(d.x - p.x, d.z - p.z); cam.pitch = 0.3; cam.px = p.x; cam.pz = p.z; cam.cd = 5.6;
+  for (const e of G.enemies) if (Math.hypot(e.x - d.x, e.z - d.z) < 8) DF.alertE(e, true);
+  return { pass: true, seed, dist: Math.hypot(d.x - p.x, d.z - p.z) }; `), wait: 500, shot: "t23-fight-tunnel" },
   step("the camera is put back", `cam.dist = window.__cd0; DF.newRun(99); return { pass: true };`),
 ];
