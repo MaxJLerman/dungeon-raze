@@ -2225,7 +2225,7 @@ function explode(x, z, r, dmg, post, c) {
   G.shake = Math.max(G.shake, r > 4.5 ? 0.9 : 0.45);
   SFX.slam();
   for (const e of G.enemies) {
-    if (e.dead || e.state === "fall" || e.hidden) continue;
+    if (e.dead || e.state === "fall" || e.hidden || e.aloft) continue;
     if (Math.hypot(e.x - x, e.z - z) < r + e.r && G.world.los(x, z, e.x, e.z))
       hitEnemy(e, dmg, post, { src: "aoe", heavy: true, fx: x, fz: z });
   }
@@ -2390,7 +2390,7 @@ function kill(e) {
     let b = null,
       bd = p.cls.ranged ? 22 : 13;
     for (const o of G.enemies)
-      if (!o.dead && o.aware && o.state !== "fall" && !o.hidden) {
+      if (!o.dead && o.aware && o.state !== "fall" && !o.hidden && !o.aloft) {
         const d = Math.hypot(o.x - p.x, o.z - p.z);
         if (d < bd) {
           bd = d;
@@ -2786,7 +2786,7 @@ function nearestStaggered() {
   let b = null,
     bd = 3.7;
   for (const e of G.enemies)
-    if (!e.dead && !e.hidden && e.state === "stagger") {
+    if (!e.dead && !e.hidden && !e.aloft && e.state === "stagger") {
       const d = Math.hypot(e.x - p.x, e.z - p.z) - e.r;
       if (d < bd) {
         bd = d;
@@ -2801,7 +2801,7 @@ function pickLock(exclude) {
     bs = 1e9;
   const far = p.cls.ranged ? 34 : 24;
   for (const e of G.enemies) {
-    if (e.dead || e === exclude || e.state === "fall" || e.hidden) continue;
+    if (e.dead || e === exclude || e.state === "fall" || e.hidden || e.aloft) continue;
     const d = Math.hypot(e.x - p.x, e.z - p.z);
     if (d > far) continue;
     const a = Math.abs(angDiff(cam.yaw, Math.atan2(e.x - p.x, e.z - p.z)));
@@ -2821,8 +2821,9 @@ function aimYaw(base, range = 4.8, cone = 1.1) {
   let best = null,
     bs = 1e9;
   for (const e of G.enemies) {
-    // a safe enemy cannot be hurt, so the assist passes it over
-    if (e.dead || e.state === "fall" || e.hidden || e.safe) continue;
+    // a safe enemy cannot be hurt, so the assist passes it over; one aloft is
+    // out of reach of everything but shots
+    if (e.dead || e.state === "fall" || e.hidden || e.aloft || e.safe) continue;
     const d = Math.hypot(e.x - p.x, e.z - p.z);
     if (d > range + e.r) continue;
     const a = Math.abs(angDiff(base, Math.atan2(e.x - p.x, e.z - p.z)));
@@ -3177,6 +3178,7 @@ function grappleTarget() {
       !e.dead &&
       e.state !== "fall" &&
       !e.hidden &&
+      !e.aloft &&
       Math.hypot(e.x - p.x, e.z - p.z) <= 14 &&
       w.los(p.x, p.z, e.x, e.z);
   if (p.lock) return ok(p.lock) ? p.lock : null;
@@ -3273,7 +3275,7 @@ function useSpecial(ix, iz, il) {
       let best = null,
         bd = 1e9;
       for (const e of G.enemies) {
-        if (e.dead || e.state === "fall" || e.hidden) continue;
+        if (e.dead || e.state === "fall" || e.hidden || e.aloft) continue;
         const d = Math.hypot(e.x - p.x, e.z - p.z);
         if (
           d < 30 &&
@@ -3549,6 +3551,7 @@ function playerUpdate(dt) {
     p.lock &&
     (p.lock.dead ||
       p.lock.hidden ||
+      p.lock.aloft ||
       Math.hypot(p.lock.x - p.x, p.lock.z - p.z) > (c.ranged ? 42 : 30))
   )
     p.lock = null;
@@ -3687,7 +3690,7 @@ function playerUpdate(dt) {
           const hx = Math.sin(p.yaw),
             hz = Math.cos(p.yaw);
           for (const e of G.enemies) {
-            if (e.dead || e.state === "fall" || e.hidden) continue;
+            if (e.dead || e.state === "fall" || e.hidden || e.aloft) continue;
             const dx = e.x - p.x,
               dz = e.z - p.z,
               d = Math.hypot(dx, dz);
@@ -3748,6 +3751,7 @@ function playerUpdate(dt) {
               (e) =>
                 !e.dead &&
                 !e.hidden &&
+                !e.aloft &&
                 Math.hypot(e.x - p.x, e.z - p.z) < m.range + e.r &&
                 Math.abs(angDiff(p.yaw, Math.atan2(e.x - p.x, e.z - p.z))) <
                   m.arc / 2 + 0.2,
@@ -3810,7 +3814,8 @@ function playerUpdate(dt) {
         t < m.wind + m.act + 0.03
       ) {
         for (const e of G.enemies) {
-          if (e.dead || e.state === "fall" || e.hidden || p.hitSet.has(e)) continue;
+          if (e.dead || e.state === "fall" || e.hidden || e.aloft || p.hitSet.has(e))
+            continue;
           const dx = e.x - p.x,
             dz = e.z - p.z,
             d = Math.hypot(dx, dz);
@@ -4057,7 +4062,8 @@ function playerUpdate(dt) {
           dur: 0.2,
           c: CYAN,
         });
-        if (!p.bT.dead) hitEnemy(p.bT, 34, 30, { heavy: true, src: "blink" });
+        if (!p.bT.dead && !p.bT.aloft)
+          hitEnemy(p.bT, 34, 30, { heavy: true, src: "blink" });
       }
       if (p.t > (p.bT ? 0.44 : 0.22)) {
         p.state = "free";
@@ -4353,6 +4359,7 @@ function enemyUpdate(e, dt) {
     alive &&
     !d.ambush &&
     !e.hidden &&
+    !e.aloft &&
     (d.boss || e.state !== "return" || inTerritory(e))
   ) {
     const front = Math.abs(angDiff(e.yaw, toP)) < 1.75,
@@ -4806,8 +4813,9 @@ function bombsUpdate(dt) {
   const p = G.player,
     w = G.world;
   for (const b of G.bombs) {
-    // its enemy dead or gone hidden (under the water): it drops where it is
-    if (b.e && (b.e.dead || b.e.hidden)) {
+    // its enemy dead, gone hidden (under the water) or aloft (up in the wall):
+    // it drops where it is
+    if (b.e && (b.e.dead || b.e.hidden || b.e.aloft)) {
       b.e = null;
       b.y = 0.4;
     }
@@ -4931,7 +4939,7 @@ function caveImpact(c) {
     off = (o) => (o.x - c.x) * nx + (o.z - c.z) * nz,
     thrown = Math.sign((c.fx - c.x) * nx + (c.fz - c.z) * nz) || -1;
   for (const e of G.enemies) {
-    if (e.dead || ridgeD(c, e.x, e.z) > th + e.r + 0.4) continue;
+    if (e.dead || e.aloft || ridgeD(c, e.x, e.z) > th + e.r + 0.4) continue;
     hitEnemy(e, CAVEIN.dmg, CAVEIN.post, {
       src: "aoe",
       heavy: true,
@@ -4961,7 +4969,7 @@ function caveImpact(c) {
     w.resolve(o, r);
   };
   out(p, 0.6, pside);
-  for (const e of G.enemies) if (!e.def.dummy) out(e, e.r, pside);
+  for (const e of G.enemies) if (!e.def.dummy && !e.aloft) out(e, e.r, pside);
   for (const e of G.enemies) e.route = null;
   for (let s = 0; s <= 1; s += 0.1)
     sparks(
@@ -5048,6 +5056,7 @@ function minesUpdate(dt) {
         !e.dead &&
         e.state !== "fall" &&
         !e.hidden &&
+        !e.aloft &&
         !e.safe &&
         Math.hypot(e.x - m.x, e.z - m.z) < MINE.trig + e.r
       ) {
@@ -5061,6 +5070,7 @@ function minesUpdate(dt) {
           !e.dead &&
           e.state !== "fall" &&
           !e.hidden &&
+          !e.aloft &&
           !e.safe &&
           segDist(e.x, e.z, m.x, m.z, o.x, o.z) < e.r
         ) {
@@ -5214,7 +5224,15 @@ function riftBodies(prev) {
     SFX.cross();
   }
   for (const e of G.enemies) {
-    if (e.dead || e.def.boss || e.def.dummy || e.state === "fall" || bound(e) || e.hidden)
+    if (
+      e.dead ||
+      e.def.boss ||
+      e.def.dummy ||
+      e.state === "fall" ||
+      bound(e) ||
+      e.hidden ||
+      e.aloft
+    )
       continue;
     if (e.rest > 0 || e.y > 0.3) continue;
     const q = prev.e.get(e);
@@ -5321,6 +5339,7 @@ function landEnemy(e) {
       o !== e &&
       !o.dead &&
       o.state !== "fall" &&
+      !o.aloft &&
       Math.hypot(o.x - e.x, o.z - e.z) < im.r + o.r
     )
       hitEnemy(o, im.dmg, im.post, { src: "aoe", heavy: true, fx: e.x, fz: e.z });
@@ -5352,7 +5371,13 @@ function cloudsUpdate(dt) {
       if (p.state !== "dead" && Math.hypot(p.x - c.x, p.z - c.z) < c.r)
         hurtPlayer(CLOUD.dmg, null, { dmg: CLOUD.dmg, dot: true, px: c.x, pz: c.z });
       for (const o of G.enemies.slice())
-        if (!o.dead && o.state !== "fall" && !o.hidden && Math.hypot(o.x - c.x, o.z - c.z) < c.r)
+        if (
+          !o.dead &&
+          o.state !== "fall" &&
+          !o.hidden &&
+          !o.aloft &&
+          Math.hypot(o.x - c.x, o.z - c.z) < c.r
+        )
           hitEnemy(o, CLOUD.dmg, 0, { src: "aoe", dot: true, fx: c.x, fz: c.z });
     }
   }
@@ -5375,6 +5400,7 @@ function holesUpdate(dt) {
         !e.def.dummy &&
         !bound(e) &&
         !e.hidden &&
+        !e.aloft &&
         e.state !== "fall" &&
         Math.hypot(e.x - h.x, e.z - h.z) < DROP.r + e.r,
     );
@@ -5390,6 +5416,8 @@ function projUpdate(dt) {
     pr.life -= dt;
     pr.x += pr.vx * dt;
     pr.z += pr.vz * dt;
+    // a shot thrown from high up (the crocodile's plates) falls to yTo
+    if (pr.vy) pr.y = Math.max(pr.yTo, pr.y + pr.vy * dt);
     if (G.rifts.length === 2)
       riftShot(pr, pr.x - pr.vx * dt, pr.z - pr.vz * dt);
     const wall = w.fieldAt(pr.x, pr.z) < 0.12;
@@ -5479,10 +5507,10 @@ function separate() {
     es = G.enemies;
   for (let i = 0; i < es.length; i++) {
     const a = es[i];
-    if (a.dead || a.state === "fall" || a.hidden) continue;
+    if (a.dead || a.state === "fall" || a.hidden || a.aloft) continue;
     for (let j = i + 1; j < es.length; j++) {
       const b = es[j];
-      if (b.dead || b.state === "fall" || b.hidden) continue;
+      if (b.dead || b.state === "fall" || b.hidden || b.aloft) continue;
       const dx = b.x - a.x,
         dz = b.z - a.z,
         d = Math.hypot(dx, dz),

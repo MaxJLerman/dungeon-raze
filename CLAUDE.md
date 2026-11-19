@@ -51,8 +51,12 @@ is what you need to change the code without breaking it.
   the player enters the cavern, swims under, surfaces with a warning and
   fights on land, where its death roll drags the player into the water. At
   75%, 50% and 25% of its health no hit takes it past the mark, and
-  reaching one breaks off what it is doing and it dives. Part two, the
-  tunnel phase at each mark, remains. A D run made live by hand has
+  reaching one breaks off what it is doing. Part two (branch
+  `feat/crocodile-2`) is under way: at a mark it now leaps into the
+  cavern's wall tunnels and throws spiked plates from one mouth after
+  another, then drops back into the water. The shot cap and the parry
+  knock-down, the falling ceiling, bloaters down the falls and its shadow
+  remain. A D run made live by hand has
   no E type in it. The design is in
   `docs/superpowers/specs/2026-11-19-d-enemies-design.md` for the enemies,
   `docs/superpowers/specs/2026-11-18-sewer-d-gate-design.md` for the sewer
@@ -762,8 +766,9 @@ is what you need to change the code without breaking it.
     the Starfall target, mines and tripwires, `separate`, `riftBodies` and
     `kill`'s relock.
     A new way of hitting or targeting an enemy must skip it too, and must
-    skip a hidden enemy (`e.hidden`, see Enemies) as well; `grappleTarget`
-    and `nearestStaggered` skip both.
+    skip a hidden enemy (`e.hidden`, see Enemies) and an aloft one
+    (`e.aloft`) as well; `grappleTarget` and `nearestStaggered` skip all
+    three.
   - **Execution.** The enemy is killed, then dropped like a Drop (its body
     falls in the `dead` case of `enemyUpdate`) and lands in one blast
     (`DROP.exec`). The boss takes the execution in place; the dummy stands
@@ -857,6 +862,19 @@ is what you need to change the code without breaking it.
   part in being woken or waking others: it is left out of `seeingMate`,
   `callPack`, `alertE`'s neighbour wake and the sight wake-up, and its own
   rule says when it acts. No hidden enemy is woken by sight either.
+- **Aloft.** `e.aloft` is an enemy up in the wall where only shots reach it
+  (the crocodile in its tunnel phase). Every place that skips `e.hidden`
+  skips `e.aloft` too, except two: the player's shot hit loop in
+  `projUpdate` and `aimRanged`, so shots and their aim still find it. So it
+  cannot be locked (a lock on it drops), aimed at by `aimYaw`, hit in melee
+  or by the reach tear or blink, caught in a blast, cloud or eel shock,
+  grappled, executed, dropped, crossed through a rift, set off a mine or
+  wire, struck or pushed by a cave-in or a Drop's landing, or separated, and
+  a sticky bomb on it drops off. `hitEnemy` itself does not skip it. Types
+  that never set it are unchanged.
+- **Falling shots.** A shot with `vy` falls by it each step to no lower
+  than its `yTo` (`projUpdate`); the crocodile's plates use it. Only the
+  drawn height changes: hits are on the flat floor as for every shot.
 - **Water.** An `EDEF` entry may carry `wade`, a factor on its speed in
   water: below 1 slows it, above 1 speeds it. `wadeOf(def)` returns it, or
   `WATER.slow` when the entry has none, and E's types have none (the bloater
@@ -984,9 +1002,10 @@ table runs exactly as before.
   attack token while she stands off. `respawn` rebuilds the enemies, so her
   rats are gone and her timer starts fresh.
 - **D effects** live in `07b_dfx.js`, which `07_render.js` calls each frame:
-  `drawClouds`, `drawShocks`, `drawSongs` and `drawWakes`. Each reads the
+  `drawClouds`, `drawShocks`, `drawSongs`, `drawWakes` and `drawMouths`,
+  and for each plate in flight `drawPlate`. Each reads the
   game's list (`G.clouds`, `G.shocks`, the singing sirens, the crocodile
-  under the water) and draws only effects
+  under the water or in its tunnels) and draws only effects
   (`R.sprite`, `R.ring`, `R.flat`), so it is all additive and the sewer's
   triangle budget is untouched. `resetRun` and `respawn` clear both lists.
 - **The bloater** (`bloater`, threat 0, `bound: "water"`) floats in a pool or
@@ -1064,9 +1083,12 @@ table runs exactly as before.
     0 otherwise. At `landT` 0 or `outT` `CROC.reachT` (3 s), in `chase` or
     `rec`, it goes `dive`: through
     `eStep` to the nearest shore (4 s at most; a stagger puts it back in
-    `land`), then `under` (`crocDive` starts it). Leaving the cavern or the
-    player dying, in any mode, and the shared give-up (state `return`) call `crocReset`: full health,
-    `e.marks` 0, `wait`, hidden at its post, unaware, `G.bossSeen` false.
+    `land`), then `under` (`crocDive` starts it). At a mark it goes `leap`,
+    `tunnel` and `drop` instead (the tunnel phase, below). Leaving the
+    cavern or the player dying, in any mode, and the shared give-up (state
+    `return`) call `crocReset`: full health, `e.marks` 0, `wait`, hidden at
+    its post, unaware, not aloft or safe, `y` 0, no `e.tun`, `G.bossSeen`
+    false. Plates already thrown fly on.
   - `crocShores(e, w)` (cached on `e.shores`) is every water point on a
     1 m lattice centred on the cavern with `fieldAt` at least `e.r` and dry
     footing within 3 m (`crocDry`: a 0.5 m lattice in a clear line).
@@ -1116,9 +1138,8 @@ table runs exactly as before.
     50% and 25% of `def.hp`, it has passed; `crocNextMark(e)` is the next,
     `def.hp * (1 - 0.25 * (marks + 1))`, or 0 once all three are.
     `crocFloor(e)` is the least health a hit may leave: the next mark, but
-    in a `dive` a mark started (`e.markDive`, set by `crocDive(e, w, true)`)
-    the mark just passed, so no second mark passes before it has been
-    under (a stagger that turns that dive back into `land` ends it). No hit
+    in `leap`, `tunnel` and `drop` (`CROC_ALOFT`) the mark just passed, so
+    nothing takes health off it up there until part two's shot cap lands. No hit
     takes it past the floor: its `hit` hook caps the damage (posture lands
     whole) and its `hpFloor` hook holds the health there after the
     multipliers, so melee, shots, blasts, mines, clouds and the execution
@@ -1128,13 +1149,36 @@ table runs exactly as before.
     execution plays out first: `e.marks++`, a hold of its ends through
     `releaseHold()` (as if it ran out: `HOLD.safe` and the grace), a roll
     ends with `e.rollCD = CROC.rollCD`, a stagger's posture empties, and
-    `crocDive` drops its attack and sends it to the shore and under. Once
+    `crocLeap` drops its attack and starts the tunnel phase. Once
     all three are passed a hit can kill it, and `kill` clears D.
-  - **Part two** puts the tunnel phase where the dive at a mark is now:
-    leaps into `world.wallTunnels`, plates flung from the mouths with a
-    warning first, a cap on what shots take off in one tunnel phase, and a
-    parried plate that knocks it out onto the ring staggered. None of it is
-    built.
+  - **The tunnel phase** (`crocLeap`, `crocTunnelStep`, numbers in `CROC`).
+    `crocMouthPlan(e, w)` gives `{ list, n }`: 1 to 4 distinct mouths of
+    `world.wallTunnels` (at most all of them) in a random order, and the
+    plates at each, `n[k]` 1 or 2 when `e.marks` is 1, else 1 to 4. It is
+    aloft (`e.aloft`, see Enemies) in all three modes. `leap`: `safe`, it
+    flies from where it stood to the first mouth over `CROC.leapT` (0.8 s),
+    arcing `CROC_LEAP_ARC` above the line. At a mouth (`crocMouth`) it stands
+    at the mouth pulled `CROC.mouthIn` (1 m) toward the centre, so a shot
+    meets its body before the wall, `e.y` the mouth's `y`, facing the
+    player. `tunnel` runs `e.tun = { list, k, n, sub, t, plates, hp0,
+    knocked, ... }`: in sub `show` the first plate comes `CROC.throwWind`
+    (0.5 s) after it shows, the rest `CROC.throwGap` (1.2 s) apart, and it
+    stays `CROC.linger` (1 s) after its last; then the next mouth is sub
+    `warn` for `CROC.mouthWarn` (1 s), hidden there, while `drawMouths`
+    pours foam over that mouth's lip and lights two eyes in it. After the
+    last mouth, `drop`: `safe`, it falls over `CROC.dropT` (0.6 s) to the
+    `crocSwimNet` point nearest the mouth, then goes `under`, not aloft, `y`
+    0, `e.tun` null. A plate (`crocPlate`) is a real enemy shot in
+    `G.projs` (`own "e"`, `src` it, `kind "plate"`, `plate: true`,
+    `CROC.plateDmg` 14 at `CROC.plateSpeed` 15), aimed at the player,
+    parried and blocked like any shot, falling from the mouth's height to
+    `CROC_PLATE_Y` over its flight (`vy`, `yTo`). `hp0` and `knocked` are
+    for part two's next task (the shot cap `CROC.tunCap` and the parry
+    knock-down); neither is read yet. `poseCrocUp` (`05b_dbodies.js`) draws
+    it lying in the outlet, `CROC_PERCH` out from the wall on the outlet's
+    floor with its head over the lip, crouching with the head drawn aside
+    before each plate and flinging it up and out as the plate flies; the
+    tail lashes inside the outlet, out of sight.
   - `drawWakes` (`07b_dfx.js`): under, a V of foam back from its heading
     and bubbles over it; rising, bubbles boiling up and rings widening on
     the water. Everything is drawn only where `waterAt` reads 0.5 or more.
@@ -1299,13 +1343,21 @@ The class picker and HUD read `CLASSES` and need no changes.
   mashing free and the cooldown, climbing back out in the same land phase,
   a drag target past rubble, and a death in the roll. Then the marks: no
   melee hit, cloud tick, blast, shot or berserk hit passes one, reaching one
-  breaks off a bite and dives with nothing landing after, ends a death
-  roll with the player freed, hits in a mark's dive stop at that mark,
-  the three fall at 600, 400 and 200 and then
+  breaks off a bite and leaps with nothing landing after, ends a death
+  roll with the player freed, hits all through a tunnel phase stop at that
+  mark, the three fall at 600, 400 and 200 and then
   it dies and D is cleared, and an execution at a mark stops there and
-  plays out before it dives. Shots go to
+  plays out before it leaps. Then the tunnel phase: the leap to a mouth,
+  the plan's counts, real plates hitting a pinned player for
+  `CROC.plateDmg` (and the chip when guarding), the warning before each
+  later mouth, the drop back into the water unhurt, nothing but shots
+  reaching it at a mouth (melee, a blast, the grapple, lock, `aimYaw`,
+  execution, Drop, a mine, a cave-in, `separate`; a bolt and `aimRanged`
+  still do), and the reset on leaving mid phase with a plate in flight.
+  Shots go to
   `shots/t25-croc-*` (idle, rear, bite, tail, roll), `t25-wake`,
-  `t25-rise` and `t25-roll` (mid-roll): look at them.
+  `t25-rise`, `t25-roll` (mid-roll), `t25-mouth-warn` and
+  `t25-mouth-throw`: look at them.
 - Run `tests/t22.mjs` after any change to the sewer, water, `fieldFns`,
   `meshSink`, the world shader, `visiblePieces`, cleared grades or portal
   opening: `SCRIPT=$PWD/tests/t22.mjs node test.mjs smoke`. It makes D live
@@ -1388,8 +1440,8 @@ The class picker and HUD read `CLASSES` and need no changes.
   crocodile lands. A D made live by hand fights the D enemies everywhere (rat,
   drowned and brood mother in brood rooms and tunnels, siren or eels with
   rats and bloaters in pool rooms, bloaters in gutters, grabbers at grates)
-  and Old Sluicejaw in the cavern, which dives at each mark where part
-  two's tunnel phase will go.
+  and Old Sluicejaw in the cavern, which leaps into its wall tunnels and
+  throws plates at each mark; nothing yet knocks it out of them.
 - The rat, the drowned and the brood mother are untested by hand. Their
   numbers (speed, health, the cover's angle, the brood timer, cap and
   distances, placement odds) and how they look were set by tests and
@@ -1411,7 +1463,11 @@ The class picker and HUD read `CLASSES` and need no changes.
   it leaves land for a player in the water out of its reach, and coming up
   under a player in the water at any spot but the last) and how the wake,
   warning and roll look, and the marks at a quarter of its health each.
-  Whether a player in the water is punished too hard is a question.
+  Whether a player in the water is punished too hard is a question. The
+  tunnel phase's numbers (`leapT`, `mouthWarn`, `throwWind`, `throwGap`,
+  `linger`, `dropT`, a plate's 14 damage at 15 m/s) and its look were set
+  without a playtest. At a mouth its tail is inside the outlet, so the throw
+  reads as a toss of the head more than a tail whip.
 - A hidden grabber is invisible until it strikes, and its grate is the only
   sign. The grates are drawn for every tunnel, so a grate with no grabber
   looks the same as one with one.
@@ -1435,8 +1491,8 @@ The class picker and HUD read `CLASSES` and need no changes.
 2. Give the portal grades meaning: enemy difficulty and kill rewards per
    grade, then open D to S. D's place and water are built (`feat/sewer`) and
    so are its enemies (`feat/d-enemies`, `feat/d-enemies-water`) and part
-   one of the crocodile boss (`feat/crocodile`); next are its part two, the
-   tunnel phase, then adding D to `LIVE_GRADES`. Revisit whether dying should send the player back
+   one of the crocodile boss (`feat/crocodile`); its part two
+   (`feat/crocodile-2`) is under way, then D joins `LIVE_GRADES`. Revisit whether dying should send the player back
    to the base once there are rewards to lose.
 3. Loot, inventory and an extraction loop. The owner asked for these early on
    and they were set aside to get combat playable first.

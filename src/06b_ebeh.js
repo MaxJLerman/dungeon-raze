@@ -276,6 +276,7 @@ function eelShock(e, w, p) {
       !o.dead &&
       o.state !== "fall" &&
       !o.hidden &&
+      !o.aloft &&
       w.waterAt(o.x, o.z) > 0.5 &&
       w.bodyAt(o.x, o.z) === id
     )
@@ -521,14 +522,21 @@ EBEH.grabber = {
 //          the clock stops in a stagger, and each stagger adds stagBonus;
 //          a player in the water out of its reach for CROC.reachT ends it
 //   dive   up, walking to the nearest shore, then under again
-// Leaving the cavern or the player dying, in any mode, puts it back to wait
-// at full health with no marks passed (crocReset).
+//   leap   at a mark: flying from where it stood to the first mouth of its
+//          tunnel phase, over CROC.leapT (safe)
+//   tunnel at the cavern's wall tunnels (e.tun): it shows at a mouth and
+//          throws plates at the player, then goes on unseen through the wall
+//          to the next mouth, which warns first
+//   drop   from the last mouth down into the water under it, then under
+// In leap, tunnel and drop it is aloft (e.aloft): up in the wall, where only
+// shots reach it. Leaving the cavern or the player dying, in any mode, puts
+// it back to wait at full health with no marks passed (crocReset).
 // The marks: e.marks of the three, at 75%, 50% and 25% of its health, are
 // passed. No hit takes it past the next (crocNextMark): its hit hook caps the
 // damage and hpFloor holds it past any multiplier (crocFloor). Reaching one,
 // once the player is not executing it, breaks off whatever it is doing, a
-// hold included, and it dives at once; until it is under, no hit takes it
-// below that mark. Part two puts the tunnel phase there.
+// hold included, and it leaps into the wall tunnels at once; until it is in
+// the water again, no hit takes it below that mark.
 // Every number is a starting value for the playtest:
 //   under     how long a spell under lasts, from and to, in s
 //   swim      its least speed under the water, m/s: it swims faster when
@@ -547,6 +555,17 @@ EBEH.grabber = {
 //             reach before it dives to come up at them
 //   wetDry    for a player in the water, how far from dry footing a spot it
 //             comes up at may be (the climb-out's furthest reach)
+// and for the tunnel phase:
+//   leapT     how long the leap from the ring to the first mouth lasts
+//   mouthIn   how far toward the cavern's centre from a mouth it stands
+//   mouthWarn how long the next mouth warns before it shows there
+//   throwWind the whip before each plate
+//   throwGap  the time between one plate and the next at a mouth
+//   linger    how long it stays at a mouth after its last plate there
+//   plateSpeed, plateDmg  a plate's speed (m/s) and damage
+//   tunCap    the most that shots may take off it in one tunnel phase (the
+//             cap itself is part two's next task)
+//   dropT     how long the drop from the last mouth into the water lasts
 const CROC = {
   under: [3, 5],
   swim: 7,
@@ -562,6 +581,16 @@ const CROC = {
   rollCD: 8,
   reachT: 3,
   wetDry: 6,
+  leapT: 0.8,
+  mouthIn: 1,
+  mouthWarn: 1,
+  throwWind: 0.5,
+  throwGap: 1.2,
+  linger: 1,
+  plateSpeed: 15,
+  plateDmg: 14,
+  tunCap: 100,
+  dropT: 0.6,
 };
 // the rearing slam's hit is centred this far in front of it
 const CROC_SLAM_AHEAD = 1;
@@ -674,8 +703,10 @@ function crocReset(e) {
     stagd: false,
     rolling: false,
     rollCD: 0,
-    markDive: false,
     outT: 0,
+    aloft: false,
+    safe: false,
+    tun: null,
   });
   G.bossSeen = false;
 }
@@ -755,15 +786,16 @@ function crocPlan(e, w) {
 function crocNextMark(e) {
   return e.marks < 3 ? e.def.hp * (1 - 0.25 * (e.marks + 1)) : 0;
 }
+// the modes of the tunnel phase, in which it is aloft
+const CROC_ALOFT = { leap: 1, tunnel: 1, drop: 1 };
 // The least health a hit may leave (its hit hook and hpFloor): the next mark,
-// but while the dive a mark started is under way, the mark just passed, so
-// no second mark passes before it has been under.
+// but in the tunnel phase a mark started, the mark just passed, so no second
+// mark passes before it is back in the water.
 function crocFloor(e) {
-  return e.mode === "dive" && e.markDive ? e.def.hp * (1 - 0.25 * e.marks) : crocNextMark(e);
+  return CROC_ALOFT[e.mode] ? e.def.hp * (1 - 0.25 * e.marks) : crocNextMark(e);
 }
-// Off to the nearest shore clear of rubble (dive), then under. mark: the
-// dive a mark started.
-function crocDive(e, w, mark = false) {
+// Off to the nearest shore clear of rubble (dive), then under.
+function crocDive(e, w) {
   let best = null,
     bd = 1e9;
   for (const s of crocShores(e, w)) {
@@ -771,7 +803,6 @@ function crocDive(e, w, mark = false) {
     if (d < bd && w.fieldAt(s.x, s.z) >= e.r) (bd = d), (best = s);
   }
   e.mode = "dive";
-  e.markDive = mark;
   e.modeT = 4;
   e.spot = best || { x: e.x, z: e.z };
   e.state = "chase";
@@ -838,6 +869,188 @@ function crocSurface(e, c) {
   e.plan = null;
   SFX.tele(true);
 }
+// ---- the tunnel phase ----
+// how high over the straight line from the ring to the mouth the leap arcs
+const CROC_LEAP_ARC = 2;
+// a plate is drawn falling to this height over its flight to the player
+const CROC_PLATE_Y = 1.25;
+// Where it stands at wall tunnel i: the mouth pulled CROC.mouthIn toward the
+// cavern's centre, so its body is in front of the wall, at the mouth's height.
+function crocMouth(w, i) {
+  const m = w.wallTunnels[i];
+  return {
+    x: m.x + Math.sin(m.yaw) * CROC.mouthIn,
+    z: m.z + Math.cos(m.yaw) * CROC.mouthIn,
+    y: m.y,
+    yaw: m.yaw,
+  };
+}
+// The plan of a tunnel phase: the mouths it visits in order (distinct, 1 to
+// 4 of them and at most every mouth) and the plates it throws at each (n[k]:
+// 1 or 2 in the phase from the 75% mark, else 1 to 4), each count random.
+function crocMouthPlan(e, w) {
+  const idx = w.wallTunnels.map((_, i) => i);
+  for (let i = idx.length - 1; i > 0; i--) {
+    const j = (Math.random() * (i + 1)) | 0;
+    [idx[i], idx[j]] = [idx[j], idx[i]];
+  }
+  const list = idx.slice(0, 1 + ((Math.random() * Math.min(4, idx.length)) | 0)),
+    top = e.marks === 1 ? 2 : 4;
+  return { list, n: list.map(() => 1 + ((Math.random() * top) | 0)) };
+}
+// At a mark: it drops what it was doing and leaps for the first mouth of a
+// new plan. e.tun is the phase: the plan (list, n), the mouth it is at (k),
+// sub "show" or "warn", t the time left in the sub (at a mouth, to the next
+// plate, or after the last one to leaving), plates thrown at this mouth,
+// hp0 its health as the phase began, knocked (a parried plate's, part two's
+// next task), and where the leap or the drop starts (x0, z0, y0) and the
+// drop ends (px, pz).
+function crocLeap(e, w) {
+  const { list, n } = crocMouthPlan(e, w),
+    q = crocMouth(w, list[0]);
+  e.tun = {
+    list,
+    k: 0,
+    n,
+    sub: "show",
+    t: CROC.throwWind,
+    plates: 0,
+    hp0: e.hp,
+    knocked: false,
+    x0: e.x,
+    z0: e.z,
+  };
+  Object.assign(e, {
+    mode: "leap",
+    modeT: CROC.leapT,
+    aloft: true,
+    safe: true,
+    hidden: false,
+    wet: false,
+    state: "chase",
+    atk: null,
+    plan: null,
+    token: false,
+    route: null,
+    yaw: Math.atan2(q.x - e.x, q.z - e.z),
+  });
+  sparks(e.x, 0.3, e.z, 18, [0.55, 0.5, 0.45], 6, 0.5);
+  G.shake = Math.max(G.shake, 0.4);
+  SFX.whoosh(true);
+}
+// A spiked plate flung at the player from where it stands: a real enemy shot,
+// parried and blocked like any other, drawn falling from the mouth's height
+// to chest height over its flight to them.
+function crocPlate(e, p) {
+  const a = Math.atan2(p.x - e.x, p.z - e.z),
+    x = e.x + Math.sin(a) * (e.r + 0.3),
+    z = e.z + Math.cos(a) * (e.r + 0.3),
+    d = Math.max(2, Math.hypot(p.x - x, p.z - z)),
+    s = CROC.plateSpeed;
+  G.projs.push({
+    x,
+    y: e.y,
+    z,
+    vx: Math.sin(a) * s,
+    vz: Math.cos(a) * s,
+    vy: ((CROC_PLATE_Y - e.y) * s) / d,
+    yTo: CROC_PLATE_Y,
+    life: d / s + 1.5,
+    own: "e",
+    dmg: CROC.plateDmg,
+    src: e,
+    kind: "plate",
+    plate: true,
+    c: [0.78, 0.84, 0.66],
+  });
+  SFX.whoosh(false);
+}
+// The tunnel phase, one step: the leap, each mouth in turn, the drop. It
+// stands where the phase puts it, so no knock moves it up there.
+function crocTunnelStep(e, dt, c) {
+  const w = c.w,
+    p = c.p,
+    T = e.tun;
+  e.kx = e.kz = 0;
+  e.speed = 0;
+  if (e.mode === "leap") {
+    e.modeT -= dt;
+    const q = crocMouth(w, T.list[0]),
+      k = sat(1 - e.modeT / CROC.leapT);
+    e.x = lerp(T.x0, q.x, k);
+    e.z = lerp(T.z0, q.z, k);
+    e.y = q.y * k + CROC_LEAP_ARC * 4 * k * (1 - k);
+    if (e.modeT > 1e-9) return true;
+    e.mode = "tunnel";
+    e.safe = false;
+    e.x = q.x;
+    e.z = q.z;
+    e.y = q.y;
+    sparks(e.x, e.y, e.z, 14, [0.55, 0.5, 0.45], 4, 0.4);
+    SFX.thud(true);
+    return true;
+  }
+  if (e.mode === "tunnel") {
+    const q = crocMouth(w, T.list[T.k]);
+    e.x = q.x;
+    e.z = q.z;
+    e.y = q.y;
+    T.t -= dt;
+    if (T.sub === "warn") {
+      e.hidden = true;
+      if (T.t > 1e-9) return true;
+      T.sub = "show";
+      T.t = CROC.throwWind;
+      T.plates = 0;
+      e.hidden = false;
+      SFX.slam();
+    }
+    e.yaw = Math.atan2(p.x - e.x, p.z - e.z);
+    if (T.t > 1e-9) return true;
+    if (T.plates < T.n[T.k]) {
+      crocPlate(e, p);
+      T.plates++;
+      T.t = T.plates < T.n[T.k] ? CROC.throwGap : CROC.linger;
+      return true;
+    }
+    // done at this mouth: on through the wall to the next, which warns first
+    if (++T.k < T.list.length) {
+      const n = crocMouth(w, T.list[T.k]);
+      T.sub = "warn";
+      T.t = CROC.mouthWarn;
+      e.hidden = true;
+      e.x = n.x;
+      e.z = n.z;
+      SFX.tele(false);
+      return true;
+    }
+    // or down into the water under the last one
+    const net = crocSwimNet(e, w),
+      i = crocNode(net, q.x, q.z),
+      to = i >= 0 ? net.pts[i] : q;
+    Object.assign(T, { x0: e.x, z0: e.z, y0: e.y, px: to.x, pz: to.z });
+    e.mode = "drop";
+    e.modeT = CROC.dropT;
+    e.safe = true;
+    return true;
+  }
+  // drop: falling ever faster from the mouth into the water
+  e.modeT -= dt;
+  const k = sat(1 - e.modeT / CROC.dropT);
+  e.x = lerp(T.x0, T.px, k);
+  e.z = lerp(T.z0, T.pz, k);
+  e.y = T.y0 * (1 - k * k);
+  if (e.modeT > 1e-9) return true;
+  e.y = 0;
+  e.aloft = false;
+  e.safe = false;
+  e.tun = null;
+  splash(e.x, e.z, 34);
+  G.shake = Math.max(G.shake, 0.5);
+  SFX.slam();
+  crocUnder(e);
+  return true;
+}
 EBEH.croc = {
   foot: crocFoot,
   // no hit takes it past the next mark; posture lands as it would
@@ -874,7 +1087,7 @@ EBEH.croc = {
     // leaving the cavern or dying ends the fight, in every mode
     if (e.mode !== "wait" && (e.state === "return" || !G.inBoss || !c.alive)) crocReset(e);
     // a mark reached, once an execution of it has played out: it lets go of
-    // a held player, drops its attack (a stagger too) and dives at once
+    // a held player, drops its attack (a stagger too) and leaps at once
     if (
       (e.mode === "land" || e.mode === "dive") &&
       e.hp <= crocNextMark(e) &&
@@ -887,9 +1100,10 @@ EBEH.croc = {
         e.rollCD = CROC.rollCD;
       }
       if (e.state === "stagger") e.posture = 0;
-      crocDive(e, w, true);
+      crocLeap(e, w);
       return true;
     }
+    if (CROC_ALOFT[e.mode]) return crocTunnelStep(e, dt, c);
     if (e.mode === "wait") {
       e.hidden = true;
       if (G.inBoss && c.alive) {

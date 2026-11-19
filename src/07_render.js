@@ -929,6 +929,7 @@ function render() {
   drawShocks();
   drawSongs();
   drawWakes();
+  drawMouths();
   // ---- fx ----
   if (p.state !== "dead") {
     R.blob(p.x, p.z, 0.8, 0.55);
@@ -1203,6 +1204,10 @@ function render() {
     }
     if (k === "sticky") {
       R.sprite(pr.x, pr.y, pr.z, 0.16, c[0], c[1], c[2], 1.4);
+      continue;
+    }
+    if (k === "plate") {
+      drawPlate(pr);
       continue;
     }
     if (k === "bullet") {

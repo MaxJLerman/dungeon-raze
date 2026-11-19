@@ -224,3 +224,83 @@ function drawWakes() {
     }
   }
 }
+// Old Sluicejaw's tunnel phase. While it goes on through the wall to the next
+// mouth (the warn), that mouth surges: foam boils over its lip and pours down
+// its fall in a thick sheet, splashing out on the water below, and two amber
+// eyes glow in the dark of the outlet, all growing toward the moment it shows.
+function drawMouths() {
+  const w = G.world,
+    wl = -WATER.sink + 0.03,
+    foam = [0.72, 0.9, 0.84];
+  for (const e of G.enemies) {
+    const T = e.tun;
+    if (e.type !== "croc" || e.dead || e.mode !== "tunnel" || !T || T.sub !== "warn") continue;
+    const m = w.wallTunnels[T.list[T.k]];
+    if (!m || Math.hypot(m.x - R.cam.x, m.z - R.cam.z) > 80) continue;
+    const k = sat(1 - T.t / CROC.mouthWarn),
+      t = G.t,
+      fx = Math.sin(m.yaw),
+      fz = Math.cos(m.yaw),
+      // right of the outlet's facing
+      rx = -fz,
+      rz = fx,
+      y0 = m.y - 0.8,
+      E = SEWER.mouthOut,
+      hw = SEWER.mouthHW * 0.85,
+      at = (l, out, y) => [m.x + rx * l + fx * out, y, m.z + rz * l + fz * out],
+      fall = Math.sqrt((2 * (y0 - wl)) / 9.8),
+      g = 0.45 + 0.55 * k;
+    // the sheet: foam leaving the lip and falling faster and faster
+    const N = 14 + Math.round(26 * k);
+    for (let i = 0; i < N; i++) {
+      const h = Math.abs(Math.sin(i * 12.9898 + m.x)),
+        u = (t * (0.9 + 0.5 * h) + i * 0.137) % 1,
+        tau = u * fall,
+        l = (h * 2 - 1) * hw,
+        [x, , z] = at(l, E + (1.2 + 1.4 * k) * tau, 0),
+        y = y0 - 4.9 * tau * tau;
+      R.sprite(x, y, z, 0.16 + 0.28 * u, foam[0], foam[1], foam[2], g * (0.75 - 0.35 * u));
+    }
+    // boiling over the lip
+    for (let i = 0; i < 7; i++) {
+      const l = (i / 6 - 0.5) * 2 * hw,
+        b = 0.5 + 0.5 * Math.sin(t * 9 + i * 2.3),
+        [x, y, z] = at(l, E * (0.4 + 0.6 * b), y0 + 0.08 + 0.12 * b * k);
+      R.sprite(x, y, z, 0.3 + 0.15 * b, foam[0], foam[1], foam[2], g * 0.7);
+    }
+    // where it lands: churned foam and rings on the water
+    const [lx, , lz] = at(0, E + (1.2 + 1.4 * k) * fall * 0.85, 0);
+    if (w.waterAt(lx, lz) >= 0.5) {
+      R.flat(lx, wl, lz, 1.2 + 0.8 * k, foam[0], foam[1], foam[2], 0.35 + 0.5 * k);
+      for (let i = 0; i < 2; i++) {
+        const q = (t * 1.4 + i / 2) % 1,
+          r = 0.5 + 1.8 * q;
+        R.ring(lx, wl, lz, r - 0.1, r, foam[0], foam[1], foam[2], g * 0.6 * (1 - q));
+      }
+    }
+    // the eyes in the dark, a little blink now and then
+    const blink = Math.sin(t * 2.3 + m.x) > 0.96 ? 0.15 : 1,
+      a = (0.35 + 0.9 * k) * blink;
+    for (const s of [-1, 1]) {
+      const [x, y, z] = at(s * 0.24, 0.16, m.y - 0.35);
+      R.sprite(x, y, z, 0.11, 1, 0.78, 0.22, 1.6 * a);
+      R.sprite(x, y, z, 0.32, 1, 0.6, 0.12, 0.45 * a);
+    }
+  }
+}
+// A spiked plate in flight: a pale disc spinning flat, six spikes round its
+// rim and a faint trail behind it.
+function drawPlate(pr) {
+  const c = pr.c,
+    sp = Math.hypot(pr.vx, pr.vz) || 1,
+    bx = pr.vx / sp,
+    bz = pr.vz / sp,
+    spin = G.t * 16 + pr.x * 0.3;
+  R.sprite(pr.x, pr.y, pr.z, 0.24, c[0], c[1], c[2], 1.3);
+  for (let i = 0; i < 6; i++) {
+    const a = spin + (i / 6) * TAU;
+    R.sprite(pr.x + Math.cos(a) * 0.3, pr.y + Math.sin(a * 2) * 0.03, pr.z + Math.sin(a) * 0.3, 0.08, 1, 0.97, 0.85, 1.5);
+  }
+  for (let i = 1; i <= 3; i++)
+    R.sprite(pr.x - bx * 0.3 * i, pr.y - (pr.vy || 0) * 0.02 * i, pr.z - bz * 0.3 * i, 0.18 * (1 - i * 0.22), c[0] * 0.6, c[1] * 0.8, c[2] * 0.6, 0.5 - i * 0.12);
+}
