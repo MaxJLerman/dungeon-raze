@@ -4936,11 +4936,19 @@ function update(dt) {
   for (const g of G.ghosts) g.t += dt;
   G.ghosts = G.ghosts.filter((g) => g.t < 0.35);
   if (G.gate) G.gate.t += dt;
-  // map discovery
+  // map discovery: a room with a half width and depth (the sewer's) is seen
+  // from anywhere in its rectangle and 3 m round it, a cave chamber within
+  // its radius and 3 m
   const p = G.player,
     w = G.world;
   for (const n of w.nodes)
-    if (!n.seen && Math.hypot(n.x - p.x, n.z - p.z) < n.r + 3) n.seen = true;
+    if (
+      !n.seen &&
+      (n.hw > 0
+        ? Math.abs(n.x - p.x) < n.hw + 3 && Math.abs(n.z - p.z) < n.hd + 3
+        : Math.hypot(n.x - p.x, n.z - p.z) < n.r + 3)
+    )
+      n.seen = true;
   for (const e of w.edges)
     if (!e.seen) {
       for (let i = 0; i < e.pts.length; i += 2) {

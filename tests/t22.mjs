@@ -177,7 +177,11 @@ export default [
   { ...sewer("the player wading through a pool, for looking at", `const n = w.nodes.find((n) => n.kind === "pool"); const b = w.bodies.filter((q) => q.room === n.id).sort((a, c) => c.n - a.n)[0];
   p.x = b.x; p.z = b.z; p.yaw = 0; DF.keys[DF.BIND.fwd] = true; DF.sim(0.3); DF.keys[DF.BIND.fwd] = false; for (const e of G.enemies) e.x += 500;
   cam.yaw = p.yaw + 0.5; cam.pitch = 0.25; cam.px = p.x; cam.pz = p.z; cam.cd = 4; return { pass: w.waterAt(p.x, p.z) > 0.9, wet: w.waterAt(p.x, p.z), b, n: n.id };`), wait: 500, shot: "t22-wade" },
-  step("the minimap draws water only in seen rooms and tunnels", `DF.newRun(5, "D"); const w = G.world;
+  sewer("a long room shows on the map as soon as the player is at its far end", `const n = w.nodes.filter((n) => n.kind !== "boss").sort((a, b) => Math.abs(b.hw - b.hd) - Math.abs(a.hw - a.hd))[0];
+  const along = n.hw > n.hd, x = n.x + (along ? n.hw - 1.5 : 0), z = n.z + (along ? 0 : n.hd - 1.5), old = Math.hypot(x - n.x, z - n.z) >= n.r + 3;
+  for (const m of w.nodes) m.seen = false; p.x = x; p.z = z; DF.sim(1 / 60);
+  return { pass: n.seen && old && Math.hypot(p.x - x, p.z - z) < 0.5, seen: n.seen, old, hw: n.hw, hd: n.hd };`),
+  step("the minimap draws water only in seen rooms and tunnels",`DF.newRun(5, "D"); const w = G.world;
   for (const n of w.nodes) n.seen = false; for (const e of w.edges) e.seen = false;
   const none = DF.HUD.mapWater(w).length;
   const pool = w.nodes.find((n) => n.kind === "pool"); pool.seen = true; const room = DF.HUD.mapWater(w);
