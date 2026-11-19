@@ -375,17 +375,19 @@ export default [
     const c = { alive: !e.dead, foot: bad === 0, moved: total >= 2, smooth: jump <= 0.5 };
     return { pass: Object.values(c).every(Boolean), c, bad, jump, total, n: run.path.length, body: run.b.id };`),
   pool("its burst leaves a cloud that hurts everyone in it", `
-    // the player and a rat one metre from the burst, on the other sides of it; the rat is held on its spot (a free
-    // one is knocked out of the cloud and runs for the player), so the test is the cloud's damage
-    const r = DF.makeEnemy({ type: "rat", x: e.x - 1, z: e.z, yaw: 0, node: -1 }); r.hx = r.x; r.hz = r.z; G.enemies.push(r);
+    // the player 1 m from the burst on one side, a rat 1 m off on the other that is stunned (so it stays in the gas) and a
+    // free rat 1 m off to the side, which runs for the player and so out of the cloud after a tick
+    const mkr = (x, z) => { const r = DF.makeEnemy({ type: "rat", x, z, yaw: 0, node: -1 }); r.hx = r.x; r.hz = r.z; G.enemies.push(r); return r; };
+    const r = mkr(e.x - 1, e.z), f = mkr(e.x, e.z + 1);
+    r.state = "stagger"; r.t = 0; r.dur = 4; r.posture = 0;
     p.x = e.x + 1; p.z = e.z; p.state = "free"; cam.px = p.x; cam.pz = p.z; p.iframe = 0;
     keep(); const hp0 = p.hp; let hurt = false; DF.kill(e);
     const made = G.clouds.length === 1 && G.clouds[0].r === DF.CLOUD.r;
-    DF.sim(3, () => { r.cd = 99; r.x = r.hx; r.z = r.hz; if (p.state === "hit") hurt = true; });
+    DF.sim(3, () => { r.cd = f.cd = 99; if (p.state === "hit") hurt = true; });
     const loss = hp0 - p.hp, ideal = DF.CLOUD.dmg * 6;
-    DF.sim(0.2, () => { r.cd = 99; r.x = r.hx; r.z = r.hz; });
-    const c = { made, player: Math.abs(loss - ideal) <= DF.CLOUD.dmg, never: !hurt, rat: r.dead || r.hp <= 0, gone: G.clouds.length === 0 };
-    return { pass: Object.values(c).every(Boolean), c, loss, ideal, rat: r.hp };`, "fighter", "bloater"),
+    DF.sim(0.2, () => { r.cd = f.cd = 99; });
+    const c = { made, player: Math.abs(loss - ideal) <= DF.CLOUD.dmg, never: !hurt, rat: r.dead || r.hp <= 0, free: f.hp < 18, gone: G.clouds.length === 0 };
+    return { pass: Object.values(c).every(Boolean), c, loss, ideal, rat: r.hp, free: f.hp };`, "fighter", "bloater"),
   pool("the cloud ignores guard", `
     const run = (guard) => { G.enemies = []; G.clouds = []; p.x = e.x + 1; p.z = e.z; p.yaw = Math.atan2(e.x - p.x, e.z - p.z); p.state = guard ? "guard" : "free"; p.iframe = 0; p.guardT = 5; keep(); const hp0 = p.hp;
       G.clouds.push({ x: e.x, z: e.z, r: DF.CLOUD.r, t: 0, tick: 0 }); let st = true;
@@ -404,10 +406,19 @@ export default [
     const hp0 = e.hp; DF.hitEnemy(e, 5, 5, { src: "melee" });
     const c = { near: t !== null, hurt: e.hp < hp0, foot: foot() };
     return { pass: Object.values(c).every(Boolean), c, t, range, d: D(e, p) };`, "fighter", "bloater"),
+  pool("a cloud tick is damage only: no knock, flinch, focus or hitstop for what it hurts", `
+    // a husk (42 hp, held on its spot) outlasts the cloud's first ticks, so it shows what a tick does to a living enemy
+    const h = DF.makeEnemy({ type: "husk", x: e.x + 1, z: e.z, yaw: 0, node: -1 }); h.hx = h.x; h.hz = h.z; G.enemies = [h]; DF.alertE(h, true);
+    p.x = e.x - 8; p.z = e.z; cam.px = p.x; cam.pz = p.z; keep(); p.focus = 10; G.hitstop = 0;
+    G.clouds = [{ x: h.x, z: h.z, r: DF.CLOUD.r, t: 0, tick: 0 }]; let hit = false, knock = 0, stop = 0;
+    DF.sim(1.2, () => { h.cd = 99; h.x = h.hx; h.z = h.hz; keep(); if (h.state === "hit") hit = true; knock = Math.max(knock, Math.hypot(h.kx, h.kz)); stop = Math.max(stop, G.hitstop); });
+    const c = { dmg: Math.abs((42 - h.hp) - DF.CLOUD.dmg * 2) <= DF.CLOUD.dmg, noHit: !hit, noKnock: knock === 0, focus: p.focus === 10, stop: stop === 0 };
+    return { pass: Object.values(c).every(Boolean), c, hp: h.hp, posture: h.posture };`, "fighter", "bloater"),
   pool("a cloud can burst another bloater", `
+    // the player stands 1 m the other side of the burst, so the second bloater floats through the gas toward them
     const b2 = DF.makeEnemy({ type: "bloater", x: e.x + 1, z: e.z, yaw: 0, node: -1 }); b2.hx = b2.x; b2.hz = b2.z; G.enemies.push(b2);
-    p.x = e.x - 6; p.z = e.z - 6; keep(); DF.kill(e); let max = G.clouds.length;
-    DF.sim(3, () => { keep(); b2.x = b2.hx; b2.z = b2.hz; max = Math.max(max, G.clouds.length); });
+    p.x = e.x - 1; p.z = e.z; cam.px = p.x; cam.pz = p.z; keep(); DF.kill(e); let max = G.clouds.length;
+    DF.sim(3, () => { keep(); max = Math.max(max, G.clouds.length); });
     return { pass: b2.dead && max === 2, dead: b2.dead, hp: b2.hp, max };`, "fighter", "bloater"),
   { name: "the bloater, one on the water", eval: `(() => { const { G, cam } = DF; G.manual = true; DF.setClass("fighter"); DF.LIVE_GRADES.add("D"); DF.newRun(5, "D"); DF.LIVE_GRADES.delete("D"); DF.show("play"); G.state = "play";
     const p = G.player, w = G.world; G.enemies = []; G.projs = [];

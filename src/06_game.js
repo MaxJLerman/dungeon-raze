@@ -2226,7 +2226,7 @@ function hitEnemy(e, dmg, post, o = {}) {
   const p = G.player,
     c = p.cls;
   // the Riftwalker's trait: the first hit after coming out of a rift
-  if (p.riftBonus > 0) {
+  if (p.riftBonus > 0 && !o.dot) {
     dmg *= 1 + RIFT.bonus;
     p.riftBonus = 0;
   }
@@ -2280,7 +2280,10 @@ function hitEnemy(e, dmg, post, o = {}) {
   const dl = Math.hypot(dx, dz) || 1;
   dx /= dl;
   dz /= dl;
-  if (e.def.poise === 0) {
+  // o.dot: damage over time (a poison cloud's tick). It deals its damage and
+  // posture and can stagger or kill, but gives no knockback, flinch, hitstop,
+  // shake, focus or hit sound, like atk.dot in hurtPlayer.
+  if (e.def.poise === 0 && !o.dot) {
     const k = o.heavy ? 9 : 5;
     e.kx = dx * k;
     e.kz = dz * k;
@@ -2289,11 +2292,13 @@ function hitEnemy(e, dmg, post, o = {}) {
     e.x - dx * e.r * 0.6,
     1.0 * e.fig.o.sc + 0.2,
     e.z - dz * e.r * 0.6,
-    o.heavy ? 16 : 9,
+    o.dot ? 3 : o.heavy ? 16 : 9,
     mult > 1 ? AMBER : close ? WHITE : c.col,
     o.heavy ? 8 : 6,
   );
-  if (close) {
+  if (o.dot) {
+    // nothing for the player
+  } else if (close) {
     G.hitstop = Math.max(G.hitstop, o.heavy ? 0.1 : 0.055);
     G.shake = Math.max(G.shake, o.heavy ? 0.5 : 0.28);
     p.focus = Math.min(100, p.focus + (o.heavy ? 6 : 4));
@@ -2301,7 +2306,7 @@ function hitEnemy(e, dmg, post, o = {}) {
     G.shake = Math.max(G.shake, o.heavy ? 0.3 : 0.12);
     p.focus = Math.min(100, p.focus + (o.src === "aoe" ? 2 : 3));
   }
-  SFX.hit(o.heavy);
+  if (!o.dot) SFX.hit(o.heavy);
   if (o.heavy && o.src === "melee") PAD.rumble("heavy");
   if (e.hp <= 0) {
     kill(e);
@@ -2338,7 +2343,8 @@ function hitEnemy(e, dmg, post, o = {}) {
     return;
   }
   const flinch =
-    e.def.poise === 0 || (e.def.poise === 1 && o.heavy && e.state !== "wind");
+    !o.dot &&
+    (e.def.poise === 0 || (e.def.poise === 1 && o.heavy && e.state !== "wind"));
   if (flinch && e.state !== "act") {
     e.state = "hit";
     e.t = 0;
@@ -5095,7 +5101,7 @@ function cloudsUpdate(dt) {
         hurtPlayer(CLOUD.dmg, null, { dmg: CLOUD.dmg, dot: true, px: c.x, pz: c.z });
       for (const o of G.enemies.slice())
         if (!o.dead && o.state !== "fall" && !o.hidden && Math.hypot(o.x - c.x, o.z - c.z) < c.r)
-          hitEnemy(o, CLOUD.dmg, 0, { src: "aoe", fx: c.x, fz: c.z });
+          hitEnemy(o, CLOUD.dmg, 0, { src: "aoe", dot: true, fx: c.x, fz: c.z });
     }
   }
   G.clouds = G.clouds.filter((c) => c.t < CLOUD.life);
