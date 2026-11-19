@@ -14,9 +14,9 @@ export default [
   return { pass: JSON.stringify(got) === JSON.stringify(GOLD), got };`),
   // the sewer's mesh, materials, water, spawns, pieces and dressing for three
   // seeds: a change that only moves code must leave these as they are (last
-  // set when brood rooms and tunnels got their D enemies; the mesh, materials,
-  // water, pieces and dressing values did not move then)
-  step("genSewer is unchanged by moving code", `const GOLD = {"1":[-1431275824,-1228683800,246235336,607675172,1102444081,-82002622,1529990366],"5":[-958529565,1429795960,-1035043016,-1166667044,-307525205,608908786,-1321668637],"9":[857347738,-962631704,-1260107072,933463255,-1268144331,749723291,-865936057]};
+  // set when pool rooms, gutters and grates got their D enemies: only the
+  // spawns value moved, as it did when brood rooms and tunnels got theirs)
+  step("genSewer is unchanged by moving code", `const GOLD = {"1":[-1431275824,-1228683800,246235336,607675172,406369168,-82002622,1529990366],"5":[-958529565,1429795960,-1035043016,-1166667044,612439474,608908786,-1321668637],"9":[857347738,-962631704,-1260107072,933463255,-79641355,749723291,-865936057]};
   const h = (a) => { let x = 0; for (let i = 0; i < a.length; i++) x = (x * 31 + Math.round(a[i] * 1000)) | 0; return x; };
   const hs = (s) => { let x = 0; for (let i = 0; i < s.length; i++) x = (x * 31 + s.charCodeAt(i)) | 0; return x; };
   const got = {}; for (const s of [1, 5, 9]) { const w = DF.genSewer(s);
@@ -84,8 +84,9 @@ export default [
     const fights = w.nodes.filter((n) => n.kind === "pool" || n.kind === "brood").length, leaves = w.nodes.filter((n) => n.adj.length === 1 && n.kind !== "start" && !w.path.includes(n.id)).length;
     if (fights < 15 || leaves < 2 || w.edges.length - w.nodes.length + 1 < 2) few.push({ s, fights, leaves }); }
   const ratio = d / e; return { pass: ratio > 1.35 && ratio < 1.65 && few.length === 0, ratio, few };`),
-  step("every sewer spawn and respawn spot is dry, walkable and not in a rest room", `const bad = []; for (let s = 1; s <= 6; s++) { const w = DF.genSewer(s), rest = new Set(w.shrines.map((q) => q.node));
-    for (const q of w.spawns) if (w.fieldAt(q.x, q.z) < 0.5 || w.waterAt(q.x, q.z) > 0 || rest.has(q.node) && q.type !== "warden") bad.push([s, q.type]);
+  step("every sewer spawn and respawn spot is dry (but a water type's), walkable and not in a rest room", `const bad = []; const R = { siren: 0.6, eel: 0.45, bloater: 0.4 }, wet = (t) => !!R[t];
+    for (let s = 1; s <= 6; s++) { const w = DF.genSewer(s), rest = new Set(w.shrines.map((q) => q.node));
+    for (const q of w.spawns) if (w.fieldAt(q.x, q.z) < (R[q.type] || (q.type === "grabber" ? 0.35 : 0.5)) || (wet(q.type) ? w.waterAt(q.x, q.z) < 0.5 : w.waterAt(q.x, q.z) > 0) || rest.has(q.node) && q.type !== "warden") bad.push([s, q.type]);
     for (const c of w.shrines) { const o = { x: c.x, z: c.z - 1.6 }; w.resolve(o, 0.6); if (w.fieldAt(o.x, o.z) < 0.55 || w.waterAt(o.x, o.z) > 0) bad.push([s, "shrine", c.node]); } }
   return { pass: bad.length === 0, bad };`),
   step("the sewer ceiling clears the camera and rises in rooms", `const w = DF.genSewer(3), b = w.boss; let low = 0;

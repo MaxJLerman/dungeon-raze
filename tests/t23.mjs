@@ -270,10 +270,10 @@ export default [
     for (const s of [-1, 1]) { const r = DF.makeEnemy({ type: "rat", x: e.x + (-fz) * s * 2.3 - fx * 0.8, z: e.z + fx * s * 2.3 - fz * 0.8, yaw: e.yaw + s * 0.3, node: -1 }); r.state = "chase"; r.aware = true; r.speed = 0; r.walk = 0.4 + s; G.enemies.push(r); }
     return { pass: true };`, "t23-brood"),
   // ---- placement in the sewer ----
-  step("brood rooms hold one brood mother and only D types", `const bad = [], D = ["rat", "drowned", "brood"];
+  step("brood rooms hold one brood mother and only D types (tunnels add the gutter bloater and the grate grabber)", `const bad = [], D = ["rat", "drowned", "brood"], T = [...D, "bloater", "grabber"];
     for (let s = 1; s <= 12; s++) { const w = DF.genSewer(s);
       for (const n of w.nodes) if (n.kind === "brood") { const k = w.spawns.filter((q) => q.node === n.id && q.type === "brood").length; if (k !== 1) bad.push({ s, room: n.id, k }); }
-      for (const q of w.spawns) if ((q.kind === "brood" || q.kind === "tunnel") && !D.includes(q.type)) bad.push({ s, type: q.type, kind: q.kind }); }
+      for (const q of w.spawns) if ((q.kind === "brood" && !D.includes(q.type)) || (q.kind === "tunnel" && !T.includes(q.type))) bad.push({ s, type: q.type, kind: q.kind }); }
     return { pass: bad.length === 0, bad: bad.slice(0, 6) };`),
   step("brood rooms hold 2 to 4 rats and at most one drowned", `const bad = []; let rooms = 0, drowned = 0;
     for (let s = 1; s <= 12; s++) { const w = DF.genSewer(s);
@@ -292,11 +292,7 @@ export default [
         packs++; if (pack.length === 3) three++;
         if (pack.length > 3 || pack.some((q) => pack.some((r) => Math.hypot(q.x - r.x, q.z - r.z) > 3))) bad.push({ s, n: pack.length }); } }
     return { pass: bad.length === 0 && three > 3 && drowned > 0, bad: bad.slice(0, 6), packs, three, drowned };`),
-  step("pool rooms still hold the E stand-ins, two or three on dry open floor", `const bad = []; let rooms = 0;
-    for (let s = 1; s <= 12; s++) { const w = DF.genSewer(s);
-      for (const n of w.nodes) if (n.kind === "pool") { rooms++; const sp = w.spawns.filter((q) => q.node === n.id);
-        if (sp.length < 2 || sp.length > 3 || sp.some((q) => q.kind !== "pool" || !["husk", "spit"].includes(q.type) || w.fieldAt(q.x, q.z) < 1 || w.waterAt(q.x, q.z) !== 0)) bad.push({ s, room: n.id, types: sp.map((q) => q.type) }); } }
-    return { pass: bad.length === 0 && rooms > 8, bad: bad.slice(0, 6), rooms };`),
+  // pool rooms hold the siren, eel and bloater now: t24 checks them
   // a brood room from its tunnel mouth, with everything awake and the player 8 m in
   { ...step("a brood room with its enemies awake, for looking at", `window.__cd0 = window.__cd0 || cam.dist; DF.LIVE_GRADES.add("D"); DF.newRun(5, "D"); DF.show("play"); G.state = "play"; DF.LIVE_GRADES.delete("D");
   const w = G.world, p = G.player;

@@ -774,5 +774,65 @@ export default [
     put(1.8, 0); e.rearmT = 0; let n = 0; DF.sim(3, () => { p.hp = p.maxHp; if (p.state === "held" && ++n > 20) return false; });
     SHOT();
     return { pass: p.state === "held", st: p.state };`), wait: 400, shot: "t24-grabber-hold" },
+  // ---- placement ----
+  step("no E types in D but the Warden", `const bad = [];
+    for (let s = 1; s <= 12; s++) for (const q of DF.genSewer(s).spawns) if (["husk", "brute", "spit"].includes(q.type)) bad.push({ s, type: q.type });
+    return { pass: bad.length === 0, bad: bad.slice(0, 6) };`),
+  step("pool rooms hold sirens or eels, never both, and never a brood mother", `const bad = []; let rooms = 0, sirens = 0, eels = 0, two = 0;
+    for (let s = 1; s <= 12; s++) { const w = DF.genSewer(s);
+      for (const n of w.nodes) { const sp = w.spawns.filter((q) => q.node === n.id), c = (t) => sp.filter((q) => q.type === t).length;
+        if (n.kind === "pool") { rooms++; const si = c("siren"), ee = c("eel"), ra = c("rat"), bl = c("bloater");
+          sirens += si; eels += ee; if (ee === 2) two++;
+          if (!((si === 1 && ee === 0) || (si === 0 && ee >= 1 && ee <= 2)) || ra < 2 || ra > 3 || bl < 1 || bl > 2 || c("brood") || sp.length !== si + ee + ra + bl || sp.some((q) => q.kind !== "pool")) bad.push({ s, room: n.id, si, ee, ra, bl });
+        } else if (n.kind === "brood" && (c("siren") || c("eel"))) bad.push({ s, room: n.id, brood: true }); } }
+    return { pass: bad.length === 0 && rooms > 8 && sirens > 0 && eels > 0 && two > 0, bad: bad.slice(0, 6), rooms, sirens, eels, two };`),
+  step("the siren guards the crossing", `const bad = []; let n0 = 0;
+    for (let s = 1; s <= 12; s++) { const w = DF.genSewer(s);
+      for (const q of w.spawns) if (q.type === "siren") { n0++; const n = w.nodes[q.node], x = n.cross;
+        if (!x || Math.hypot(q.x - x.x, q.z - x.z) > 4) bad.push({ s, room: n.id, cross: x }); } }
+    return { pass: bad.length === 0 && n0 > 3, bad: bad.slice(0, 6), n0 };`),
+  step("crossingOf has a crossing in every pool room and none elsewhere", `const bad = [];
+    for (let s = 1; s <= 12; s++) { const w = DF.genSewer(s);
+      for (const n of w.nodes) { const x = n.cross;
+        if (n.kind === "pool" ? !x || x.a === x.b || w.bodies[x.a].room !== n.id || w.bodies[x.b].room !== n.id || w.waterAt(x.x, x.z) > 0.5 : x) bad.push({ s, room: n.id, kind: n.kind }); } }
+    return { pass: bad.length === 0, bad: bad.slice(0, 6) };`),
+  step("eels are in different bodies", `const bad = []; let two = 0, off = 0;
+    for (let s = 1; s <= 12; s++) { const w = DF.genSewer(s);
+      for (const n of w.nodes) { const es = w.spawns.filter((q) => q.type === "eel" && q.node === n.id), ids = es.map((q) => w.bodyAt(q.x, q.z));
+        if (new Set(ids).size !== ids.length || ids.includes(-1)) bad.push({ s, room: n.id, ids });
+        if (es.length === 2) { two++; if (ids.some((b) => b !== n.cross.a && b !== n.cross.b)) off++; } } }
+    return { pass: bad.length === 0 && two > 0, bad: bad.slice(0, 6), two, off };`),
+  step("water-bound spawns stand on their footing", `const bad = []; let n0 = 0; const R = { siren: 0.6, eel: 0.45, bloater: 0.4 };
+    for (let s = 1; s <= 12; s++) { const w = DF.genSewer(s);
+      for (const q of w.spawns) if (R[q.type]) { n0++; if (w.waterAt(q.x, q.z) < 0.5 || w.fieldAt(q.x, q.z) < R[q.type]) bad.push({ s, type: q.type, why: "grid" }); } }
+    for (let s = 1; s <= 12; s++) { DF.newRun(s, "D");
+      for (const e of G.enemies) if (R[e.type] && !DF.footOk(e, e.x, e.z)) bad.push({ s, type: e.type, why: "footOk" }); }
+    return { pass: bad.length === 0 && n0 > 20, bad: bad.slice(0, 6), n0 };`),
+  step("sirens and eels stand a metre in from the shore", `const bad = [];
+    for (let s = 1; s <= 12; s++) { const w = DF.genSewer(s);
+      for (const q of w.spawns) if (q.type === "siren" || q.type === "eel") for (let k = 0; k < 16; k++) for (const r of [0.5, 1]) if (w.waterAt(q.x + Math.sin(k * 0.3927) * r, q.z + Math.cos(k * 0.3927) * r) !== 1) bad.push({ s, type: q.type });
+    }
+    return { pass: bad.length === 0, bad: bad.slice(0, 6) };`),
+  step("grabbers sit at grates", `const bad = []; let n0 = 0, grates = 0;
+    for (let s = 1; s <= 12; s++) { const w = DF.genSewer(s); grates += w.grates.length;
+      for (const q of w.spawns) if (q.type === "grabber") { n0++; const g = w.grates.find((g) => Math.hypot(g.x - q.x, g.z - q.z) <= 0.5);
+        if (!g || Math.abs(Math.atan2(Math.sin(g.yaw - q.yaw), Math.cos(g.yaw - q.yaw))) > 1e-9 || q.kind !== "tunnel" || q.node !== -1 || w.fieldAt(q.x, q.z) < 0.35) bad.push({ s, q, g }); } }
+    return { pass: bad.length === 0 && n0 > 0 && n0 < grates, bad: bad.slice(0, 4), n0, grates };`),
+  step("some gutters hold a bloater, none on dry floor", `const bad = []; let gut = 0, held = 0;
+    for (let s = 1; s <= 12; s++) { const w = DF.genSewer(s); gut += w.bodies.filter((b) => b.room === -1).length;
+      for (const q of w.spawns) if (q.type === "bloater" && q.node === -1) { held++; if (q.kind !== "tunnel" || w.waterAt(q.x, q.z) !== 1 || w.bodies[w.bodyAt(q.x, q.z)].room !== -1) bad.push({ s, q }); } }
+    return { pass: bad.length === 0 && held > 0 && held < gut, bad: bad.slice(0, 4), gut, held };`),
+  // a pool room from its tunnel mouth, with everything awake, the player a few metres in
+  ...["siren", "eel"].map((kind) => ({ ...step("a " + kind + " room with its enemies awake, for looking at", `window.__cd0 = window.__cd0 || cam.dist;
+  let seed = 0; for (let s = 1; s <= 12 && !seed; s++) { const w = DF.genSewer(s); if (w.spawns.some((q) => q.type === "${kind}" && w.nodes[q.node].kind === "pool" && w.waterAt(q.x, q.z) === 1)) seed = s; }
+  if (!seed) return { pass: false, why: "no ${kind} room" };
+  DF.LIVE_GRADES.add("D"); DF.newRun(seed, "D"); DF.show("play"); G.state = "play"; DF.LIVE_GRADES.delete("D");
+  const w = G.world, p = G.player, T = G.enemies.find((e) => e.type === "${kind}"), n = w.nodes[T.node];
+  const nb = n.adj.map((j) => w.nodes[j]).sort((a, b) => a.depth - b.depth)[0], ed = w.edges.find((e) => (e.a === n.id && e.b === nb.id) || (e.b === n.id && e.a === nb.id));
+  const pts = ed.a === n.id ? ed.pts : ed.pts.slice().reverse(); let mouth = pts[0]; for (const q of pts) { mouth = q; if (Math.abs(q.x - n.x) >= n.hw || Math.abs(q.z - n.z) >= n.hd) break; }
+  const a = Math.atan2(T.x - mouth.x, T.z - mouth.z); p.x = mouth.x + Math.sin(a) * 2.5; p.z = mouth.z + Math.cos(a) * 2.5; w.resolve(p, 0.6);
+  p.yaw = cam.yaw = Math.atan2(T.x - p.x, T.z - p.z); cam.pitch = 0.35; cam.px = p.x; cam.pz = p.z; cam.cd = 5.6;
+  let awake = 0; for (const e of G.enemies) if (e.node === n.id) { DF.alertE(e, true); awake++; }
+  return { pass: awake >= 4 && G.enemies.some((e) => e.node === n.id && e.type === "rat") && G.enemies.some((e) => e.node === n.id && e.type === "bloater"), awake, seed, d: Math.hypot(T.x - p.x, T.z - p.z) }; `), wait: 500, shot: "t24-fight-pool-" + kind })),
   step("the class and the camera's boom are put back", `DF.setClass("fighter"); cam.dist = 5.6; return { pass: true };`),
 ];
