@@ -22,8 +22,16 @@ const SEWER = {
   roomHW: [10, 15],
   roomHD: [8, 12],
   corner: 3,
-  pillarAt: 12, // both half-sizes at least this get one or two pillars
-  pillarR: 0.8,
+  // pillars: square brick piers in pool, brood and rest rooms whose shorter
+  // half-size is at least pillarAt, pillarHS half their side, centred on a
+  // grid point so their faces lie on grid lines. A pier stands at least
+  // pool.walk from walls, other piers and water outside it, or inside a pool
+  // with pillarWet of water all round it, and out of a tunnel's lane into
+  // the room. Its plinth stands base.out proud of it, up to base.top.
+  pillarAt: 9,
+  pillarHS: 1,
+  pillarWet: 2,
+  pillarBase: { out: 0.15, top: 0.4 },
   // the arrival hall, off the grid beside corner (0, 0)
   startD: 44,
   startHW: 9,
@@ -43,8 +51,8 @@ const SEWER = {
   // at least `min` across, and are parted by walkways at least `walk` wide
   // and one crossing `cross` wide. A side facing a wall may draw back by up
   // to `shrink`. The shore is drawn where the grid reads 0.5, which can sit
-  // up to `grid` past a pool's painted box, so walls and pillars stand that
-  // much further off to keep a walkway `walk` wide.
+  // up to `grid` past a pool's painted box, so walls stand that much further
+  // off to keep a walkway `walk` wide.
   pool: { edge: 3, walk: 3, cross: 2.5, min: 4, shrink: 1.5, grid: 0.5 },
   gutterW: 1.45, // from a gutter's wall to its shore
   gutterP: 1 / 3, // the share of tunnels with a gutter
@@ -449,23 +457,6 @@ function genSewer(seed) {
       F[k] += f * ((vnoise(gx * 0.9 + 3.1, gz * 0.9 + 8.7) - 0.5) * 1.4 - 0.5);
     });
   }
-  // pillars in big rooms, off the centre and off the axes the tunnels leave by
-  const pillars = [];
-  for (const n of nodes) {
-    if (n.kind !== "room" || n.hw < S.pillarAt || n.hd < S.pillarAt) continue;
-    const sx = Rn() < 0.5 ? -1 : 1,
-      sz = Rn() < 0.5 ? -1 : 1;
-    pillars.push({ x: n.x + sx * n.hw * 0.5, z: n.z + sz * n.hd * 0.5 });
-    if (Rn() < 0.5)
-      pillars.push({ x: n.x - sx * n.hw * 0.5, z: n.z - sz * n.hd * 0.5 });
-  }
-  // over the whole room (no room is more than 12 m from wall to middle), so
-  // the field and the vault that follows it have no step round a pillar
-  for (const c of pillars)
-    each(c.x - 12, c.z - 12, c.x + 12, c.z + 12, (k, x, z) => {
-      const d = Math.hypot(x - c.x, z - c.z) - S.pillarR;
-      if (d < F[k]) F[k] = d;
-    });
   const fns = fieldFns(F, minX, minZ, W, H, Wt),
     { fieldAt, resolve, waterAt } = fns;
   const vaultAt = (x, z) => {
@@ -541,8 +532,6 @@ function genSewer(seed) {
   // gutter runs down one side of some tunnels and one wall of some brood
   // rooms; the boss cavern has its moat, centre pool and fall pools. fieldFns
   // already holds Wt, so waterAt reads what is written here.
-  const inBox = (n, x, z, pad) =>
-    Math.abs(x - n.x) < n.hw + pad && Math.abs(z - n.z) < n.hd + pad;
   const paint = (r, v) =>
     each(r.x0, r.z0, r.x1, r.z1, (k, x, z) => {
       if (x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1) Wt[k] = v;
@@ -669,28 +658,12 @@ function genSewer(seed) {
     ]);
     return made;
   };
-  // a pillar stands well inside a pool, or clear of every pool by a walkway
-  const pillarFits = (rs, c) =>
-    rs.some(
-      (r) =>
-        c.x - r.x0 >= 1 && r.x1 - c.x >= 1 && c.z - r.z0 >= 1 && r.z1 - c.z >= 1,
-    ) ||
-    rs.every(
-      (r) =>
-        Math.hypot(
-          Math.max(r.x0 - c.x, 0, c.x - r.x1),
-          Math.max(r.z0 - c.z, 0, c.z - r.z1),
-        ) >=
-        S.pool.walk + S.pool.grid + S.pillarR,
-    );
   for (const n of nodes) {
     if (n.kind === "pool") {
-      const mine = pillars.filter((c) => inBox(n, c.x, c.z, 0)),
-        lays = poolLayouts(n);
+      const lays = poolLayouts(n);
       for (let li = 0; li < lays.length; li++) {
         const rs = lays[li],
           last = li === lays.length - 1;
-        if (!last && !mine.every((c) => pillarFits(rs, c))) continue;
         for (const r of rs) paint(r, 1);
         if (last || dryJoined(n)) break;
         for (const r of rs) paint(r, 0);
@@ -813,6 +786,121 @@ function genSewer(seed) {
         Wt[k] = 1;
     });
   }
+  // ---- rest points: the arrival hall's beside where the player lands ----
+  const spawn = { x: start.x + out.x * 4, z: start.z + out.z * 4 };
+  resolve(spawn, 1);
+  const shrines = [];
+  for (const sid of restIds) {
+    const n = nodes[sid],
+      sx = sid === start.id ? spawn.x + out.z * 3.5 : n.x + 2,
+      sz = sid === start.id ? spawn.z - out.x * 3.5 : n.z;
+    shrines.push({ x: sx, z: sz, node: sid, lit: sid === start.id, restT: 0 });
+  }
+  // ---- pillars ----
+  // Square piers written into the field after the water, so each is placed
+  // round the pools and gutters already there (see SEWER.pillarAt). A room
+  // tries a pair through its middle or a single pier, at spots near half
+  // way to its walls; a spot that breaks a rule is passed over, and a room
+  // where none fits has none. The arrival hall and the boss cavern have none.
+  const pillars = [],
+    PH = S.pillarHS,
+    walk = S.pool.walk,
+    // how far (x, z) is from pier c's footprint, 0 inside it
+    pierD = (c, x, z) =>
+      Math.hypot(Math.max(Math.abs(x - c.x) - PH, 0), Math.max(Math.abs(z - c.z) - PH, 0));
+  const pierFits = (n, c, others) => {
+    // roomField is least over the pier at one of its corners
+    for (const sx of [-1, 1])
+      for (const sz of [-1, 1])
+        if (roomField(n, c.x + sx * PH, c.z + sz * PH) < walk) return false;
+    for (const o of others)
+      if (Math.hypot(Math.max(Math.abs(o.x - c.x) - 2 * PH, 0), Math.max(Math.abs(o.z - c.z) - 2 * PH, 0)) < walk)
+        return false;
+    // out of each tunnel's lane, its line from the mouth to the middle
+    for (const m of mouthsOf(n)) {
+      const L = Math.hypot(m.x - n.x, m.z - n.z);
+      for (let t = 0; t <= L; t += 0.25)
+        if (pierD(c, n.x + m.ux * t, n.z + m.uz * t) < S.tunR) return false;
+    }
+    for (const sh of shrines)
+      if (sh.node === n.id && pierD(c, sh.x, sh.z) < walk) return false;
+    // no water within a walkway of it, or water all round it to pillarWet
+    let dry = true,
+      wet = true;
+    for (let x = c.x - PH - walk; x <= c.x + PH + walk + 1e-9; x += 0.25)
+      for (let z = c.z - PH - walk; z <= c.z + PH + walk + 1e-9; z += 0.25) {
+        const d = pierD(c, x, z);
+        if (d > walk) continue;
+        const v = waterAt(x, z) >= 0.5;
+        if (v) dry = false;
+        else if (d <= S.pillarWet) wet = false;
+      }
+    return dry || wet;
+  };
+  // F as the least of what is there and the distance to the pier, over a
+  // box past the middle of the deepest room so the field has no step; the
+  // values it replaces are kept so a pier can be taken out again
+  const R0 = S.roomHD[1] + 4;
+  const writePier = (c) => {
+    const kept = [];
+    each(c.x - R0, c.z - R0, c.x + R0, c.z + R0, (k, x, z) => {
+      const qx = Math.abs(x - c.x) - PH,
+        qz = Math.abs(z - c.z) - PH,
+        d = Math.hypot(Math.max(qx, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qz), 0);
+      if (d < F[k]) {
+        kept.push(k, F[k]);
+        F[k] = d;
+      }
+    });
+    return kept;
+  };
+  const unwrite = (kept) => {
+    for (let i = kept.length - 2; i >= 0; i -= 2) F[kept[i]] = kept[i + 1];
+  };
+  for (const n of nodes) {
+    if (n.kind !== "pool" && n.kind !== "brood" && n.kind !== "shrine") continue;
+    if (Math.min(n.hw, n.hd) < S.pillarAt) continue;
+    const two = Rn() < 0.5,
+      fr = [0.5, 0.4, 0.6, 0.3, 0.7, 0.2],
+      quads = [
+        [1, 1],
+        [1, -1],
+        [-1, 1],
+        [-1, -1],
+      ];
+    for (let i = quads.length - 1; i > 0; i--) {
+      const j = (Rn() * (i + 1)) | 0;
+      [quads[i], quads[j]] = [quads[j], quads[i]];
+    }
+    // spots nearest half way first
+    const spots = [];
+    for (const fu of fr)
+      for (const fv of fr)
+        for (const [sx, sz] of quads)
+          spots.push({
+            x: Math.round(n.x + sx * fu * n.hw),
+            z: Math.round(n.z + sz * fv * n.hd),
+            o: Math.abs(fu - 0.5) + Math.abs(fv - 0.5),
+          });
+    spots.sort((a, b) => a.o - b.o);
+    const sets = [];
+    if (two)
+      for (const c of spots)
+        sets.push([
+          { x: c.x, z: c.z },
+          { x: Math.round(2 * n.x - c.x), z: Math.round(2 * n.z - c.z) },
+        ]);
+    for (const c of spots) sets.push([{ x: c.x, z: c.z }]);
+    for (const set of sets) {
+      if (!set.every((c, i) => pierFits(n, c, set.slice(0, i)))) continue;
+      const kept = set.map(writePier);
+      if (dryJoined(n)) {
+        pillars.push(...set);
+        break;
+      }
+      for (let i = kept.length - 1; i >= 0; i--) unwrite(kept[i]);
+    }
+  }
   // the bodies of water: one id per region of grid points joined side to
   // side, each with its room (-1 in a tunnel) and its most open point
   const bodies = [],
@@ -897,8 +985,6 @@ function genSewer(seed) {
     );
   // the manhole beside where the player lands: a hole in the vault over the
   // one cell it is centred in, between the lowest and highest of its corners
-  const spawn = { x: start.x + out.x * 4, z: start.z + out.z * 4 };
-  resolve(spawn, 1);
   const perp = { x: out.z, z: -out.x },
     hole = {
       x: Math.floor(spawn.x - perp.x * 1.4) + 0.5,
@@ -1153,14 +1239,6 @@ function genSewer(seed) {
     }
   });
 
-  // ---- rest points: the arrival hall's beside where the player lands ----
-  const shrines = [];
-  for (const sid of restIds) {
-    const n = nodes[sid],
-      sx = sid === start.id ? spawn.x + out.z * 3.5 : n.x + 2,
-      sz = sid === start.id ? spawn.z - out.x * 3.5 : n.z;
-    shrines.push({ x: sx, z: sz, node: sid, lit: sid === start.id, restT: 0 });
-  }
   // ---- dressing, lamps and the boss cavern's set ----
   const dress = dressSewer({
     S,

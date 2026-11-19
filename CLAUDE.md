@@ -156,7 +156,8 @@ is what you need to change the code without breaking it.
   and `bodyAt`.** Never test whether the world is the sewer to decide whether
   something is wet; `genWorld`, `genHub` and `genSewer` all return both
   functions, so no reader needs a zone check. `genSewer` also returns `F`,
-  `Wt`, `bodyIds` and `pillars` for tests; game code does not read them.
+  `Wt`, `bodyIds` and `pillars` (`{ x, z }`, each a pier's centre) for
+  tests; game code does not read them.
 - `world.grates` lists the grates and pipe mouths in tunnel walls
   (`{ x, z, yaw, kind }`, `kind` being `"grate"` or `"drain"`, for the drain grabber), `world.wallTunnels` the boss
   cavern's high wall outlets, and `world.shafts` its light shafts. All three
@@ -195,6 +196,21 @@ is what you need to change the code without breaking it.
   cavern. Rooms get a kind: `start`, `pool`, `brood`, `shrine` or `boss`; no
   room is both pool and brood, and every spawn records its room kind. Rest
   rooms hold no enemies. A run is about 1.5 times the walked length of E's.
+- **Pillars** are square brick piers in the field, so they block movement,
+  sight, routes, shots and the camera like any wall. Pool, brood and rest
+  rooms whose shorter half-size is at least `SEWER.pillarAt` (9 m, about
+  three rooms in four) try a pair through the middle or one pier, near half way to the
+  walls; the arrival hall and the boss cavern have none. A pier is
+  `2 * pillarHS` (2 m) wide and centred on a grid point, so its faces lie on
+  grid lines and the wall drawn round it is its footprint. It is placed
+  after the water, round it: 3 m from the room's walls and other piers, out
+  of each tunnel's lane (`tunR` from the line from mouth to middle), clear
+  of the rest plinth, and either with no water within 3 m or inside a pool
+  with `pillarWet` (2 m) of water on every side, so it never leaves a sliver
+  of water or a narrow walkway. A spot that breaks a rule is passed over.
+  Most pool rooms have no pool big enough, so about two fight rooms in five
+  have piers, most of them brood rooms. The field and the vault dip to meet
+  a pier; `dressRooms` draws its plinth and capital and keeps arches clear.
 - Water in the sewer: pools in pool rooms (two to four separate bodies, a
   crossing between two of them, dry walkways joining every entrance), a gutter
   along some tunnels (never joined to a room's pools) and some brood rooms,
@@ -877,7 +893,9 @@ The class picker and HUD read `CLASSES` and need no changes.
   `genSewer` is unchanged (hashes of the mesh, materials, `Wt`, spawns, pieces
   and dressing for seeds 1, 5 and 9; update them only for a change meant to
   alter the sewer, and say so in the commit), that the drawn shore is where
-  `waterAt` reads 0.5, the water rules above over twelve seeds, water
+  `waterAt` reads 0.5, the water rules above and the pillar rules (their
+  share of rooms, that each blocks and is drawn on its footprint) over
+  twelve seeds, water
   in the player and enemy moves, D sealed and opened, the save, the layout
   over many seeds, water bodies and dry routes, the boss cavern, the brick
   and water materials, lamps, drips, the minimap, that every walkable point

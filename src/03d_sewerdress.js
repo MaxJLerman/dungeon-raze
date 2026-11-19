@@ -413,7 +413,7 @@ function dressHeaps(o, kit) {
 // bases and capitals.
 function dressRooms(o, kit) {
   const { S, nodes } = o,
-    { sink, mulc, ribCol, arch, wallAt, out, lamp, prism, cone } = kit;
+    { sink, mulc, ribCol, arch, wallAt, out, lamp, box } = kit;
   for (const n of nodes) {
     if (n.kind === "boss") continue;
     const onX = n.hw >= n.hd,
@@ -422,11 +422,15 @@ function dressRooms(o, kit) {
       t = onX ? [1, 0] : [0, 1],
       nv = onX ? [0, 1] : [1, 0],
       m = Math.max(1, Math.round((2 * U - 6) / 5.5) + 1),
-      // what stands in the vault's way: pillars, and the manhole
+      // what stands in the vault's way: pillars (the vault dips to meet
+      // them, so an arch keeps well off), and the manhole
+      // (only those in this room)
+      off = (c, u, d) =>
+        Math.abs(c.x - n.x) > n.hw ||
+        Math.abs(c.z - n.z) > n.hd ||
+        Math.abs((c.x - n.x) * t[0] + (c.z - n.z) * t[1] - u) > d,
       clear = (u) =>
-        [...o.pillars, o.hole].every(
-          (c) => Math.abs((c.x - n.x) * t[0] + (c.z - n.z) * t[1] - u) > 1.8,
-        );
+        o.pillars.every((c) => off(c, u, S.pillarHS + 2)) && off(o.hole, u, 1.8);
     let k = 0;
     for (let i = 0; i < m; i++) {
       const u = m === 1 ? 0 : -(U - 3) + (2 * (U - 3) * i) / (m - 1),
@@ -445,12 +449,17 @@ function dressRooms(o, kit) {
       if (wallAt(n, t, nv, sd * U))
         lamp(n.x + t[0] * sd * U, n.z + t[1] * sd * U, out(t, sd), 3);
   }
-  // pillars get a stone base and a capital under the vault
+  // each pier gets a stone plinth, from under the water up to base.top, and
+  // a stone capital where the vault springs from it
+  const PH = S.pillarHS,
+    B = S.pillarBase;
   for (const c of o.pillars) {
-    prism(c.x, c.z, 1, -sink - 0.05, 0.35, 8, SEWER_STONE);
-    const top = o.wallTop(c.x + S.pillarR, c.z);
-    prism(c.x, c.z, 1, top - 0.75, top - 0.45, 8, SEWER_STONE);
-    cone(c.x, top - 0.75, c.z, 1, -0.25, 8, mulc(SEWER_STONE, 0.85));
+    const y0 = -sink - 0.05;
+    box(c.x, (y0 + B.top) / 2, c.z, 0, PH + B.out, PH + B.out, (B.top - y0) / 2, SEWER_STONE);
+    let top = 1e9;
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) top = Math.min(top, o.wallTop(c.x + sx * PH, c.z + sz * PH));
+    box(c.x, top - 0.35, c.z, 0, PH + 0.18, PH + 0.18, 0.12, SEWER_STONE);
+    box(c.x, top - 0.55, c.z, 0, PH + 0.08, PH + 0.08, 0.08, mulc(SEWER_STONE, 0.85));
   }
 }
 
