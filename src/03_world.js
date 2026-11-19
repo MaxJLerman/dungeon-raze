@@ -317,7 +317,7 @@ const ROCK_PAD = 3;
 const MAT = { BRICK: 1, WATER: 2 };
 // Collects world triangles: positions as floats, colours square-root encoded
 // in bytes with the glow amount in the alpha byte, and one material byte per
-// vertex.
+// vertex. tri takes one colour for the face, triC one per corner.
 function meshSink() {
   const P = [],
     C = [],
@@ -332,7 +332,14 @@ function meshSink() {
     C.push(r, g, bl, gl2, r, g, bl, gl2, r, g, bl, gl2);
     M.push(mat, mat, mat);
   }
-  return { P, C, M, tri };
+  // the same with a colour per corner, for shading that runs across a face
+  function triC(a, b, c, ca, cb, cc, glow = 0, mat = 0) {
+    P.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+    const g = (glow * 255) | 0;
+    for (const k of [ca, cb, cc]) C.push(b8(k[0]), b8(k[1]), b8(k[2]), g);
+    M.push(mat, mat, mat);
+  }
+  return { P, C, M, tri, triC };
 }
 
 // Room graph: a jittered grid of rooms, a spanning tree and some loop edges.

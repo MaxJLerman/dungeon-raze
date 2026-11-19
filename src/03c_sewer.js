@@ -51,10 +51,49 @@ const SEWER = {
   moatW: 4,
   crossW: 4, // the dry crossing over the moat at the cavern's entrance
   centreR: 6,
-  fallR: 5, // the fall pool, its centre 1 m in from the far wall
+  fallR: 5, // a fall pool, its centre 1 m in from the far wall
+  // the boss cavern's set: a dome on walls this high, the wall tunnels across
+  // its far wall (how many, radians apart, their centre height, half the
+  // opening's width, how far each outlet stands out of the wall) and the
+  // light shafts through cracks in the dome
+  bossWall: 8.5,
+  mouths: [3, 5],
+  mouthGap: 0.33,
+  mouthY: 5,
+  mouthHW: 1,
+  mouthOut: 0.9,
+  shafts: [3, 6],
+  // dressing: brick ribs across tunnels this far apart, standing this far out
+  // of the wall and vault; a lamp on every third rib; grates at least this
+  // far apart along a tunnel
+  ribGap: [4, 6],
+  ribD: 0.2,
+  grateGap: 12,
 };
 const BRICK = hexc(0x7a5242),
-  SEWER_LAMP = hexc(0x7dff9a);
+  SEWER_LAMP = hexc(0x7dff9a),
+  SEWER_SKY = [0.62, 0.8, 0.7], // the pale light down a manhole or a crack
+  SEWER_STONE = hexc(0x8a8274),
+  SEWER_IRON = hexc(0x2e2a27),
+  SEWER_RUST = hexc(0x553a2a),
+  SEWER_MOSS = hexc(0x34502a);
+
+// A lamp's brightness at time t, from its phase ph: 1, but for a lamp that
+// flickers, now and then a stutter of 0.3 s that dips toward 0.15. Time runs
+// in windows of 5 to 9 s, and a little under half of them hold a stutter.
+function lampFlicker(ph, t) {
+  const key = Math.floor(ph * 1000),
+    per = 5 + 4 * hash2(key, 1),
+    u = t + ph * 3,
+    k = Math.floor(u / per);
+  if (hash2(key + 3, k) > 0.45) return 1;
+  const d = u - k * per - (0.3 + hash2(key + 7, k) * (per - 0.7));
+  if (d < 0 || d >= 0.3) return 1;
+  const s = Math.floor(d / 0.05);
+  return s === 0 || hash2(key + 11, k * 8 + s) < 0.6
+    ? 0.15 + 0.08 * hash2(key + 13, k * 8 + s)
+    : 0.65;
+}
 
 // Field of an axis-aligned rounded rectangle: positive inside, roughly the
 // distance to its edge.
@@ -141,6 +180,571 @@ function lineOk(pts) {
     if (turn > SEWER.turnMax || turn < 0.1) return false;
   }
   return true;
+}
+
+// The corners of each face of a box, as -1 or 1 along its facing, its right
+// and up.
+const BOX_FACES = [
+  [[1, -1, -1], [1, 1, -1], [1, 1, 1], [1, -1, 1]],
+  [[-1, -1, -1], [-1, 1, -1], [-1, 1, 1], [-1, -1, 1]],
+  [[-1, 1, -1], [1, 1, -1], [1, 1, 1], [-1, 1, 1]],
+  [[-1, -1, -1], [1, -1, -1], [1, -1, 1], [-1, -1, 1]],
+  [[-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]],
+  [[-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1]],
+];
+
+// Everything in the sewer that is drawn and blocks nothing: brick ribs and
+// stone portals across tunnels and rooms, pipes, grates and drains, lamps,
+// brick heaps, the ladder and manhole, the rest points, pillar bases and the
+// boss cavern's set. It reads the field and never writes it, and draws from
+// its own random stream o.Rd. Returns the lamps (and other lights), their
+// halos, the grates and drains, and the shafts.
+function dressSewer(o) {
+  const { S, Rd, nodes, edges, boss, ea, fieldAt, waterAt, roofAt, roomAt, tri } =
+    o;
+  const sink = WATER.sink,
+    mulc = (c, m) => [c[0] * m, c[1] * m, c[2] * m],
+    BLACK = [0.003, 0.004, 0.003],
+    ribCol = mulc(BRICK, 1.08);
+  const lights = [],
+    halos = [],
+    grates = [],
+    shafts = [];
+
+  // ---- shapes ----
+  const quad = (a, b, c, d, col, glow = 0, mat = 0) => {
+    tri(a, b, c, col, glow, mat);
+    tri(a, c, d, col, glow, mat);
+  };
+  // a box from its centre, its facing, and half its depth along the facing,
+  // its width and its height
+  const box = (x, y, z, yaw, hf, hr, hy, col, mat = 0, glow = 0) => {
+    const fx = Math.sin(yaw),
+      fz = Math.cos(yaw),
+      v = ([i, j, k]) => [
+        x + fx * hf * i - fz * hr * j,
+        y + hy * k,
+        z + fz * hf * i + fx * hr * j,
+      ];
+    for (const [a, b, c, d] of BOX_FACES)
+      quad(v(a), v(b), v(c), v(d), col, glow, mat);
+  };
+  // the sides of an n-sided tube from a to b; returns the two directions
+  // across it
+  const tube = (a, b, rad, n, col, mat = 0, glow = 0) => {
+    const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]],
+      L = Math.hypot(d[0], d[1], d[2]),
+      t = d.map((v) => v / L),
+      u0 = Math.abs(t[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0],
+      ud = u0[0] * t[0] + u0[1] * t[1] + u0[2] * t[2],
+      u1 = [u0[0] - t[0] * ud, u0[1] - t[1] * ud, u0[2] - t[2] * ud],
+      ul = Math.hypot(u1[0], u1[1], u1[2]),
+      u = u1.map((v) => v / ul),
+      w = [
+        t[1] * u[2] - t[2] * u[1],
+        t[2] * u[0] - t[0] * u[2],
+        t[0] * u[1] - t[1] * u[0],
+      ];
+    const at = (p, k) => {
+      const an = (k / n) * TAU,
+        c = Math.cos(an) * rad,
+        s = Math.sin(an) * rad;
+      return [
+        p[0] + u[0] * c + w[0] * s,
+        p[1] + u[1] * c + w[1] * s,
+        p[2] + u[2] * c + w[2] * s,
+      ];
+    };
+    for (let k = 0; k < n; k++)
+      quad(at(a, k), at(a, k + 1), at(b, k + 1), at(b, k), col, glow, mat);
+    return { u, w };
+  };
+  const prism = (x, z, r, y0, y1, n, col, glow = 0, mat = 0) =>
+    tube([x, y0, z], [x, y1, z], r, n, col, mat, glow);
+  // a pyramid of n sides, its base at y, its tip h above (or below)
+  const cone = (x, y, z, r, h, n, col) => {
+    for (let k = 0; k < n; k++) {
+      const a0 = (k / n) * TAU,
+        a1 = ((k + 1) / n) * TAU;
+      tri(
+        [x + Math.cos(a0) * r, y, z + Math.sin(a0) * r],
+        [x + Math.cos(a1) * r, y, z + Math.sin(a1) * r],
+        [x, y + h, z],
+        col,
+      );
+    }
+  };
+  // a flat ring in the plane y, from radius r0 to r1
+  const annulus = (x, y, z, r0, r1, n, col, glow = 0) => {
+    for (let k = 0; k < n; k++) {
+      const a0 = (k / n) * TAU,
+        a1 = ((k + 1) / n) * TAU,
+        P = (a, r) => [x + Math.cos(a) * r, y, z + Math.sin(a) * r];
+      quad(P(a0, r0), P(a1, r0), P(a1, r1), P(a0, r1), col, glow);
+    }
+  };
+  // An arch across a passage: c its middle on the floor, n across it and t
+  // along it. Its legs stand against walls `half` out either side; between
+  // them it follows the drawn vault, d below it, and it is w either side of c
+  // along the passage. Its edges run 0.15 into the wall and vault so no gap
+  // shows. alt shades every other stone.
+  const arch = (c, n, t, half, w, d, col, mat, segs, alt) => {
+    const s0 = half - d,
+      I = [],
+      Q = [];
+    const foot = (s) =>
+      waterAt(c.x + n[0] * s, c.z + n[1] * s) > 0 ? -sink - 0.05 : -0.02;
+    I.push([-s0, foot(-s0)]);
+    Q.push([-half - 0.15, foot(-s0)]);
+    for (let k = 0; k <= segs; k++) {
+      const s = -s0 + (2 * s0 * k) / segs,
+        y = roofAt(c.x + n[0] * s, c.z + n[1] * s);
+      I.push([s, y - d]);
+      Q.push([(s * (half + 0.15)) / s0, y + 0.15]);
+    }
+    I.push([s0, foot(s0)]);
+    Q.push([half + 0.15, foot(s0)]);
+    const P3 = ([s, y], e) => [
+      c.x + n[0] * s + t[0] * e,
+      y,
+      c.z + n[1] * s + t[1] * e,
+    ];
+    for (let k = 0; k + 1 < I.length; k++) {
+      const cl = alt && k % 2 ? mulc(col, 0.84) : col;
+      quad(P3(I[k], -w), P3(I[k + 1], -w), P3(I[k + 1], w), P3(I[k], w), cl, 0, mat);
+      for (const e of [-w, w])
+        quad(P3(I[k], e), P3(I[k + 1], e), P3(Q[k + 1], e), P3(Q[k], e), cl, 0, mat);
+    }
+  };
+  // whether a straight wall stands s across n from c (s signed), for 0.4
+  // either way along t
+  const wallAt = (c, n, t, s) => {
+    const g = Math.sign(s);
+    for (const e of [-0.4, 0, 0.4]) {
+      const x = c.x + t[0] * e,
+        z = c.z + t[1] * e,
+        fin = fieldAt(x + n[0] * (s - g * 0.3), z + n[1] * (s - g * 0.3)),
+        fout = fieldAt(x + n[0] * (s + g * 0.3), z + n[1] * (s + g * 0.3));
+      if (fin < 0.1 || fin > 0.5 || fout > -0.1) return false;
+    }
+    return true;
+  };
+  const nearCrumble = (x, z, r) =>
+    o.crumble.some((q) => Math.hypot(q.x - x, q.z - z) < r);
+  const out = (n, sd) => Math.atan2(-n[0] * sd, -n[1] * sd);
+
+  // ---- things on walls ----
+  // a lamp: (x, z) on the wall's face, yaw facing out of it, y the middle of
+  // its glass. About one in three flickers.
+  const lamp = (x, z, yaw, y) => {
+    const fx = Math.sin(yaw),
+      fz = Math.cos(yaw),
+      gx = x + fx * 0.4,
+      gz = z + fz * 0.4;
+    box(x + fx * 0.03, y + 0.3, z + fz * 0.03, yaw, 0.03, 0.08, 0.11, SEWER_IRON);
+    box(x + fx * 0.22, y + 0.3, z + fz * 0.22, yaw, 0.2, 0.025, 0.025, SEWER_IRON);
+    prism(gx, gz, 0.1, y - 0.12, y + 0.12, 6, mulc(SEWER_LAMP, 0.55), 0.5);
+    cone(gx, y + 0.12, gz, 0.14, 0.17, 6, SEWER_IRON);
+    cone(gx, y - 0.12, gz, 0.11, -0.07, 6, SEWER_IRON);
+    const ph = Rd() * TAU,
+      flick = Rd() < 1 / 3;
+    lights.push({ x: gx + fx * 0.2, y, z: gz + fz * 0.2, c: SEWER_LAMP, i: 1.1, r: 13, ph, flick });
+    halos.push({ x: gx, y, z: gz, c: SEWER_LAMP, s: 1.1, ph, flick, lamp: true });
+  };
+  // a barred grate at the foot of a wall: (x, z) on the wall's face, yaw
+  // facing out of it
+  const grate = (x, z, yaw) => {
+    const fx = Math.sin(yaw),
+      fz = Math.cos(yaw),
+      at = (r, y, f) => [x - fz * r + fx * f, y, z + fx * r + fz * f],
+      B = (r, y, f, hf, hr, hy, col) => {
+        const p = at(r, y, f);
+        box(p[0], p[1], p[2], yaw, hf, hr, hy, col);
+      };
+    quad(at(-0.56, -sink - 0.1, 0.02), at(0.56, -sink - 0.1, 0.02), at(0.56, 0.64, 0.02), at(-0.56, 0.64, 0.02), BLACK);
+    B(-0.66, 0.3, 0.06, 0.08, 0.11, 0.66, SEWER_STONE);
+    B(0.66, 0.3, 0.06, 0.08, 0.11, 0.66, SEWER_STONE);
+    B(0, 0.76, 0.07, 0.09, 0.77, 0.12, mulc(SEWER_STONE, 0.9));
+    for (let k = -2; k <= 2; k++) B(k * 0.21, 0.13, 0.06, 0.022, 0.022, 0.5, SEWER_IRON);
+    B(0, 0.36, 0.07, 0.02, 0.56, 0.025, SEWER_IRON);
+    grates.push({ x, z, yaw, kind: "grate" });
+  };
+  // a drain pipe's mouth low in a wall, with its flange and dark inside
+  const drain = (x, z, yaw) => {
+    const fx = Math.sin(yaw),
+      fz = Math.cos(yaw),
+      y = 0.55,
+      P = (e) => [x + fx * e, y, z + fz * e],
+      { u, w } = tube(P(-0.2), P(0.36), 0.19, 8, SEWER_RUST);
+    tube(P(-0.05), P(0.06), 0.27, 8, mulc(SEWER_STONE, 0.8));
+    const c = P(0.32),
+      rim = (k) => {
+        const an = (k / 8) * TAU,
+          a = Math.cos(an) * 0.17,
+          b = Math.sin(an) * 0.17;
+        return [c[0] + u[0] * a + w[0] * b, c[1] + u[1] * a + w[1] * b, c[2] + u[2] * a + w[2] * b];
+      };
+    for (let k = 0; k < 8; k++) tri(c, rim(k), rim(k + 1), BLACK);
+    grates.push({ x, z, yaw, kind: "drain" });
+  };
+
+  // ---- tunnels ----
+  const gap = () => S.ribGap[0] + Rd() * (S.ribGap[1] - S.ribGap[0]);
+  for (const e of edges) {
+    const line = [nodes[e.a], ...e.bends, nodes[e.b]],
+      segs = [];
+    let tot = 0;
+    for (let i = 0; i + 1 < line.length; i++) {
+      const p = line[i],
+        q = line[i + 1],
+        L = Math.hypot(q.x - p.x, q.z - p.z),
+        t = [(q.x - p.x) / L, (q.z - p.z) / L];
+      segs.push({ p, L, t, n: [-t[1], t[0]], a0: tot });
+      tot += L;
+    }
+    // the point at arc length a, its run's directions and how far it is
+    // from the nearest bend
+    const at = (a) => {
+      let g = segs[segs.length - 1];
+      for (const sg of segs)
+        if (a < sg.a0 + sg.L) {
+          g = sg;
+          break;
+        }
+      const l = clamp(a - g.a0, 0, g.L);
+      return {
+        x: g.p.x + g.t[0] * l,
+        z: g.p.z + g.t[1] * l,
+        t: g.t,
+        n: g.n,
+        bend: Math.min(l, g.L - l),
+      };
+    };
+    const inRoom = (a, pad) => {
+      const q = at(a);
+      return !!roomAt(q.x, q.z, pad);
+    };
+    // the stretch outside every room
+    let a0 = 0,
+      a1 = tot;
+    while (a0 < tot && inRoom(a0, 0.6)) a0 += 0.25;
+    while (a1 > a0 && inRoom(a1, 0.6)) a1 -= 0.25;
+    if (a1 - a0 < 2) continue;
+    const both = (q) =>
+      q.bend >= 0.8 &&
+      wallAt(q, q.n, q.t, S.tunR) &&
+      wallAt(q, q.n, q.t, -S.tunR);
+    // a stone portal where the tunnel leaves each room
+    const portal = (from, dir) => {
+      for (let a = from; Math.abs(a - from) < 4; a += dir * 0.25) {
+        const q = at(a);
+        if (!both(q)) continue;
+        arch(q, q.n, q.t, S.tunR, 0.36, 0.32, SEWER_STONE, 0, 12, true);
+        return a;
+      }
+      return from;
+    };
+    const pa = portal(a0, 1),
+      pb = portal(a1, -1);
+    // brick ribs between the portals, a lamp on every third
+    const ribs = [pa];
+    let k = 0;
+    for (let a = pa + gap(); a < pb - 2; ) {
+      const q = at(a);
+      if (q.bend < 1.2 || !both(q) || inRoom(a, 1) || nearCrumble(q.x, q.z, 2.6)) {
+        a += 0.5;
+        continue;
+      }
+      arch(q, q.n, q.t, S.tunR, 0.2, S.ribD, ribCol, MAT.BRICK, 10, false);
+      if (k % 3 === 1) {
+        const sd = (k / 3) & 1 ? 1 : -1,
+          s = sd * (S.tunR - S.ribD);
+        lamp(q.x + q.n[0] * s, q.z + q.n[1] * s, out(q.n, sd), 2.6);
+      }
+      k++;
+      ribs.push(a);
+      a += gap();
+    }
+    ribs.push(pb);
+    // grates and drains between ribs, S.grateGap apart at least; the first
+    // in a tunnel is a grate
+    let last = -1e9,
+      placed = 0;
+    const fit = (a, sd, kind) => {
+      const q = at(a);
+      if (q.bend < 1 || inRoom(a, 1.5) || nearCrumble(q.x, q.z, 3)) return false;
+      if (!wallAt(q, q.n, q.t, sd * S.tunR)) return false;
+      const x = q.x + q.n[0] * sd * S.tunR,
+        z = q.z + q.n[1] * sd * S.tunR;
+      (kind === "drain" ? drain : grate)(x, z, out(q.n, sd));
+      return true;
+    };
+    for (let i = 0; i + 1 < ribs.length; i++) {
+      const a = (ribs[i] + ribs[i + 1]) / 2;
+      if (a - last < S.grateGap) continue;
+      const sd = Rd() < 0.5 ? -1 : 1,
+        kind = placed && Rd() < 0.4 ? "drain" : "grate";
+      if (fit(a, sd, kind) || fit(a, -sd, kind)) {
+        last = a;
+        placed++;
+      }
+    }
+    for (let a = a0 + 1; !placed && a < a1 - 1; a += 0.5)
+      if (fit(a, 1, "grate") || fit(a, -1, "grate")) placed++;
+    // a pipe along one wall, where the wall runs straight behind it, turning
+    // into the wall at each end
+    if (Rd() < 0.55) {
+      const sd = Rd() < 0.5 ? -1 : 1,
+        rad = 0.11 + Rd() * 0.08,
+        y = 1.6 + Rd() * 0.4,
+        off = sd * (S.tunR - rad - 0.05);
+      for (const g of segs) {
+        const P = (l, o2) => [
+          g.p.x + g.t[0] * l + g.n[0] * o2,
+          y,
+          g.p.z + g.t[1] * l + g.n[1] * o2,
+        ];
+        const pipe = (l0, l1) => {
+          tube(P(l0, off), P(l1, off), rad, 6, SEWER_RUST);
+          tube(P(l0, off), P(l0, off + sd * 0.7), rad, 6, SEWER_RUST);
+          tube(P(l1, off), P(l1, off + sd * 0.7), rad, 6, SEWER_RUST);
+        };
+        let s0 = null,
+          s1 = 0;
+        for (let l = 0.6; l <= g.L - 0.6; l += 0.5) {
+          const q = at(g.a0 + l);
+          const a = g.a0 + l;
+          if (a > pa + 0.7 && a < pb - 0.7 && wallAt(q, q.n, q.t, sd * S.tunR)) {
+            if (s0 === null) s0 = l;
+            s1 = l;
+          } else {
+            if (s0 !== null && s1 - s0 >= 1.5) pipe(s0, s1);
+            s0 = null;
+          }
+        }
+        if (s0 !== null && s1 - s0 >= 1.5) pipe(s0, s1);
+      }
+    }
+  }
+
+  // ---- brick heaps where a wall has fallen in ----
+  for (const c of o.crumble) {
+    let gx = fieldAt(c.x + 0.5, c.z) - fieldAt(c.x - 0.5, c.z),
+      gz = fieldAt(c.x, c.z + 0.5) - fieldAt(c.x, c.z - 0.5);
+    const gl = Math.hypot(gx, gz) || 1;
+    gx /= gl;
+    gz /= gl;
+    // from where the wall stands now, out into the tunnel
+    let u0 = -1.5;
+    while (u0 < 1.5 && fieldAt(c.x + gx * u0, c.z + gz * u0) < 0.05) u0 += 0.1;
+    const bx = c.x + gx * u0,
+      bz = c.z + gz * u0;
+    for (let i = 0; i < 48; i++) {
+      const u = Math.pow(Rd(), 1.4) * 2.1,
+        v = (Rd() - 0.5) * 3.4 * (1 - u / 3),
+        h = 0.85 * (1 - u / 2.1) * (1 - Math.abs(v) / 1.9) * Rd(),
+        sc = 0.8 + Rd() * 0.7;
+      box(
+        bx + gx * u - gz * v,
+        Math.max(0, h) + 0.05 * sc,
+        bz + gz * u + gx * v,
+        Rd() * TAU,
+        0.12 * sc,
+        0.06 * sc,
+        0.05 * sc,
+        mulc(BRICK, 0.5 + Rd() * 0.5),
+      );
+    }
+    for (let i = 0; i < 6; i++) {
+      const u = Rd() * 0.9,
+        v = (Rd() - 0.5) * 2;
+      box(bx + gx * u - gz * v, 0.15, bz + gz * u + gx * v, Rd() * TAU, 0.34, 0.24, 0.2, mulc(BRICK, 0.45), MAT.BRICK);
+    }
+  }
+
+  // ---- rooms: transverse brick arches on pilasters, lamps ----
+  for (const n of nodes) {
+    if (n.kind === "boss") continue;
+    const onX = n.hw >= n.hd,
+      U = onX ? n.hw : n.hd,
+      V = onX ? n.hd : n.hw,
+      t = onX ? [1, 0] : [0, 1],
+      nv = onX ? [0, 1] : [1, 0],
+      m = Math.max(1, Math.round((2 * U - 6) / 5.5) + 1),
+      // what stands in the vault's way: pillars, and the manhole
+      clear = (u) =>
+        [...o.pillars, o.hole].every(
+          (c) => Math.abs((c.x - n.x) * t[0] + (c.z - n.z) * t[1] - u) > 1.8,
+        );
+    let k = 0;
+    for (let i = 0; i < m; i++) {
+      const u = m === 1 ? 0 : -(U - 3) + (2 * (U - 3) * i) / (m - 1),
+        q = { x: n.x + t[0] * u, z: n.z + t[1] * u };
+      if (!clear(u) || !wallAt(q, nv, t, V) || !wallAt(q, nv, t, -V)) continue;
+      arch(q, nv, t, V, 0.3, 0.26, ribCol, MAT.BRICK, 14, false);
+      if (k % 2 === 0) {
+        const sd = (k / 2) % 2 ? 1 : -1,
+          s = sd * (V - 0.26);
+        lamp(q.x + nv[0] * s, q.z + nv[1] * s, out(nv, sd), 3);
+      }
+      k++;
+    }
+    // lamps on the end walls where no tunnel leaves
+    for (const sd of [-1, 1])
+      if (wallAt(n, t, nv, sd * U))
+        lamp(n.x + t[0] * sd * U, n.z + t[1] * sd * U, out(t, sd), 3);
+  }
+  // pillars get a stone base and a capital under the vault
+  for (const c of o.pillars) {
+    prism(c.x, c.z, 1, -sink - 0.05, 0.35, 8, SEWER_STONE);
+    const top = o.wallTop(c.x + S.pillarR, c.z);
+    prism(c.x, c.z, 1, top - 0.75, top - 0.45, 8, SEWER_STONE);
+    cone(c.x, top - 0.75, c.z, 1, -0.25, 8, mulc(SEWER_STONE, 0.85));
+  }
+
+  // ---- the arrival: the manhole, its shaft up through the vault and the
+  // ladder down from it ----
+  {
+    const h = o.hole,
+      top = o.holeY,
+      p = o.perp,
+      tall = top + 2.6;
+    // the shaft, a stone collar under the vault wide enough to hide the cut
+    // cell's corners, and a skirt from it up past the cell's highest corner
+    prism(h.x, h.z, 0.46, top - 0.05, tall, 10, mulc(BRICK, 0.6), 0, MAT.BRICK);
+    annulus(h.x, top, h.z, 0.44, 0.88, 12, mulc(SEWER_STONE, 0.7));
+    prism(h.x, h.z, 0.88, top - 0.14, o.holeTop, 12, mulc(SEWER_STONE, 0.6));
+    annulus(h.x, tall - 0.05, h.z, 0, 0.48, 10, SEWER_SKY, 1);
+    const ry = Math.atan2(p.z, -p.x);
+    for (const sd of [-1, 1])
+      box(h.x + p.x * 0.24 * sd, tall / 2, h.z + p.z * 0.24 * sd, ry, 0.025, 0.03, tall / 2, SEWER_IRON);
+    for (let y = 0.3; y < tall - 0.2; y += 0.3)
+      box(h.x, y, h.z, ry, 0.02, 0.24, 0.018, SEWER_IRON);
+    lights.push({ x: h.x, y: top - 0.6, z: h.z, c: SEWER_SKY, i: 0.9, r: 9, ph: 0, flick: false });
+  }
+  // ---- rest points: a brick plinth with an iron fire basket ----
+  for (const sh of o.shrines) {
+    box(sh.x, 0.42, sh.z, 0, 0.42, 0.42, 0.44, BRICK, MAT.BRICK);
+    box(sh.x, 0.9, sh.z, 0, 0.48, 0.48, 0.05, SEWER_STONE);
+    const P = (a, r, y) => [sh.x + Math.cos(a) * r, y, sh.z + Math.sin(a) * r];
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * TAU,
+        b = ((k + 1) / 8) * TAU;
+      tube(P(a, 0.2, 0.95), P(a, 0.36, 1.45), 0.022, 4, SEWER_IRON);
+      tube(P(a, 0.36, 1.45), P(b, 0.36, 1.45), 0.024, 4, SEWER_IRON);
+    }
+    prism(sh.x, sh.z, 0.24, 0.95, 1.02, 8, hexc(0x5a2a12), 0.3);
+  }
+
+  // ---- the boss cavern ----
+  {
+    const R = boss.r,
+      ang = (q) => Math.atan2(q.x - boss.x, q.z - boss.z),
+      P = (a, r, y) => [boss.x + Math.sin(a) * r, y, boss.z + Math.cos(a) * r];
+    // the wall tunnels: brick outlets standing out of the wall, dark inside,
+    // water running out over a stone lip
+    for (const q of o.wallTunnels) {
+      const fx = Math.sin(q.yaw),
+        fz = Math.cos(q.yaw),
+        a = S.mouthHW,
+        th = 0.32,
+        y0 = q.y - 0.8,
+        ys = y0 + 0.5,
+        E = S.mouthOut,
+        at = (r, y, e) => [q.x - fz * r + fx * e, y, q.z + fx * r + fz * e],
+        IN = [[-a, y0]],
+        OUT = [[-a - th, y0 - 0.28]];
+      for (let k = 0; k <= 8; k++) {
+        const an = PI - (k / 8) * PI;
+        IN.push([Math.cos(an) * a, ys + Math.sin(an) * a]);
+        OUT.push([Math.cos(an) * (a + th), ys + Math.sin(an) * (a + th)]);
+      }
+      IN.push([a, y0]);
+      OUT.push([a + th, y0 - 0.28]);
+      for (let k = 0; k + 1 < IN.length; k++) {
+        const [r0, h0] = IN[k],
+          [r1, h1] = IN[k + 1],
+          [s0, g0] = OUT[k],
+          [s1, g1] = OUT[k + 1];
+        quad(at(r0, h0, -0.1), at(r1, h1, -0.1), at(r1, h1, E), at(r0, h0, E), mulc(BRICK, 0.1));
+        quad(at(s0, g0, -0.5), at(s1, g1, -0.5), at(s1, g1, E), at(s0, g0, E), mulc(BRICK, 0.9), 0, MAT.BRICK);
+        quad(at(r0, h0, E), at(r1, h1, E), at(s1, g1, E), at(s0, g0, E), k % 2 ? mulc(SEWER_STONE, 0.82) : SEWER_STONE);
+      }
+      for (let k = 0; k + 1 < IN.length; k++)
+        tri(at(0, ys, 0.05), at(IN[k][0], IN[k][1], 0.05), at(IN[k + 1][0], IN[k + 1][1], 0.05), BLACK);
+      tri(at(0, ys, 0.05), at(a, y0, 0.05), at(-a, y0, 0.05), BLACK);
+      quad(at(-a, y0 + 0.03, 0.05), at(a, y0 + 0.03, 0.05), at(a, y0 + 0.03, E), at(-a, y0 + 0.03, E), o.wcol, 0, MAT.WATER);
+      quad(at(-a - th, y0 - 0.28, E), at(a + th, y0 - 0.28, E), at(a, y0, E), at(-a, y0, E), SEWER_STONE);
+      quad(at(-a - th, y0 - 0.28, -0.5), at(a + th, y0 - 0.28, -0.5), at(a + th, y0 - 0.28, E), at(-a - th, y0 - 0.28, E), mulc(BRICK, 0.6), 0, MAT.BRICK);
+      // a lamp over it, to light the fall
+      lamp(q.x, q.z, q.yaw, ys + a + th + 0.75);
+    }
+    // pilasters round the wall, clear of the outlets and the entrance, a lamp
+    // on every other one
+    const N = 20,
+      y0 = -sink - 0.1,
+      y1 = S.bossWall - 0.35;
+    let k = 0;
+    for (let i = 0; i < N; i++) {
+      const a = ea + ((i + 0.5) / N) * TAU;
+      if (Math.abs(angDiff(a, ea)) < 0.22) continue;
+      if (o.wallTunnels.some((q) => Math.abs(angDiff(a, ang(q))) < 0.15)) continue;
+      const p = P(a, R - 0.12, (y0 + y1) / 2);
+      box(p[0], p[1], p[2], a + PI, 0.3, 0.4, (y1 - y0) / 2, ribCol, MAT.BRICK);
+      if (k++ % 2 === 0) {
+        const f = P(a, R - 0.42, 0);
+        lamp(f[0], f[2], a + PI, 3.6);
+      }
+    }
+    // a stone cornice where the walls end and the dome begins
+    const M = 72,
+      c0 = S.bossWall - 0.4,
+      c1 = S.bossWall - 0.1;
+    for (let i = 0; i < M; i++) {
+      const a0 = (i / M) * TAU,
+        a1 = ((i + 1) / M) * TAU;
+      quad(P(a0, R - 0.45, c0), P(a1, R - 0.45, c0), P(a1, R + 0.3, c0), P(a0, R + 0.3, c0), mulc(SEWER_STONE, 0.7));
+      quad(P(a0, R - 0.45, c0), P(a1, R - 0.45, c0), P(a1, R - 0.45, c1), P(a0, R - 0.45, c1), mulc(SEWER_STONE, 0.9));
+    }
+    // cracks in the dome over the dry ring, each letting down a shaft of
+    // light; the shafts themselves are drawn each frame
+    const nS = S.shafts[0] + ((Rd() * (S.shafts[1] - S.shafts[0] + 1)) | 0);
+    for (let t = 0; t < 400 && shafts.length < nS; t++) {
+      const a = Rd() * TAU,
+        d = S.centreR + 2.5 + Rd() * (R - S.moatW - S.centreR - 5),
+        x = boss.x + Math.sin(a) * d,
+        z = boss.z + Math.cos(a) * d,
+        r = 0.9 + Rd() * 0.6;
+      if (shafts.some((h) => Math.hypot(h.x - x, h.z - z) < 7)) continue;
+      let dry = waterAt(x, z) === 0;
+      for (let j = 0; j < 8 && dry; j++)
+        dry =
+          waterAt(x + Math.sin(j * 0.785) * (r + 0.6), z + Math.cos(j * 0.785) * (r + 0.6)) === 0;
+      if (!dry) continue;
+      shafts.push({ x, z, r, top: roofAt(x, z) });
+      lights.push({ x, y: 2.4, z, c: SEWER_SKY, i: 1.25, r: 11, ph: 0, flick: false });
+    }
+    for (const h of shafts) {
+      const da = Rd() * PI,
+        ux = Math.sin(da),
+        uz = Math.cos(da),
+        pts = [];
+      for (let j = 0; j <= 6; j++) {
+        const s = (j / 6 - 0.5) * 2.8,
+          o2 = (Rd() - 0.5) * 0.5;
+        pts.push({ x: h.x + ux * s + uz * o2, z: h.z + uz * s - ux * o2, w: 0.05 + 0.3 * Math.sin((j / 6) * PI) });
+      }
+      const C = (j, sd, k2, dy) => {
+        const q = pts[j];
+        return [q.x + uz * sd * q.w * k2, roofAt(q.x, q.z) - dy, q.z - ux * sd * q.w * k2];
+      };
+      for (let j = 0; j < 6; j++) {
+        quad(C(j, -1, 2.4, 0.05), C(j + 1, -1, 2.4, 0.05), C(j + 1, 1, 2.4, 0.05), C(j, 1, 2.4, 0.05), mulc(BRICK, 0.12));
+        quad(C(j, -1, 1, 0.09), C(j + 1, -1, 1, 0.09), C(j + 1, 1, 1, 0.09), C(j, 1, 1, 0.09), SEWER_SKY, 1);
+      }
+    }
+  }
+  return { lights, halos, grates, shafts };
 }
 
 function genSewer(seed) {
@@ -326,6 +930,9 @@ function genSewer(seed) {
     F = new Float32Array(NP).fill(-3),
     V = new Float32Array(NP).fill(S.vault.tunnel),
     Wt = new Float32Array(NP),
+    // where the drawn shore runs: above 0 is drawn as water. Wt - 0.5 but
+    // along tunnel gutters, which hold the distance past a straight shore
+    Sd = new Float32Array(NP).fill(NaN),
     bodyIds = new Int16Array(NP).fill(-1);
   // calls fn(k, x, z) for every grid point in a box
   const each = (x0, z0, x1, z1, fn) => {
@@ -414,8 +1021,10 @@ function genSewer(seed) {
     if (Rn() < 0.5)
       pillars.push({ x: n.x - sx * n.hw * 0.5, z: n.z - sz * n.hd * 0.5 });
   }
+  // over the whole room (no room is more than 12 m from wall to middle), so
+  // the field and the vault that follows it have no step round a pillar
   for (const c of pillars)
-    each(c.x - 4, c.z - 4, c.x + 4, c.z + 4, (k, x, z) => {
+    each(c.x - 12, c.z - 12, c.x + 12, c.z + 12, (k, x, z) => {
       const d = Math.hypot(x - c.x, z - c.z) - S.pillarR;
       if (d < F[k]) F[k] = d;
     });
@@ -467,12 +1076,32 @@ function genSewer(seed) {
     if (Math.hypot(q.x - boss.x, q.z - boss.z) >= boss.r) mouth = q;
     else break;
   const ea = Math.atan2(mouth.x - boss.x, mouth.z - boss.z);
+  // Decoration draws from its own stream, so the layout above and the
+  // spawns below never move when it changes.
+  const Rd = rng((seed * 7919 + 17) >>> 0);
+  // the wall tunnels: spread across the far wall, each facing the centre
+  const wallTunnels = [];
+  {
+    const n = S.mouths[0] + ((Rd() * (S.mouths[1] - S.mouths[0] + 1)) | 0);
+    for (let k = 0; k < n; k++) {
+      const a =
+          ea + PI + (k - (n - 1) / 2) * S.mouthGap + (Rd() - 0.5) * 0.04,
+        x = boss.x + Math.sin(a) * boss.r,
+        z = boss.z + Math.cos(a) * boss.r;
+      wallTunnels.push({
+        x,
+        y: S.mouthY,
+        z,
+        yaw: Math.atan2(boss.x - x, boss.z - z),
+      });
+    }
+  }
 
   // ---- water ----
   // Wt is 1 in water and 0 on dry ground. Pools fill pool rooms inside a dry
   // ring along the walls, which joins every tunnel mouth to every other; a
   // gutter runs down one side of some tunnels and one wall of some brood
-  // rooms; the boss cavern has its moat, centre pool and fall pool. fieldFns
+  // rooms; the boss cavern has its moat, centre pool and fall pools. fieldFns
   // already holds Wt, so waterAt reads what is written here.
   const inBox = (n, x, z, pad) =>
     Math.abs(x - n.x) < n.hw + pad && Math.abs(z - n.z) < n.hd + pad;
@@ -689,24 +1318,33 @@ function genSewer(seed) {
       };
     each(x0 - m, z0 - m, x1 + m, z1 + m, (k, x, z) => {
       const [d, sgn] = near(x, z, pts);
-      if (sgn !== side || d < S.tunR - S.gutterW || d > m) return;
+      if (sgn !== side || d < 1 || d > m) return;
       for (const n of nodes) {
         if (inBox(n, x, z, S.gutterEnd)) return;
         if (n === boss && Math.hypot(x - n.x, z - n.z) < n.r + 2) return;
       }
       for (const o of edges)
         if (o !== e && near(x, z, o.pts)[0] < S.tunR + 0.3) return;
-      Wt[k] = 1;
+      // drawn, the shore runs straight along the tunnel where the grid's
+      // shore runs on average
+      Sd[k] = d - (S.tunR - S.gutterW - 0.25);
+      if (d >= S.tunR - S.gutterW) Wt[k] = 1;
     });
   }
   // the boss cavern: a moat along the wall but for a dry crossing at the
-  // entrance, a centre pool, and a fall pool at the far wall joined to the moat
+  // entrance, a centre pool, and fall pools at the far wall joined to the moat
   {
     const R = boss.r,
       ex = Math.sin(ea),
       ez = Math.cos(ea),
-      fx = boss.x - ex * (R - 1),
-      fz = boss.z - ez * (R - 1);
+      // a fall pool at the far wall, and one under each wall tunnel
+      falls = [
+        { x: boss.x - ex * (R - 1), z: boss.z - ez * (R - 1) },
+        ...wallTunnels.map((q) => ({
+          x: boss.x + ((q.x - boss.x) * (R - 1)) / R,
+          z: boss.z + ((q.z - boss.z) * (R - 1)) / R,
+        })),
+      ];
     each(boss.x - R - 2, boss.z - R - 2, boss.x + R + 2, boss.z + R + 2, (k, x, z) => {
       const dx = x - boss.x,
         dz = z - boss.z,
@@ -721,11 +1359,14 @@ function genSewer(seed) {
       if (
         moat ||
         d <= S.centreR ||
-        (Math.hypot(x - fx, z - fz) <= S.fallR && (d <= R || F[k] < 0))
+        (falls.some((f) => Math.hypot(x - f.x, z - f.z) <= S.fallR) &&
+          (d <= R || F[k] < 0))
       )
         Wt[k] = 1;
     });
   }
+  for (let k = 0; k < NP; k++)
+    if (Sd[k] !== Sd[k] || (Wt[k] > 0.5 && Sd[k] <= 0)) Sd[k] = Wt[k] - 0.5;
   // the bodies of water: one id per region of grid points joined side to
   // side, each with its room (-1 in a tunnel) and its most open point
   const bodies = [],
@@ -761,32 +1402,159 @@ function genSewer(seed) {
   }
 
   // ---- mesh: brick floor, walls and vault; water sunk below the floor ----
-  const { P, C, M, tri } = meshSink();
-  const mulc = (c, m) => [c[0] * m, c[1] * m, c[2] * m];
-  const cy = (i, j) => ceilOf(F[j * W1 + i], V[j * W1 + i]);
+  const { P, C, M, tri, triC } = meshSink();
+  const mulc = (c, m) => [c[0] * m, c[1] * m, c[2] * m],
+    mix = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)],
+    stain = (x, z, f) => vnoise(x * f + 5.3, z * f + 1.7);
   const sink = WATER.sink,
     wcol = hexc(0x24423a),
-    lcol = mulc(BRICK, 0.75);
-  // a convex polygon of floor points, as a fan
+    damp = mulc(BRICK, 0.3);
+  // The drawn vault: ceilAt's, and in the boss cavern a dome on walls
+  // S.bossWall high. It is never below ceilAt, so the camera stays under it.
+  const domeAt = (x, z) => {
+    const d = Math.hypot(x - boss.x, z - boss.z) / boss.r;
+    return d < 1
+      ? S.bossWall + (S.ceilTop - S.bossWall) * Math.sqrt(1 - d * d)
+      : 0;
+  };
+  const roofAt = (x, z) => Math.max(ceilAt(x, z), domeAt(x, z)),
+    roofK = (i, j) =>
+      Math.max(ceilOf(F[j * W1 + i], V[j * W1 + i]), domeAt(i + minX, j + minZ)),
+    // where a wall meets the vault: the vault's height at the wall's line,
+    // and the cavern's wall height round the boss
+    wallTop = (x, z) =>
+      Math.max(
+        ceilOf(0, vaultAt(x, z)),
+        Math.hypot(x - boss.x, z - boss.z) < boss.r + 0.5 ? S.bossWall : 0,
+      );
+  // colours: damp and moss toward the walls and the water, stains overhead
+  const nearWet = (x, z) =>
+    Math.max(
+      waterAt(x + 0.8, z),
+      waterAt(x - 0.8, z),
+      waterAt(x, z + 0.8),
+      waterAt(x, z - 0.8),
+    );
+  const floorCol = (x, z) => {
+    const wall = 1 - sat(fieldAt(x, z) / 1.4),
+      wet = nearWet(x, z),
+      s = stain(x, z, 0.4);
+    let c = mulc(BRICK, 0.44 + 0.12 * s);
+    c = mix(c, damp, 0.45 * wall + 0.3 * wet);
+    return mix(c, mulc(SEWER_MOSS, 0.7), (0.5 * wall + 0.4 * wet) * stain(x, z, 0.9));
+  };
+  const ceilCol = (x, z) =>
+    mix(
+      mulc(BRICK, 0.34 + 0.08 * stain(x, z, 0.3)),
+      mulc(SEWER_MOSS, 0.3),
+      0.5 * sat(stain(x + 31, z, 0.15) * 2 - 1),
+    );
+  // the manhole beside where the player lands: a hole in the vault over the
+  // one cell it is centred in, between the lowest and highest of its corners
+  const spawn = { x: start.x + out.x * 4, z: start.z + out.z * 4 };
+  resolve(spawn, 1);
+  const perp = { x: out.z, z: -out.x },
+    hole = {
+      x: Math.floor(spawn.x - perp.x * 1.4) + 0.5,
+      z: Math.floor(spawn.z - perp.z * 1.4) + 0.5,
+    },
+    hk = [0, 1].flatMap((dj) =>
+      [0, 1].map((di) => roofK(hole.x - 0.5 - minX + di, hole.z - 0.5 - minZ + dj)),
+    ),
+    holeY = Math.min(...hk) - 0.04,
+    holeTop = Math.max(...hk) + 0.1;
+  // a convex polygon of floor points, as a fan, coloured per corner
   const fan = (pts, y, col, mat) => {
+    const cs = pts.map((p) => (typeof col === "function" ? col(p[0], p[1]) : col));
     for (let q = 1; q + 1 < pts.length; q++)
-      tri(
+      triC(
         [pts[0][0], y, pts[0][1]],
         [pts[q][0], y, pts[q][1]],
         [pts[q + 1][0], y, pts[q + 1][1]],
-        col,
+        cs[0],
+        cs[q],
+        cs[q + 1],
         0,
         mat,
       );
   };
-  // the brick lip from the floor down to the water, along a shore segment
-  const lip = (a, b) => {
-    const a0 = [a[0], 0, a[1]],
-      b0 = [b[0], 0, b[1]],
-      a1 = [a[0], -sink, a[1]],
-      b1 = [b[0], -sink, b[1]];
-    tri(a0, b0, b1, lcol, 0, MAT.BRICK);
-    tri(a0, b1, a1, lcol, 0, MAT.BRICK);
+  // dressed stone along a shore from a to b: a coping 0.4 wide on the dry
+  // side (toward dc), and its face down to the water
+  const coping = (a, b, dc) => {
+    let nx = a[1] - b[1],
+      nz = b[0] - a[0];
+    const l = Math.hypot(nx, nz) || 1;
+    nx /= l;
+    nz /= l;
+    if ((dc[0] - a[0]) * nx + (dc[1] - a[1]) * nz < 0) {
+      nx = -nx;
+      nz = -nz;
+    }
+    const h = hash2(Math.round((a[0] + b[0]) * 2), Math.round((a[1] + b[1]) * 2)),
+      y = h > 0.5 ? 0.043 : 0.04,
+      col = mulc(SEWER_STONE, 0.6 + 0.2 * h),
+      A = [a[0], y, a[1]],
+      B = [b[0], y, b[1]];
+    tri(A, B, [b[0] + nx * 0.4, y, b[1] + nz * 0.4], col);
+    tri(A, [b[0] + nx * 0.4, y, b[1] + nz * 0.4], [a[0] + nx * 0.4, y, a[1] + nz * 0.4], col);
+    tri(A, B, [b[0], -sink, b[1]], mulc(col, 0.8));
+    tri(A, [b[0], -sink, b[1]], [a[0], -sink, a[1]], mulc(col, 0.8));
+  };
+  // the vault over one cell, cut where the wall stands (as marchWalls cuts
+  // it), so the vault meets the top of the wall along one clean line
+  const vaultCell = (i, j, x, z, k) => {
+    const v = [F[k], F[k + 1], F[k + W1 + 1], F[k + W1]],
+      ins = v.map((f) => f > 0),
+      n = ins.filter(Boolean).length;
+    if (n === 0) return;
+    const cs = [
+        [x, z],
+        [x + 1, z],
+        [x + 1, z + 1],
+        [x, z + 1],
+      ],
+      hs = [roofK(i, j), roofK(i + 1, j), roofK(i + 1, j + 1), roofK(i, j + 1)],
+      V3 = (c) => [cs[c][0], hs[c], cs[c][1]],
+      cut = [
+        () => [x + v[0] / (v[0] - v[1]), z],
+        () => [x + 1, z + v[1] / (v[1] - v[2])],
+        () => [x + v[3] / (v[3] - v[2]), z + 1],
+        () => [x, z + v[0] / (v[0] - v[3])],
+      ].map((f) => () => {
+        const p = f();
+        return [p[0], wallTop(p[0], p[1]), p[1]];
+      }),
+      poly = (ps) => {
+        const cols = ps.map((p) => ceilCol(p[0], p[2]));
+        for (let q = 1; q + 1 < ps.length; q++)
+          triC(ps[0], ps[q], ps[q + 1], cols[0], cols[q], cols[q + 1], 0, MAT.BRICK);
+      };
+    if (n === 4) {
+      // split along the diagonal nearer the vault at the middle of the cell
+      const mid = roofAt(x + 0.5, z + 0.5);
+      if (Math.abs((hs[0] + hs[2]) / 2 - mid) <= Math.abs((hs[1] + hs[3]) / 2 - mid))
+        poly([V3(0), V3(1), V3(2), V3(3)]);
+      else poly([V3(1), V3(2), V3(3), V3(0)]);
+      return;
+    }
+    const ctr = (v[0] + v[1] + v[2] + v[3]) / 4 > 0;
+    if (n === 2 && ins[0] === ins[2] && !ctr) {
+      // a saddle whose middle is rock: two corners apart
+      if (ins[0]) {
+        poly([V3(0), cut[0](), cut[3]()]);
+        poly([V3(2), cut[2](), cut[1]()]);
+      } else {
+        poly([V3(1), cut[1](), cut[0]()]);
+        poly([V3(3), cut[3](), cut[2]()]);
+      }
+      return;
+    }
+    const ps = [];
+    for (let c = 0; c < 4; c++) {
+      if (ins[c]) ps.push(V3(c));
+      if (ins[c] !== ins[(c + 1) % 4]) ps.push(cut[c]());
+    }
+    poly(ps);
   };
   for (let j = 0; j < H; j++)
     for (let i = 0; i < W; i++) {
@@ -794,19 +1562,17 @@ function genSewer(seed) {
         mx = Math.max(F[k], F[k + 1], F[k + W1], F[k + W1 + 1]);
       if (mx < -1.3) continue;
       const x = i + minX,
-        z = j + minZ,
-        fcol = mulc(BRICK, 0.5 + 0.04 * hash2(i + 11, j + 5)),
-        ccol = mulc(BRICK, 0.35 + 0.04 * hash2(i + 77, j + 31));
-      // the floor splits along the line where the water grid crosses a half
+        z = j + minZ;
+      // the floor splits along the drawn shore
       const cs = [
           [x, z],
           [x + 1, z],
           [x + 1, z + 1],
           [x, z + 1],
         ],
-        s = [k, k + 1, k + W1 + 1, k + W1].map((q) => Wt[q] - 0.5),
+        s = [k, k + 1, k + W1 + 1, k + W1].map((q) => Sd[q]),
         nWet = s.filter((v) => v > 0).length;
-      if (nWet === 0) fan(cs, 0, fcol, MAT.BRICK);
+      if (nWet === 0) fan(cs, 0, floorCol, MAT.BRICK);
       else if (nWet === 4) fan(cs, -sink, wcol, MAT.WATER);
       else {
         const dry = [],
@@ -826,87 +1592,96 @@ function genSewer(seed) {
             cut.push(e);
           }
         }
-        fan(dry, 0, fcol, MAT.BRICK);
+        fan(dry, 0, floorCol, MAT.BRICK);
+        const dc = [
+          dry.reduce((a, p) => a + p[0], 0) / dry.length,
+          dry.reduce((a, p) => a + p[1], 0) / dry.length,
+        ];
         if (nWet === 2 && s[0] > 0 === s[2] > 0) {
           // a saddle: the dry floor joins across, the two wet corners part
           for (let c = 0; c < 4; c++)
             if (s[c] > 0) {
               fan([cs[c], cut[c], cut[(c + 3) % 4]], -sink, wcol, MAT.WATER);
-              lip(cut[(c + 3) % 4], cut[c]);
+              coping(cut[(c + 3) % 4], cut[c], dc);
             }
         } else {
           fan(wet, -sink, wcol, MAT.WATER);
-          lip(cut[0], cut[1]);
+          coping(cut[0], cut[1], dc);
         }
       }
-      const a = [x, cy(i, j), z],
-        b = [x + 1, cy(i + 1, j), z],
-        c = [x + 1, cy(i + 1, j + 1), z + 1],
-        d = [x, cy(i, j + 1), z + 1];
-      tri(a, b, c, ccol, 0, MAT.BRICK);
-      tri(a, c, d, mulc(ccol, 0.95), 0, MAT.BRICK);
+      // the vault, open over the manhole
+      if (x === hole.x - 0.5 && z === hole.z - 0.5) continue;
+      vaultCell(i, j, x, z, k);
     }
-  // the walls reach below the water so no gap shows at a pool's edge
+  // The walls stand straight from below the water to the line where the
+  // vault meets them: wet and mossy at the foot, damp low down, stained
+  // above, and darker where they have crumbled.
   marchWalls(F, minX, minZ, W, H, (ax, az, bx, bz) => {
-    const ta = ceilAt(ax, az) + 0.4,
-      tb = ceilAt(bx, bz) + 0.4,
-      a0 = [ax, -sink - 0.1, az],
-      b0 = [bx, -sink - 0.1, bz],
-      col = mulc(
-        BRICK,
-        0.9 + 0.1 * hash2(Math.round(ax * 9), Math.round(bz * 9)),
-      );
-    tri(a0, b0, [bx, tb, bz], col, 0, MAT.BRICK);
-    tri(a0, [bx, tb, bz], [ax, ta, az], mulc(col, 0.95), 0, MAT.BRICK);
+    let nx = az - bz,
+      nz = bx - ax;
+    const l = Math.hypot(nx, nz) || 1,
+      mx = (ax + bx) / 2,
+      mz = (az + bz) / 2;
+    nx /= l;
+    nz /= l;
+    if (fieldAt(mx + nx * 0.5, mz + nz * 0.5) < fieldAt(mx - nx * 0.5, mz - nz * 0.5)) {
+      nx = -nx;
+      nz = -nz;
+    }
+    const rows = [-sink - 0.1, 1.1],
+      cols = (x, z) => {
+        const wet = waterAt(x + nx * 0.7, z + nz * 0.7),
+          broken = crumble.some((c) => Math.hypot(c.x - x, c.z - z) < S.crumbleR + 1)
+            ? 0.75
+            : 1;
+        return [
+          mulc(mix(damp, SEWER_MOSS, 0.25 + 0.5 * stain(x, z, 0.7)), 1 - 0.3 * wet),
+          mulc(BRICK, (0.74 + 0.2 * stain(x, z, 0.35) - 0.12 * wet) * broken),
+          mulc(BRICK, (0.8 + 0.3 * stain(x + 9, z + 3, 0.2)) * broken),
+        ];
+      },
+      ca = cols(ax, az),
+      cb = cols(bx, bz),
+      A = [rows[0], rows[1], wallTop(ax, az)].map((y) => [ax, y, az]),
+      B = [rows[0], rows[1], wallTop(bx, bz)].map((y) => [bx, y, bz]);
+    for (let r = 0; r < 2; r++) {
+      triC(A[r], B[r], B[r + 1], ca[r], cb[r], cb[r + 1], 0, MAT.BRICK);
+      triC(A[r], B[r + 1], A[r + 1], ca[r], cb[r + 1], ca[r + 1], 0, MAT.BRICK);
+    }
   });
 
-  // ---- shrines: the arrival hall's beside where the player lands ----
-  const spawn = { x: start.x + out.x * 4, z: start.z + out.z * 4 };
-  resolve(spawn, 1);
-  const shrines = [],
-    st = hexc(0x3b3f4a);
+  // ---- rest points: the arrival hall's beside where the player lands ----
+  const shrines = [];
   for (const sid of restIds) {
     const n = nodes[sid],
       sx = sid === start.id ? spawn.x + out.z * 3.5 : n.x + 2,
       sz = sid === start.id ? spawn.z - out.x * 3.5 : n.z;
-    for (let i = 0; i < 8; i++) {
-      const a0 = (i / 8) * TAU,
-        a1 = ((i + 1) / 8) * TAU,
-        p0 = [sx + Math.cos(a0) * 0.75, 0, sz + Math.sin(a0) * 0.75],
-        p1 = [sx + Math.cos(a1) * 0.75, 0, sz + Math.sin(a1) * 0.75],
-        q0 = [sx + Math.cos(a0) * 0.5, 1.0, sz + Math.sin(a0) * 0.5],
-        q1 = [sx + Math.cos(a1) * 0.5, 1.0, sz + Math.sin(a1) * 0.5],
-        m = 0.8 + 0.4 * (i % 2);
-      tri(p0, p1, q1, mulc(st, m));
-      tri(p0, q1, q0, mulc(st, m));
-      tri(q0, q1, [sx, 1.1, sz], mulc(st, m * 1.2));
-    }
     shrines.push({ x: sx, z: sz, node: sid, lit: sid === start.id, restT: 0 });
   }
-  // ---- lamps: a plain green light in every room and tunnel ----
-  const lights = [];
-  for (const n of nodes)
-    lights.push({
-      x: n.x,
-      y: 3.2,
-      z: n.z,
-      c: SEWER_LAMP,
-      i: 1.1,
-      r: n.kind === "boss" ? 30 : 18,
-      ph: Rn() * TAU,
-    });
-  for (const e of edges) {
-    const m = e.pts[(e.pts.length / 2) | 0];
-    lights.push({
-      x: m.x,
-      y: 2.6,
-      z: m.z,
-      c: SEWER_LAMP,
-      i: 0.9,
-      r: 14,
-      ph: Rn() * TAU,
-    });
-  }
+  // ---- dressing, lamps and the boss cavern's set ----
+  const dress = dressSewer({
+    S,
+    Rd,
+    nodes,
+    edges,
+    boss,
+    ea,
+    fieldAt,
+    waterAt,
+    roofAt,
+    roomAt,
+    wallTop,
+    tri,
+    wcol,
+    crumble,
+    pillars,
+    shrines,
+    wallTunnels,
+    hole,
+    holeY,
+    holeTop,
+    perp,
+  });
 
   // ---- spawns ----
   const PACK = {
@@ -1009,16 +1784,16 @@ function genSewer(seed) {
     waterAt,
     bodyAt: (x, z) => fns.bodyAt(x, z, bodyIds),
     bodies,
-    grates: [],
-    wallTunnels: [],
-    shafts: [],
+    grates: dress.grates,
+    wallTunnels,
+    shafts: dress.shafts,
     pieces: null,
     crumble,
     pos: new Float32Array(P),
     col: new Uint8Array(C),
     mat: new Uint8Array(M),
-    lights,
-    halos: [],
+    lights: dress.lights,
+    halos: dress.halos,
     shrines,
     spawns,
     spawn,

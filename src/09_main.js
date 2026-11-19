@@ -622,6 +622,8 @@ window.DF = {
   genHub,
   genSewer,
   SEWER,
+  SEWER_LAMP,
+  lampFlicker,
   ENV_SEWER,
   TOUCH,
   PAD,

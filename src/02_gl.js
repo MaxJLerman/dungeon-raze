@@ -83,7 +83,8 @@ const R = (() => {
   float vnoise(vec2 p){ vec2 i=floor(p),f=fract(p); f=f*f*(3.-2.*f);
     return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y); }
   // Brick: courses 0.22 m high, bricks 0.5 m long, every other course half a
-  // brick along, mortar 0.025 m at 0.55. Returns the colour scale. A wall runs
+  // brick along, mortar 0.025 m at 0.55, some bricks dark or missing. Returns
+  // the colour scale. A wall runs
   // along its normal's horizontal tangent; a floor lies in xz. The normal is
   // taken from camera-relative positions, and a wall measures from the middle
   // of its 8 m square of ground, so that the tangent's rounding error is not
@@ -98,7 +99,13 @@ const R = (() => {
     float px=length(fwidth(q));
     float m=1.-smoothstep(0.0125-px*0.5,0.0125+px*0.5,d);
     m=mix(m,0.16,smoothstep(0.02,0.06,px));
-    return mix(1.+0.12*(hash(vec2(floor(u),row))*2.-1.),0.55,m);
+    // each brick's shade, hashed with its square so the pattern never repeats;
+    // a few are dark, and a few are missing: a hole shaded from its top edge
+    vec2 b=vec2(floor(u),row)+c*0.731;
+    float sh=1.+0.12*(hash(b)*2.-1.), k=hash(b.yx+17.3);
+    if(k>0.984) sh=0.2+0.16*(1.-fract(q.y/0.22));
+    else if(k>0.945) sh*=0.62;
+    return mix(sh,0.55,m);
   }
   // Water: the slope of slow ripples running with the flow, and how bright
   // the streaks along it are at p.
@@ -481,6 +488,16 @@ const R = (() => {
     pv(fxA, nA++, x + ax + bx, y + ay + by, z + az + bz, 1, 1, r, g, b, a);
     pv(fxA, nA++, x - ax + bx, y - ay + by, z - az + bz, -1, 1, r, g, b, a);
   }
+  // a soft disc of additive light lying flat at height y, s in radius
+  function flat(x, y, z, s, r, g, b, a) {
+    if (nA + 6 > FXMAX) return;
+    pv(fxA, nA++, x - s, y, z - s, -1, -1, r, g, b, a);
+    pv(fxA, nA++, x + s, y, z - s, 1, -1, r, g, b, a);
+    pv(fxA, nA++, x + s, y, z + s, 1, 1, r, g, b, a);
+    pv(fxA, nA++, x - s, y, z - s, -1, -1, r, g, b, a);
+    pv(fxA, nA++, x + s, y, z + s, 1, 1, r, g, b, a);
+    pv(fxA, nA++, x - s, y, z + s, -1, 1, r, g, b, a);
+  }
   function blob(x, z, s, a) {
     if (nD + 6 > 8000) return;
     const y = 0.12;
@@ -572,6 +589,7 @@ const R = (() => {
     drawNode,
     nodePos,
     sprite,
+    flat,
     blob,
     ribbon,
     ring,

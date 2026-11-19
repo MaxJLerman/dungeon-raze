@@ -114,4 +114,34 @@ export default [
   // the boss cavern from its entrance, looking at the centre pool
   { ...sewer("the boss cavern, for looking at", `const b = w.boss, ent = w.nodes[w.path[w.path.length - 2]], a = Math.atan2(ent.x - b.x, ent.z - b.z);
   return look(b.x + Math.sin(a) * (b.r - 3), b.z + Math.cos(a) * (b.r - 3), a + Math.PI, 0.3);`), wait: 400, shot: "t22-boss" },
+  step("the sewer lists grates, wall tunnels and shafts", `const w = DF.genSewer(6), b = w.boss, ent = w.nodes[w.path[w.path.length - 2]];
+  const far = w.wallTunnels.every((q) => (q.x - b.x) * (ent.x - b.x) + (q.z - b.z) * (ent.z - b.z) < 0);
+  return { pass: w.grates.length > 0 && w.wallTunnels.length >= 3 && w.wallTunnels.length <= 5 && far && w.shafts.length >= 3 && w.lights.every((L) => typeof L.flick === "boolean") };`),
+  step("a flickering lamp is steady most of the time and stutters sometimes", `let low = 0, full = 0, n = 0; for (let t = 0; t < 60; t += 1 / 60) { const v = DF.lampFlicker(1.7, t); n++; if (v < 0.5) low++; if (v > 0.99) full++; }
+  return { pass: low > 0 && full / n > 0.85 && DF.lampFlicker(1.7, 12.3) === DF.lampFlicker(1.7, 12.3) };`),
+  // every tunnel longer than 20 m has a grate in its wall, facing into it;
+  // wall tunnels face the cavern's centre at about 5 m up, shafts stand on
+  // dry floor inside it, about one lamp in three flickers, and nothing glows
+  // like a crystal
+  step("grates, wall tunnels, shafts and lamps are where they belong", `const bad = []; let flick = 0, lamps = 0;
+  for (let s = 1; s <= 8; s++) { const w = DF.genSewer(s), b = w.boss, inRoom = (x, z) => w.nodes.some((n) => Math.abs(x - n.x) < n.hw && Math.abs(z - n.z) < n.hd);
+    for (const e of w.edges) { let len = 0; for (let i = 1; i < e.pts.length; i++) { const a = e.pts[i - 1], c = e.pts[i]; if (!inRoom((a.x + c.x) / 2, (a.z + c.z) / 2)) len += Math.hypot(c.x - a.x, c.z - a.z); }
+      if (len <= 20) continue;
+      const near = (g) => e.pts.some((q) => Math.hypot(q.x - g.x, q.z - g.z) < DF.SEWER.tunR + 1.5);
+      const g = w.grates.find((g) => near(g) && w.fieldAt(g.x + Math.sin(g.yaw) * 1.5, g.z + Math.cos(g.yaw) * 1.5) > w.fieldAt(g.x, g.z) + 1);
+      if (!g) bad.push([s, "grate", e.a, e.b, Math.round(len)]); }
+    for (const q of w.wallTunnels) { const d = Math.hypot(q.x - b.x, q.z - b.z), face = Math.abs(DF.angDiff(q.yaw, Math.atan2(b.x - q.x, b.z - q.z)));
+      if (Math.abs(d - b.r) > 0.6 || Math.abs(q.y - 5) > 1 || face > 0.05 || w.waterAt(q.x + Math.sin(q.yaw) * 2, q.z + Math.cos(q.yaw) * 2) !== 1) bad.push([s, "mouth"]); }
+    if (w.shafts.length < 3 || w.shafts.length > 6) bad.push([s, "shafts", w.shafts.length]);
+    for (const h of w.shafts) if (Math.hypot(h.x - b.x, h.z - b.z) > b.r - 4 || w.waterAt(h.x, h.z) !== 0 || !(h.r > 0)) bad.push([s, "shaft"]);
+    for (const L of w.lights) if (L.c === DF.SEWER_LAMP) { lamps++; if (L.flick) flick++; }
+    if (w.halos.some((h) => !h.lamp)) bad.push([s, "halo"]); }
+  const share = flick / lamps;
+  return { pass: bad.length === 0 && share > 0.2 && share < 0.45, bad: bad.slice(0, 6), share };`),
+  // the arrival: the ladder down from the manhole, beside where the player lands
+  { ...sewer("the arrival hall under the manhole, for looking at", `const s = w.spawn, a = w.spawnYaw;
+  return look(s.x + Math.sin(a) * 4.5, s.z + Math.cos(a) * 4.5, a + Math.PI + 0.35, -0.12);`), wait: 500, shot: "t22-arrival" },
+  // the boss cavern from the dry ring, looking at the wall tunnels and their falls
+  { ...sewer("the boss cavern's far wall, for looking at", `const b = w.boss, q = w.wallTunnels[(w.wallTunnels.length / 2) | 0], a = Math.atan2(q.x - b.x, q.z - b.z);
+  return look(b.x + Math.sin(a) * 7, b.z + Math.cos(a) * 7, a, -0.05);`), wait: 500, shot: "t22-falls" },
 ];

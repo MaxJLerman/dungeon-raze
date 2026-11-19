@@ -549,12 +549,19 @@ function buildLights() {
   near.sort((a, b) => a[0] - b[0]);
   for (let i = 0; i < near.length && L.length < 8; i++) {
     const c = near[i][1];
+    // a crystal breathes; a lamp (which says whether it flickers) holds
+    // steady but for its stutters
     L.push({
       x: c.x,
       y: c.y,
       z: c.z,
       c: c.c,
-      i: c.i + Math.sin(G.t * 1.7 + c.ph) * 0.2,
+      i:
+        c.flick === undefined
+          ? c.i + Math.sin(G.t * 1.7 + c.ph) * 0.2
+          : c.flick
+            ? c.i * lampFlicker(c.ph, G.t)
+            : c.i,
       r: c.r,
     });
   }
@@ -731,6 +738,123 @@ function drawCaveIns() {
     R.drawNode(c.node);
   }
 }
+// The sewer's moving set, drawn each frame: water pouring from the boss
+// cavern's wall tunnels into the pools below, and shafts of light down from
+// the cracks in its dome. Nothing is drawn for a world without them.
+function drawSewerSet(w) {
+  const cx = R.cam.x,
+    cz = R.cam.z,
+    sink = WATER.sink,
+    fc = [0.5, 0.78, 0.66];
+  for (const q of w.wallTunnels) {
+    if (Math.hypot(q.x - cx, q.z - cz) > 80) continue;
+    const fx = Math.sin(q.yaw),
+      fz = Math.cos(q.yaw),
+      rx = -fz,
+      rz = fx,
+      y0 = q.y - 0.8 + 0.03,
+      E = SEWER.mouthOut,
+      ph = q.x * 0.37;
+    // running out along the outlet's floor, then falling: out at an even
+    // pace, down faster and faster
+    R.ribbon(
+      4,
+      (t, s) => {
+        const e = t * E,
+          l = (s ? 1 : -1) * SEWER.mouthHW * 0.85;
+        return [q.x + fx * e + rx * l, y0 + 0.02, q.z + fz * e + rz * l];
+      },
+      fc[0],
+      fc[1],
+      fc[2],
+      (t) => 0.16 + 0.08 * Math.sin(t * 9 - G.t * 7 + ph),
+    );
+    for (let j = 0; j < 3; j++) {
+      const o2 = [0, -0.42, 0.45][j],
+        hw = [0.85, 0.28, 0.3][j],
+        a = [0.2, 0.32, 0.3][j];
+      R.ribbon(
+        12,
+        (t, s) => {
+          const e = E + 1.1 * t,
+            y = y0 - (y0 + sink) * t * t,
+            l = o2 + (s ? 1 : -1) * hw * (1 + 0.3 * t);
+          return [q.x + fx * e + rx * l, y, q.z + fz * e + rz * l];
+        },
+        fc[0],
+        fc[1],
+        fc[2],
+        (t) => a * (0.6 + 0.4 * Math.sin(t * 13 - G.t * (8 + j) + j * 2.1 + ph)),
+      );
+    }
+    // where it lands: spray, mist and spreading rings
+    const bx = q.x + fx * (E + 1.1),
+      bz = q.z + fz * (E + 1.1);
+    for (let j = 0; j < 3; j++) {
+      const k = G.t * (6 + j) + j * 2 + ph;
+      R.sprite(
+        bx + rx * Math.sin(k) * 0.4,
+        -sink + 0.2 + 0.18 * Math.abs(Math.sin(k * 1.3)),
+        bz + rz * Math.sin(k) * 0.4,
+        0.6,
+        fc[0],
+        fc[1],
+        fc[2],
+        0.3,
+      );
+    }
+    R.sprite(bx, -sink + 0.7, bz, 2.2, fc[0], fc[1], fc[2], 0.12);
+    for (let j = 0; j < 2; j++) {
+      const k = (G.t * 0.8 + j * 0.5 + ph) % 1,
+        r = 0.4 + 1.8 * k;
+      R.ring(bx, -sink + 0.02, bz, r, r + 0.14, fc[0], fc[1], fc[2], 0.35 * (1 - k));
+    }
+  }
+  const sky = SEWER_SKY;
+  for (const h of w.shafts) {
+    let dx = cx - h.x,
+      dz = cz - h.z;
+    const d = Math.hypot(dx, dz) || 1;
+    if (d > 80) continue;
+    // a beam facing the camera, narrow at the crack and wide on the floor
+    dx /= d;
+    dz /= d;
+    const sh = 0.92 + 0.08 * Math.sin(G.t * 0.7 + h.x);
+    for (const [wm, a] of [
+      [1.7, 0.05],
+      [0.9, 0.09],
+    ])
+      R.ribbon(
+        10,
+        (t, s) => {
+          const y = lerp(h.top - 0.1, 0.05, t),
+            l = (s ? 1 : -1) * h.r * wm * lerp(0.35, 1, t);
+          return [h.x + dz * l, y, h.z - dx * l];
+        },
+        sky[0],
+        sky[1],
+        sky[2],
+        (t) => a * sh * (t < 0.06 ? t / 0.06 : 1) * (0.7 + 0.3 * Math.sin(PI * t)),
+      );
+    R.flat(h.x, 0.04, h.z, h.r * 1.9, sky[0], sky[1], sky[2], 0.3 * sh);
+    R.flat(h.x, 0.05, h.z, h.r * 0.9, sky[0], sky[1], sky[2], 0.25 * sh);
+    R.sprite(h.x, h.top - 0.25, h.z, h.r * 1.2, sky[0], sky[1], sky[2], 0.35);
+    // dust drifting down through it
+    for (let j = 0; j < 8; j++) {
+      const k = (G.t * 0.035 + j * 0.131 + h.x * 0.01) % 1;
+      R.sprite(
+        h.x + Math.sin(G.t * 0.3 + j * 2.1) * h.r * 0.5,
+        h.top * (1 - k),
+        h.z + Math.cos(G.t * 0.27 + j * 1.7) * h.r * 0.5,
+        0.05,
+        sky[0],
+        sky[1],
+        sky[2],
+        0.9,
+      );
+    }
+  }
+}
 function render() {
   const p = G.player,
     w = G.world;
@@ -876,9 +1000,17 @@ function render() {
   for (const h of w.halos) {
     const d = Math.hypot(h.x - cx, h.z - cz);
     if (d > 64) continue;
+    if (h.lamp) {
+      // a lamp's glass and glow, dimming with its light when it stutters
+      const fl = h.flick ? lampFlicker(h.ph, G.t) : 1;
+      R.sprite(h.x, h.y, h.z, 0.24, h.c[0], h.c[1], h.c[2], 1.3 * fl);
+      R.sprite(h.x, h.y, h.z, h.s, h.c[0], h.c[1], h.c[2], 0.32 * fl);
+      continue;
+    }
     const fl = 0.85 + 0.15 * Math.sin(G.t * 2.2 + h.x);
     R.sprite(h.x, h.y, h.z, 1.9, h.c[0], h.c[1], h.c[2], 0.5 * fl);
   }
+  drawSewerSet(w);
   for (const sh of w.shrines) {
     const fl = Math.sin(G.t * 11 + sh.x) * 0.5 + Math.sin(G.t * 17) * 0.5;
     if (sh.lit) {
