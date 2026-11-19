@@ -725,6 +725,7 @@ window.DF = {
   crocChunkLand,
   crocBloat,
   crocFallSpot,
+  crocSwimNet,
   drawMouths,
   grappleTarget,
   nearestStaggered,

@@ -583,6 +583,11 @@ EBEH.grabber = {
 // and for the bloaters down the falls:
 //   bloatEvery how often one washes down a fall while the fight is on, in s
 //   bloatCap   how many of them may be alive at once
+// and for its shadow:
+//   shadowR   how near a light shaft's centre its shadow shows on the water
+//             while it is under, fading out to nothing at this distance over
+//             its last CROC_SHADOW_FADE m (the shafts stand over the dry
+//             ring; each one's light reaches 11 m)
 const CROC = {
   under: [3, 5],
   swim: 7,
@@ -617,9 +622,12 @@ const CROC = {
   rockCap: 5,
   bloatEvery: 14,
   bloatCap: 2,
+  shadowR: 5,
 };
 // the rearing slam's hit is centred this far in front of it
 const CROC_SLAM_AHEAD = 1;
+// its shadow fades out over this much short of CROC.shadowR (drawWakes)
+const CROC_SHADOW_FADE = 1.5;
 // states in which it is busy in the water, and does not climb out yet
 const CROC_WET_BUSY = { wind: 1, act: 1, hold: 1, stagger: 1 };
 // The dry footing point on a 0.5 m lattice within R m (3 unless given) of

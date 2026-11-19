@@ -920,25 +920,47 @@ const bloatSteps = [
   begin(); DF.crocBloat(e, w); const n1 = live().length; DF.respawn(); G.manual = true; const n2 = G.enemies.filter((o) => o.fromFall).length;
   return { pass: before.n === 2 && before.aware && before.dead && n < 60 && after.n === 0 && after.clouds === 0 && after.kills === 0 && after.focus === 0 && after.tool === 0 && !after.lock && after.gone && n1 === 1 && n2 === 0,
     before, after, n, n1, n2 };`),
-  cstep("its shadow shows under a shaft", `
+  step("the shadow can show in every cavern", `const C = DF.CROC, out = [];
+  // the nearest point of the real swim net to any shaft, per seed: within shadowR on every one
+  for (let s = 1; s <= 12; s++) { const w = DF.genSewer(s), e = DF.makeEnemy(w.spawns.find((q) => q.type === "croc")), net = DF.crocSwimNet(e, w).pts;
+    let d = 1e9, n = 0; for (const h of w.shafts) for (const q of net) { const k = Math.hypot(q.x - h.x, q.z - h.z); d = Math.min(d, k); if (k < C.shadowR) n++; }
+    out.push({ s, d: +d.toFixed(2), n }); }
+  return { pass: C.shadowR === 5 && out.every((o) => o.d < C.shadowR && o.n > 0), shadowR: C.shadowR, out };`),
+  cstep("its shadow shows near a shaft", `
+  // the swim-net point nearest a shaft, and one further from the same shaft but still in reach
+  begin(); const net = DF.crocSwimNet(e, w).pts; let q = null, h = null, bd = 1e9;
+  for (const s of w.shafts) for (const n of net) { const d = Math.hypot(n.x - s.x, n.z - s.z); if (d < bd) (bd = d), (q = n), (h = s); }
+  const q2 = net.find((n) => { const d = Math.hypot(n.x - h.x, n.z - h.z); return d > bd + 1 && d < C.shadowR - 0.3; });
   // the blobs of the last whole frame drawn (each frame starts with R.begin)
-  begin(); const h = w.shafts[0], real = DF.R.blob, rb = DF.R.begin; let frames = [[]];
+  const real = DF.R.blob, rb = DF.R.begin; let frames = [[]];
   DF.R.begin = (...a) => { frames.push([]); return rb(...a); };
   DF.R.blob = (...a) => { frames[frames.length - 1].push(a); return real(...a); };
   try {
     const at = async (x, z) => { Object.assign(e, { mode: "under", hidden: true, x, z, yaw: 0.7, modeT: 1e6, speed: 0 }); frames = [[]]; await draw(); return frames[frames.length - 1]; };
-    const under = await at(h.x, h.z), away = await at(B.x, B.z);
-    const extra = under.filter((a) => a[4] === 0.7 && a[5] > 1);
+    const mine = (f) => f.filter((a) => a[4] === 0.7 && a[5] > 1);
+    const under = await at(q.x, q.z), away = await at(B.x, B.z), further = q2 ? mine(await at(q2.x, q2.z)) : [];
+    // the dry floor under the shaft itself has no water for it to show through
+    const dry = await at(h.x, h.z);
+    const extra = mine(under), a0 = extra[0] && extra[0][3], a1 = further[0] && further[0][3];
     // rising, it is not drawn
-    e.mode = "rise"; e.modeT = C.warn; e.spot = { x: h.x, z: h.z }; frames = [[]]; await draw(); const rise = frames[frames.length - 1].filter((a) => a[4] === 0.7).length;
-    return { pass: !!h && under.length === away.length + 1 && extra.length === 1 && rise === 0, shafts: w.shafts.length, under: under.length, away: away.length, extra, rise };
+    e.mode = "rise"; e.modeT = C.warn; e.spot = { x: q.x, z: q.z }; frames = [[]]; await draw(); const rise = mine(frames[frames.length - 1]).length;
+    return { pass: !!q && bd < C.shadowR && under.length === away.length + 1 && extra.length === 1 && a0 > 0 && a0 <= 0.95 && !!q2 && further.length === 1 && a1 < a0 && dry.length === away.length && rise === 0,
+      bd: +bd.toFixed(2), under: under.length, away: away.length, dry: dry.length, a0, a1, q2: !!q2, rise };
   } finally { DF.R.blob = real; DF.R.begin = rb; }`),
-  { ...cstep("its shadow under a shaft, for looking at", `
-  begin(); const h = w.shafts[0], a = Math.atan2(B.x - h.x, B.z - h.z) + 0.6;
-  Object.assign(e, { mode: "under", hidden: true, x: h.x, z: h.z, yaw: a + 1.2, modeT: 1e6, speed: 0 });
-  put({ x: h.x - Math.sin(a) * 4.5, z: h.z - Math.cos(a) * 4.5 }); w.resolve(p, p.r);
-  p.yaw = cam.yaw = Math.atan2(h.x - p.x, h.z - p.z); cam.pitch = 0.6; cam.px = p.x; cam.pz = p.z; p.fig.root.s = [0.0001, 0.0001, 0.0001];
-  return { pass: true };`), wait: 500, shot: "t25-shadow" },
+  { ...cstep("its shadow near a shaft, for looking at", `
+  // of the swim-net points where its shadow is at full strength, the one in the most open water (the most of
+  // a ring 1.5 m round it wet), nearest the shaft on a tie
+  const net = DF.crocSwimNet(e, w).pts, wetRing = (n) => { let k = 0; for (let i = 0; i < 16; i++) if (w.waterAt(n.x + Math.sin(i * Math.PI / 8) * 1.5, n.z + Math.cos(i * Math.PI / 8) * 1.5) >= 0.5) k++; return k; };
+  let q = null, h = null, bd = 1e9, bk = -1;
+  for (const s of w.shafts) for (const n of net) { const d = Math.hypot(n.x - s.x, n.z - s.z), k = wetRing(n);
+    if (d < C.shadowR - 1.5 && (k > bk || (k === bk && d < bd))) (bd = d), (q = n), (h = s), (bk = k); }
+  begin(); const ux = (q.x - h.x) / bd, uz = (q.z - h.z) / bd;
+  // seen from beside the shaft, looking down past its light onto the water
+  Object.assign(e, { mode: "under", hidden: true, x: q.x, z: q.z, yaw: Math.atan2(uz, -ux), modeT: 1e6, speed: 0 });
+  put({ x: q.x - ux * 3.5 + uz * 0.8, z: q.z - uz * 3.5 - ux * 0.8 }); w.resolve(p, p.r);
+  p.yaw = cam.yaw = Math.atan2(q.x - p.x, q.z - p.z); cam.pitch = 0.9; cam.px = p.x; cam.pz = p.z; p.fig.root.s = [0.0001, 0.0001, 0.0001];
+  await draw(); const sc = DF.R.toScreen(q.x, -0.25, q.z);
+  return { pass: true, bd, wet: bk, sc };`), wait: 500, shot: "t25-shadow" },
   step("the player is put back once more", `G.player.fig.root.s = [1, 1, 1]; DF.newRun(99); return { pass: true };`),
 ];
 export default [...base, ...crocSteps, ...rollSteps, ...markSteps, ...tunnelSteps, ...ceilingSteps, ...bloatSteps];
