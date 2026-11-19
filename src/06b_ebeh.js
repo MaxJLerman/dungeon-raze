@@ -280,3 +280,117 @@ function eelShock(e, w, p) {
     dur: EEL.lit,
   });
 }
+// The siren lives in one pool (foot) and comes to the shore nearest the
+// player (goal). Her lunge (kind "grab") catches a player in reach in front
+// of her and drags them into her pool (held); once the hold is over, however
+// it ended, she sinks back toward her post and cannot attack for
+// SIREN.grabCD s. Her song (kind "song") pulls the player toward her while
+// she can see them; a dodge breaks it.
+EBEH.siren = {
+  foot: waterFoot,
+  goal: waterGoal,
+  canAttack: (e) => !(e.grabCD > 0),
+  step(e, dt, c) {
+    if (e.body === undefined) e.body = c.w.bodyAt(e.x, e.z);
+    e.grabCD = Math.max(0, (e.grabCD || 0) - dt);
+    if (e.state !== "act") e.sing = false;
+    if (!e.grabbing) return false;
+    const p = c.p;
+    if (e.state === "hold" && p.hold && p.hold.by === e) {
+      e.yaw = turnTo(e.yaw, c.toP, e.def.turn * dt);
+      // she backs off to keep clear of the player she drags, so they reach
+      // the water and are not shoved back onto the bank by her body
+      const gx = e.dragX - e.x,
+        gz = e.dragZ - e.z,
+        gd = Math.hypot(gx, gz);
+      if (gd > 0.05) eStep(e, gx / gd, gz / gd, Math.min(SIREN.dragSpeed, gd / dt), dt);
+      return true;
+    }
+    // the hold is over: she let go, a hit or stagger made her, or the player
+    // broke free or died
+    e.grabbing = false;
+    e.grabCD = SIREN.grabCD;
+    if (e.state === "hold") {
+      e.state = "rec";
+      e.t = 0;
+      e.atk = e.def.atks.lunge;
+      e.token = false;
+    }
+    return false;
+  },
+  // while she cannot grab she makes for her post, watching the player
+  chase(e, dt, c) {
+    if (!(e.grabCD > 0)) return false;
+    e.token = false;
+    e.yaw = turnTo(e.yaw, c.toP, e.def.turn * dt);
+    const hx = e.hx - e.x,
+      hz = e.hz - e.z,
+      hd = Math.hypot(hx, hz);
+    if (hd > 0.3) eStep(e, hx / hd, hz / hd, e.def.speed, dt);
+    return true;
+  },
+  // the lunge's wind-up is the shared red warning; the song's is her rising
+  wind() {},
+  act(e, dt, c) {
+    const a = e.atk,
+      p = c.p;
+    e.sing = false;
+    if (a.kind === "grab") {
+      if (e.hitDone || c.dist > a.reach + 0.6 || Math.abs(angDiff(e.yaw, c.toP)) > a.arc / 2) return;
+      e.hitDone = true;
+      // a parry that sent her reeling leaves nothing to grab with
+      if (hurtPlayer(a.dmg, e, a) === "none" || e.state !== "act") return;
+      const t = sirenDrag(e, c);
+      if (grabPlayer(e, { dps: SIREN.dps, tx: t.x, tz: t.z, speed: SIREN.dragSpeed })) {
+        e.state = "hold";
+        e.t = 0;
+        e.grabbing = true;
+        e.dragX = t.hx;
+        e.dragZ = t.hz;
+      }
+      return;
+    }
+    if (a.kind !== "song") return;
+    e.yaw = turnTo(e.yaw, c.toP, e.def.turn * dt);
+    if (!c.alive || ["held", "execute", "blink", "grapple", "inspect"].includes(p.state)) return;
+    if (p.state === "dodge") {
+      e.state = "rec";
+      e.t = 0;
+      return;
+    }
+    if (!c.w.los(e.x, e.z, p.x, p.z)) return;
+    // pulled toward her, never into her, and never through a wall
+    const room = c.dist - (e.r + p.r + 0.2);
+    if (room <= 0) return;
+    const s = Math.min(room, SIREN.pull * dt);
+    p.x -= (c.dx / c.dist) * s;
+    p.z -= (c.dz / c.dist) * s;
+    c.w.resolve(p, p.r);
+    e.sing = true;
+  },
+};
+// Where the siren drags a player she has caught: where the line from the
+// player through her crosses into the water, SIREN.drag m further along it,
+// walked back toward the shore until it is footing of hers (her own spot when
+// none is). hx, hz is where she backs off to meanwhile: e.r + p.r + 0.2 past
+// that point on the same line, walked back the same way but no nearer than
+// e.r + p.r (she stays where she is when there is no such spot).
+function sirenDrag(e, c) {
+  const p = c.p,
+    w = c.w,
+    d = c.dist,
+    ux = d > 0.01 ? -c.dx / d : -Math.sin(e.yaw),
+    uz = d > 0.01 ? -c.dz / d : -Math.cos(e.yaw);
+  let s = 0;
+  while (s < d && w.waterAt(p.x + ux * s, p.z + uz * s) < 0.5) s += 0.05;
+  const sx = p.x + ux * s,
+    sz = p.z + uz * s;
+  const back = (x0, z0, k0, k1) => {
+    for (let k = k0; k >= k1 - 1e-6; k -= 0.1)
+      if (waterFoot(e, x0 + ux * k, z0 + uz * k)) return { x: x0 + ux * k, z: z0 + uz * k };
+    return null;
+  };
+  const t = back(sx, sz, SIREN.drag, 0) || { x: e.x, z: e.z },
+    h = back(t.x, t.z, e.r + p.r + 0.2, e.r + p.r) || { x: e.x, z: e.z };
+  return { x: t.x, z: t.z, hx: h.x, hz: h.z };
+}

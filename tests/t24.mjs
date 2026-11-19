@@ -82,6 +82,29 @@ const EELSET = `
   const spotA = (d) => spot(big, e.x, e.z, d), spotB = (d) => spot(B, B.x, B.z, d);
   const aggro = (q) => { DF.alertE(q, true); q.aware = true; q.state = "chase"; };
 `;
+// the siren's set-up: E0 is a footing spot about 1.2 m in from the shore on a heading (sh.a, dir) with open dry floor
+// out to 8 m from E0, bank(d) the point d metres from E0 along it; setUp(d) puts her at E0 awake and the player at bank(d) facing her, free and unhurt;
+// force(k) starts an attack (the lunge from its wind, the song from its act); SHOT() points the camera past the player at her
+const SIRENSET = `
+  const S = DF.SIREN, A = DF.EDEF.siren.atks;
+  const dry = (q) => w.waterAt(q.x, q.z) === 0 && w.fieldAt(q.x, q.z) >= 1 && w.los(E0.x, E0.z, q.x, q.z);
+  // the heading with the nearest shore that has open dry floor out to 8 m from E0
+  let dir = null, E0 = null, bank = null;
+  for (let k = 0; k < 48 && !dir; k++) { const a = (k / 48) * Math.PI * 2, u = { x: Math.sin(a), z: Math.cos(a) }; let s = 0;
+    while (s < 30 && w.waterAt(at.x + u.x * s, at.z + u.z * s) >= 0.5) s += 0.25;
+    for (let j = 1.2; j <= s; j += 0.1) { const q = { x: at.x + u.x * (s - j), z: at.z + u.z * (s - j) }; if (DF.waterFoot(e, q.x, q.z)) { E0 = q; break; } }
+    if (!E0) continue;
+    bank = (d) => ({ x: E0.x + u.x * d, z: E0.z + u.z * d });
+    if ([3.5, 5, 8].every((d) => dry(bank(d)))) { dir = u; sh.a = a; } else E0 = null; }
+  if (!dir) return { pass: false, why: "no shore with open dry floor past it" };
+  const setUp = (d) => {
+    e.x = e.okx = E0.x; e.z = e.okz = E0.z; e.kx = e.kz = 0; e.yaw = sh.a; e.grabCD = 0;
+    const q = bank(d); p.x = q.x; p.z = q.z; p.yaw = sh.a + Math.PI; cam.yaw = p.yaw; cam.px = p.x; cam.pz = p.z;
+    p.state = "free"; p.hold = null; p.iframe = 0; p.kx = p.kz = 0; keep(); G.grabGrace = 0;
+    DF.alertE(e, true); e.aware = true; e.state = "chase"; return q; };
+  const force = (k) => { e.atk = A[k]; e.state = k === "lunge" ? "wind" : "act"; e.t = 0; e.hitDone = false; };
+  const SHOT = () => { const face = Math.atan2(e.x - p.x, e.z - p.z); cam.yaw = face + 0.45; cam.pitch = 0.22; p.yaw = face; cam.px = p.x; cam.pz = p.z; };
+`;
 // the player 2.5 m short of the bloater at `at` and to its right, the camera behind the player looking down on both
 const SHOTCAM = `const a = 2.4, fx = Math.sin(a), fz = Math.cos(a), rx = -fz, rz = fx; cam.yaw = a; cam.pitch = 0.5;
     p.x = at.x - fx * 2.5 + rx * 1.4; p.z = at.z - fz * 2.5 + rz * 1.4; w.resolve(p, 0.6); p.yaw = a; p.state = "free"; cam.px = p.x; cam.pz = p.z; DF.sim(0.3);`;
@@ -549,5 +572,82 @@ export default [
     e.shockT = DF.EEL.every - 0.01; let n = 0; DF.sim(4, () => { keep(); p.x = dry.x; p.z = dry.z; e.cd = 99; if (G.shocks.length && ++n > 6) return false; });
     const face = Math.atan2(B.x - big.x, B.z - big.z) + SIDE; cam.yaw = face; cam.pitch = 0.55; p.yaw = face; cam.px = p.x; cam.pz = p.z;
     return { pass: G.shocks.length === 1, n: G.shocks.length, dB: D(B, big), dry, dd };`.replace("SIDE", "-Math.PI / 2"), "fighter", "eel"), wait: 400, shot: "t24-eel-shock" },
-  step("the class is put back", `DF.setClass("fighter"); return { pass: true };`),
+  // ---- the siren ----
+  pool("a siren stays in water", STAYS, "fighter", "siren"),
+  pool("her lunge reaches 4 m onto the bank and drags the player in", SIRENSET + `
+    const P0 = setUp(3.5); if (!dry(P0)) return { pass: false, why: "the bank is not dry", P0 };
+    // where the line from the player through her crosses into the water
+    let s = 0; while (s < 3.5 && w.waterAt(P0.x - dir.x * s, P0.z - dir.z * s) < 0.5) s += 0.05;
+    const Sh = { x: P0.x - dir.x * s, z: P0.z - dir.z * s };
+    force("lunge"); let held = false, free = null, stays = true;
+    DF.sim(3, () => { keep(); e.cd = 99; if (!foot()) stays = false; if (p.state === "held") held = true; else if (held && !free) free = { x: p.x, z: p.z }; });
+    const c = { held, free: !!free, wet: !!free && w.waterAt(free.x, free.z) >= 0.5 && w.bodyAt(free.x, free.z) === e.body,
+      deep: !!free && Math.abs(D(free, Sh) - S.drag) <= 1, stays };
+    return { pass: Object.values(c).every(Boolean), c, depth: free && D(free, Sh), shore: s };`, "fighter", "siren"),
+  pool("out of reach, the lunge misses", SIRENSET + `
+    const P0 = setUp(5); if (!dry(P0)) return { pass: false, why: "the bank is not dry", P0 };
+    force("lunge"); let held = false, acted = false;
+    DF.sim(3, () => { keep(); e.cd = 99; if (e.state === "act") acted = true; if (p.state === "held") held = true; });
+    return { pass: acted && !held, acted, held };`, "fighter", "siren"),
+  pool("she cannot grab again for SIREN.grabCD", SIRENSET + `
+    const P0 = setUp(3.5); if (!dry(P0)) return { pass: false, why: "the bank is not dry", P0 };
+    force("lunge"); let held = false;
+    DF.sim(4, () => { keep(); if (p.state === "held") held = true; else if (held) return false; });
+    if (!held || p.state === "held") return { pass: false, why: "no hold", held };
+    // the player back on the bank in her reach, where she would attack at once
+    const pin = () => { keep(); p.x = P0.x; p.z = P0.z; };
+    let wind = false; DF.sim(S.grabCD - 0.5, () => { pin(); if (e.state === "wind") wind = true; });
+    let again = null; DF.sim(8, (i) => { pin(); if (e.state === "wind") { again = i / 60; return false; } });
+    return { pass: !wind && again !== null, wind, again, cd: e.grabCD };`, "fighter", "siren"),
+  pool("the song pulls and a dodge breaks it", SIRENSET + `
+    const P8 = setUp(8); if (!dry(P8)) return { pass: false, why: "the bank is not dry", P8 };
+    force("song"); const d0 = D(p, e); DF.sim(1, () => { keep(); e.cd = 99; }); const pulled = d0 - D(p, e);
+    setUp(8); force("song"); DF.sim(0.3, () => { keep(); e.cd = 99; });
+    DF.taps[DF.BIND.dodge] = true; let rec = false, dodged = false;
+    DF.sim(0.1, () => { keep(); e.cd = 99; if (p.state === "dodge") dodged = true; if (e.state === "rec") rec = true; });
+    DF.sim(1, () => { keep(); e.cd = 99; if (p.state !== "dodge") return false; });
+    // what is left of the dodge's slide may move them a little, but not toward her
+    const q = { x: p.x, z: p.z }; DF.sim(0.6, () => { keep(); e.cd = 99; });
+    const c = { pulled: pulled >= 2, dodged, rec, still: D(p, E0) >= D(q, E0) - 0.01 };
+    return { pass: Object.values(c).every(Boolean), c, pulled, before: D(q, E0), after: D(p, E0) };`, "fighter", "siren"),
+  pool("the song does nothing to a held player", SIRENSET + `
+    const P8 = setUp(8); if (!dry(P8)) return { pass: false, why: "the bank is not dry", P8 };
+    force("song"); p.state = "held"; p.hold = { by: { state: "hold", dead: false, x: p.x + 1, z: p.z }, t: 0, tick: 0, jolt: 0, dps: 0, tx: p.x, tz: p.z, speed: 0 };
+    let moved = 0; DF.sim(0.5, () => { keep(); e.cd = 99; p.hold.t = 0; moved = Math.max(moved, D(p, P8)); });
+    p.state = "free"; p.hold = null;
+    return { pass: moved < 0.01, moved };`, "fighter", "siren"),
+  pool("the player can walk against the song", SIRENSET + `
+    const P5 = setUp(5); if (!dry(P5)) return { pass: false, why: "the bank is not dry", P5 };
+    force("song"); cam.yaw = sh.a; p.yaw = sh.a; const d0 = D(p, E0); let sang = 0;
+    DF.keys[DF.BIND.fwd] = true;
+    try { DF.sim(2, () => { keep(); e.cd = 99; if (e.state === "act") sang++; }); } finally { DF.keys[DF.BIND.fwd] = false; }
+    return { pass: D(p, E0) > d0 && sang >= 110, d0, d: D(p, E0), sang };`, "fighter", "siren"),
+  pool("she can be hit from dry floor when she comes to the edge", `
+    const P2 = { x: e.x + Math.sin(sh.a) * (sh.s + 1.5), z: e.z + Math.cos(sh.a) * (sh.s + 1.5) };
+    if (w.waterAt(P2.x, P2.z) !== 0 || w.fieldAt(P2.x, P2.z) < 0.6) return { pass: false, why: "no dry bank", P2 };
+    p.x = P2.x; p.z = P2.z; cam.px = p.x; cam.pz = p.z; DF.alertE(e, true); e.aware = true; e.state = "chase";
+    // what the melee hit loop reaches: range plus her radius
+    const range = DF.MOVES[p.cls.chain].range + e.r; let t = null, landed = false;
+    DF.sim(10, (i) => { keep(); if (t === null && D(e, p) <= range) { t = i / 60; const h = e.hp; DF.hitEnemy(e, 5, 5, { src: "melee" }); landed = e.hp < h; return false; } });
+    const c = { near: t !== null, landed, foot: foot() };
+    return { pass: Object.values(c).every(Boolean), c, t, range, d: D(e, p) };`, "fighter", "siren"),
+  { ...pool("the siren, idle and low in the water", SIRENSET + `
+    // a short boom (put back by the last step), the camera about 4 m from her and in front of her to one side, the
+    // player out of the way 2.4 m short of her on the line of sight; no update runs, so she does not notice them
+    e.state = "idle"; e.aware = false; e.x = e.okx = e.hx = E0.x; e.z = e.okz = e.hz = E0.z; e.yaw = e.hyaw = sh.a;
+    const a = sh.a + Math.PI + 0.8, vx = Math.sin(a), vz = Math.cos(a), rx = -vz, rz = vx;
+    p.x = e.x - vx * 2.4 - rx * 1.3; p.z = e.z - vz * 2.4 - rz * 1.3; p.state = "free"; p.yaw = a;
+    cam.dist = 2.5; cam.yaw = a; cam.pitch = 0.45; cam.px = p.x; cam.pz = p.z;
+    return { pass: e.state === "idle" && !e.aware };`, "fighter", "siren"), wait: 400, shot: "t24-siren" },
+  { ...pool("the siren half way through the lunge's wind", SIRENSET + `
+    setUp(3.5); force("lunge"); SHOT(); DF.sim(DF.EDEF.siren.atks.lunge.wind / 2, () => { keep(); SHOT(); });
+    return { pass: e.state === "wind", st: e.state };`, "fighter", "siren"), wait: 400, shot: "t24-siren-lunge" },
+  { ...pool("the siren singing to a player on the bank", SIRENSET + `
+    setUp(6); force("song"); DF.sim(0.4, () => { keep(); e.cd = 99; }); SHOT();
+    return { pass: e.sing === true, st: e.state };`, "fighter", "siren"), wait: 400, shot: "t24-siren-song" },
+  { ...pool("the player held in her pool", SIRENSET + `
+    setUp(3.5); force("lunge"); let n = 0; DF.sim(3, () => { keep(); if (p.state === "held" && ++n > 60) return false; });
+    SHOT();
+    return { pass: p.state === "held", st: p.state };`, "fighter", "siren"), wait: 400, shot: "t24-siren-hold" },
+  step("the class and the camera's boom are put back", `DF.setClass("fighter"); cam.dist = 5.6; return { pass: true };`),
 ];

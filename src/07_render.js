@@ -926,6 +926,7 @@ function render() {
   drawHoles();
   drawClouds();
   drawShocks();
+  drawSongs();
   // ---- fx ----
   if (p.state !== "dead") {
     R.blob(p.x, p.z, 0.8, 0.55);

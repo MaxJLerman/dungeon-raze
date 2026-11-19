@@ -92,3 +92,44 @@ function drawShocks() {
     R.ring(e.x, 0.06, e.z, 0.6 + 2.2 * g, 0.7 + 2.2 * g, 0.4, 0.75, 1, 0.5 * (1 - g * 0.5));
   }
 }
+// A siren's song: while it pulls, pale rings travel from her to the player,
+// each standing across the line between them and closing as it nears them,
+// and slow rings spread on the water round her.
+function drawSongs() {
+  const p = G.player,
+    wl = -WATER.sink + 0.03;
+  for (const e of G.enemies) {
+    if (e.type !== "siren" || e.dead || !e.vis || !e.sing) continue;
+    const dx = p.x - e.x,
+      dz = p.z - e.z,
+      d = Math.hypot(dx, dz) || 1,
+      rx = -dz / d,
+      rz = dx / d;
+    for (let i = 0; i < 4; i++) {
+      // 0 leaving her mouth, 1 reaching the player
+      const k = (G.t * 0.8 + i / 4) % 1,
+        cx = e.x + dx * k,
+        cz = e.z + dz * k,
+        cy = lerp(0.65, 1.15, k),
+        rr = lerp(0.75, 0.3, k),
+        a = 0.55 * Math.sin(PI * k);
+      R.ribbon(
+        20,
+        (t, side) => {
+          const an = t * TAU,
+            r = rr + (side ? 0.07 : 0);
+          return [cx + rx * Math.cos(an) * r, cy + Math.sin(an) * r, cz + rz * Math.cos(an) * r];
+        },
+        0.75,
+        0.95,
+        1,
+        () => a,
+      );
+    }
+    for (let i = 0; i < 2; i++) {
+      const k = (G.t * 0.5 + i / 2) % 1,
+        r = 0.7 + 2.2 * k;
+      R.ring(e.x, wl, e.z, r - 0.06, r, 0.65, 0.9, 0.95, 0.45 * (1 - k));
+    }
+  }
+}

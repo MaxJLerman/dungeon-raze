@@ -708,6 +708,7 @@ window.DF = {
   BROOD,
   CLOUD,
   EEL,
+  SIREN,
   EFIG,
   EPOSE,
   makeEnemy,

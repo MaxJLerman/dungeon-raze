@@ -1186,6 +1186,11 @@ const CLOUD = { r: 1.5, life: 3, tick: 0.5, dmg: 4 };
 // shocks everything standing in its body of water for `dmg` (and `post`
 // posture, for an enemy). The pool is drawn lit for `lit` s.
 const EEL = { every: 8, glow: 1.2, dmg: 22, post: 20, lit: 0.4 };
+// The siren: her lunge drags a caught player `drag` m past the shore into
+// her pool at `dragSpeed` m/s, hurting them `dps` a second, and she cannot
+// grab again for `grabCD` s after. Her song pulls the player toward her at
+// `pull` m/s, about half a walk, so walking away still wins.
+const SIREN = { drag: 2, grabCD: 6, pull: 2.6, dps: 8, dragSpeed: 5 };
 const EDEF = {
   husk: {
     name: "Husk",
@@ -1401,6 +1406,48 @@ const EDEF = {
         arc: 1.4,
         lunge: 0.6,
         trig: 2.2,
+      },
+    },
+  },
+  // D gate: a siren, who guards a pool room's crossing from the water and
+  // never leaves it. Her lunge grabs a player on the bank and drags them into
+  // her pool (held); her song pulls them toward her (EBEH.siren, SIREN).
+  siren: {
+    name: "Siren",
+    threat: 2,
+    hp: 150,
+    posture: 110,
+    speed: 3.2,
+    wade: 1.8,
+    turn: 5,
+    r: 0.6,
+    sight: 18,
+    cd: 2.0,
+    poise: 1,
+    top: 1.4,
+    bound: "water",
+    atks: {
+      lunge: {
+        kind: "grab",
+        style: "thrust",
+        wind: 0.7,
+        act: 0.35,
+        rec: 0.9,
+        dmg: 6,
+        reach: 4,
+        arc: 1.2,
+        trig: 5,
+        unb: true,
+      },
+      song: {
+        kind: "song",
+        style: "cast",
+        wind: 0.9,
+        act: 2.0,
+        rec: 0.8,
+        dmg: 0,
+        trig: 12,
+        minTrig: 3,
       },
     },
   },
