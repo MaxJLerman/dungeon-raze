@@ -53,6 +53,16 @@ export default [
   d.c = { fighter: ["E", 7] }; localStorage.setItem(k, JSON.stringify(d)); DF.loadOpt(); const c2 = DF.gradeCleared("E");
   localStorage.setItem(k, keep); DF.resetCleared();
   return { pass: a && b && c2, a, b, c2 };`),
+  step("a save with __proto__ or constructor keys still loads its options and clears nothing odd", `const k = "dungeon-raze.v2", keep = localStorage.getItem(k), sens = DF.OPT.sens;
+  const d = JSON.parse(keep || "{}"); delete d.c; d.o = { ...(d.o || {}), sens: 2.5 }; d.u = ["constructor", "__proto__", "toString"];
+  const raw = JSON.stringify(d).replace(/}$/, ',"c":{"__proto__":["E"],"constructor":["E"],"toString":["E"],"hasOwnProperty":["D"]}}');
+  DF.resetCleared(); localStorage.setItem(k, raw); let err = null; try { DF.loadOpt(); } catch (e) { err = String(e); }
+  const c = { err: err === null, opts: DF.OPT.sens === 2.5, none: !DF.gradeCleared("E") && !DF.gradeCleared("D") && Object.keys(DF.CLEARED).length === 0,
+    unl: !DF.UNLOCKED.has("constructor") && !DF.UNLOCKED.has("__proto__") && !DF.UNLOCKED.has("toString"),
+    clear: DF.clearGrade("E", "constructor") === false && DF.clearGrade("E", "__proto__") === false && !DF.gradeCleared("E"),
+    open: DF.classOpen("constructor") === false && DF.unlockClass("toString") === false, proto: typeof ({}).includes === "undefined" };
+  localStorage.setItem(k, keep); DF.OPT.sens = sens; DF.resetCleared();
+  return { pass: Object.values(c).every(Boolean), c, err };`),
   step("the sewer is connected and has every room kind", `const bad = []; for (let s = 1; s <= 12; s++) { const w = DF.genSewer(s), k = w.nodes.map((n) => n.kind);
     const ok = ["start", "pool", "brood", "shrine", "boss"].every((x) => k.includes(x)) && w.shrines.length === 4 && w.nodes.every((n) => n.depth >= 0)
       && w.nodes.filter((n) => n.kind === "start")[0].adj.length === 1 && w.boss.adj.length === 1;

@@ -202,24 +202,25 @@ function actKey(a) {
 // `hidden` is always open.
 const UNLOCKED = new Set();
 function classOpen(id) {
-  return !!CLASSES[id] && (!CLASSES[id].hidden || UNLOCKED.has(id));
+  return Object.hasOwn(CLASSES, id) && (!CLASSES[id].hidden || UNLOCKED.has(id));
 }
 function pickable() {
   return CLASS_IDS.filter(classOpen);
 }
 // true when the class was locked until now
 function unlockClass(id) {
-  if (!CLASSES[id] || UNLOCKED.has(id)) return false;
+  if (!Object.hasOwn(CLASSES, id) || UNLOCKED.has(id)) return false;
   UNLOCKED.add(id);
   saveOpt();
   return true;
 }
 // Grades whose boss a class has beaten, saved under "c": class id to grade
-// ids. A gate opens when any class has cleared the one before it.
-const CLEARED = {};
+// ids. A gate opens when any class has cleared the one before it. No
+// prototype, so a saved key such as "__proto__" is only ever a key.
+const CLEARED = Object.create(null);
 // true when this class had not cleared the grade until now
 function clearGrade(grade, cls) {
-  if (!CLASSES[cls] || !GRADE_IDS.includes(grade)) return false;
+  if (!Object.hasOwn(CLASSES, cls) || !GRADE_IDS.includes(grade)) return false;
   const list = CLEARED[cls] || (CLEARED[cls] = []);
   if (list.includes(grade)) return false;
   list.push(grade);
@@ -273,11 +274,11 @@ function loadOpt() {
         PAD_BIND[k] =
           d.p[k] === null || PAD_CODES.includes(d.p[k]) ? d.p[k] : DEFAULT_PAD[k];
     if (Array.isArray(d.u))
-      for (const id of d.u) if (CLASSES[id]) UNLOCKED.add(id);
+      for (const id of d.u) if (Object.hasOwn(CLASSES, id)) UNLOCKED.add(id);
     // only known classes and grades; anything else in "c" is dropped
     if (d.c && typeof d.c === "object" && !Array.isArray(d.c))
       for (const id in d.c)
-        if (CLASSES[id] && Array.isArray(d.c[id]))
+        if (Object.hasOwn(CLASSES, id) && Array.isArray(d.c[id]))
           for (const g of d.c[id])
             if (typeof g === "string" && GRADE_IDS.includes(g)) {
               const list = CLEARED[id] || (CLEARED[id] = []);
@@ -285,7 +286,7 @@ function loadOpt() {
             }
     if (d.o) {
       // a hidden class that is not unlocked falls back to the first open one
-      if (CLASSES[d.o.cls]) OPT.cls = classOpen(d.o.cls) ? d.o.cls : pickable()[0];
+      if (Object.hasOwn(CLASSES, d.o.cls)) OPT.cls = classOpen(d.o.cls) ? d.o.cls : pickable()[0];
       if (d.o.sens > 0.1 && d.o.sens < 5) OPT.sens = d.o.sens;
       OPT.invY = !!d.o.invY;
       const num = (v, lo, hi) => typeof v === "number" && v >= lo && v <= hi;
