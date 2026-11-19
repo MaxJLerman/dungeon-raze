@@ -70,8 +70,9 @@ const SEWER = {
   ribD: 0.2,
   grateGap: 12,
   // culling: a tunnel piece is this many runs; a cell this near a piece
-  // joins it; sight samples this far apart; the fog is 99% at fog / fogD
-  piece: { runs: 3, pad: 3, sample: 3, fog: 2.146 },
+  // joins it; sight samples this far apart, and on every edge-th cell of a
+  // piece's rim; the fog is 99% at fog / fogD
+  piece: { runs: 3, pad: 3, sample: 3, edge: 2, fog: 2.146 },
 };
 const BRICK = hexc(0x7a5242),
   SEWER_LAMP = hexc(0x7dff9a),
@@ -906,9 +907,13 @@ function sewerPieces(o) {
     bx[1] = Math.min(bx[1], 0);
     bx[4] = Math.max(bx[4], 0);
   }
-  // what each piece sees: itself, its neighbours on the grid, and any piece
-  // in sight between sample points, within the fog
+  // what each piece sees: itself, its neighbours on the grid, any piece in
+  // sight between sample points within the fog, and then the neighbours of
+  // every piece on that list. The camera can stand anywhere in a piece and
+  // see past a corner that no pair of samples clears; the extra ring is what
+  // catches those, and it is what keeps the list generous
   const sees = pieces.map((_, i) => new Set([i])),
+    nb = pieces.map(() => []),
     link = (a, b) => {
       sees[a].add(b);
       sees[b].add(a);
@@ -918,17 +923,35 @@ function sewerPieces(o) {
       const k = j * W1 + i,
         a = pieceGrid[k];
       if (a < 0) continue;
-      if (i < W && pieceGrid[k + 1] >= 0 && pieceGrid[k + 1] !== a) link(a, pieceGrid[k + 1]);
-      if (j < H && pieceGrid[k + W1] >= 0 && pieceGrid[k + W1] !== a) link(a, pieceGrid[k + W1]);
+      for (const q of [i < W ? k + 1 : -1, j < H ? k + W1 : -1]) {
+        const b = q < 0 ? -1 : pieceGrid[q];
+        if (b < 0 || b === a || sees[a].has(b)) continue;
+        link(a, b);
+        nb[a].push(b);
+        nb[b].push(a);
+      }
     }
+  // samples: a lattice over each piece's cells, and every S.piece.edge-th
+  // cell on its rim (against a wall or another piece), where the camera
+  // sees furthest round a corner
   const smp = pieces.map(() => []),
-    st = S.piece.sample;
-  for (let j = 0; j <= H; j += st)
-    for (let i = 0; i <= W; i += st) {
-      const k = j * W1 + i;
-      if (core[k] >= 0 && F[k] > 0) smp[core[k]].push(i + minX, j + minZ);
+    st = S.piece.sample,
+    eg = S.piece.edge;
+  for (let j = 0; j <= H; j++)
+    for (let i = 0; i <= W; i++) {
+      const k = j * W1 + i,
+        a = core[k];
+      if (a < 0 || F[k] <= 0) continue;
+      const rim =
+        (i + j) % eg === 0 &&
+        i > 0 &&
+        j > 0 &&
+        i < W &&
+        j < H &&
+        [k - 1, k + 1, k - W1, k + W1].some((q) => core[q] !== a || F[q] <= 0);
+      if ((i % st === 0 && j % st === 0) || rim) smp[a].push(i + minX, j + minZ);
     }
-  // a piece the lattice misses is sampled at its deepest cell
+  // a piece with no sample is sampled at its deepest cell
   for (let id = 0; id < np; id++)
     if (!smp[id].length) {
       let kb = -1;
@@ -952,6 +975,9 @@ function sewerPieces(o) {
             break search;
           }
     }
+  // one ring more, both ways, from the lists as the sight lines left them
+  const sight = sees.map((t) => [...t]);
+  for (let i = 0; i < np; i++) for (const j of sight[i]) for (const m of nb[j]) link(i, m);
   for (let i = 0; i < np; i++) pieces[i].sees = [...sees[i]].sort((a, b) => a - b);
   const pieceAt = (x, z) => {
     const i = Math.round(x - minX),

@@ -179,12 +179,31 @@ export default [
   // the map blown up to four times its size, to see what is on it
   const m = document.getElementById("map"); m.style.cssText = "width:640px;height:640px;right:20px;top:20px";
   return look(n.x, n.z - n.hd * 0.4, 0, 0.3);`), wait: 500, shot: "t22-map" },
-  // culling: the sewer is cut into pieces, each with the pieces it can see
-  sewer("everything the camera can see is in a drawn piece", `const bad = [], cut = 2.146 / DF.ENV_SEWER.fogD; for (let k = 0; k < 30; k++) { const e = w.edges[k % w.edges.length], q = e.pts[(k * 7) % e.pts.length]; p.x = q.x; p.z = q.z; w.resolve(p, 0.6);
-    const cx = p.x - Math.sin(p.yaw) * 4, cz = p.z - Math.cos(p.yaw) * 4, ids = new Set(DF.visiblePieces(w, cx, cz, p.x, p.z, false) || []);
-    const need = new Set(); for (let x = p.x - 40; x < p.x + 40; x += 1.5) for (let z = p.z - 40; z < p.z + 40; z += 1.5) if (Math.hypot(x - cx, z - cz) <= cut && w.fieldAt(x, z) > 0.2 && w.los(p.x, p.z, x, z)) need.add(w.pieceAt(x, z));
-    need.delete(-1); for (const id of need) if (!ids.has(id)) bad.push([k, id]); }
-  return { pass: bad.length === 0 && w.pieces.length > 1, bad: bad.slice(0, 5), pieces: w.pieces.length };`),
+  // culling: the sewer is cut into pieces, each with the pieces it can see.
+  // The view is cast from where the camera sits: behind the player at its
+  // full distance (1.35 times that in the boss cavern, as when the boss is
+  // locked), over the shoulder and pulled in by the walls and vault as
+  // camUpdate does. Six seeds; every 2 m on the way to the boss at four
+  // headings, five spots in every room at eight and every third point of
+  // every tunnel at four. Every walkable point in sight within the fog cutoff
+  // must be in a piece that visiblePieces lists for a full turn
+  step("everything the camera can see is in a drawn piece", `DF.LIVE_GRADES.add("D"); const cut = 2.146 / DF.ENV_SEWER.fogD, out = { views: 0, miss: 0, bad: [] };
+  for (const s of [2, 5, 9, 11, 13, 21]) { DF.newRun(s, "D"); const w = G.world, P = [], bn = w.nodes.find((n) => n.kind === "boss");
+    const camAt = (x, z, yaw, pitch, D) => { const fx = Math.sin(yaw), fz = Math.cos(yaw); let so = 0.6; if (w.fieldAt(x - fz * so, z + fx * so) < 0.5) so = 0;
+      const vx = x - fz * so, vz = z + fx * so, cp = Math.cos(pitch), sp = Math.sin(pitch); let t = 1;
+      for (let i = 1; i <= 16; i++) { const u = i / 16, X = vx - fx * cp * D * u, Y = 1.62 + sp * D * u, Z = vz - fz * cp * D * u; if (w.fieldAt(X, Z) < 0.4 || Y > w.ceilAt(X, Z) - 0.4 || Y < 0.35) { t = (i - 1) / 16; break; } }
+      const cd = Math.max(0.6, D * t); return [vx - fx * cp * cd, vz - fz * cp * cd]; };
+    const r = [w.spawn, ...w.route(w.spawn.x, w.spawn.z, w.boss.x, w.boss.z, 0.6)];
+    for (let i = 1; i < r.length; i++) { const a = r[i - 1], b = r[i], L = Math.hypot(b.x - a.x, b.z - a.z), yaw = Math.atan2(b.x - a.x, b.z - a.z); for (let t = 0; t < L; t += 2) P.push([a.x + ((b.x - a.x) * t) / L, a.z + ((b.z - a.z) * t) / L, yaw, 4]); }
+    for (const n of w.nodes) for (const [u, v] of [[0, 0], [-0.6, -0.6], [0.6, -0.6], [-0.6, 0.6], [0.6, 0.6]]) P.push([n.x + u * n.hw, n.z + v * n.hd, 0.3, 8]);
+    for (const e of w.edges) for (let i = 0; i < e.pts.length; i += 3) P.push([e.pts[i].x, e.pts[i].z, 0.7, 4]);
+    for (const [x, z, y0, nh] of P) { if (w.fieldAt(x, z) < 0.5) continue; const inBoss = Math.abs(x - bn.x) < bn.hw + 4 && Math.abs(z - bn.z) < bn.hd + 4;
+      for (let h = 0; h < nh; h++) for (const D of inBoss ? [DF.cam.dist, DF.cam.dist * 1.35] : [DF.cam.dist]) { const yaw = y0 + (h * 2 * Math.PI) / nh, [cx, cz] = camAt(x, z, yaw, h % 2 ? 0.45 : 0.1, D);
+        const ids = new Set(DF.visiblePieces(w, cx, cz, x, z, false) || []); out.views++;
+        look: for (let X = cx - cut; X <= cx + cut; X += 1) for (let Z = cz - cut; Z <= cz + cut; Z += 1) { const id = w.pieceAt(X, Z);
+          if (id < 0 || ids.has(id) || (X - cx) ** 2 + (Z - cz) ** 2 > cut * cut || !(w.fieldAt(X, Z) > 0) || !w.los(cx, cz, X, Z)) continue;
+          out.miss++; if (out.bad.length < 8) out.bad.push({ s, at: [Math.round(x), Math.round(z)], yaw: +yaw.toFixed(2), id, d: Math.round(Math.hypot(X - cx, Z - cz)) }); break look; } } } }
+  return { pass: out.miss === 0 && out.views > 4000, ...out };`),
   sewer("the camera outside every piece still draws the player's pieces", `const ids = DF.visiblePieces(w, w.minX - 50, w.minZ - 50, w.spawn.x, w.spawn.z); return { pass: Array.isArray(ids) && ids.length > 0 };`),
   step("the cave and hall still draw whole", `DF.newRun(99); return { pass: G.world.pieces === null && DF.visiblePieces(G.world, 0, 0, 0, 0) === null && DF.genHub().pieces === null };`),
   // 20 points along the way to the boss in three seeds, two frames drawn at

@@ -165,8 +165,10 @@ is what you need to change the code without breaking it.
   per room and one per stretch of `SEWER.piece.runs` tunnel runs. A piece is
   `{ first, count, box, sees, ... }`: a range of vertices, a bounding box and
   the ids of the pieces visible from anywhere in it. `sees` is worked out with
-  `world.los` between sample points and errs generous, and neighbours are
-  always in it. `world.pieceGrid` and `world.pieceAt(x, z)` give the piece at a
+  `world.los` between sample points (a 3 m lattice and every second cell of
+  a piece's rim) and errs generous: its grid neighbours are always in it, and
+  so are the neighbours of every piece that sight put in it, because the
+  camera can see round a corner that no pair of samples clears. `world.pieceGrid` and `world.pieceAt(x, z)` give the piece at a
   point, or -1 outside every piece. The cave and hall have `pieces: null` and
   are drawn whole.
 - `visiblePieces(w, cx, cz, px, pz, frustum = true)` returns the ids to draw:
@@ -178,7 +180,8 @@ is what you need to change the code without breaking it.
   `R.drawWorld(visiblePieces(...))` each frame. A test can pass `frustum`
   false to get what a full turn of the camera could need. Measured budget:
   cave 99 draws 81,835 triangles whole; the sewer's busiest frame over the
-  sampled walks was about 22,900. t22 fails if a sewer frame draws more than
+  sampled walks was about 27,900, and the most a full turn could need within
+  the fog about 54,200. t22 fails if a sewer frame draws more than
   cave 99.
 - **The sewer** (`genSewer(seed)` in `03c_sewer.js`, numbers in `SEWER`). It
   uses `planGraph` and `linkGraph` on a 5 by 4 grid with a wider spacing, adds
@@ -846,8 +849,10 @@ The class picker and HUD read `CLASSES` and need no changes.
   It checks that `genWorld` is unchanged (hashes of caves 1, 7 and 99), water
   in the player and enemy moves, D sealed and opened, the save, the layout
   over many seeds, water bodies and dry routes, the boss cavern, the brick
-  and water materials, lamps, drips, the minimap, that culled frames draw
-  everything a full frame shows, and the triangle budget. It also writes
+  and water materials, lamps, drips, the minimap, that every walkable point
+  in sight of the camera (placed and pulled in as `camUpdate` does, on the
+  way to the boss, in rooms and in tunnels, at several headings) within the
+  fog is in a listed piece, and the triangle budget. It also writes
   screenshots (`shots/t22-*.png`) of the cave, hall, sewer rooms, tunnels,
   bends, the boss cavern and wading, which are the only check on whether the
   sewer reads as brick and not as a brown cave: look at them.
@@ -902,8 +907,10 @@ The class picker and HUD read `CLASSES` and need no changes.
 - The sewer's frame rate on a real phone is unmeasured. The budget is
   triangles drawn (at most what the whole of cave 99 draws), measured in
   headless Chromium.
-- `visiblePieces` can miss a piece in a rare far, fogged view, because each
-  piece's `sees` list comes from sampled sight lines.
+- `sees` still comes from sampled sight lines, so some camera spot could in
+  principle see a piece that is not drawn. No such view turned up in about
+  100,000 camera views over 32 seeds, measured as t22 does; t22 itself
+  checks six seeds.
 - Sewer decoration (brick heaps, plinths, ribs, pipes) blocks nothing, so a
   body can stand inside a heap.
 - The D portal is sealed on the published page by design, until the D
