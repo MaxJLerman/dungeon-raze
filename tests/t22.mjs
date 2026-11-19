@@ -14,7 +14,7 @@ export default [
   return { pass: JSON.stringify(got) === JSON.stringify(GOLD), got };`),
   // the sewer's mesh, materials, water, spawns, pieces and dressing for three
   // seeds: a change that only moves code must leave these as they are
-  step("genSewer is unchanged by moving code", `const GOLD = {"1":[1120373139,-297404816,196683480,-116376488,-635115949,1463472809,-975957500],"5":[-549557269,-1978863856,-1899064056,-1610458384,-1972915195,1096105572,320828384],"9":[-142133581,-1537443400,-1396076192,-837123880,-1716636275,1844049144,1094484411]};
+  step("genSewer is unchanged by moving code", `const GOLD = {"1":[2131035611,1635570288,-1101587512,768324173,-635115949,-928983629,-975957500],"5":[-1879733403,1244249168,-489759688,-1558580053,-1972915195,303596508,320828384],"9":[-1024072747,1090434160,1593504080,-1941855533,-1716636275,1255611922,1094484411]};
   const h = (a) => { let x = 0; for (let i = 0; i < a.length; i++) x = (x * 31 + Math.round(a[i] * 1000)) | 0; return x; };
   const hs = (s) => { let x = 0; for (let i = 0; i < s.length; i++) x = (x * 31 + s.charCodeAt(i)) | 0; return x; };
   const got = {}; for (const s of [1, 5, 9]) { const w = DF.genSewer(s);
@@ -96,6 +96,37 @@ export default [
       if (n.kind === "pool" && (own < 2 || own > 4)) bad.push([s, n.id, own]); }
     for (const b of w.bodies) if (b.room === -1) { for (const n of w.nodes) if (Math.abs(b.x - n.x) < n.hw + 1 && Math.abs(b.z - n.z) < n.hd + 1) bad.push([s, "gutter", n.id]); } }
   return { pass: bad.length === 0, bad };`),
+  // The drawn water is the floor triangles of water material at -sink. Inside
+  // a square of floor the drawn shore is a straight line between the points
+  // where waterAt reads 0.5 on its sides, and waterAt's 0.5 line is the
+  // bilinear curve through the same points. For a cell with one corner of 1
+  // and three of 0, the most common shore cell, the curve meets the diagonal
+  // at 1 - 1/sqrt 2 and the line at 1/4: they part by 0.061 m. Corner values
+  // near 0.5 can bow it by up to 0.47 of the side (found numerically), so
+  // the floor halves such a square until the bow is no more than that 0.061,
+  // or down to an eighth of a cell (0.47 / 8 = 0.059). The test steps out
+  // from each point 1 cm at a time in 32 directions, which adds up to 2 cm.
+  // So on every walkable point near a shore in four seeds, where the drawing
+  // and waterAt >= 0.5 disagree, waterAt must agree within 0.08 m, and such
+  // points must be rare: a shore drawn off the grid's along every gutter, as
+  // before this test, made 5% of them disagree.
+  step("the drawn shore is where waterAt reads 0.5", `const TOL = 0.08, out = { pts: 0, off: 0, worst: 0, at: null };
+  for (const s of [1, 5, 9, 13]) { const w = DF.genSewer(s), P = w.pos, M = w.mat, sink = DF.WATER.sink, W1 = w.W + 1, tris = new Map();
+    for (let t = 0; t < M.length / 3; t++) { const b = t * 9; if (M[t * 3] !== 2 || [1, 4, 7].some((o) => Math.abs(P[b + o] + sink) > 1e-4)) continue;
+      const c = Math.floor((P[b] + P[b + 3] + P[b + 6]) / 3 - w.minX) + Math.floor((P[b + 2] + P[b + 5] + P[b + 8]) / 3 - w.minZ) * W1;
+      if (!tris.has(c)) tris.set(c, []); tris.get(c).push(b); }
+    const side = (ax, az, bx, bz, x, z) => (bx - ax) * (z - az) - (bz - az) * (x - ax);
+    const inTri = (b, x, z) => { const d1 = side(P[b], P[b + 2], P[b + 3], P[b + 5], x, z), d2 = side(P[b + 3], P[b + 5], P[b + 6], P[b + 8], x, z), d3 = side(P[b + 6], P[b + 8], P[b], P[b + 2], x, z);
+      return !((d1 < -1e-9 || d2 < -1e-9 || d3 < -1e-9) && (d1 > 1e-9 || d2 > 1e-9 || d3 > 1e-9)); };
+    const drawn = (x, z) => (tris.get(Math.floor(x - w.minX) + Math.floor(z - w.minZ) * W1) || []).some((b) => inTri(b, x, z));
+    const near = (x, z, wet) => { for (let r = 0.01; r <= 1; r += 0.01) for (let a = 0; a < 32; a++) if (w.waterAt(x + Math.sin(a * Math.PI / 16) * r, z + Math.cos(a * Math.PI / 16) * r) >= 0.5 === wet) return r; return 1; };
+    for (let j = 0; j < w.H; j++) for (let i = 0; i < w.W; i++) { const k = j * W1 + i, c = [w.Wt[k], w.Wt[k + 1], w.Wt[k + W1], w.Wt[k + W1 + 1]];
+      if (!tris.has(k) && Math.max(...c) === 0 || Math.min(...c) === 1) continue;
+      for (let a = 0; a < 6; a++) for (let b = 0; b < 6; b++) { const x = w.minX + i + (a + 0.5) / 6, z = w.minZ + j + (b + 0.5) / 6;
+        if (!(w.fieldAt(x, z) > 0)) continue; out.pts++; const d = drawn(x, z);
+        if (w.waterAt(x, z) >= 0.5 === d) continue; out.off++; const r = near(x, z, d);
+        if (r > out.worst) { out.worst = r; out.at = { s, x: +x.toFixed(2), z: +z.toFixed(2), drawn: d, wet: +w.waterAt(x, z).toFixed(3), room: w.nodes.findIndex((n) => Math.abs(x - n.x) < n.hw + 1 && Math.abs(z - n.z) < n.hd + 1) }; } } } }
+  return { pass: out.worst <= TOL && out.pts > 20000 && out.off < out.pts * 0.02, ...out, worst: +out.worst.toFixed(3) };`),
   step("a dry route joins every tunnel mouth of every room", `const bad = []; for (let s = 1; s <= 6; s++) { const w = DF.genSewer(s), Fd = w.F.map((f, k) => (w.Wt[k] > 0.5 ? -1 : f)), dry = DF.fieldFns(Fd, w.minX, w.minZ, w.W, w.H);
     for (const n of w.nodes) { if (n.kind === "boss") continue; const mids = w.edges.filter((e) => e.a === n.id || e.b === n.id).map((e) => e.pts[(e.pts.length / 2) | 0]);
       for (let i = 1; i < mids.length; i++) if (!dry.route(mids[0].x, mids[0].z, mids[i].x, mids[i].z, 0.6)) bad.push([s, n.id]); } }
@@ -186,6 +217,19 @@ export default [
   { ...sewer("the player wading through a pool, for looking at", `const n = w.nodes.find((n) => n.kind === "pool"); const b = w.bodies.filter((q) => q.room === n.id).sort((a, c) => c.n - a.n)[0];
   p.x = b.x; p.z = b.z; p.yaw = 0; DF.keys[DF.BIND.fwd] = true; DF.sim(0.3); DF.keys[DF.BIND.fwd] = false; for (const e of G.enemies) e.x += 500;
   cam.yaw = p.yaw + 0.5; cam.pitch = 0.25; cam.px = p.x; cam.pz = p.z; cam.cd = 4; return { pass: w.waterAt(p.x, p.z) > 0.9, wet: w.waterAt(p.x, p.z), b, n: n.id };`), wait: 500, shot: "t22-wade" },
+  // standing just inside a tunnel gutter's drawn shore, 0.1 m into the water:
+  // the body is drawn sunk by about half of WATER.sink, not standing on the
+  // water
+  { ...sewer("the player at a gutter's edge, for looking at", `let q = null;
+    for (let x = w.minX + 2; x < w.minX + w.W - 2 && !q; x += 0.25) for (let z = w.minZ + 2; z < w.minZ + w.H - 2 && !q; z += 0.25) {
+      const v = w.waterAt(x, z); if (v < 0.58 || v > 0.62 || w.fieldAt(x, z) < 1 || w.nodes.some((n) => Math.abs(x - n.x) < n.hw + 4 && Math.abs(z - n.z) < n.hd + 4)) continue;
+      const gx = w.waterAt(x + 0.3, z) - w.waterAt(x - 0.3, z), gz = w.waterAt(x, z + 0.3) - w.waterAt(x, z - 0.3), l = Math.hypot(gx, gz); if (l < 0.3) continue;
+      const tx = -gz / l, tz = gx / l; if ([-2, 2].every((s) => Math.abs(w.waterAt(x + tx * s, z + tz * s) - 0.6) < 0.08)) q = { x, z, a: Math.atan2(gx, gz) }; }
+    if (!q) return { pass: false, why: "no straight gutter edge" };
+    look(q.x, q.z, q.a + Math.PI / 2, 0.32); cam.yaw = q.a + 0.75; cam.cd = 3.2; p.state = "free";
+    return { pass: true, at: q, wet: w.waterAt(q.x, q.z) };`), wait: 600, shot: "t22-gutter-edge" },
+  step("the sunk body at the gutter's edge, read after two frames", `const p = G.player, y = DF.R.nodePos(p.fig.root, 0, 0, 0)[1], want = -DF.WATER.sink * G.world.waterAt(p.x, p.z);
+    return { pass: Math.abs(y - want) < 0.02 && y < -0.1, y, want };`),
   sewer("a long room shows on the map as soon as the player is at its far end", `const n = w.nodes.filter((n) => n.kind !== "boss").sort((a, b) => Math.abs(b.hw - b.hd) - Math.abs(a.hw - a.hd))[0];
   const along = n.hw > n.hd, x = n.x + (along ? n.hw - 1.5 : 0), z = n.z + (along ? 0 : n.hd - 1.5), old = Math.hypot(x - n.x, z - n.z) >= n.r + 3;
   for (const m of w.nodes) m.seen = false; p.x = x; p.z = z; DF.sim(1 / 60);

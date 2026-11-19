@@ -44,7 +44,7 @@ const SEWER = {
   // and one crossing `cross` wide. A side facing a wall may draw back by up
   // to `shrink`.
   pool: { edge: 3, walk: 3, cross: 2.5, min: 4, shrink: 1.5 },
-  gutterW: 1.2,
+  gutterW: 1.45, // from a gutter's wall to its shore
   gutterP: 1 / 3, // the share of tunnels with a gutter
   gutterEnd: 1, // a tunnel's gutter stops this far outside every room's box
   broodGutterP: 0.5, // the chance a brood room has a gutter along one wall
@@ -369,9 +369,6 @@ function genSewer(seed) {
     F = new Float32Array(NP).fill(-3),
     V = new Float32Array(NP).fill(S.vault.tunnel),
     Wt = new Float32Array(NP),
-    // where the drawn shore runs: above 0 is drawn as water. Wt - 0.5 but
-    // along tunnel gutters, which hold the distance past a straight shore
-    Sd = new Float32Array(NP).fill(NaN),
     bodyIds = new Int16Array(NP).fill(-1);
   // calls fn(k, x, z) for every grid point in a box
   const each = (x0, z0, x1, z1, fn) => {
@@ -722,7 +719,11 @@ function genSewer(seed) {
     }
   }
   // tunnel gutters: a strip along one wall, off every room and every other
-  // tunnel's floor, reaching a metre into the wall so waterAt reads 1 at it
+  // tunnel's floor, reaching a metre into the wall so waterAt reads 1 at it.
+  // Wt runs from 0 to 1 over a metre across every edge of the strip: its
+  // shore, S.gutterW from the wall, and where it stops short of a room's box,
+  // the boss cavern or another tunnel. Bilinear reading then puts the line
+  // where waterAt reads 0.5 straight along each edge, and not in steps
   for (const e of edges) {
     if (Rn() >= S.gutterP) continue;
     const side = Rn() < 0.5 ? -1 : 1,
@@ -757,17 +758,23 @@ function genSewer(seed) {
       };
     each(x0 - m, z0 - m, x1 + m, z1 + m, (k, x, z) => {
       const [d, sgn] = near(x, z, pts);
-      if (sgn !== side || d < 1 || d > m) return;
+      // how far inside the nearest edge of the strip the point is, measured
+      // to the line where Wt is 0.5: the shore, and half a metre outside
+      // where it stops
+      let a = d - (S.tunR - S.gutterW);
+      if (sgn !== side || a <= -0.5 || d > m) return;
       for (const n of nodes) {
-        if (inBox(n, x, z, S.gutterEnd)) return;
-        if (n === boss && Math.hypot(x - n.x, z - n.z) < n.r + 2) return;
+        const qx = Math.abs(x - n.x) - n.hw - S.gutterEnd,
+          qz = Math.abs(z - n.z) - n.hd - S.gutterEnd;
+        a = Math.min(
+          a,
+          Math.hypot(Math.max(qx, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qz), 0) - 0.5,
+        );
+        if (n === boss) a = Math.min(a, Math.hypot(x - n.x, z - n.z) - n.r - 2.5);
       }
       for (const o of edges)
-        if (o !== e && near(x, z, o.pts)[0] < S.tunR + 0.3) return;
-      // drawn, the shore runs straight along the tunnel where the grid's
-      // shore runs on average
-      Sd[k] = d - (S.tunR - S.gutterW - 0.25);
-      if (d >= S.tunR - S.gutterW) Wt[k] = 1;
+        if (o !== e) a = Math.min(a, near(x, z, o.pts)[0] - S.tunR - 0.8);
+      Wt[k] = Math.max(Wt[k], sat(0.5 + a));
     });
   }
   // the boss cavern: a moat along the wall but for a dry crossing at the
@@ -804,8 +811,6 @@ function genSewer(seed) {
         Wt[k] = 1;
     });
   }
-  for (let k = 0; k < NP; k++)
-    if (Sd[k] !== Sd[k] || (Wt[k] > 0.5 && Sd[k] <= 0)) Sd[k] = Wt[k] - 0.5;
   // the bodies of water: one id per region of grid points joined side to
   // side, each with its room (-1 in a tunnel) and its most open point
   const bodies = [],
@@ -829,7 +834,7 @@ function genSewer(seed) {
         j > 0 ? k - W1 : -1,
         j < H ? k + W1 : -1,
       ])
-        if (q >= 0 && Wt[q] > 0.5 && bodyIds[q] < 0) {
+        if (q >= 0 && Wt[q] >= 0.5 && bodyIds[q] < 0) {
           bodyIds[q] = id;
           stack.push(q);
         }
@@ -918,7 +923,10 @@ function genSewer(seed) {
       );
   };
   // dressed stone along a shore from a to b: a coping 0.4 wide on the dry
-  // side (toward dc), and its face down to the water
+  // side (toward dc), and its face down to the water. Its outer edge stands
+  // off each end away from the water as waterAt falls there, so stones that
+  // meet at an end share their outer corner and the edge runs smooth where
+  // the shore turns a little from one cell to the next
   const coping = (a, b, dc) => {
     let nx = a[1] - b[1],
       nz = b[0] - a[0];
@@ -929,13 +937,27 @@ function genSewer(seed) {
       nx = -nx;
       nz = -nz;
     }
+    const outer = (p) => {
+      let gx = waterAt(p[0] - 0.25, p[1]) - waterAt(p[0] + 0.25, p[1]),
+        gz = waterAt(p[0], p[1] - 0.25) - waterAt(p[0], p[1] + 0.25);
+      const g = Math.hypot(gx, gz);
+      gx /= g;
+      gz /= g;
+      if (!(gx * nx + gz * nz > 0.7)) {
+        gx = nx;
+        gz = nz;
+      }
+      return [p[0] + gx * 0.4, p[1] + gz * 0.4];
+    };
     const h = hash2(Math.round((a[0] + b[0]) * 2), Math.round((a[1] + b[1]) * 2)),
       y = h > 0.5 ? 0.043 : 0.04,
       col = mulc(SEWER_STONE, 0.6 + 0.2 * h),
       A = [a[0], y, a[1]],
-      B = [b[0], y, b[1]];
-    tri(A, B, [b[0] + nx * 0.4, y, b[1] + nz * 0.4], col);
-    tri(A, [b[0] + nx * 0.4, y, b[1] + nz * 0.4], [a[0] + nx * 0.4, y, a[1] + nz * 0.4], col);
+      B = [b[0], y, b[1]],
+      oa = outer(a),
+      ob = outer(b);
+    tri(A, B, [ob[0], y, ob[1]], col);
+    tri(A, [ob[0], y, ob[1]], [oa[0], y, oa[1]], col);
     tri(A, B, [b[0], -sink, b[1]], mulc(col, 0.8));
     tri(A, [b[0], -sink, b[1]], [a[0], -sink, a[1]], mulc(col, 0.8));
   };
@@ -995,6 +1017,91 @@ function genSewer(seed) {
     }
     poly(ps);
   };
+  // The floor of a square of side h at (x, z), its corners' Wt - 0.5 in s
+  // (in the order (x, z), (x + h, z), (x + h, z + h), (x, z + h)): brick
+  // where s is below 0 and water sunk below it where s is above, split where
+  // s crosses 0 along the sides, which is where waterAt reads 0.5 there.
+  // Across the square waterAt is bilinear and its 0.5 line bows off the
+  // straight split. A cell with one corner of 1 and three of 0 bows by
+  // 0.061 m and is drawn as it is; where it bows more than 6 cm (corner
+  // values near 0.5, as where two edges of a gutter meet), or the square is
+  // a saddle, the square is drawn as four, with the values waterAt reads at
+  // their corners, down to an eighth of a cell.
+  const floorCell = (x, z, h, s, depth) => {
+    const cs = [
+        [x, z],
+        [x + h, z],
+        [x + h, z + h],
+        [x, z + h],
+      ],
+      nWet = s.filter((v) => v > 0).length;
+    if (nWet === 0) return fan(cs, 0, floorCol, MAT.BRICK);
+    if (nWet === 4) return fan(cs, -sink, wcol, MAT.WATER);
+    const dry = [],
+      wet = [],
+      cut = [];
+    for (let c = 0; c < 4; c++) {
+      const d = (c + 1) % 4;
+      (s[c] > 0 ? wet : dry).push(cs[c]);
+      if (s[c] > 0 !== s[d] > 0) {
+        const t = s[c] / (s[c] - s[d]),
+          e = [
+            cs[c][0] + (cs[d][0] - cs[c][0]) * t,
+            cs[c][1] + (cs[d][1] - cs[c][1]) * t,
+          ];
+        dry.push(e);
+        wet.push(e);
+        cut.push(e);
+      }
+    }
+    const saddle = nWet === 2 && s[0] > 0 === s[2] > 0;
+    if (depth < 3) {
+      // how far the bilinear line is from the split at three points along it
+      let off = saddle ? 1 : 0;
+      for (const t of saddle ? [] : [0.25, 0.5, 0.75]) {
+        const u = (lerp(cut[0][0], cut[1][0], t) - x) / h,
+          v = (lerp(cut[0][1], cut[1][1], t) - z) / h,
+          f = lerp(lerp(s[0], s[1], u), lerp(s[3], s[2], u), v),
+          gu = lerp(s[1] - s[0], s[2] - s[3], v) / h,
+          gv = lerp(s[3] - s[0], s[2] - s[1], u) / h;
+        off = Math.max(off, Math.abs(f) / (Math.hypot(gu, gv) || 1e-9));
+      }
+      if (off > 0.062) {
+        const g = h / 2,
+          m01 = (s[0] + s[1]) / 2,
+          m12 = (s[1] + s[2]) / 2,
+          m23 = (s[2] + s[3]) / 2,
+          m30 = (s[3] + s[0]) / 2,
+          mc = (s[0] + s[1] + s[2] + s[3]) / 4;
+        floorCell(x, z, g, [s[0], m01, mc, m30], depth + 1);
+        floorCell(x + g, z, g, [m01, s[1], m12, mc], depth + 1);
+        floorCell(x + g, z + g, g, [mc, m12, s[2], m23], depth + 1);
+        floorCell(x, z + g, g, [m30, mc, m23, s[3]], depth + 1);
+        return;
+      }
+    }
+    const mid = (ps) => [
+      ps.reduce((a, p) => a + p[0], 0) / ps.length,
+      ps.reduce((a, p) => a + p[1], 0) / ps.length,
+    ];
+    if (saddle) {
+      // the middle goes the way waterAt reads it there, and the two corners
+      // of the other kind part
+      const wetMid = s[0] + s[1] + s[2] + s[3] >= 0;
+      fan(wetMid ? wet : dry, wetMid ? -sink : 0, wetMid ? wcol : floorCol, wetMid ? MAT.WATER : MAT.BRICK);
+      for (let c = 0; c < 4; c++)
+        if (s[c] > 0 !== wetMid) {
+          const t3 = [cs[c], cut[c], cut[(c + 3) % 4]];
+          if (wetMid) fan(t3, 0, floorCol, MAT.BRICK);
+          else fan(t3, -sink, wcol, MAT.WATER);
+          coping(cut[(c + 3) % 4], cut[c], wetMid ? mid(t3) : mid(dry));
+        }
+      return;
+    }
+    fan(dry, 0, floorCol, MAT.BRICK);
+    fan(wet, -sink, wcol, MAT.WATER);
+    coping(cut[0], cut[1], mid(dry));
+  };
   for (let j = 0; j < H; j++)
     for (let i = 0; i < W; i++) {
       const k = j * W1 + i,
@@ -1002,52 +1109,7 @@ function genSewer(seed) {
       if (mx < -1.3) continue;
       const x = i + minX,
         z = j + minZ;
-      // the floor splits along the drawn shore
-      const cs = [
-          [x, z],
-          [x + 1, z],
-          [x + 1, z + 1],
-          [x, z + 1],
-        ],
-        s = [k, k + 1, k + W1 + 1, k + W1].map((q) => Sd[q]),
-        nWet = s.filter((v) => v > 0).length;
-      if (nWet === 0) fan(cs, 0, floorCol, MAT.BRICK);
-      else if (nWet === 4) fan(cs, -sink, wcol, MAT.WATER);
-      else {
-        const dry = [],
-          wet = [],
-          cut = [];
-        for (let c = 0; c < 4; c++) {
-          const d = (c + 1) % 4;
-          (s[c] > 0 ? wet : dry).push(cs[c]);
-          if (s[c] > 0 !== s[d] > 0) {
-            const t = s[c] / (s[c] - s[d]),
-              e = [
-                cs[c][0] + (cs[d][0] - cs[c][0]) * t,
-                cs[c][1] + (cs[d][1] - cs[c][1]) * t,
-              ];
-            dry.push(e);
-            wet.push(e);
-            cut.push(e);
-          }
-        }
-        fan(dry, 0, floorCol, MAT.BRICK);
-        const dc = [
-          dry.reduce((a, p) => a + p[0], 0) / dry.length,
-          dry.reduce((a, p) => a + p[1], 0) / dry.length,
-        ];
-        if (nWet === 2 && s[0] > 0 === s[2] > 0) {
-          // a saddle: the dry floor joins across, the two wet corners part
-          for (let c = 0; c < 4; c++)
-            if (s[c] > 0) {
-              fan([cs[c], cut[c], cut[(c + 3) % 4]], -sink, wcol, MAT.WATER);
-              coping(cut[(c + 3) % 4], cut[c], dc);
-            }
-        } else {
-          fan(wet, -sink, wcol, MAT.WATER);
-          coping(cut[0], cut[1], dc);
-        }
-      }
+      floorCell(x, z, 1, [k, k + 1, k + W1 + 1, k + W1].map((q) => Wt[q] - 0.5), 0);
       // the vault, open over the manhole
       if (x === hole.x - 0.5 && z === hole.z - 0.5) continue;
       vaultCell(i, j, x, z, k);

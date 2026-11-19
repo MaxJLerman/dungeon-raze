@@ -202,6 +202,21 @@ is what you need to change the code without breaking it.
   within 6 m of the cavern wall, so the ring ten metres in from the edge stays
   dry. A dry route joins every tunnel mouth of every room: no route is
   forced through water.
+- **The drawn shore is where `waterAt` reads 0.5.** `floorCell` splits the
+  floor of each cell where `Wt` crosses 0.5 along the cell's sides, which is
+  where the bilinear reading crosses it there. Inside the cell the bilinear
+  line bows off that straight split: by 0.061 m for one corner of 1 and
+  three of 0, and up to about half the cell for corner values near 0.5, so
+  a cell that bows more than the first is drawn as four smaller squares,
+  down to an eighth of a cell. A saddle goes the way its middle reads. t22
+  checks the two agree within 0.08 m on every walkable point near a shore.
+  Pools, brood gutters and the cavern's water are 0 or 1 on the grid; a
+  tunnel gutter's `Wt` ramps from 0 to 1 over the metre across its shore,
+  `SEWER.gutterW` from its wall, and across where it stops short of a room,
+  the cavern or another tunnel, so its edges run straight and not in steps.
+  `bodyAt` reads the nearest grid point, so beside a gutter's shore it can
+  be -1 where `waterAt` reads 0.5 or a little more. Never draw water from
+  anything but `Wt`.
 - The ceiling is brick, a vault that rises into rooms, and `ceilAt` follows it
   so the camera collides with the arch. Ribs, pipes, grates, lamps, brick
   heaps, pillar bases and the ladder in the arrival hall are drawn and block
