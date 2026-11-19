@@ -191,6 +191,18 @@ const crocSteps = [
   at(Math.PI); e.state = "chase"; e.plan = null; e.cd = 0; let started = null;
   until(() => e.state === "wind", 0.5); started = e.state === "wind" ? Object.keys(e.def.atks).find((x) => e.def.atks[x] === e.atk) : e.state;
   return { pass: behind.tail === 200 && !front.tail && started === "tail", behind, front, started };`),
+  cstep("a long swim still surfaces in its time under", `
+  begin(); const n0 = e.mode === "under" ? 1 : -1;
+  // in the moat, with its spot on the far side of the moat
+  const sh = DF.crocShores(e, w), far = sh.reduce((a, q) => Math.hypot(q.x - B.x, q.z - B.z) > Math.hypot(a.x - B.x, a.z - B.z) ? q : a);
+  const moat = sh.filter((q) => q.body === far.body && Math.hypot(q.x - B.x, q.z - B.z) > B.r - 6);
+  const from = moat[0]; e.x = from.x; e.z = from.z;
+  const to = moat.reduce((a, q) => Math.hypot(q.x - from.x, q.z - from.z) > Math.hypot(a.x - from.x, a.z - from.z) ? q : a);
+  e.spot = to; e.path = null; const t0 = e.modeT;
+  DF.sim(1 / 60, keep); let len = 0; for (let i = 0, x = from.x, z = from.z; i < e.path.length; i++) { len += Math.hypot(e.path[i].x - x, e.path[i].z - z); x = e.path[i].x; z = e.path[i].z; }
+  const n = 2 + until(() => e.mode === "rise", C.under[1] + 2);
+  return { pass: n0 === 1 && len > 40 && e.mode === "rise" && Math.hypot(e.x - to.x, e.z - to.z) < 0.01 && n <= C.under[1] * 60 + 1 && e.spot === to,
+    len, t0, n: n / 60, cap: C.under[1], mode: e.mode };`),
   cstep("leaving the cavern resets it", `
   begin(); until(() => e.mode === "land", 25); e.hp = e.def.hp * 0.7;
   put(out); const n = until(() => e.mode === "wait", 1);

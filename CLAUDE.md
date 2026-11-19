@@ -1037,8 +1037,10 @@ table runs exactly as before.
     `crocReset`. `wait`: hidden at its post; once `G.inBoss` it calls
     `alertE` (the boss bar shows while it is `aware`) and goes `under` for
     a time in `CROC.under`. `under`: hidden; it picks `e.spot` with
-    `crocPickSpot` and swims to it at `CROC.swim` along `crocPlan`'s path,
-    a search over `crocSwimNet` (water points 1 m apart with room for its
+    `crocPickSpot` and swims to it along `crocPlan`'s path at `CROC.swim`,
+    or faster when that is what it takes to be there when its time under
+    is up, so a spell under never outlasts `CROC.under[1]`. The path comes
+    from a search over `crocSwimNet` (water points 1 m apart with room for its
     body, in joined pieces). A spot in water not joined to its own (the moat
     and the centre pool) is reached by moving at once to that water's point
     nearest it, so no wake crosses dry floor. Once there and its time is up
@@ -1330,8 +1332,7 @@ The class picker and HUD read `CLASSES` and need no changes.
 - Old Sluicejaw is untested by hand. Set without a playtest: `CROC` (3 to 5
   s under, 7 m/s swimming, the 0.9 s warning, 18 burst damage, 10 s on land,
   3 s per stagger, spots 8 m apart and 4 m from the player) and how the wake
-  and warning look. Under the water it swims a 1 m lattice, so a long way
-  round the moat can keep it under for several seconds past its time.
+  and warning look.
 - A hidden grabber is invisible until it strikes, and its grate is the only
   sign. The grates are drawn for every tunnel, so a grate with no grabber
   looks the same as one with one.

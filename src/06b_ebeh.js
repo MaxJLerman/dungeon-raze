@@ -518,8 +518,9 @@ EBEH.grabber = {
 //   dive   up, walking to the nearest shore, then under again
 // Leaving the cavern or dying, in any mode, puts it back to wait at full
 // health (crocReset). Every number is a starting value for the playtest:
-//   under     the least time a spell under lasts, from and to, in s
-//   swim      its speed under the water, m/s
+//   under     how long a spell under lasts, from and to, in s
+//   swim      its least speed under the water, m/s: it swims faster when
+//             that is what it takes to reach its spot in its time under
 //   warn      how long the warning lasts before it bursts out
 //   burst     the damage to a player standing on the spot as it comes up
 //   land      how long a land phase lasts, staggers aside
@@ -802,17 +803,32 @@ EBEH.croc = {
         e.path = null;
       }
       if (!e.path) crocPlan(e, w);
-      const q = e.path[e.pi];
-      if (q) {
-        const dx = q.x - e.x,
-          dz = q.z - e.z,
-          d = Math.hypot(dx, dz);
-        if (d < 0.05) e.pi++;
-        else {
-          e.yaw = turnTo(e.yaw, Math.atan2(dx, dz), 8 * dt);
-          eStep(e, dx / d, dz / d, Math.min(CROC.swim, d / dt), dt);
+      if (e.pi < e.path.length) {
+        // the way left; it swims fast enough to be there when its time is up
+        let left = 0;
+        for (let i = e.pi, x = e.x, z = e.z; i < e.path.length; i++) {
+          left += Math.hypot(e.path[i].x - x, e.path[i].z - z);
+          x = e.path[i].x;
+          z = e.path[i].z;
         }
-        return true;
+        let go = Math.max(CROC.swim, left / Math.max(e.modeT, dt)) * dt,
+          moved = 0;
+        while (go > 1e-6 && e.pi < e.path.length) {
+          const q = e.path[e.pi],
+            dx = q.x - e.x,
+            dz = q.z - e.z,
+            d = Math.hypot(dx, dz),
+            m = Math.min(go, d);
+          if (d > 1e-6) {
+            e.yaw = turnTo(e.yaw, Math.atan2(dx, dz), 8 * dt);
+            eStep(e, dx / d, dz / d, m / dt, dt);
+          }
+          go -= m;
+          moved += m;
+          if (m >= d - 1e-6) e.pi++;
+        }
+        e.speed = moved / dt;
+        if (e.pi < e.path.length) return true;
       }
       if (e.modeT > 0) return true;
       // rubble on the ring beside it since it was picked: another spot
