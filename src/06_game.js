@@ -2021,15 +2021,17 @@ function kill(e) {
   const b = EBEH[e.type];
   if (b && b.death) b.death(e);
 }
-// A hit a type's hook refused: no damage, no knock, no flinch, no hitstop and
-// no focus. It still counts as an attack on the enemy (it hunts, is
-// provoked, learns where the player is) and fills posture.
-function blockHit(e, post) {
+// What any hit does to the one it lands on, before damage and knock: it
+// flashes, hunts (past the leash), learns where the player is and fills
+// posture. Shared by hitEnemy and blockHit so the two cannot drift apart.
+function noticeHit(e, post) {
   const p = G.player;
   e.flash = 1;
+  // a hit always starts a hunt, even past the leash
   if (!e.def.boss && !e.def.dummy) e.prov = PURSUIT.provoke;
   alertE(e, true);
   if (!e.def.boss && !e.def.dummy) {
+    // a hit tells the enemy where it came from
     e.lsx = p.x;
     e.lsz = p.z;
     e.lvx = e.lvz = 0;
@@ -2043,6 +2045,11 @@ function blockHit(e, post) {
     e.posture += post * (e.state === "wind" ? 1.25 : 1);
     e.postT = 0;
   }
+}
+// A hit a type's hook refused: no damage, no knock, no flinch, no hitstop and
+// no focus. It still counts as an attack on the enemy.
+function blockHit(e, post) {
+  noticeHit(e, post);
   sparks(e.x, 1.0 * e.fig.o.sc + 0.2, e.z, 7, WHITE, 5, 0.25);
   SFX.block();
   if (e.state !== "stagger" && e.state !== "roar" && e.posture >= e.def.posture)
@@ -2099,25 +2106,7 @@ function hitEnemy(e, dmg, post, o = {}) {
   }
   e.hp -= dmg * mult;
   if (e.def.dummy) e.hp = e.def.hp;
-  e.flash = 1;
-  // a hit always starts a hunt, even past the leash
-  if (!e.def.boss && !e.def.dummy) e.prov = PURSUIT.provoke;
-  alertE(e, true);
-  if (!e.def.boss && !e.def.dummy) {
-    // a hit tells the enemy where it came from
-    e.lsx = p.x;
-    e.lsz = p.z;
-    e.lvx = e.lvz = 0;
-    if (e.state === "search") {
-      e.sub = "go";
-      e.route = null;
-      e.fails = 0;
-    }
-  }
-  if (e.state !== "stagger") {
-    e.posture += post * (e.state === "wind" ? 1.25 : 1);
-    e.postT = 0;
-  }
+  noticeHit(e, post);
   const ox = o.fx !== undefined ? o.fx : p.x,
     oz = o.fz !== undefined ? o.fz : p.z;
   let dx = e.x - ox,

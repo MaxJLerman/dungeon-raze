@@ -36,9 +36,9 @@ export default [
     const z = DF.makeEnemy({ type: "__k", x: e.x, z: e.z, yaw: Math.PI, node: -1 }); G.enemies = [z]; z.x = e.x; z.z = e.z;
     const n = { w: 0, a: 0 }; let rec = false;
     DF.EBEH.__k = { wind() { n.w++; }, act() { n.a++; } };
-    DF.alertE(z, true); DF.sim(3, () => { keep(); if (z.state === "rec") rec = true; });
+    DF.alertE(z, true); DF.sim(4, () => { keep(); if (z.state === "rec") { rec = true; return false; } });
     delete DF.EBEH.__k; clear();
-    return { pass: n.w >= 1 && n.a >= 15 * n.w && rec, n, rec };`),
+    return { pass: n.w === 1 && n.a >= 15 && n.a <= 25 && rec, n, rec };`),
   arena("a hit hook can refuse a hit", `const hp = e.def.hp; DF.EBEH.__t = { hit: () => ({ dmg: 0, post: 0, blocked: true }) };
     e.type = "__t"; DF.hitEnemy(e, 30, 10, { src: "melee" }); const kept = e.hp === hp && e.state !== "hit" && e.kx === 0;
     delete DF.EBEH.__t; e.type = "husk"; DF.hitEnemy(e, 30, 10, { src: "melee" });
