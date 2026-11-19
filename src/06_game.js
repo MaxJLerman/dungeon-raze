@@ -5416,8 +5416,13 @@ function projUpdate(dt) {
     pr.life -= dt;
     pr.x += pr.vx * dt;
     pr.z += pr.vz * dt;
-    // a shot thrown from high up (the crocodile's plates) falls to yTo
-    if (pr.vy) pr.y = Math.max(pr.yTo, pr.y + pr.vy * dt);
+    // a shot thrown from high up (the crocodile's plates) falls to yTo, and
+    // one parried back up climbs to it
+    if (pr.vy)
+      pr.y =
+        pr.vy < 0
+          ? Math.max(pr.yTo, pr.y + pr.vy * dt)
+          : Math.min(pr.yTo, pr.y + pr.vy * dt);
     if (G.rifts.length === 2)
       riftShot(pr, pr.x - pr.vx * dt, pr.z - pr.vz * dt);
     const wall = w.fieldAt(pr.x, pr.z) < 0.12;
@@ -5461,6 +5466,12 @@ function projUpdate(dt) {
           if (s && !s.dead) a = Math.atan2(s.x - pr.x, s.z - pr.z);
           pr.vx = Math.sin(a) * 24;
           pr.vz = Math.cos(a) * 24;
+          // a falling shot climbs back to the height of the one it came from
+          if (pr.vy) {
+            const live = s && !s.dead;
+            pr.yTo = live ? s.y : pr.y;
+            pr.vy = live ? ((s.y - pr.y) * 24) / Math.max(1, Math.hypot(s.x - pr.x, s.z - pr.z)) : 0;
+          }
         } else if (res !== "none" || p.iframe <= 0) pr.life = -1;
       }
     } else {
@@ -5487,6 +5498,9 @@ function projUpdate(dt) {
           hitEnemy(e, pr.dmg, pr.post, {
             src: pr.kind,
             heavy: pr.heavy,
+            // a crocodile's plate parried back, and the mouth it came from
+            plate: !!pr.plate,
+            mouth: pr.mouth,
             sx: pr.x - pr.vx * 0.05,
             sz: pr.z - pr.vz * 0.05,
           });

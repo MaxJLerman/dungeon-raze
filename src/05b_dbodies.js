@@ -1348,6 +1348,7 @@ function poseCroc(e) {
       neck = neck,
       neckY = neckY,
       jaw = jaw,
+      roll = roll,
       reach = reach,
       splay = splay,
       tuck = tuck,
@@ -1552,7 +1553,8 @@ function poseCroc(e) {
 // head turns and dips toward the player; before each plate it crouches with
 // the head drawn down and aside, the body cocked and the tail lashing, then
 // whips round the other way and flings the head up and out as the plate
-// flies. Dropping, it pitches nose down into the water.
+// flies. Dropping, it pitches nose down into the water; knocked down, it
+// rolls over once as it falls and lands flat.
 function poseCrocUp(e) {
   const w = G.world,
     T = e.tun,
@@ -1577,6 +1579,26 @@ function poseCrocUp(e) {
       jaw: 0.3,
       wave: 0.1,
       tailUp: 0.15,
+    };
+  }
+  if (e.mode === "drop" && T.knocked) {
+    // knocked out of the wall: a full roll over as it falls, landing flat
+    // and turned the way it lands
+    const k = sat(1 - e.modeT / CROC.dropT);
+    return {
+      px: e.x + ox * (1 - k),
+      py: e.y - CROC_LIP * (1 - k),
+      pz: e.z + oz * (1 - k),
+      yaw: m.yaw + angDiff(m.yaw, e.yaw) * smooth(k),
+      pitch: lerp(0.3, 0, smooth(k)),
+      roll: -TAU * smooth(k),
+      tuck: 0.4 * (1 - k),
+      swing: 0,
+      reach: 0.6,
+      jaw: 0.5,
+      wave: 0.4,
+      rate: 8,
+      tailUp: 0.2 * (1 - k),
     };
   }
   if (e.mode === "drop") {

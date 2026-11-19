@@ -390,7 +390,7 @@ const markSteps = [
   return { pass: held === "held" && r.pstate !== "held" && r.hold === null && r.iframe >= H.safe - 2 / 60 && r.grace > H.grace - 2 / 60 &&
     r.marks === 1 && r.mode === "leap" && r.estate !== "hold" && !r.rolling && Math.abs(r.rollCD - C.rollCD) < 0.05, held, ...r };`),
   mstep("a mark's tunnel phase passes no second mark", `
-  // a mark reached on land: it leaps, and hits all through the phase stop at that mark
+  // a mark reached on land: it leaps, and hits all through the phase stop at the cap below it
   DF.hitEnemy(e, 300, 0, {}); DF.sim(1 / 60, keep);
   const m0 = { marks: e.marks, mode: e.mode, hp: e.hp };
   const seen = [], modes = {}; let n = 0;
@@ -404,8 +404,9 @@ const markSteps = [
   const under = { mode: e.mode, marks: e.marks, hp: e.hp };
   // up again, the next mark is open
   until(() => e.mode === "land", 25); DF.hitEnemy(e, 500, 0, { heavy: true }); const next = e.hp;
-  return { pass: m0.marks === 1 && m0.mode === "leap" && m0.hp === 600 && n >= 1 && seen.every((v) => v === 600) && modes.leap && modes.tunnel && modes.drop &&
-    under.mode === "under" && under.marks === 1 && under.hp === 600 && next === 400, m0, n, modes, bad: seen.filter((v) => v !== 600).slice(0, 4), under, next };`),
+  const lo = 600 - C.tunCap;
+  return { pass: m0.marks === 1 && m0.mode === "leap" && m0.hp === 600 && n >= 1 && seen.every((v) => v >= lo) && seen.includes(lo) && modes.leap && modes.tunnel && modes.drop &&
+    under.mode === "under" && under.marks === 1 && under.hp === lo && next === 400, m0, n, modes, bad: seen.filter((v) => !(v >= lo)).slice(0, 4), under, next };`),
   mstep("the marks fall at 75, 50 and 25 and then it can die", `
   const got = [];
   try {
@@ -436,6 +437,8 @@ const markSteps = [
 // toward the centre, leap() hits it to its next mark and runs the leap, plates() the plates in
 // flight, two(n0, n1) makes the phase visit at least two mouths with n0 and n1 plates at the first
 // two, view(i) a dry spot in front of mouth i and look(i) the hidden player there looking up at it.
+// bolt() fires a player's shot into it from 4 m toward the centre; back(i) the same as a parried
+// plate thrown from mouth i.
 const tunnel = `${landed}
   const W = w.wallTunnels, mouthPt = (i) => { const m = W[i]; return { x: m.x + Math.sin(m.yaw) * C.mouthIn, z: m.z + Math.cos(m.yaw) * C.mouthIn, y: m.y }; };
   const leap = () => { DF.hitEnemy(e, 300, 0, {}); return until(() => e.mode === "tunnel", C.leapT + 0.5); };
@@ -443,6 +446,9 @@ const tunnel = `${landed}
   const two = (n0 = 1, n1 = 1) => { const T = e.tun; if (T.list.length < 2) T.list = [T.list[0], (T.list[0] + 1) % W.length]; T.n = [n0, n1, ...T.n.slice(2, T.list.length)]; };
   const view = (i, d0 = 11) => { const m = W[i]; for (let d = d0; d < 24; d += 0.5) { const x = m.x + Math.sin(m.yaw) * d, z = m.z + Math.cos(m.yaw) * d;
     if (w.waterAt(x, z) === 0 && w.fieldAt(x, z) >= 1) return { x, z }; } return null; };
+  const bolt = (dmg = 10, post = 5, extra = {}) => { const toC = Math.atan2(B.x - e.x, B.z - e.z), pr = { x: e.x + Math.sin(toC) * 4, y: 1.2, z: e.z + Math.cos(toC) * 4,
+    vx: -Math.sin(toC) * 30, vz: -Math.cos(toC) * 30, life: 2, own: "p", dmg, post, kind: "bolt", c: [1, 1, 1], ...extra }; G.projs.push(pr); return pr; };
+  const back = (mouth) => bolt(30, 30, { kind: "reflect", heavy: true, plate: true, mouth, src: e });
   const look = (i, side = 0.25, pitch = -0.22) => { const m = W[i]; put(view(i)); p.yaw = cam.yaw = Math.atan2(m.x - p.x, m.z - p.z) + side; cam.pitch = pitch; cam.px = p.x; cam.pz = p.z; p.fig.root.s = [0.0001, 0.0001, 0.0001]; };`;
 const tstep = (name, body) => cstep(name, `${tunnel}\n${body}`);
 const tunnelSteps = [
@@ -559,6 +565,108 @@ const tunnelSteps = [
   DF.sim(4, () => { if (p.hp < h) hurt += h - p.hp; h = p.hp; for (const pr of G.projs) if (!known.has(pr)) more++; });
   return { pass: n < 60 && r.mode === "wait" && r.aloft === false && r.y === 0 && r.tun === null && r.hidden && !r.safe && r.flies && r.only && hurt === 0 && more === 0 && G.projs.length === 0,
     r: { ...r, tun: !!r.tun }, hurt, more, left: G.projs.length };`),
+  tstep("shots hurt it at a mouth", `
+  leap(); two(1, 1); e.tun.t = 99; const hp0 = e.hp, post0 = e.posture, pr = bolt();
+  DF.sim(0.3, () => { keep(); e.tun.t = 99; });
+  const at = { hp: e.hp, post: e.posture, gone: !G.projs.includes(pr), stagger: e.state === "stagger" };
+  // hidden at the next mouth, the same shot passes on
+  e.tun.t = 0; until(() => e.tun.sub === "warn", 3); e.tun.t = 99;
+  const hp1 = e.hp, wpr = bolt(); let minD = 1e9;
+  DF.sim(0.3, () => { keep(); e.tun.t = 99; if (wpr.life > 0) minD = Math.min(minD, Math.hypot(wpr.x - e.x, wpr.z - e.z)); });
+  return { pass: at.hp === hp0 - 10 && at.gone && at.post === post0 && !at.stagger && e.tun.sub === "warn" && e.hidden && e.hp === hp1 && minD < 1,
+    hp0, at, hp1, hp: e.hp, minD };`),
+  tstep("a tunnel phase takes at most tunCap", `
+  // berserk on and a shot into it every step, through two whole phases
+  const phase = () => {
+    leap(); const hp0 = e.hp, next = e.def.hp * (1 - 0.25 * (e.marks + 1)), post0 = e.posture;
+    let lo = e.hp, postUp = 0, stag = false; const modes = {};
+    DF.sim(45, () => { keep(); p.buff = "berserk"; if (e.mode === "under") return false; modes[e.mode] = 1;
+      bolt(); lo = Math.min(lo, e.hp); postUp = Math.max(postUp, e.posture - post0); if (e.state === "stagger") stag = true; });
+    p.buff = null;
+    return { hp0, lost: hp0 - lo, lo, next, postUp, stag, modes: Object.keys(modes).join(), end: e.mode };
+  };
+  try {
+    const a = phase(); until(() => e.mode === "land", 25); until(() => e.state === "chase", 3);
+    const b = phase();
+    const ok = (r) => r.lost === C.tunCap && r.lo >= r.next && r.postUp === 0 && !r.stag && r.modes === "tunnel,drop" && r.end === "under";
+    return { pass: ok(a) && ok(b) && a.hp0 === 600 && b.hp0 === 400, a, b };
+  } finally { p.buff = null; }`),
+  tstep("a plate reaches a player right under the mouth", `
+  leap(); e.tun.n[0] = 1;
+  // the player as near under it as the floor lets them stand, nearer than a plate starts out
+  let q = null, bd = 1e9;
+  for (let i = -8; i <= 8; i++) for (let j = -8; j <= 8; j++) { const x = e.x + i * 0.25, z = e.z + j * 0.25, d = Math.hypot(x - e.x, z - e.z);
+    if (d < bd && w.fieldAt(x, z) >= p.r) { bd = d; q = { x, z }; } }
+  put(q); let hurt = 0, hits = 0, h = p.hp;
+  DF.sim(3, () => { p.x = q.x; p.z = q.z; p.kx = p.kz = 0; if (p.hp < h) { hurt += h - p.hp; hits++; } p.hp = p.maxHp; h = p.hp;
+    if (e.tun && e.tun.plates >= 1 && plates().length === 0) return false; });
+  return { pass: bd < e.r + 0.3 && hits === 1 && Math.abs(hurt - C.plateDmg) < 0.01, bd, hits, hurt };`),
+  tstep("a parried plate knocks it down", `
+  leap(); const i0 = e.tun.list[0]; e.tun.n[0] = 1; const q = view(i0); put(q);
+  const hp0 = e.hp; let rf = null, tR = 0, ys = [], landN = 0;
+  DF.keys[DF.BIND.guard] = true;
+  DF.sim(8, () => { keep(); p.x = q.x; p.z = q.z; p.kx = p.kz = 0; p.yaw = cam.yaw = Math.atan2(e.x - p.x, e.z - p.z); p.guardT = 0;
+    if (!rf) rf = G.projs.find((pr) => pr.src === e && pr.plate && pr.own === "p") || null;
+    if (rf) { tR++; if (rf.life > 0 && G.projs.includes(rf)) ys.push(rf.y); }
+    if (e.mode === "land") return false; });
+  DF.keys[DF.BIND.guard] = false;
+  const rose = ys.length > 2 && ys.every((y, k) => !k || y >= ys[k - 1] - 1e-9) && ys[ys.length - 1] > 3;
+  const T = e.tun, r = { mode: e.mode, state: e.state, y: e.y, aloft: e.aloft, safe: e.safe, hidden: e.hidden, knocked: T && T.knocked, landT: e.landT,
+    water: w.waterAt(e.x, e.z), field: w.fieldAt(e.x, e.z), fromC: Math.hypot(e.x - B.x, e.z - B.z), lost: hp0 - e.hp };
+  return { pass: !!rf && rf.kind === "reflect" && rf.plate === true && rf.mouth === i0 && tR <= 2 * 60 && rose &&
+    r.mode === "land" && r.state === "stagger" && r.y === 0 && !r.aloft && !r.safe && !r.hidden && r.knocked === true && r.landT === C.land &&
+    r.water < 0.5 && r.field >= e.r && r.fromC < B.r && r.lost > 0 && r.lost <= C.tunCap,
+    rf: rf && { kind: rf.kind, plate: rf.plate, mouth: rf.mouth, i0 }, tR: tR / 60, rose, ys: ys.filter((_, k) => k % 6 === 0).map((y) => +y.toFixed(2)), r };`),
+  tstep("one knock-down per phase and only at its mouth", `
+  leap(); two(1, 1); const i0 = e.tun.list[0], i1 = e.tun.list[1];
+  e.tun.t = 0; until(() => e.tun.k === 1 && e.tun.sub === "show", 5); e.tun.t = 99;
+  // a parried plate from the mouth it has left reaches it at the next: a hit, no knock-down
+  const hp0 = e.hp; back(i0); DF.sim(0.3, () => { keep(); e.tun.t = 99; });
+  const other = { mode: e.mode, knocked: e.tun.knocked, lost: hp0 - e.hp, aloft: e.aloft };
+  // one from this mouth knocks it down
+  back(i1); DF.sim(0.3, () => { keep(); e.tun.t = 99; if (e.mode !== "tunnel") return false; });
+  const T = e.tun, fall = { mode: e.mode, knocked: T.knocked, px: T.px, pz: T.pz, modeT: e.modeT };
+  // a second in the fall changes nothing (safe lifted so the hook sees it)
+  e.safe = false; DF.hitEnemy(e, 30, 30, { src: "reflect", heavy: true, plate: true, mouth: i1 }); e.safe = true;
+  const fall2 = { mode: e.mode, px: T.px, pz: T.pz, modeT: e.modeT };
+  until(() => e.mode === "land", 2);
+  // nor once it is down
+  const down = { t: e.t, x: e.x, z: e.z, state: e.state };
+  DF.hitEnemy(e, 30, 30, { src: "reflect", heavy: true, plate: true, mouth: i1 }); DF.sim(1 / 60, keep);
+  const after = { mode: e.mode, state: e.state, dt: e.t - down.t, moved: Math.hypot(e.x - down.x, e.z - down.z), y: e.y, aloft: e.aloft };
+  return { pass: other.mode === "tunnel" && other.knocked === false && other.lost === 30 && other.aloft &&
+    fall.mode === "drop" && fall.knocked === true && fall2.mode === "drop" && fall2.px === fall.px && fall2.pz === fall.pz && fall2.modeT === fall.modeT &&
+    down.state === "stagger" && after.mode === "land" && after.state === "stagger" && Math.abs(after.dt - 1 / 60) < 1e-6 && after.moved < 1e-6 && after.y === 0 && !after.aloft,
+    other, fall, fall2, down, after };`),
+  tstep("it waits at its mouth for a plate parried back from it", `
+  leap(); two(1, 1); const i0 = e.tun.list[0];
+  // its last plate here thrown and about to move on, a parried one 20 m out on its way back
+  e.tun.plates = e.tun.n[0]; e.tun.t = 1 / 60;
+  const toC = Math.atan2(B.x - e.x, B.z - e.z), far = (d, a) => ({ x: e.x + Math.sin(toC) * d, y: 1.25, z: e.z + Math.cos(toC) * d, vx: Math.sin(a) * 24, vz: Math.cos(a) * 24,
+    life: 2, own: "p", dmg: 30, post: 30, kind: "reflect", heavy: true, plate: true, mouth: i0, src: e, c: [1, 1, 1] });
+  G.projs.push(far(20, toC + Math.PI)); let stayed = true;
+  DF.sim(1.5, () => { keep(); if (e.mode !== "tunnel") return false; if (e.tun.k !== 0 || e.tun.sub !== "show") stayed = false; });
+  const hit = { mode: e.mode, knocked: e.tun.knocked, stayed };
+  // once the one in the air has missed, it moves on
+  until(() => e.mode === "land", 2); until(() => e.state === "chase", 6); until(() => e.mode === "under", 30); until(() => e.mode === "land", 25);
+  leap(); two(1, 1); e.tun.plates = e.tun.n[0]; e.tun.t = 1 / 60; const j0 = e.tun.list[0];
+  const miss = far(2, toC); miss.mouth = j0; G.projs.push(miss); let left = 0;
+  DF.sim(3, () => { keep(); left++; if (e.tun.k === 1) return false; });
+  return { pass: hit.stayed && hit.mode === "drop" && hit.knocked === true && e.tun.k === 1 && !e.tun.knocked && !G.projs.includes(miss) && left <= 2.1 * 60,
+    hit, k: e.tun.k, left: left / 60 };`),
+  tstep("knocked down, the land fight carries on", `
+  leap(); const i0 = e.tun.list[0]; e.tun.t = 99; back(i0);
+  until(() => e.mode === "land", 2);
+  const knocked = e.mode === "land" && e.state === "stagger";
+  // open to an execution: the player beside it finds it
+  const side = ringAt(Math.hypot(e.x - B.x, e.z - B.z), Math.atan2(e.x - B.x, e.z - B.z) + 0.12); put(side);
+  const near = Math.hypot(p.x - e.x, p.z - e.z), exec = DF.nearestStaggered() === e;
+  // the stagger ends and it fights on, then dives on its land clock
+  put(view(i0, 14)); const n0 = until(() => e.state !== "stagger", 6);
+  const fought = { state: e.state, mode: e.mode };
+  let leapt = false; const n1 = until(() => e.mode === "dive" || e.mode === "under", 30, () => { if ((e.mode === "leap" || e.mode === "tunnel" || e.mode === "drop")) leapt = true; });
+  return { pass: knocked && exec && fought.mode === "land" && fought.state !== "stagger" && (e.mode === "dive" || e.mode === "under") && !leapt && e.marks === 1 && !e.aloft,
+    knocked, near, exec, stag: n0 / 60, fought, toDive: n1 / 60, mode: e.mode, marks: e.marks, landT: e.landT, outT: e.outT };`),
   // for looking at: the warning at a mouth, and it at a mouth mid whip with a plate in the air
   { ...tstep("the warning at a mouth, for looking at", `
   leap(); two(1, 1); until(() => e.tun.sub === "warn", 10); DF.sim(C.mouthWarn * 0.6, keep);
@@ -573,6 +681,12 @@ const tunnelSteps = [
   for (const t of [C.throwWind, C.throwWind * 0.5, 0.01, C.throwGap - 0.1]) { T.t = t; DF.poseEnemy(e); if (!finite()) fin = false; }
   T.t = keepT; DF.poseEnemy(e);
   return { pass: fin && e.mode === "tunnel" && T.sub === "show" && plates().length === 1, fin, plates: plates().length, y: plates()[0] && plates()[0].y };`), wait: 500, shot: "t25-mouth-throw" },
+  { ...tstep("knocked down mid fall, for looking at", `
+  leap(); const i0 = e.tun.list[0]; e.tun.t = 99; look(i0, 0.1, -0.12); back(i0);
+  until(() => e.mode === "drop", 1); DF.sim(C.dropT * 0.45, keep);
+  const f = e.fig, finite = () => { let ok = true; (function rec(n) { for (const v of [...n.p, ...n.r, ...n.s]) if (!Number.isFinite(v)) ok = false; n.ch.forEach(rec); })(f.root); return ok; };
+  let fin = true; const m0 = e.modeT; for (const t of [C.dropT, C.dropT * 0.5, 0]) { e.modeT = t; DF.poseEnemy(e); if (!finite()) fin = false; } e.modeT = m0; DF.poseEnemy(e);
+  return { pass: fin && e.mode === "drop" && e.tun.knocked === true, fin, y: e.y };`), wait: 500, shot: "t25-knock" },
   step("the player is put back", `G.player.fig.root.s = [1, 1, 1]; DF.newRun(99); return { pass: true };`),
 ];
 export default [...base, ...crocSteps, ...rollSteps, ...markSteps, ...tunnelSteps];
