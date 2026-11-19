@@ -1556,6 +1556,9 @@ function makeEnemy(s) {
     told: false,
     // seconds left in which a hit makes it ignore its leash
     prov: 0,
+    // the last spot it may stand on, for a type whose footing is limited
+    okx: s.x,
+    okz: s.z,
   };
 }
 function spawnEnemies() {
@@ -2015,6 +2018,35 @@ function kill(e) {
       say("A new gate has opened in the base.", "good", 6);
     SFX.win();
   }
+  const b = EBEH[e.type];
+  if (b && b.death) b.death(e);
+}
+// A hit a type's hook refused: no damage, no knock, no flinch, no hitstop and
+// no focus. It still counts as an attack on the enemy (it hunts, is
+// provoked, learns where the player is) and fills posture.
+function blockHit(e, post) {
+  const p = G.player;
+  e.flash = 1;
+  if (!e.def.boss && !e.def.dummy) e.prov = PURSUIT.provoke;
+  alertE(e, true);
+  if (!e.def.boss && !e.def.dummy) {
+    e.lsx = p.x;
+    e.lsz = p.z;
+    e.lvx = e.lvz = 0;
+    if (e.state === "search") {
+      e.sub = "go";
+      e.route = null;
+      e.fails = 0;
+    }
+  }
+  if (e.state !== "stagger") {
+    e.posture += post * (e.state === "wind" ? 1.25 : 1);
+    e.postT = 0;
+  }
+  sparks(e.x, 1.0 * e.fig.o.sc + 0.2, e.z, 7, WHITE, 5, 0.25);
+  SFX.block();
+  if (e.state !== "stagger" && e.state !== "roar" && e.posture >= e.def.posture)
+    stagger(e);
 }
 function hitEnemy(e, dmg, post, o = {}) {
   if (e.dead || e.state === "fall") return;
@@ -2024,6 +2056,16 @@ function hitEnemy(e, dmg, post, o = {}) {
   if (p.riftBonus > 0) {
     dmg *= 1 + RIFT.bonus;
     p.riftBonus = 0;
+  }
+  // a type's own say over the hit: change what lands, or refuse it
+  const bh = EBEH[e.type];
+  if (bh && bh.hit) {
+    const r = bh.hit(e, dmg, post, o);
+    if (r) {
+      if (r.blocked) return blockHit(e, r.post);
+      dmg = r.dmg;
+      post = r.post;
+    }
   }
   let mult = 1;
   const close = o.src === "melee" || o.src === "blink" || o.src === "exec";
@@ -2221,7 +2263,7 @@ function hurtPlayer(dmg, e, atk) {
   G.shake = Math.max(G.shake, 0.7);
   G.hitstop = Math.max(G.hitstop, 0.06);
   SFX.hurt();
-  const kb = (atk.unb ? 11 : 7) * (armored ? 0.3 : 1);
+  const kb = (atk.kb || (atk.unb ? 11 : 7)) * (armored ? 0.3 : 1);
   p.kx = -kdx * kb;
   p.kz = -kdz * kb;
   sparks(p.x, 1.2, p.z, 10, RED, 5);
@@ -3618,6 +3660,26 @@ function chooseAtk(e, dist) {
 }
 function eStep(e, dx, dz, spd, dt) {
   spd *= wadeMul(G.world.waterAt(e.x, e.z), wadeOf(e.def));
+  const b = EBEH[e.type];
+  if (b && b.foot) {
+    // a body held to its footing: the whole step, else along x or along z,
+    // else none; speed and walk reflect the step taken
+    const mx = dx * spd * dt,
+      mz = dz * spd * dt;
+    let sx = 0,
+      sz = 0;
+    if (b.foot(e, e.x + mx, e.z + mz)) {
+      sx = mx;
+      sz = mz;
+    } else if (b.foot(e, e.x + mx, e.z)) sx = mx;
+    else if (b.foot(e, e.x, e.z + mz)) sz = mz;
+    e.x += sx;
+    e.z += sz;
+    const moved = Math.hypot(sx, sz);
+    e.speed = dt > 0 ? moved / dt : 0;
+    e.walk += (moved * 2.0) / e.fig.o.sc;
+    return;
+  }
   e.x += dx * spd * dt;
   e.z += dz * spd * dt;
   e.speed = spd;
@@ -3818,6 +3880,10 @@ function enemyUpdate(e, dt) {
   const face = (rate) => {
     e.yaw = turnTo(e.yaw, toP, rate * dt);
   };
+  // a type's hooks, and what they are told (built only for a type with some)
+  const b = EBEH[e.type],
+    c = b ? { p, w, dx, dz, dist, toP, alive } : null;
+  if (b && b.step && b.step(e, dt, c)) return;
   switch (e.state) {
     case "idle":
       // shoved off the post, for example by one walking past: go back
@@ -3881,6 +3947,8 @@ function enemyUpdate(e, dt) {
         toSearch(e);
         break;
       }
+      if (b && b.chase && b.chase(e, dt, c)) break;
+      const mayAtk = !(b && b.canAttack) || b.canAttack(e, c);
       let ux = dx / (dist || 1),
         uz = dz / (dist || 1),
         aim = null;
@@ -3923,7 +3991,8 @@ function enemyUpdate(e, dt) {
           dist < 17 &&
           dist > 3 &&
           Math.abs(angDiff(e.yaw, toP)) < 0.5 &&
-          w.los(e.x, e.z, p.x, p.z)
+          w.los(e.x, e.z, p.x, p.z) &&
+          mayAtk
         ) {
           e.atk = d.atks.shot;
           e.state = "wind";
@@ -3934,7 +4003,7 @@ function enemyUpdate(e, dt) {
       }
       if (e.cd <= 0 && !e.plan) e.plan = chooseAtk(e, dist);
       if (e.plan && dist < (e.plan.minTrig || 0)) e.plan = null;
-      const want = e.plan && e.cd <= 0 && (e.token || takeToken(e));
+      const want = e.plan && e.cd <= 0 && mayAtk && (e.token || takeToken(e));
       if (want) {
         if (dist <= e.plan.trig + e.r * 0.3) {
           if (Math.abs(angDiff(e.yaw, toP)) < 0.7) {
@@ -4068,7 +4137,13 @@ function enemyUpdate(e, dt) {
             kind: "warn",
             c: RED,
           });
-        }
+        } else if (
+          a.kind &&
+          a.kind !== "charge" &&
+          b &&
+          b.wind
+        )
+          b.wind(e, c);
       }
       break;
     }
@@ -4130,6 +4205,9 @@ function enemyUpdate(e, dt) {
           hurtPlayer(a.dmg, e, a);
           if (e.state !== "act") break;
         }
+      } else if (a.kind !== "shot" && a.kind !== "volley" && b && b.act) {
+        b.act(e, dt, c);
+        if (e.state !== "act") break;
       }
       if (k >= 1) {
         e.state = "rec";
@@ -4815,7 +4893,12 @@ function projUpdate(dt) {
             pr.life = -1;
             break;
           }
-          hitEnemy(e, pr.dmg, pr.post, { src: pr.kind, heavy: pr.heavy });
+          hitEnemy(e, pr.dmg, pr.post, {
+            src: pr.kind,
+            heavy: pr.heavy,
+            sx: pr.x - pr.vx * 0.05,
+            sz: pr.z - pr.vz * 0.05,
+          });
           if (pr.hitSet) pr.hitSet.add(e);
           else {
             pr.life = -1;
@@ -4912,6 +4995,9 @@ function update(dt) {
   }
   G.pending = G.pending.filter((q) => q.t > 0);
   separate();
+  for (const e of G.enemies)
+    if (!e.dead && e.state !== "fall" && EBEH[e.type] && EBEH[e.type].foot)
+      keepFooting(e);
   G.enemies = G.enemies.filter((e) => !e.gone);
   for (const q of G.parts) {
     q.t += dt;

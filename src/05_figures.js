@@ -324,6 +324,7 @@ function makePlayerFig(id) {
   return finishFigure(f);
 }
 function makeEnemyFig(type) {
+  if (EFIG[type]) return EFIG[type]();
   let f;
   if (type === "husk") {
     f = makeFigure({

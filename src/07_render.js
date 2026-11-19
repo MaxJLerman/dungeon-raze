@@ -361,6 +361,7 @@ function poseDummy(e) {
 }
 function poseEnemy(e) {
   if (e.def.dummy) return poseDummy(e);
+  if (EPOSE[e.type] && EPOSE[e.type].pose) return EPOSE[e.type].pose(e);
   const f = e.fig,
     d = e.def,
     o = f.o,
@@ -454,6 +455,7 @@ function poseEnemy(e) {
     }
   }
   if (f.cape) f.cape.r[0] = 0.12 + mv * 0.6;
+  if (EPOSE[e.type] && EPOSE[e.type].after) EPOSE[e.type].after(e);
   setEm(f, tr + e.flash * 0.9, tg + e.flash * 0.85, tb + e.flash * 0.7);
   if (f.sac) {
     const g = e.state === "wind" ? sat(e.t / e.atk.wind) : 0;
