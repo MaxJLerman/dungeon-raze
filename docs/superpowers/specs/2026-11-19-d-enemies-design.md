@@ -330,3 +330,23 @@ and `held`.
 - The bodies' shapes, colours and poses, and the sounds.
 - How the eel's lit body of water and the poison cloud are drawn.
 - How the held prompt reads on each input.
+
+## Notes for batch 2 from batch 1's review
+
+The final review of batch 1 found nothing that blocks it, but four things in
+the shared code will bite water-bound types (the siren and the eel). The batch
+2 plan should settle each before it builds those types.
+
+- `makeEnemy` sets `okx` and `okz` from the raw spawn point before any
+  resolve. A water type must spawn on water, and its anchor must be a spot it
+  may stand on, or `keepFooting` will treat the first step as a move to undo.
+- `caveUpdate` pushes bodies out of new rock before `keepFooting` runs. A
+  water-bound body pushed onto dry floor snaps back to `okx` and `okz`, which
+  may by then be inside rubble.
+- `separate` moves a footed body and `keepFooting` undoes it, so the overlap
+  comes back every frame. Treat footed types like the boss in `separate`'s
+  weighting, or have `foot` consider `fieldAt`.
+- The class-tool exemptions (the grapple yank, rift crossing, Drop, the
+  Sapper's kick and the Riftwalker's execution drop) each test `boss` or
+  `dummy` by hand. They want one predicate, such as `bound(e)`, rather than
+  more `boss || dummy` checks.

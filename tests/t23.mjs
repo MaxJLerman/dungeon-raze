@@ -24,7 +24,7 @@ const view = (type, name, body, shot) => [
   step("the camera and the player are put back", `cam.dist = window.__cd0; DF.newRun(99); return { pass: true };`),
 ];
 export default [
-  step("a type with no hooks has no entry", `return { pass: DF.EBEH && DF.EBEH.husk === undefined && DF.EBEH.brute === undefined && DF.EBEH.spitter === undefined && DF.EBEH.warden === undefined && typeof DF.EFIG === "object" && typeof DF.EPOSE === "object" };`),
+  step("a type with no hooks has no entry", `return { pass: DF.EBEH && DF.EBEH.husk === undefined && DF.EBEH.brute === undefined && DF.EBEH.spit === undefined && DF.EBEH.warden === undefined && typeof DF.EFIG === "object" && typeof DF.EPOSE === "object" };`),
   arena("step, chase and death hooks are called", `const n = { s: 0, c: 0, d: 0 };
     DF.EBEH.__t = { step() { n.s++; return false; }, chase() { n.c++; return false; }, death() { n.d++; } };
     e.type = "__t"; DF.alertE(e, true); DF.sim(1, keep); DF.kill(e); clear();
@@ -174,6 +174,33 @@ export default [
     let toolPlain = 0, plainFocus = 0;
     for (let i = 0; i < 40; i++) { p.tool = 0; p.focus = 0; DF.kill(mk(undefined)); toolPlain += p.tool; plainFocus = p.focus; }
     return { pass: toolBorn === 0 && focusOk && toolPlain > 0 && plainFocus === 6 && DF.BROOD.focus === 2, toolBorn, focusOk, toolPlain, plainFocus };`),
+  step("executing a born rat gives no tool charge and BROOD.focus; a placed rat's still does", `DF.setClass("enforcer"); DF.newRun(99); DF.show("play"); G.state = "play"; const p = G.player, w = G.world;
+    G.enemies = []; const out = {};
+    const run = (born, rnd) => { const e = DF.makeEnemy({ type: "rat", x: p.x, z: p.z + 3, yaw: Math.PI, node: -1 }); w.resolve(e, e.r); G.enemies.push(e); if (born) { e.born = true; e.mom = {}; }
+      p.state = "free"; p.hp = 50; p.tool = 0; p.focus = 0; e.state = "stagger"; e.t = 0; e.dur = 3; DF.startExecute(e);
+      const r0 = Math.random; Math.random = () => rnd; DF.sim(1, () => !p.exDone); Math.random = r0;
+      return { tool: p.tool, focus: p.focus, hp: p.hp, dead: e.dead }; };
+    out.born = run(true, 0); out.placed = run(false, 0.99);
+    DF.setClass("fighter"); DF.newRun(99);
+    // the kill adds BROOD.focus (born) or 6 (placed) beside the execution's own share
+    const k = DF.BROOD.focus;
+    return { pass: out.born.dead && out.born.tool === 0 && out.born.focus === k + k && out.born.hp === 60 && out.placed.tool === 1 && out.placed.focus === 12 + 6 && out.placed.hp === 60, out };`),
+  arenaOf("brood", 9, "a killed rat's slot is refilled every 6 s later, not at once", `DF.alertE(e, true); e.cd = 99;
+    const mk = () => { const r = DF.makeEnemy({ type: "rat", x: e.x + 1, z: e.z + 1, yaw: 0, node: -1 }); r.mom = e; r.born = true; r.cd = 99; G.enemies.push(r); return r; };
+    const kids = [mk(), mk(), mk(), mk()]; const live = () => G.enemies.filter((o) => o.mom === e && !o.dead).length;
+    DF.sim(8, () => { keep(); for (const k of kids) k.hp = k.def.hp; });
+    DF.kill(kids[0]); let t = 0, at = null; const n0 = live();
+    DF.sim(8, () => { keep(); for (const k of kids) if (!k.dead) k.hp = k.def.hp; t += 1 / 60; if (at === null && live() > n0) { at = t; return false; } });
+    return { pass: at !== null && at > DF.BROOD.every - 0.5 && at < DF.BROOD.every + 0.5, at, live: live() };`),
+  arenaOf("brood", 9, "after a hunt ends the first rat comes DF.BROOD.first s into the next", `DF.alertE(e, true); e.cd = 99; DF.sim(2.5, keep);
+    const n0 = G.enemies.length; if (n0 !== 1) return { pass: false, why: "a rat came early", n0 };
+    const c = { p, w, dx: p.x - e.x, dz: p.z - e.z, dist: Math.hypot(p.x - e.x, p.z - e.z), toP: 0, alive: true };
+    e.aware = false; DF.EBEH.brood.step(e, 0.1, c); e.aware = false; e.state = "idle"; DF.alertE(e, true);
+    let t = 0, at = null; DF.sim(8, () => { keep(); e.cd = 99; t += 1 / 60; if (at === null && G.enemies.length > n0) { at = t; return false; } });
+    return { pass: at !== null && Math.abs(at - DF.BROOD.first) < 0.6, at };`),
+  arenaOf("rat", 1.2, "a rat holding a token drops it while swimming", `DF.alertE(e, true); e.state = "chase"; e.aware = true; e.token = true; e.plan = null; e.cd = 5; w.waterAt = () => 1;
+    DF.sim(1 / 60, keep); const wet = e.token;
+    return { pass: wet === false, wet };`),
   arenaOf("brood", 9, "she keeps her distance", `DF.alertE(e, true); e.cd = 0; let wind = false;
     // the player walks toward her from 9 m to 5 m over 2 s
     const px = p.x, pz = p.z; e.x = px; e.z = pz + 9; w.resolve(e, e.r); e.state = "chase"; e.birthT = 0;

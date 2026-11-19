@@ -19,6 +19,7 @@
 //                                of act (k >= 1 goes to rec) still runs
 //                                unless the hook changed e.state
 //   hit(e, dmg, post, o) -> null | { dmg, post, blocked }
+//                                a result must carry both dmg and post
 //                                in hitEnemy, after the Riftwalker bonus and
 //                                before the ambush multiplier; o carries sx
 //                                and sz (where a shot started) for a shot
@@ -66,12 +67,21 @@ const BROOD_STATES = { chase: 1, search: 1, wind: 1, act: 1, rec: 1 };
 EBEH.brood = {
   step(e, dt, c) {
     if (e.birthT === undefined) e.birthT = BROOD.every - BROOD.first;
-    if (!e.aware || G.inBoss || !BROOD_STATES[e.state]) return false;
-    e.birthT += dt;
-    if (e.birthT < BROOD.every) return false;
+    if (!e.aware) {
+      // a hunt that ends starts the next one from the first rat's delay
+      e.birthT = BROOD.every - BROOD.first;
+      return false;
+    }
+    if (G.inBoss || !BROOD_STATES[e.state]) return false;
     let n = 0;
     for (const o of G.enemies) if (o.mom === e && !o.dead) n++;
-    if (n >= BROOD.cap) return false;
+    if (n >= BROOD.cap) {
+      // at the cap the timer waits: a slot that opens is filled `every` later
+      e.birthT = 0;
+      return false;
+    }
+    e.birthT += dt;
+    if (e.birthT < BROOD.every) return false;
     e.birthT = 0;
     // behind her, away from the player
     const k = c.dist > 0.01 ? 1.4 / c.dist : 0,

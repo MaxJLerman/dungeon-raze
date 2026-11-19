@@ -3536,14 +3536,15 @@ function playerUpdate(dt) {
         G.shake = 1;
         G.flashWhite = 0.6;
         p.hp = Math.min(p.maxHp, p.hp + 10);
-        p.focus = Math.min(100, p.focus + 12);
+        // a rat a brood mother sent out gives what it gives when killed
+        p.focus = Math.min(100, p.focus + (e.born ? BROOD.focus : 12));
         const sniper = p.clsId === "enforcer",
           sapper = p.clsId === "sapper",
           rift = p.clsId === "riftwalker";
         if (sniper) {
           // a tracer all the way to the target, and a sticky bomb back
           SFX.gun(true);
-          p.tool = Math.min(c.tool.max, p.tool + 1);
+          if (!e.born) p.tool = Math.min(c.tool.max, p.tool + 1);
         }
         G.arcs.push({
           lance: true,
@@ -4113,6 +4114,7 @@ function enemyUpdate(e, dt) {
       }
       if (e.cd <= 0 && !e.plan) e.plan = chooseAtk(e, dist);
       if (e.plan && dist < (e.plan.minTrig || 0)) e.plan = null;
+      if (!mayAtk) e.token = false;
       const want = e.plan && e.cd <= 0 && mayAtk && (e.token || takeToken(e));
       if (want) {
         if (dist <= e.plan.trig + e.r * 0.3) {

@@ -199,15 +199,16 @@ is what you need to change the code without breaking it.
   points: the arrival hall and three along the path, the last just before the
   cavern. Rooms get a kind: `start`, `pool`, `brood`, `shrine` or `boss`; no
   room is both pool and brood, and every spawn records its room kind. Rest
-  rooms hold no enemies. **Spawns** are drawn at the end of `genSewer`, from
-  `Rn`, after everything else, so they never move the layout. A brood room
+  rooms hold no enemies. A run is about 1.5 times the walked length of E's.
+  **Spawns** are drawn at the end of `genSewer`, from `Rn`, after everything
+  else, so they never move the layout. A brood room
   holds one `brood` at the farthest of 12 dry spots from its entry (the first
   point outside the room of the tunnel to its neighbour of lowest depth), 2 to
   4 `rat`, and with chance 0.4 one `drowned`. A tunnel post (half the tunnels)
   holds a `drowned` with chance 0.4, else a pack of three `rat`: the post and
   two points 1.2 m either way along the tunnel, each kept only if dry and open
   (`kind: "tunnel"`). Pool rooms still hold `PACK.pool`, E's husk and spitter,
-  until batch 2 gives them the siren and the eel. A run is about 1.5 times the walked length of E's.
+  until batch 2 gives them the siren and the eel.
 - **Pillars** are square brick piers in the field, so they block movement,
   sight, routes, shots and the camera like any wall. Pool, brood and rest
   rooms whose shorter half-size is at least `SEWER.pillarAt` (9 m, about
@@ -783,6 +784,15 @@ is what you need to change the code without breaking it.
   around the screen centre and `world.los` from the player is clear. The box
   is tall because the resting camera looks down, so an enemy straight ahead
   sits above the centre. The HUD only reads enemies; looking never wakes one.
+- `EDEF.dummy` is the training dummy. Its `dummy: true` flag is honoured in
+  nine places: `makeEnemy` (always aware, so no ambush bonus and its bar
+  shows), `enemyUpdate` (pinned in place, no AI), `hitEnemy` (health restored
+  after every hit), `kill` (refuses), the `execute` case of `playerUpdate`
+  (stands back up, and is not kicked by the Sapper or dropped by the
+  Riftwalker), `caveImpact` and `separate` (not pushed out of the rubble),
+  and `riftBodies` and `holesUpdate` (never crosses a rift, never falls).
+  Any new way of killing or moving an enemy must respect it.
+
 ### Enemy behaviours (`06b_ebeh.js`, `05b_dbodies.js`)
 
 The shared state machine is left alone for E. A D type adds what it needs
@@ -814,9 +824,9 @@ table runs exactly as before.
     `footOk(e, x, z)` (always true for a type with no hook). `eStep` refuses a
     step that `footOk` forbids, trying each axis alone so the body slides, and
     `keepFooting(e)` runs each update after every other mover (knockback,
-    lunges, `separate`, rifts) for a type with a hook: it records a spot the
-    body may stand on, or puts it back on the last one. Nothing uses it yet; it
-    is there for the water-bound enemies of batch 2.
+    lunges, `separate`, rifts) for a type with a `foot` hook: it records a
+    spot the body may stand on, or puts it back on the last one. Nothing uses
+    it yet; it is there for the water-bound enemies of batch 2.
 - **`EFIG`** maps a type to a function that returns its finished figure, which
   `makeEnemyFig` calls first. **`EPOSE`** maps a type to `{ pose(e) }`, which
   replaces the body of `poseEnemy` (the dummy still goes first), or to
@@ -841,20 +851,16 @@ table runs exactly as before.
   stands her ground and bites. While hunting and in a state where she is up
   (`BROOD_STATES`), every `BROOD.every` (6 s) she sends out a rat behind her,
   away from the player, up to `BROOD.cap` (4) alive at once; the first goes
-  `BROOD.first` (3 s) into a hunt. She sends nothing when she is staggered,
+  `BROOD.first` (3 s) into a hunt. At the cap her timer holds at 0, so a
+  rat killed is replaced `BROOD.every` after the slot opens, and when she is
+  not hunting it is put back to the first rat's delay. She sends nothing when she is staggered,
   falling, unaware or the player is in the boss chamber. A sent-out rat has
   `mom` (her) and `born`, shares her post (so it returns to her room), and
-  gives `BROOD.focus` (2) focus and no tool charge when it dies. She takes no
+  gives `BROOD.focus` (2) focus and no tool charge when it dies, and an
+  execution of one gives `BROOD.focus` focus (not 12) and no Enforcer tool
+  charge, beside the usual heal. She takes no
   attack token while she stands off. `respawn` rebuilds the enemies, so her
   rats are gone and her timer starts fresh.
-- `EDEF.dummy` is the training dummy. Its `dummy: true` flag is honoured in
-  nine places: `makeEnemy` (always aware, so no ambush bonus and its bar
-  shows), `enemyUpdate` (pinned in place, no AI), `hitEnemy` (health restored
-  after every hit), `kill` (refuses), the `execute` case of `playerUpdate`
-  (stands back up, and is not kicked by the Sapper or dropped by the
-  Riftwalker), `caveImpact` and `separate` (not pushed out of the rubble),
-  and `riftBodies` and `holesUpdate` (never crosses a rift, never falls).
-  Any new way of killing or moving an enemy must respect it.
 
 ## Recipes
 
@@ -1090,8 +1096,8 @@ The class picker and HUD read `CLASSES` and need no changes.
 1. Tune feel from the owner's playtest: timing windows, sensitivity, difficulty.
 2. Give the portal grades meaning: enemy difficulty and kill rewards per
    grade, then open D to S. D's place and water are built (`feat/sewer`);
-   next are the other four D enemies (batch 2), then the crocodile boss, then adding D to
-   `LIVE_GRADES`. Revisit whether dying should send the player back
+   next are the other four D enemies (batch 2), then the crocodile boss,
+   then adding D to `LIVE_GRADES`. Revisit whether dying should send the player back
    to the base once there are rewards to lose.
 3. Loot, inventory and an extraction loop. The owner asked for these early on
    and they were set aside to get combat playable first.
@@ -1104,9 +1110,9 @@ The class picker and HUD read `CLASSES` and need no changes.
 7. A jump. The owner first asked for it on Space and A or Cross, with dodge
    on B. Dodge has since gone back to Space and Interact to G, so the
    keyboard key for a jump needs asking again (not Ctrl: Ctrl+W closes the
-   tab). On a pad, near a plaque the same button inspects instead. What the jump is for in a fight (movement,
-   clearing slam shockwaves, jump attacks, invulnerability) is undecided; ask
-   the owner before building it. The floor is flat, so there is nothing to
+   tab). On a pad, near a plaque the same button inspects instead. What the
+   jump is for in a fight (movement, clearing slam shockwaves, jump attacks,
+   invulnerability) is undecided; ask the owner before building it. The floor is flat, so there is nothing to
    jump onto. A touch Jump button must fit the owner's honeycomb layout.
 8. Hidden classes and joke classes. See `docs/ideas/joke-classes.md`. All
    three plaque classes are built. Still to come: the joke classes, quests on

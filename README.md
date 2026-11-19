@@ -234,8 +234,8 @@ Screenshots go to `shots/`.
 | `tests/t19.mjs` | The plaques by touch on every device. Run in `hub` mode with `touch-all.mjs` |
 | `tests/t20.mjs` | Rock in the walkable field and the cave-in that uses it. Run in `smoke` mode |
 | `tests/t21.mjs` | The Riftwalker's rift ends, crossing and Drop. Run in `smoke` mode |
-| `tests/t23.mjs` | The D enemies: behaviour hooks, the rat, the drowned and the brood mother, their bodies, and where the sewer places them, with screenshots. Run in `smoke` mode |
 | `tests/t22.mjs` | The sewer: water, D opening and the save, the layout over many seeds, brick and water drawing, only drawing what is seen, screenshots. Run in `smoke` mode |
+| `tests/t23.mjs` | The D enemies: behaviour hooks, the rat, the drowned and the brood mother, their bodies, and where the sewer places them, with screenshots. Run in `smoke` mode |
 
 The touch scripts `t14` and `t15` run under emulated phones and tablets. Run
 one device with `DEVICE=pixel-9 SCRIPT=$PWD/tests/t14.mjs node test.mjs smoke`,
