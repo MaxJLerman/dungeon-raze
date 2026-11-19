@@ -58,7 +58,8 @@ function makeRatFig(opts = {}) {
   f.torso.prim = "sph";
   f.torso.s = [0.4, 0.72, 0.34];
   f.torso.p = [0, 0.3, 0];
-  f.chest.ch.splice(f.chest.ch.indexOf(f.chest.ch.find((n) => n !== f.torso && n.prim === "box")), 1);
+  const slab = f.chest.ch.find((n) => n !== f.torso && n.prim === "box");
+  if (slab) f.chest.ch.splice(f.chest.ch.indexOf(slab), 1);
   for (const a of [f.armR, f.armL]) {
     a.p[0] = Math.sign(a.p[0]) * 0.17;
     a.p[1] = 0.5;
@@ -309,5 +310,47 @@ EPOSE.drowned = {
     f.armL.r[2] = 0;
     f.cover.p = [wx, wy * ca + wz * sa, -wy * sa + wz * ca];
     f.cover.r = [PI / 2 - tot, 0, 0];
+  },
+};
+
+// ---- the brood mother ----
+// A bigger rat on the same body, with a pale, swollen belly sac slung under
+// the chest. The sac is a chest child that hangs toward +Z, which is down
+// while she is on all fours, so it follows her pitch. EPOSE.brood poses her as
+// a rat, then lets the sac swell and glow for a moment after she sends a rat out.
+function makeBroodFig() {
+  const f = makeRatFig({
+    sc: 1.9,
+    body: C_(0x5a4a44),
+    trim: C_(0x3d322e),
+    skin: C_(0x8a7468),
+    limb: C_(0x4e423c),
+    rim: [0.26, 0.2, 0.18],
+    eye: [1, 0.55, 0.3],
+  });
+  f.sac = f.chest.add(part("sph", C_(0xd9bfa6), 0.56, 0.7, 0.56, 0, 0.28, 0.27));
+  f.sac.s0 = f.sac.s.slice();
+  // darker knots on it (beside the sac, not in it: only a leaf takes a squash)
+  f.chest.add(part("sph", C_(0xb48a82), 0.2, 0.2, 0.2, 0.2, 0.22, 0.46));
+  f.chest.add(part("sph", C_(0xb48a82), 0.17, 0.17, 0.17, -0.2, 0.4, 0.44));
+  return finishFigure(f);
+}
+EFIG.brood = makeBroodFig;
+EPOSE.brood = {
+  pose(e) {
+    poseRat(e);
+    const f = e.fig,
+      s = f.sac,
+      since = G.t - (e.birthAt === undefined ? -99 : e.birthAt),
+      k = sat(1 - since / 0.9),
+      slow = 0.5 + 0.5 * Math.sin(G.t * 2.2 + e.ph),
+      sw = 1 + 0.05 * slow + 0.22 * k;
+    s.s[0] = s.s0[0] * sw;
+    s.s[1] = s.s0[1] * sw;
+    s.s[2] = s.s0[2] * sw;
+    const g = 0.04 + 0.04 * slow + 0.5 * k;
+    s.em[0] = s.em0[0] + g;
+    s.em[1] = s.em0[1] + g * 0.85;
+    s.em[2] = s.em0[2] + g * 0.6;
   },
 };

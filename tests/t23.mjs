@@ -3,6 +3,9 @@ const step = (name, body) => ({ name, eval: `(() => { const { G, cam } = DF; G.m
 // cave 99, every enemy gone, one enemy of the given type `dist` m in front of the player and facing them
 const arenaOf = (type, dist, name, body) => step(name, `DF.newRun(99); DF.show("play"); G.state = "play"; const p = G.player, w = G.world;
   G.enemies = []; const e = DF.makeEnemy({ type: "${type}", x: p.x, z: p.z + ${dist}, yaw: Math.PI, node: -1 }); w.resolve(e, e.r); G.enemies.push(e);
+  // straight ahead if that is floor, else the first heading round the player with floor and a clear line
+  if (w.fieldAt(e.x, e.z) < 1) for (let a = 0.4; a < 6.3; a += 0.4) { const x = p.x + Math.sin(a) * ${dist}, z = p.z + Math.cos(a) * ${dist};
+    if (w.fieldAt(x, z) >= 1 && w.los(p.x, p.z, x, z)) { e.x = x; e.z = z; e.yaw = Math.atan2(p.x - x, p.z - z); e.hx = x; e.hz = z; e.hyaw = e.yaw; break; } }
   if (w.fieldAt(e.x, e.z) < 1) return { pass: false, why: "arena not open floor" };
   const keep = () => { p.hp = p.maxHp; p.stam = p.maxStam; };
   const clear = () => { delete DF.EBEH.__t; delete DF.EDEF.__k; };
@@ -147,5 +150,91 @@ export default [
       try { DF.poseEnemy(e); if (!finite()) finiteAll = false; } catch (x) { threw = st + " " + x.message; } }
     return { pass: !!DF.EFIG.drowned && !!DF.EPOSE.drowned && Array.isArray(f.rim) && Array.isArray(f.eye) && threw === null && finiteAll, threw, finiteAll };`),
   ...view("drowned", "a drowned with its cover up, for looking at", `cam.pitch = 0.12; e.yaw = cy + Math.PI - 0.45; e.x += fx * 1.2; e.z += fz * 1.2; e.state = "chase"; e.speed = e.def.speed; e.walk = 1.1; return { pass: true };`, "t23-drowned"),
+  // ---- the brood mother ----
+  arenaOf("brood", 9, "she sends out rats, at most four at once", `if (!w.los(e.x, e.z, p.x, p.z)) return { pass: false, why: "no sight" };
+    DF.alertE(e, true); let max = 0;
+    DF.sim(40, () => { keep(); const n = G.enemies.filter((o) => o.mom === e && !o.dead).length; max = Math.max(max, n); });
+    const kids = G.enemies.filter((o) => o.mom === e);
+    return { pass: max === 4 && kids.every((o) => o.type === "rat" && o.born === true && o.node === e.node && o.aware), max, kids: kids.length };`),
+  arenaOf("brood", 9, "she sends the first rat three seconds into a hunt and the next six later", `DF.alertE(e, true); const at = [];
+    let t = 0; DF.sim(16, () => { keep(); t += 1 / 60; const n = G.enemies.filter((o) => o.mom === e).length; if (n > at.length) at.push(+t.toFixed(1)); });
+    return { pass: at.length === 3 && Math.abs(at[0] - 3.4) < 0.9 && Math.abs(at[1] - at[0] - 6) < 0.3 && Math.abs(at[2] - at[1] - 6) < 0.3, at };`),
+  arenaOf("brood", 9, "a sent-out rat is born behind her, away from the player", `DF.alertE(e, true); let r = null;
+    DF.sim(8, () => { keep(); r = G.enemies.find((o) => o.mom === e); if (r) return false; });
+    if (!r) return { pass: false, why: "no rat" };
+    const k = ((r.x - e.x) * (p.x - e.x) + (r.z - e.z) * (p.z - e.z)) / (Math.hypot(r.x - e.x, r.z - e.z) * Math.hypot(p.x - e.x, p.z - e.z) || 1);
+    return { pass: k < 0 && Math.hypot(r.x - e.x, r.z - e.z) < 3, k, d: Math.hypot(r.x - e.x, r.z - e.z) };`),
+  arenaOf("brood", 9, "she stops when she dies", `DF.alertE(e, true); DF.sim(40, keep);
+    const before = G.enemies.filter((o) => o.mom === e).length; DF.kill(e);
+    DF.sim(12, keep); const after = G.enemies.filter((o) => o.mom === e).length;
+    return { pass: before > 0 && after === before, before, after };`),
+  arenaOf("brood", 9, "her rats give no tool charge and less focus", `const mk = (born) => { const r = DF.makeEnemy({ type: "rat", x: p.x + 2, z: p.z + 2, yaw: 0, node: -1 }); r.mom = e; r.born = born; G.enemies.push(r); return r; };
+    let toolBorn = 0, focusOk = true;
+    for (let i = 0; i < 40; i++) { p.tool = 0; p.focus = 0; DF.kill(mk(true)); toolBorn += p.tool; if (p.focus !== DF.BROOD.focus) focusOk = false; }
+    let toolPlain = 0, plainFocus = 0;
+    for (let i = 0; i < 40; i++) { p.tool = 0; p.focus = 0; DF.kill(mk(undefined)); toolPlain += p.tool; plainFocus = p.focus; }
+    return { pass: toolBorn === 0 && focusOk && toolPlain > 0 && plainFocus === 6 && DF.BROOD.focus === 2, toolBorn, focusOk, toolPlain, plainFocus };`),
+  arenaOf("brood", 9, "she keeps her distance", `DF.alertE(e, true); e.cd = 0; let wind = false;
+    // the player walks toward her from 9 m to 5 m over 2 s
+    const px = p.x, pz = p.z; e.x = px; e.z = pz + 9; w.resolve(e, e.r); e.state = "chase"; e.birthT = 0;
+    const ex = e.x, ez = e.z, dir = Math.atan2(ex - px, ez - pz);
+    for (let i = 0; i < 120; i++) { const d = 9 - 4 * ((i + 1) / 120); p.x = ex - Math.sin(dir) * d; p.z = ez - Math.cos(dir) * d; keep(); DF.sim(1 / 60); if (e.state === "wind") wind = true; }
+    const dist = Math.hypot(e.x - p.x, e.z - p.z);
+    return { pass: dist > DF.BROOD.close && !wind && DF.BROOD.close === 3 && DF.BROOD.keep === 7, dist, wind };`),
+  arenaOf("brood", 5, "she backs away from a player inside her keep distance", `DF.alertE(e, true); e.cd = 5; DF.sim(0.2, keep); const d0 = Math.hypot(e.x - p.x, e.z - p.z); let wind = false;
+    DF.sim(1.5, () => { keep(); if (e.state === "wind") wind = true; });
+    const d1 = Math.hypot(e.x - p.x, e.z - p.z);
+    return { pass: d1 > d0 + 0.8 && !wind, d0, d1 };`),
+  arenaOf("brood", 9, "a brood mother sends rats while the hook conditions hold (control)", `DF.alertE(e, true); e.birthT = DF.BROOD.every - 0.1;
+    DF.sim(1, keep); const n = G.enemies.filter((o) => o.mom === e).length;
+    return { pass: n === 1, n };`),
+  arenaOf("brood", 9, "she sends nothing while staggered", `DF.alertE(e, true); e.birthT = DF.BROOD.every - 0.1; DF.stagger(e); e.dur = 3;
+    DF.sim(1, keep); const n = G.enemies.filter((o) => o.mom === e).length;
+    return { pass: n === 0 && e.state === "stagger", n, st: e.state };`),
+  arenaOf("brood", 9, "she sends nothing while falling", `DF.alertE(e, true); e.birthT = DF.BROOD.every - 0.1; e.state = "fall"; e.vy = 0; e.y = 6;
+    DF.sim(1, keep); const n = G.enemies.filter((o) => o.mom === e).length;
+    return { pass: n === 0, n };`),
+  arenaOf("brood", 9, "she sends nothing under the boss rule", `// the hook on its own, in a state and awake where it would send
+    DF.alertE(e, true); e.state = "chase"; e.birthT = DF.BROOD.every - 0.1; G.inBoss = true;
+    const c = { p, w, dx: p.x - e.x, dz: p.z - e.z, dist: Math.hypot(p.x - e.x, p.z - e.z), toP: 0, alive: true };
+    DF.EBEH.brood.step(e, 0.2, c); const direct = G.enemies.filter((o) => o.mom === e).length;
+    G.inBoss = false; DF.EBEH.brood.step(e, 0.2, c); const control = G.enemies.filter((o) => o.mom === e).length;
+    // and in the run, with the player in a chamber that holds the whole arena
+    e.birthT = DF.BROOD.every - 0.1; w.boss = { x: p.x, z: p.z, r: 40 };
+    DF.sim(1, keep); const n = G.enemies.filter((o) => o.mom === e).length - control; G.inBoss = false;
+    return { pass: direct === 0 && control === 1 && n === 0, direct, control, n };`),
+  arenaOf("brood", 9, "an unaware brood mother sends nothing", `e.birthT = DF.BROOD.every - 0.1; e.state = "idle"; e.aware = false; p.x += 60;
+    DF.sim(1, () => { keep(); e.aware = false; }); const n = G.enemies.filter((o) => o.mom === e).length;
+    return { pass: n === 0, n };`),
+  arenaOf("brood", 9, "a respawn clears her rats", `DF.alertE(e, true); DF.sim(10, keep);
+    const had = G.enemies.filter((o) => o.mom === e).length;
+    const s = { type: "brood", x: e.hx, z: e.hz, yaw: e.hyaw, node: -1 }; w.spawns = [s];
+    DF.respawn(); DF.sim(0.1);
+    const mothers = G.enemies.filter((o) => o.type === "brood");
+    return { pass: had >= 1 && !G.enemies.some((o) => o.born || o.mom) && mothers.length === 1 && mothers[0].birthT === DF.BROOD.every - DF.BROOD.first, had, birthT: mothers[0] && mothers[0].birthT };`),
+  arenaOf("brood", 9, "her rats share her post", `DF.alertE(e, true); let r = null;
+    DF.sim(8, () => { keep(); r = G.enemies.find((o) => o.mom === e); if (r) return false; });
+    if (!r) return { pass: false, why: "no rat" };
+    const same = r.hx === e.hx && r.hz === e.hz && r.hyaw === e.hyaw;
+    let far = null; for (let x = -150; x <= 150 && !far; x += 3) for (let z = -150; z <= 150; z += 3) if (Math.hypot(x - p.x, z - p.z) > 85 && w.fieldAt(x, z) > 1.5) { far = { x, z }; break; }
+    if (!far) return { pass: false, why: "no far floor" };
+    p.x = far.x; p.z = far.z; DF.sim(20, keep);
+    const d = Math.hypot(r.x - e.hx, r.z - e.hz);
+    return { pass: same && d < 3, same, d };`),
+  arenaOf("brood", 3, "the brood mother's body", `const f = e.fig; const out = {};
+    const finite = () => { let ok = true; (function rec(n) { for (const v of [...n.p, ...n.r, ...n.s]) if (!Number.isFinite(v)) ok = false; n.ch.forEach(rec); })(f.root); return ok; };
+    let threw = null, finiteAll = true;
+    for (const wet of [0, 1]) { w.waterAt = () => wet;
+      for (const st of ["idle", "alert", "chase", "search", "wind", "act", "rec", "hit", "recoil", "stagger", "roar", "return", "dead"]) {
+        e.state = st; e.t = 0.2; e.atk = e.def.atks.bite; e.speed = 3; e.walk = 1.3;
+        try { DF.poseEnemy(e); if (!finite()) finiteAll = false; } catch (x) { threw = st + " " + wet + " " + x.message; } } }
+    w.waterAt = () => 0; e.state = "chase";
+    e.birthAt = G.t; DF.poseEnemy(e); const hot = f.sac.em[0] - f.sac.em0[0];
+    e.birthAt = G.t - 9; DF.poseEnemy(e); const cool = f.sac.em[0] - f.sac.em0[0];
+    const rat = DF.makeEnemy({ type: "rat", x: 0, z: 0, yaw: 0, node: -1 });
+    return { pass: !!DF.EFIG.brood && !!DF.EPOSE.brood && Array.isArray(f.rim) && Array.isArray(f.eye) && threw === null && finiteAll && hot > 0.15 && hot > cool + 0.1 && f.o.sc > rat.fig.o.sc * 1.3, threw, finiteAll, hot, cool, sc: f.o.sc, rsc: rat.fig.o.sc };`),
+  ...view("brood", "a brood mother with two rats beside her, for looking at", `e.x += fx * 1.4; e.z += fz * 1.4; e.yaw = cy + Math.PI - 1.3; e.state = "chase"; e.speed = 0; e.walk = 1.1;
+    for (const s of [-1, 1]) { const r = DF.makeEnemy({ type: "rat", x: e.x + (-fz) * s * 2.3 - fx * 0.8, z: e.z + fx * s * 2.3 - fz * 0.8, yaw: e.yaw + s * 0.3, node: -1 }); r.state = "chase"; r.aware = true; r.speed = 0; r.walk = 0.4 + s; G.enemies.push(r); }
+    return { pass: true };`, "t23-brood"),
   step("the camera is put back", `cam.dist = window.__cd0; DF.newRun(99); return { pass: true };`),
 ];

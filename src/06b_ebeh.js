@@ -59,3 +59,50 @@ EBEH.drowned = {
     return { dmg: 0, post: o.heavy ? post : post * e.def.guardLight, blocked: true };
   },
 };
+// The brood mother keeps her distance and sends out rats on a timer. The
+// timer runs only while she is hunting and in a state where she is up and
+// about; it is set on her first step, so nothing is added to makeEnemy.
+const BROOD_STATES = { chase: 1, search: 1, wind: 1, act: 1, rec: 1 };
+EBEH.brood = {
+  step(e, dt, c) {
+    if (e.birthT === undefined) e.birthT = BROOD.every - BROOD.first;
+    if (!e.aware || G.inBoss || !BROOD_STATES[e.state]) return false;
+    e.birthT += dt;
+    if (e.birthT < BROOD.every) return false;
+    let n = 0;
+    for (const o of G.enemies) if (o.mom === e && !o.dead) n++;
+    if (n >= BROOD.cap) return false;
+    e.birthT = 0;
+    // behind her, away from the player
+    const k = c.dist > 0.01 ? 1.4 / c.dist : 0,
+      r = makeEnemy({ type: "rat", x: e.x - c.dx * k, z: e.z - c.dz * k, yaw: e.yaw, node: e.node });
+    c.w.resolve(r, r.r);
+    r.hx = e.hx;
+    r.hz = e.hz;
+    r.hyaw = e.hyaw;
+    r.mom = e;
+    r.born = true;
+    G.enemies.push(r);
+    alertE(r, true);
+    e.birthAt = G.t;
+    SFX.tele(false);
+    sparks(r.x, 0.3, r.z, 10, e.fig.eye, 4);
+    return false;
+  },
+  // back away while the player is inside her keep distance but not on her
+  chase(e, dt, c) {
+    if (!(c.dist > BROOD.close && c.dist < BROOD.keep)) return false;
+    const ux = c.dx / c.dist,
+      uz = c.dz / c.dist;
+    e.yaw = turnTo(e.yaw, c.toP, e.def.turn * dt);
+    e.strafeT -= dt;
+    if (e.strafeT <= 0) {
+      e.strafeT = 1.5 + Math.random() * 2;
+      if (Math.random() < 0.5) e.strafe = -e.strafe;
+    }
+    const tx = -uz * e.strafe,
+      tz = ux * e.strafe;
+    eStep(e, -ux * 0.8 + tx * 0.5, -uz * 0.8 + tz * 0.5, e.def.speed * 0.6, dt);
+    return true;
+  },
+};

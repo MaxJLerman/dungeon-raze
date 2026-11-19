@@ -702,6 +702,7 @@ window.DF = {
   posePlayer,
   poseEnemy,
   EBEH,
+  BROOD,
   EFIG,
   EPOSE,
   makeEnemy,

@@ -1171,6 +1171,10 @@ const MOVES = {
 const WATER = { slow: 0.6, sink: 0.3 };
 const wadeOf = (def) => (typeof def.wade === "number" ? def.wade : WATER.slow);
 const wadeMul = (water, wade) => lerp(1, wade, sat(water));
+// The brood mother: a rat every `every` s (the first `first` s into a hunt),
+// at most `cap` of hers alive. She backs off while the player is between
+// `close` and `keep` m. A rat of hers gives `focus` and no tool charge.
+const BROOD = { every: 6, first: 3, cap: 4, keep: 7, close: 3, focus: 2 };
 const EDEF = {
   husk: {
     name: "Husk",
@@ -1250,6 +1254,35 @@ const EDEF = {
         lunge: 3.6,
         trig: 4.4,
         minTrig: 2.4,
+      },
+    },
+  },
+  // D gate: a brood mother. She keeps back and sends out rats on a timer
+  // (EBEH.brood, BROOD); a rat of hers gives little back when it dies.
+  brood: {
+    name: "Brood Mother",
+    threat: 1,
+    hp: 110,
+    posture: 90,
+    speed: 2.6,
+    turn: 3,
+    r: 0.8,
+    sight: 15,
+    cd: 1.8,
+    poise: 1,
+    hunch: 0,
+    top: 1.5,
+    atks: {
+      bite: {
+        style: "thrust",
+        wind: 0.75,
+        act: 0.18,
+        rec: 0.8,
+        dmg: 18,
+        reach: 2.4,
+        arc: 1.6,
+        lunge: 0.8,
+        trig: 2.4,
       },
     },
   },
@@ -2073,8 +2106,9 @@ function kill(e) {
   e.y = 0;
   G.kills++;
   const p = G.player;
-  p.focus = Math.min(100, p.focus + 6);
-  if (Math.random() < 0.4) p.tool = Math.min(p.cls.tool.max, p.tool + 1);
+  p.focus = Math.min(100, p.focus + (e.born ? BROOD.focus : 6));
+  // the roll is taken for every enemy, so E's draws are as they were
+  if (Math.random() < 0.4 && !e.born) p.tool = Math.min(p.cls.tool.max, p.tool + 1);
   SFX.kill();
   sparks(e.x, e.def.top * 0.5, e.z, 26, e.fig.eye, 7, 0.7, 0.14);
   if (p.lock === e) {
