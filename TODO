@@ -7,3 +7,16 @@ Todo:
   Add dev options menu:
     [] enable the hidden classes
     [] enter any of the gates
+    [] jump to any boss fight
+    [] toggle god mode (no damage, unlimited consumables/stamina)
+
+  Fix:
+    [] D rank dungeon should only have the echoey water droplets noise, not everything being echoey (& reduce the frequency of the water dropping from ceiling)
+    [] Sirens don't have a melee attack while they aren't singing or dragging you
+
+  Research:
+    [] Better engine to build the game
+    [] Proper character models & traversal + fighting animations
+
+  Music:
+    [] Rok Nardin - The Mad Princess as a boss fight theme
