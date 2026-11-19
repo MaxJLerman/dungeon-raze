@@ -120,6 +120,31 @@ const hold = (name, body) =>
   const grab = (e, o) => { e.state = "hold"; return DF.grabPlayer(e, { dps: 0, tx: p.x, tz: p.z, speed: 0, ...o }); };
   ${body}`);
 
+
+// sewer seed 5 with a grate that has open floor in front: the grabber "e" made at it as placement will (0.4 m out along
+// the grate's yaw, facing out, `hx, hz` its spot). put(f, s) stands the player f m along its facing and s m to its right, free
+// and unhurt; F and R are those two directions. Async, so a step can wait for the HUD.
+const grabber = (name, body, cls = "fighter") => ({
+  name,
+  eval: `(async () => { const { G, cam } = DF; G.manual = true; DF.setClass("${cls}"); DF.LIVE_GRADES.add("D"); DF.newRun(5, "D"); DF.LIVE_GRADES.delete("D"); DF.show("play"); G.state = "play";
+  const p = G.player, w = G.world; G.projs = []; ${draw}
+  const slots = () => [...document.querySelectorAll("#ebars .eb")].filter((d) => d.style.display !== "none").map((d) => ({ name: d.querySelector(".tag").textContent }));
+  const keep = () => { p.hp = p.maxHp; p.stam = p.maxStam; }, D = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+  const S = DF.GRAB, A = DF.EDEF.grabber.atks.grab;
+  let g = null, F = null, R = null;
+  for (const q of w.grates) { const f = { x: Math.sin(q.yaw), z: Math.cos(q.yaw) }, r = { x: -f.z, z: f.x }, o = { x: q.x + f.x * 0.4, z: q.z + f.z * 0.4 };
+    const ok = (d, s) => { const x = o.x + f.x * d + r.x * s, z = o.z + f.z * d + r.z * s; return w.fieldAt(x, z) >= 0.8 && w.los(o.x, o.z, x, z); };
+    if ([1.5, 2.4, 3.5, 5].every((d) => ok(d, 0)) && ok(0.4, 1.5) && ok(0.4, -1.5) && w.fieldAt(o.x, o.z) >= 0.36) { g = q; F = f; R = r; break; } }
+  if (!g) return { pass: false, why: "no grate with open floor in front" };
+  const e = DF.makeEnemy({ type: "grabber", x: g.x + F.x * 0.4, z: g.z + F.z * 0.4, yaw: g.yaw, node: -1 }); e.hx = e.x; e.hz = e.z; e.hyaw = g.yaw; G.enemies = [e];
+  const put = (f, s) => { p.x = e.x + F.x * f + R.x * s; p.z = e.z + F.z * f + R.z * s; w.resolve(p, p.r); p.yaw = Math.atan2(e.x - p.x, e.z - p.z); cam.yaw = p.yaw; cam.px = p.x; cam.pz = p.z;
+    p.state = "free"; p.hold = null; p.iframe = 0; p.kx = p.kz = 0; G.grabGrace = 0; p.lock = null; keep(); };
+  // the camera looks along the wall, so the arm shows from the side
+  const SHOT = () => { cam.yaw = Math.atan2(R.x, R.z); cam.pitch = 0.3; p.yaw = Math.atan2(e.x - p.x, e.z - p.z); cam.px = p.x; cam.pz = p.z; };
+  ${body}
+  })()`,
+});
+
 export default [
   // ---- the helpers themselves ----
   step("bound is read from the definition, wallFoot holds the post", `
@@ -253,6 +278,24 @@ export default [
       DF.sim(1, () => { keep(); c.cd = 9; }); return { woke: o.aware || o.state !== "idle", state: o.state }; };
     const r = { control: run("rat", "rat"), amb: run("rat", "__a"), caller: run("__a", "rat") };
     return { pass: r.control.woke && !r.amb.woke && !r.caller.woke, r };`),
+  field("a neighbour's alert never wakes an ambush type, and an ambush type's alert wakes no neighbour", `
+    DF.EDEF.__a = { ...DF.EDEF.rat, ambush: true };
+    const a = spot(3), b = spot(4, 1.0), c = spot(5, 2.0); if (!a || !b || !c) return { pass: false, why: "no spots" };
+    const mk = (type, q) => { const e = DF.makeEnemy({ type, x: q.x, z: q.z, yaw: 0, node: -1 }); e.alertIn = -1; return e; };
+    const r = mk("rat", a), amb = mk("__a", b), h = mk("husk", c);
+    G.enemies = [r, amb, h]; DF.alertE(r, true);
+    const out = { control: h.alertIn > 0 && h.alertBy === r, skipped: !(amb.alertIn > 0) && amb.alertBy === null && !amb.aware };
+    // the other way: an ambush type alerted (a hit on it) wakes neither the rat nor the husk
+    const r2 = mk("rat", a), amb2 = mk("__a", b), h2 = mk("husk", c);
+    G.enemies = [r2, amb2, h2]; DF.alertE(amb2, true);
+    out.self = amb2.aware; out.none = !(r2.alertIn > 0) && !(h2.alertIn > 0) && !r2.aware && !h2.aware;
+    return { pass: Object.values(out).every(Boolean), out };`),
+  field("a lock on an enemy that turns hidden is dropped", `
+    const q = spot(4); if (!q) return { pass: false, why: "no spot" };
+    const e = DF.makeEnemy({ type: "husk", x: q.x, z: q.z, yaw: 0, node: -1 }); e.aware = true; G.enemies = [e]; e.cd = 99;
+    p.lock = e; DF.sim(2 / 60, () => { keep(); e.cd = 99; }); const kept = p.lock === e;
+    e.hidden = true; DF.sim(2 / 60, keep);
+    return { pass: kept && p.lock === null, kept, lock: !!p.lock };`),
   field("husks and rats separate, take a hit and route as before", `
     const q = spot(6, 0, 2.5) || spot(9, 0, 2.5) || spot(12, 0, 2.5); if (!q) return { pass: false, why: "no spot" };
     const out = {}, p0 = { x: p.x, z: p.z };
@@ -649,5 +692,87 @@ export default [
     setUp(3.5); force("lunge"); let n = 0; DF.sim(3, () => { keep(); if (p.state === "held" && ++n > 60) return false; });
     SHOT();
     return { pass: p.state === "held", st: p.state };`, "fighter", "siren"), wait: 400, shot: "t24-siren-hold" },
+  // ---- the drain grabber ----
+  grabber("hidden until it strikes", `
+    put(5, 0); DF.sim(3, keep); await draw();
+    const hp = e.hp, c = { hidden: e.hidden === true, vis: e.vis === false, noTag: slots().length === 0, noLock: DF.pickLock() === null, unaware: !e.aware && e.state === "idle", still: !!e.def.ambush };
+    DF.hitEnemy(e, 20, 10, { src: "melee" }); DF.explode(e.x, e.z, 5, 30, 10, DF.MAGENTA);
+    c.hp = e.hp === hp && e.posture === 0 && !e.aware && e.flash === 0;
+    return { pass: Object.values(c).every(Boolean), c };`),
+  grabber("it strikes a player passing in front, and holds them", `
+    put(1.5, 0); let wind = null, held = null, who = false, near = 1e9; const hp0 = p.hp;
+    DF.sim(2.6, (i) => { p.stam = p.maxStam; if (wind === null && e.state === "wind") wind = i / 60; if (held === null && p.state === "held") { held = i / 60; who = p.hold.by === e; }
+      if (p.state === "held") near = Math.min(near, D(p, e)); });
+    await draw();
+    const c = { wind: wind !== null && wind <= 0.2, red: e.atk === A && A.unb === true, shown: e.hidden === false && e.aware, held: held !== null && held >= A.wind && held <= A.wind + A.act + 0.1, who,
+      pulled: near <= e.r + p.r + 0.3, hurt: p.hp < hp0, post: D(e, { x: e.hx, z: e.hz }) < 0.001, tag: slots().length === 1 && slots()[0].name === "Drain Grabber" };
+    return { pass: Object.values(c).every(Boolean), c, wind, held, near, hp: p.hp };`),
+  grabber("a dodge through the strike leaves nothing to hold, and it shows for GRAB.show then hides", `
+    put(1.5, 0); let held = false, seen = 0, hid = null, rearm = null, struck = false;
+    DF.sim(5, (i) => { p.iframe = 1; p.state = "free"; p.x = e.x + F.x * 1.5; p.z = e.z + F.z * 1.5; if (e.state === "wind") struck = true; if (p.state === "held") held = true;
+      if (!e.hidden) seen = i / 60; else if (hid === null && struck) { hid = i / 60; rearm = e.rearmT; return false; } });
+    const total = A.wind + A.act + S.show;
+    const c = { struck, noHold: !held, shown: seen >= total - 0.15, hid: hid !== null && hid <= total + 0.3, rearm: rearm !== null && rearm <= S.rearm && rearm > S.rearm - 0.2, unaware: !e.aware, state: e.state === "idle" };
+    return { pass: Object.values(c).every(Boolean), c, seen, hid, total, rearm };`),
+  grabber("it does not strike from the side, past GRAB.r or from behind the wall's line", `
+    const run = (f, s) => { e.hidden = true; e.rearmT = 0; e.state = "idle"; put(f, s); let wind = false; DF.sim(3, () => { keep(); if (e.state === "wind" || !e.hidden) wind = true; }); return wind; };
+    const c = { side: !run(0.4, 1.5), far: !run(3.5, 0), edge: !run(0.4, -1.5), near: run(2.4, 0) };
+    return { pass: Object.values(c).every(Boolean), c };`),
+  grabber("enough damage drives it back, frees the player and drops a lock", `
+    put(1.5, 0); DF.sim(1.5, (i) => { keep(); if (p.state === "held") return false; });
+    if (p.state !== "held") return { pass: false, why: "no hold" };
+    p.lock = e; DF.sim(1 / 60, () => { p.hp = p.maxHp; }); const kept = p.lock === e;
+    DF.hitEnemy(e, S.back - 1, 5, { src: "melee" }); DF.sim(2 / 60, () => { p.hp = p.maxHp; }); const stays = p.state === "held" && !e.hidden && e.dmgSince === S.back - 1;
+    DF.hitEnemy(e, 1, 5, { src: "melee" }); const q = p.state; DF.sim(3 / 60, () => { p.hp = p.maxHp; });
+    const c = { kept, stays, was: q === "held", hid: e.hidden === true, free: p.state === "free", out: e.state !== "hold", rearm: e.rearmT > S.rearm - 0.1 && e.rearmT <= S.rearm, hurt: e.hp === e.def.hp - S.back, unlock: p.lock === null, unaware: !e.aware, noDmg: e.dmgSince === 0 };
+    return { pass: Object.values(c).every(Boolean), c, st: p.state };`),
+  grabber("hits add up across the strike, a heavy flinch frees the player, a kill ends it", `
+    put(1.5, 0); const wait = () => { DF.sim(1.5, () => { keep(); if (p.state === "held") return false; }); return p.state === "held"; };
+    if (!wait()) return { pass: false, why: "no hold" };
+    DF.hitEnemy(e, 9, 5, { src: "melee" }); DF.sim(3 / 60, keep); const mid = !e.hidden && p.state === "held";
+    DF.hitEnemy(e, 9, 5, { src: "melee" }); DF.sim(3 / 60, keep); const sum = e.hidden && p.state === "free";
+    // a heavy hit flinches it, which ends the hold; it stays shown and then hides when the flinch ends
+    e.hidden = true; e.rearmT = 0; G.grabGrace = 0; p.iframe = 0; e.hp = e.def.hp; put(1.5, 0); const w2 = wait(); DF.hitEnemy(e, 5, 5, { src: "melee", heavy: true }); DF.sim(2 / 60, keep);
+    const flinch = w2 && e.state === "hit" && p.state === "free" && !e.hidden;
+    DF.sim(0.5, keep); const after = e.state !== "hit";
+    // dead while holding
+    e.hidden = true; e.rearmT = 0; G.grabGrace = 0; p.iframe = 0; e.hp = e.def.hp; e.dmgSince = 0; put(1.5, 0); const w3 = wait(); DF.kill(e); DF.sim(3 / 60, keep);
+    const dead = w3 && e.dead && p.state === "free";
+    return { pass: mid && sum && flinch && after && dead, mid, sum, flinch, after, dead };`),
+  grabber("it re-arms after GRAB.rearm", `
+    put(1.5, 0); DF.sim(1.5, (i) => { keep(); if (p.state === "held") return false; });
+    DF.hitEnemy(e, S.back, 5, { src: "melee" }); DF.sim(3 / 60, keep);
+    if (!e.hidden) return { pass: false, why: "not hidden" };
+    let first = null, t0 = 0; DF.sim(S.rearm + 1.5, (i) => { p.state = "free"; p.hold = null; p.iframe = 0; G.grabGrace = 0; p.hp = p.maxHp; p.x = e.x + F.x * 1.5; p.z = e.z + F.z * 1.5;
+      if (first === null && (e.state === "wind" || !e.hidden)) { first = i / 60; return false; } });
+    const c = { late: first !== null && first >= S.rearm - 0.2, soon: first !== null && first <= S.rearm + 0.5 };
+    return { pass: Object.values(c).every(Boolean), c, first };`),
+  grabber("no strike while the grace after a release is on or the player is held", `
+    put(1.5, 0); e.rearmT = 0; G.grabGrace = 1; let wind = false; DF.sim(0.9, () => { p.hp = p.maxHp; G.grabGrace = Math.max(G.grabGrace, 0.5); if (e.state === "wind" || !e.hidden) wind = true; });
+    const a = !wind; G.grabGrace = 0; p.state = "held"; p.hold = { by: { state: "hold", dead: false, x: 0, z: 0 }, t: 0, tick: 0, jolt: 0, dps: 0, tx: p.x, tz: p.z, speed: 0 };
+    DF.sim(0.5, () => { p.hold.t = 0; if (e.state === "wind" || !e.hidden) wind = true; });
+    p.state = "free"; p.hold = null; const b = !wind;
+    DF.sim(0.3, () => { p.hp = p.maxHp; }); const c = e.state === "wind";
+    return { pass: a && b && c, a, b, c, st: e.state };`),
+  grabber("it never moves and never joins a pack", `
+    put(1.5, 0); const at = { x: e.x, z: e.z }; e.kx = 40; e.kz = -40; let far = 0;
+    DF.sim(10, (i) => { keep(); if (i % 30 === 0) { e.kx = 40; e.kz = 40; } far = Math.max(far, D(e, at)); if (e.state === "chase" && !e.hidden) e.aware = true; });
+    const moved = far;
+    // a rat that sees the player does not wake it, and an alerted grabber wakes no rat
+    e.hidden = true; e.aware = false; e.state = "idle"; e.rearmT = 99; e.kx = e.kz = 0; e.x = at.x; e.z = at.z;
+    put(5, 0); const r = DF.makeEnemy({ type: "rat", x: e.x + F.x * 3.5 + R.x * 1.5, z: e.z + F.z * 3.5 + R.z * 1.5, yaw: e.yaw, node: -1 }); r.hx = r.x; r.hz = r.z; G.enemies = [e, r];
+    DF.alertE(r, true); DF.sim(1.5, () => { keep(); r.cd = 99; });
+    const a = { woke: !e.aware && e.hidden && e.alertIn <= 0 && e.state === "idle", ratAware: r.aware };
+    G.enemies = [e, r]; r.aware = false; r.state = "idle"; r.alertIn = -1; r.alertBy = null; e.hidden = false; DF.alertE(e, true);
+    const b = { rat: !r.aware && !(r.alertIn > 0) };
+    return { pass: moved < 0.001 && a.woke && a.ratAware && b.rat, moved, a, b };`),
+  { ...grabber("the grabber, reaching out of its grate at the player", `
+    put(1.8, 0); e.rearmT = 0; let ok = false; DF.sim(2, () => { p.iframe = 1; p.state = "free"; p.x = e.x + F.x * 1.8; p.z = e.z + F.z * 1.8; p.hp = p.maxHp; if (e.state === "act" && e.t > 0.12) { ok = true; return false; } });
+    SHOT();
+    return { pass: ok && e.state === "act", st: e.state, t: e.t };`), wait: 400, shot: "t24-grabber" },
+  { ...grabber("the grabber holding the player against its wall", `
+    put(1.8, 0); e.rearmT = 0; let n = 0; DF.sim(3, () => { p.hp = p.maxHp; if (p.state === "held" && ++n > 20) return false; });
+    SHOT();
+    return { pass: p.state === "held", st: p.state };`), wait: 400, shot: "t24-grabber-hold" },
   step("the class and the camera's boom are put back", `DF.setClass("fighter"); cam.dist = 5.6; return { pass: true };`),
 ];

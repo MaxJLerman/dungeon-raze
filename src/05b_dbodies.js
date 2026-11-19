@@ -974,3 +974,213 @@ function poseSiren(e) {
   setEm(f, tr + e.flash * 0.8, tg + e.flash * 0.85, tb + e.flash * 0.75);
 }
 EPOSE.siren = { pose: poseSiren };
+// ---- the drain grabber ----
+// A long jointed arm of three segments and a clawed hand, built along +Z from
+// a root that sits on the wall's face at the grate (0.4 m behind the body's
+// post). Each segment is a pivot hung at the end of the last, so the arm can
+// coil and straighten; the hand's four fingers and thumb curl on their own
+// pivots. Grey-blue and slimy, with a spine ridge, pale drips and dark
+// elbows. poseGrabber slides the whole arm back through the wall to hide it,
+// so what is behind the wall's face is hidden by the wall itself.
+const GRAB_L = [1.0, 0.95, 0.75],
+  GRAB_W = [0.24, 0.19, 0.15],
+  GRAB_BACK = 0.4;
+function makeGrabberFig() {
+  const skin = C_(0x6d8796),
+    dark = C_(0x3b4f5c),
+    slime = C_(0xa9c9c8),
+    claw = C_(0xdadccb),
+    vein = C_(0x2c3d49);
+  const f = { o: { sc: 1 }, root: new Nd(), seg: [], fing: [] };
+  let parent = f.root;
+  for (let i = 0; i < GRAB_L.length; i++) {
+    const L = GRAB_L[i],
+      W = GRAB_W[i],
+      sg = parent.add(new Nd());
+    sg.p = [0, 0, i ? GRAB_L[i - 1] : 0];
+    // the limb: a long swollen shape, a paler belly, a dark joint at its end
+    sg.add(part("sph", skin, W, W * 0.88, L * 1.08, 0, 0, L * 0.5));
+    sg.add(part("sph", C_(0x86a3ad), W * 0.7, W * 0.4, L * 0.9, 0, -W * 0.28, L * 0.5));
+    sg.add(part("sph", dark, W * 1.1, W * 1.0, W * 1.1, 0, 0, L));
+    // a ridge of spines down the back, and a dark vein along the side
+    for (let k = 0; k < 4; k++)
+      sg.add(part("cone", dark, 0.05, 0.12 - i * 0.015, 0.05, 0, W * 0.42, L * (0.15 + k * 0.22)));
+    for (const s of [-1, 1]) sg.add(part("box", vein, 0.015, 0.02, L * 0.7, s * W * 0.4, W * 0.05, L * 0.5));
+    // slime that hangs from it
+    for (let k = 0; k < 2; k++) {
+      const dr = sg.add(part("sph", slime, 0.05, 0.11 + k * 0.04, 0.05, (k ? 1 : -1) * W * 0.2, -W * 0.52, L * (0.3 + k * 0.35)));
+      dr.em = [0.03, 0.07, 0.07];
+    }
+    f.seg.push(sg);
+    parent = sg;
+  }
+  // the hand: a broad palm, four fingers and a thumb that curl, each with a claw
+  const hand = (f.hand = parent.add(new Nd()));
+  hand.p = [0, 0, GRAB_L[GRAB_L.length - 1]];
+  hand.add(part("sph", skin, 0.24, 0.1, 0.3, 0, 0, 0.12));
+  hand.add(part("sph", dark, 0.14, 0.06, 0.16, 0, 0.06, 0.06));
+  for (let i = 0; i < 5; i++) {
+    const thumb = i === 4,
+      fg = hand.add(new Nd()),
+      len = thumb ? 0.16 : 0.2 - Math.abs(i - 1.5) * 0.015;
+    fg.p = thumb ? [0.13, -0.02, 0.1] : [-0.09 + i * 0.06, 0, 0.26];
+    fg.r0 = thumb ? [0.3, 0.9, 0] : [0, (i - 1.5) * -0.1, 0];
+    fg.add(part("box", skin, 0.045, 0.045, len, 0, 0, len / 2));
+    const cl = fg.add(part("cone", claw, 0.04, 0.15, 0.04, 0, 0, len + 0.06));
+    cl.r[0] = PI / 2;
+    f.fing.push(fg);
+  }
+  // the marker nodes the shared effects read: headN holds the eye glints (two
+  // glowing spots on the back of the hand), weapon is where a wind-up gathers
+  f.headN = hand.add(new Nd());
+  f.headN.p = [0, 0.1, 0.1];
+  f.weapon = hand.add(new Nd());
+  f.weapon.p = [0, -0.02, 0.28];
+  f.rim = [0.1, 0.17, 0.2];
+  f.eye = [0.95, 1, 0.45];
+  return finishFigure(f);
+}
+EFIG.grabber = makeGrabberFig;
+// The pose. e.ex is how far the arm is out (0 back in the wall, 1 reaching
+// its full length). It is found at its target the first time it is drawn and
+// after a gap in drawing, then eased. The base sits on the wall's face, the
+// height of the grate (or of a drain's pipe), and slides back along its facing.
+function poseGrabber(e) {
+  const f = e.fig,
+    d = e.def,
+    p = G.player,
+    dt = e.pt === undefined ? 1 : G.t - e.pt;
+  e.pt = G.t;
+  if (e.gy === undefined) {
+    e.gy = 0.3;
+    for (const g of G.world.grates)
+      if (Math.hypot(g.x + Math.sin(g.yaw) * GRAB_BACK - e.hx, g.z + Math.cos(g.yaw) * GRAB_BACK - e.hz) < 0.3) {
+        e.gy = g.kind === "drain" ? 0.55 : 0.3;
+        break;
+      }
+  }
+  const sw = Math.sin(G.t * 1.7 + e.ph),
+    sw2 = Math.sin(G.t * 2.9 + e.ph * 2);
+  // the way to the player, off its facing, for a reach and a grip
+  const aimA = clamp(angDiff(e.yaw, Math.atan2(p.x - e.x, p.z - e.z)), -0.9, 0.9),
+    // how far out the arm must be for its palm to reach the player (the palm
+    // sits 2.7 m from the base when the arm is straight and out)
+    df = Math.hypot(p.x - (e.hx - Math.sin(e.yaw) * GRAB_BACK), p.z - (e.hz - Math.cos(e.yaw) * GRAB_BACK)),
+    reach = clamp(1 - (2.7 - Math.max(0.8, df - 0.7)) / 3.05, 0.3, 1);
+  let ext = 1,
+    b = [0.16 * sw, -0.28 * sw2, 0.3 * sw],
+    lift = [0, 0, 0],
+    curl = 0.3 + 0.15 * sw2,
+    aim = 0,
+    shake = 0,
+    tr = 0,
+    tg = 0,
+    tb = 0;
+  switch (e.state) {
+    case "wind": {
+      // creeping out and coiling back, fingers spread: the red sprite gathers at the palm
+      const k = smooth(sat(e.t / e.atk.wind));
+      ext = lerp(0.3, 0.72, k);
+      b = [lerp(0.2, 0.75, k), lerp(-0.2, -1.3, k), lerp(0.2, 1.0, k)];
+      curl = -0.25;
+      shake = 0.03 * k;
+      break;
+    }
+    case "act": {
+      // thrown out straight at the player, then closing
+      const k = smooth(sat(e.t / e.atk.act));
+      ext = lerp(0.72, reach, k);
+      b = [lerp(0.75, 0, k), lerp(-1.3, 0.05, k), lerp(1.0, 0, k)];
+      lift = [-0.14 * k, -0.1 * k, -0.06 * k];
+      aim = aimA * k;
+      curl = lerp(-0.25, 0.7, smooth(sat(k * 1.4)));
+      break;
+    }
+    case "hold": {
+      // gripping, leaning back into the pull
+      // the elbows jut out, so the arm is bunched between the wall and the player
+      ext = clamp(reach + 0.25, 0.3, 1) + Math.sin(G.t * 13) * 0.015;
+      b = [0.5 + 0.05 * sw, -1.0 + 0.1 * sw2, 0.7];
+      lift = [-0.14, -0.1, -0.06];
+      aim = aimA;
+      curl = 1.15;
+      shake = 0.05;
+      break;
+    }
+    case "rec": {
+      const k = smooth(sat(e.t / e.atk.rec));
+      ext = lerp(0.95, 1, k);
+      curl = lerp(0.9, 0.3, k);
+      break;
+    }
+    case "hit":
+    case "recoil": {
+      const k = 1 - sat(e.t / 0.32);
+      ext = 1 - 0.3 * k;
+      b = [0.5 * k, -0.9 * k, 0.6 * k];
+      curl = 0.9 * k;
+      shake = 0.06 * k;
+      break;
+    }
+    case "stagger": {
+      // lying limp along the floor, fingers open: it can be executed
+      const pu = 0.5 + 0.5 * Math.sin(G.t * 10);
+      ext = 0.92;
+      b = [0.12 * Math.sin(G.t * 1.3), 0, 0];
+      lift = [0.16, 0.12, 0.08];
+      curl = -0.1;
+      tr = 0.4 + 0.3 * pu;
+      tg = 0.15 * pu;
+      break;
+    }
+    case "dead": {
+      // it goes limp and slips back into the grate
+      const k = smooth(sat(e.t / 0.9));
+      ext = 0.9 * (1 - k);
+      lift = [0.18, 0.14, 0.1];
+      curl = -0.1;
+      break;
+    }
+    default:
+      // shown and waiting: the last moment before it hides, it draws back
+      if (e.showT !== undefined && e.showT < 0.45) {
+        const k = smooth(sat(e.showT / 0.45));
+        ext = k;
+        b = [lerp(0.5, b[0], k), lerp(-0.8, b[1], k), lerp(0.5, b[2], k)];
+        curl = lerp(0.9, curl, k);
+      }
+  }
+  e.ex = e.ex === undefined || dt > 0.25 ? ext : damp(e.ex, ext, 16, dt);
+  const L = GRAB_L[0] + GRAB_L[1] + GRAB_L[2] + 0.35,
+    fx = Math.sin(e.yaw),
+    fz = Math.cos(e.yaw),
+    s = -(1 - e.ex) * L,
+    sh = shake ? Math.sin(G.t * 38) * shake : 0;
+  f.root.p[0] = e.hx - fx * GRAB_BACK + fx * s - fz * sh;
+  f.root.p[1] = e.gy + (e.y || 0);
+  f.root.p[2] = e.hz - fz * GRAB_BACK + fz * s + fx * sh;
+  f.root.r[0] = 0;
+  f.root.r[1] = e.yaw + aim * 0.3;
+  f.root.r[2] = 0;
+  for (let i = 0; i < 3; i++) {
+    f.seg[i].r[0] = lift[i];
+    f.seg[i].r[1] = b[i] + (i === 0 ? aim * 0.3 : aim * 0.35);
+    f.seg[i].r[2] = 0;
+  }
+  f.hand.r[0] = 0.1 * sw2;
+  f.hand.r[1] = 0;
+  for (let i = 0; i < f.fing.length; i++) {
+    const fg = f.fing[i],
+      ph = i * 0.7;
+    fg.r[0] = (fg.r0[0] || 0) + curl * (i === 4 ? 0.6 : 1) + 0.12 * Math.sin(G.t * 5 + ph + e.ph) * (curl < 0.6 ? 1 : 0.3);
+    fg.r[1] = fg.r0[1];
+    fg.r[2] = fg.r0[2];
+  }
+  const hurt = e.flash * 0.6;
+  for (const m of f.meshes) {
+    m.em[0] = m.em0[0] + hurt + tr;
+    m.em[1] = m.em0[1] + hurt + tg;
+    m.em[2] = m.em0[2] + hurt + tb;
+  }
+}
+EPOSE.grabber = { pose: poseGrabber };

@@ -1191,6 +1191,12 @@ const EEL = { every: 8, glow: 1.2, dmg: 22, post: 20, lit: 0.4 };
 // grab again for `grabCD` s after. Her song pulls the player toward her at
 // `pull` m/s, about half a walk, so walking away still wins.
 const SIREN = { drag: 2, grabCD: 6, pull: 2.6, dps: 8, dragSpeed: 5 };
+// The drain grabber: it strikes a player within `r` m and `arc` rad either side
+// of its grate's facing, stays shown `show` s after a strike or a hold, and
+// hides at once when it has taken `back` damage while shown. It cannot strike
+// again for `rearm` s after hiding. Its grip hurts `dps` a second and pulls the
+// player in at `speed` m/s.
+const GRAB = { r: 2.5, arc: 1.2, show: 2.5, back: 15, rearm: 4, dps: 6, speed: 4 };
 const EDEF = {
   husk: {
     name: "Husk",
@@ -1448,6 +1454,38 @@ const EDEF = {
         dmg: 0,
         trig: 12,
         minTrig: 3,
+      },
+    },
+  },
+  // D gate: a drain grabber, an arm that lives in a tunnel grate or drain and
+  // grabs a player who passes in front of it (held). It is hidden until it
+  // strikes and never moves, chases or takes a token (EBEH.grabber, GRAB).
+  grabber: {
+    name: "Drain Grabber",
+    threat: 1,
+    hp: 45,
+    posture: 40,
+    speed: 0,
+    turn: 0,
+    r: 0.35,
+    sight: 3,
+    cd: 4,
+    poise: 1,
+    top: 1.3,
+    bound: "wall",
+    ambush: true,
+    atks: {
+      grab: {
+        kind: "grab",
+        style: "thrust",
+        wind: 0.45,
+        act: 0.25,
+        rec: 0.8,
+        dmg: 6,
+        reach: 2.6,
+        trig: 2.5,
+        arc: 2.4,
+        unb: true,
       },
     },
   },
@@ -1800,6 +1838,8 @@ function makeEnemy(s) {
     // the last spot it may stand on, for a type whose footing is limited
     okx: s.x,
     okz: s.z,
+    // an ambush type starts out of sight
+    hidden: !!d.ambush,
   };
 }
 function spawnEnemies() {
@@ -2210,8 +2250,16 @@ function alertE(e, quiet, by) {
   }
   if (!quiet) SFX.alert();
   if (e.def.boss) G.bossSeen = true;
+  // an ambush type takes no part in a neighbour's wake-up, either way
+  if (e.def.ambush) return;
   for (const o of G.enemies)
-    if (o !== e && !o.aware && !o.dead && Math.hypot(o.x - e.x, o.z - e.z) < 12) {
+    if (
+      o !== e &&
+      !o.aware &&
+      !o.dead &&
+      !o.def.ambush &&
+      Math.hypot(o.x - e.x, o.z - e.z) < 12
+    ) {
       o.alertIn = 0.25 + Math.random() * 0.35;
       o.alertBy = e;
     }
@@ -3395,6 +3443,7 @@ function playerUpdate(dt) {
   if (
     p.lock &&
     (p.lock.dead ||
+      p.lock.hidden ||
       Math.hypot(p.lock.x - p.x, p.lock.z - p.z) > (c.ranged ? 42 : 30))
   )
     p.lock = null;
@@ -4189,9 +4238,11 @@ function enemyUpdate(e, dt) {
       e.alertBy = null;
     }
   }
+  // an ambush type notices nothing: its own rule decides when it strikes
   if (
     !e.aware &&
     alive &&
+    !d.ambush &&
     (d.boss || e.state !== "return" || inTerritory(e))
   ) {
     const front = Math.abs(angDiff(e.yaw, toP)) < 1.75,

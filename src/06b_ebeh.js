@@ -394,3 +394,105 @@ function sirenDrag(e, c) {
     h = back(t.x, t.z, e.r + p.r + 0.2, e.r + p.r) || { x: e.x, z: e.z };
   return { x: t.x, z: t.z, hx: h.x, hz: h.z };
 }
+// The drain grabber is an arm in a grate. Its post is the spot 0.4 m out from
+// the grate (foot holds it there), so it never moves, and it never chases,
+// routes or takes a token: step runs its whole cycle.
+//   hidden    (e.hidden) waits for a player within GRAB.r and GRAB.arc of its
+//             facing in sight, then strikes: shown, the shared wind (the red
+//             warning) and act, whose hook does the grab like the siren's
+//   shown     for GRAB.show s after a strike or a hold, then hides; GRAB.back
+//             damage taken while shown (e.dmgSince, from the hit hook) hides it
+//             at once and ends any hold (its state leaves "hold")
+//   hidden    again for GRAB.rearm s (e.rearmT) before it can strike again
+// e.showT is how long it stays shown; it holds at GRAB.show while it strikes
+// and holds, and runs down after. A flinch, recoil or stagger runs the shared
+// timers; it hides when they have ended and the time is up.
+const GRAB_BUSY = { wind: 1, act: 1, hold: 1, hit: 1, recoil: 1, stagger: 1, rec: 1 };
+function grabHide(e) {
+  e.hidden = true;
+  e.aware = false;
+  e.state = "idle";
+  e.t = 0;
+  e.atk = null;
+  e.token = false;
+  e.posture = 0;
+  e.dmgSince = 0;
+  e.rearmT = GRAB.rearm;
+}
+EBEH.grabber = {
+  foot: wallFoot,
+  // it never hunts: whatever wakes it leaves it where it is
+  chase: () => true,
+  hit(e, dmg) {
+    if (!e.hidden) e.dmgSince = (e.dmgSince || 0) + dmg;
+    return null;
+  },
+  step(e, dt, c) {
+    const p = c.p;
+    // it stays on its post: no knock moves it, not even the little foot allows
+    e.x = e.hx;
+    e.z = e.hz;
+    e.kx = e.kz = 0;
+    e.rearmT = Math.max(0, (e.rearmT || 0) - dt);
+    if (e.hidden) {
+      if (
+        e.rearmT === 0 &&
+        c.alive &&
+        p.state !== "held" &&
+        G.grabGrace <= 0 &&
+        c.dist <= GRAB.r &&
+        Math.abs(angDiff(e.yaw, c.toP)) <= GRAB.arc &&
+        c.w.los(e.x, e.z, p.x, p.z)
+      ) {
+        e.hidden = false;
+        e.aware = true;
+        e.dmgSince = 0;
+        e.showT = GRAB.show;
+        e.yaw = e.hyaw;
+        e.atk = e.def.atks.grab;
+        e.state = "wind";
+        e.t = 0;
+        e.hitDone = false;
+        SFX.tele(true);
+      }
+      return true;
+    }
+    if (e.dmgSince >= GRAB.back) {
+      grabHide(e);
+      return true;
+    }
+    if (e.state === "hold") {
+      if (p.state === "held" && p.hold && p.hold.by === e) {
+        e.showT = GRAB.show;
+        return true;
+      }
+      // the hold is over, however it ended: it lets go
+      e.state = "rec";
+      e.t = 0;
+      e.atk = e.def.atks.grab;
+      e.token = false;
+    }
+    if (e.state === "wind" || e.state === "act") e.showT = GRAB.show;
+    else {
+      e.showT -= dt;
+      if (e.showT <= 0 && !GRAB_BUSY[e.state]) {
+        grabHide(e);
+        return true;
+      }
+    }
+    // the shared timers run in the strike, the recovery and a flinch or stagger
+    return !GRAB_BUSY[e.state];
+  },
+  act(e, dt, c) {
+    const a = e.atk;
+    if (a.kind !== "grab" || e.hitDone) return;
+    if (c.dist > a.reach + 0.6 || Math.abs(angDiff(e.yaw, c.toP)) > a.arc / 2) return;
+    e.hitDone = true;
+    // a parry that sent it reeling leaves nothing to grab with
+    if (hurtPlayer(a.dmg, e, a) === "none" || e.state !== "act") return;
+    if (grabPlayer(e, { dps: GRAB.dps, tx: e.x, tz: e.z, speed: GRAB.speed })) {
+      e.state = "hold";
+      e.t = 0;
+    }
+  },
+};
