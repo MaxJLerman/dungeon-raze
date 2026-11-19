@@ -398,6 +398,7 @@ function genHub(layout = hubPortals()) {
     pieces: null,
     pos: new Float32Array(P),
     col: new Uint8Array(C),
+    mat: null,
     lights,
     halos,
     shrines: [],

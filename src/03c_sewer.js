@@ -760,10 +760,34 @@ function genSewer(seed) {
     bodies.push({ id, room: home ? home.id : -1, n: cnt, x, z });
   }
 
-  // ---- mesh: a plain placeholder, brick coloured ----
-  const { P, C, tri } = meshSink();
+  // ---- mesh: brick floor, walls and vault; water sunk below the floor ----
+  const { P, C, M, tri } = meshSink();
   const mulc = (c, m) => [c[0] * m, c[1] * m, c[2] * m];
   const cy = (i, j) => ceilOf(F[j * W1 + i], V[j * W1 + i]);
+  const sink = WATER.sink,
+    wcol = hexc(0x24423a),
+    lcol = mulc(BRICK, 0.75);
+  // a convex polygon of floor points, as a fan
+  const fan = (pts, y, col, mat) => {
+    for (let q = 1; q + 1 < pts.length; q++)
+      tri(
+        [pts[0][0], y, pts[0][1]],
+        [pts[q][0], y, pts[q][1]],
+        [pts[q + 1][0], y, pts[q + 1][1]],
+        col,
+        0,
+        mat,
+      );
+  };
+  // the brick lip from the floor down to the water, along a shore segment
+  const lip = (a, b) => {
+    const a0 = [a[0], 0, a[1]],
+      b0 = [b[0], 0, b[1]],
+      a1 = [a[0], -sink, a[1]],
+      b1 = [b[0], -sink, b[1]];
+    tri(a0, b0, b1, lcol, 0, MAT.BRICK);
+    tri(a0, b1, a1, lcol, 0, MAT.BRICK);
+  };
   for (let j = 0; j < H; j++)
     for (let i = 0; i < W; i++) {
       const k = j * W1 + i,
@@ -771,26 +795,69 @@ function genSewer(seed) {
       if (mx < -1.3) continue;
       const x = i + minX,
         z = j + minZ,
-        fcol = mulc(BRICK, 0.5 + 0.12 * hash2(i + 11, j + 5)),
-        ccol = mulc(BRICK, 0.35 + 0.1 * hash2(i + 77, j + 31));
-      tri([x, 0, z], [x + 1, 0, z], [x + 1, 0, z + 1], fcol);
-      tri([x, 0, z], [x + 1, 0, z + 1], [x, 0, z + 1], mulc(fcol, 0.92));
+        fcol = mulc(BRICK, 0.5 + 0.04 * hash2(i + 11, j + 5)),
+        ccol = mulc(BRICK, 0.35 + 0.04 * hash2(i + 77, j + 31));
+      // the floor splits along the line where the water grid crosses a half
+      const cs = [
+          [x, z],
+          [x + 1, z],
+          [x + 1, z + 1],
+          [x, z + 1],
+        ],
+        s = [k, k + 1, k + W1 + 1, k + W1].map((q) => Wt[q] - 0.5),
+        nWet = s.filter((v) => v > 0).length;
+      if (nWet === 0) fan(cs, 0, fcol, MAT.BRICK);
+      else if (nWet === 4) fan(cs, -sink, wcol, MAT.WATER);
+      else {
+        const dry = [],
+          wet = [],
+          cut = [];
+        for (let c = 0; c < 4; c++) {
+          const d = (c + 1) % 4;
+          (s[c] > 0 ? wet : dry).push(cs[c]);
+          if (s[c] > 0 !== s[d] > 0) {
+            const t = s[c] / (s[c] - s[d]),
+              e = [
+                cs[c][0] + (cs[d][0] - cs[c][0]) * t,
+                cs[c][1] + (cs[d][1] - cs[c][1]) * t,
+              ];
+            dry.push(e);
+            wet.push(e);
+            cut.push(e);
+          }
+        }
+        fan(dry, 0, fcol, MAT.BRICK);
+        if (nWet === 2 && s[0] > 0 === s[2] > 0) {
+          // a saddle: the dry floor joins across, the two wet corners part
+          for (let c = 0; c < 4; c++)
+            if (s[c] > 0) {
+              fan([cs[c], cut[c], cut[(c + 3) % 4]], -sink, wcol, MAT.WATER);
+              lip(cut[(c + 3) % 4], cut[c]);
+            }
+        } else {
+          fan(wet, -sink, wcol, MAT.WATER);
+          lip(cut[0], cut[1]);
+        }
+      }
       const a = [x, cy(i, j), z],
         b = [x + 1, cy(i + 1, j), z],
         c = [x + 1, cy(i + 1, j + 1), z + 1],
         d = [x, cy(i, j + 1), z + 1];
-      tri(a, b, c, ccol);
-      tri(a, c, d, mulc(ccol, 0.9));
+      tri(a, b, c, ccol, 0, MAT.BRICK);
+      tri(a, c, d, mulc(ccol, 0.95), 0, MAT.BRICK);
     }
+  // the walls reach below the water so no gap shows at a pool's edge
   marchWalls(F, minX, minZ, W, H, (ax, az, bx, bz) => {
     const ta = ceilAt(ax, az) + 0.4,
       tb = ceilAt(bx, bz) + 0.4,
+      a0 = [ax, -sink - 0.1, az],
+      b0 = [bx, -sink - 0.1, bz],
       col = mulc(
         BRICK,
-        0.8 + 0.2 * hash2(Math.round(ax * 9), Math.round(bz * 9)),
+        0.9 + 0.1 * hash2(Math.round(ax * 9), Math.round(bz * 9)),
       );
-    tri([ax, -0.2, az], [bx, -0.2, bz], [bx, tb, bz], col);
-    tri([ax, -0.2, az], [bx, tb, bz], [ax, ta, az], mulc(col, 0.9));
+    tri(a0, b0, [bx, tb, bz], col, 0, MAT.BRICK);
+    tri(a0, [bx, tb, bz], [ax, ta, az], mulc(col, 0.95), 0, MAT.BRICK);
   });
 
   // ---- shrines: the arrival hall's beside where the player lands ----
@@ -949,6 +1016,7 @@ function genSewer(seed) {
     crumble,
     pos: new Float32Array(P),
     col: new Uint8Array(C),
+    mat: new Uint8Array(M),
     lights,
     halos: [],
     shrines,

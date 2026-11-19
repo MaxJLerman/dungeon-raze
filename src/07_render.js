@@ -734,6 +734,7 @@ function drawCaveIns() {
 function render() {
   const p = G.player,
     w = G.world;
+  R.env.t = G.t;
   buildLights();
   R.begin();
   R.drawWorld();

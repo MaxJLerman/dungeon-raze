@@ -312,21 +312,27 @@ function fieldFns(F, minX, minZ, W, H, Wt) {
 }
 // how far past a rock's capsule its points are kept as a distance estimate
 const ROCK_PAD = 3;
+// What the world shader draws on a triangle: 0 is plain, as the cave and the
+// hall are throughout.
+const MAT = { BRICK: 1, WATER: 2 };
 // Collects world triangles: positions as floats, colours square-root encoded
-// in bytes with the glow amount in the alpha byte.
+// in bytes with the glow amount in the alpha byte, and one material byte per
+// vertex.
 function meshSink() {
   const P = [],
-    C = [];
+    C = [],
+    M = [];
   const b8 = (v) => clamp(Math.sqrt(Math.max(v, 0)) * 255, 0, 255) | 0;
-  function tri(a, b, c, col, glow = 0) {
+  function tri(a, b, c, col, glow = 0, mat = 0) {
     P.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
     const r = b8(col[0]),
       g = b8(col[1]),
       bl = b8(col[2]),
       gl2 = (glow * 255) | 0;
     C.push(r, g, bl, gl2, r, g, bl, gl2, r, g, bl, gl2);
+    M.push(mat, mat, mat);
   }
-  return { P, C, tri };
+  return { P, C, M, tri };
 }
 
 // Room graph: a jittered grid of rooms, a spanning tree and some loop edges.
@@ -979,6 +985,7 @@ function genWorld(seed) {
     pieces: null,
     pos: new Float32Array(P),
     col: new Uint8Array(C),
+    mat: null,
     lights,
     halos,
     shrines,

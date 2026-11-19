@@ -4,6 +4,7 @@ const step = (name, body) => ({ name, eval: `(() => { const { G, cam } = DF; G.m
 // a sewer run from a seed, with D live for the test
 const sewer = (name, body, seed = 5) => step(name, `DF.LIVE_GRADES.add("D"); DF.newRun(${seed}, "D"); DF.show("play"); G.state = "play";
   const w = G.world, p = G.player, D = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+  const look = (x, z, yaw, pitch) => { p.x = x; p.z = z; p.yaw = yaw; cam.yaw = yaw; cam.pitch = pitch; cam.px = x; cam.pz = z; cam.cd = 5.6; for (const e of G.enemies) e.x += 500; return { pass: true }; };
   const routeLen = (ax, az, bx, bz) => { const r = w.route(ax, az, bx, bz, 0.6); if (!r) return Infinity; let l = 0, a = { x: ax, z: az }; for (const q of r) { l += D(a, q); a = q; } return l; };
   ${body}`);
 export default [
@@ -100,4 +101,17 @@ export default [
   const o = { x: pool.x, z: pool.z + 0.6 }; DF.riftMove(o, pool.x, pool.z + 1.4, 0.6);
   DF.setClass("fighter");
   return { pass: before && (after === null || after.length > 20) && typeof a === "object" && typeof b2 === "object" && Math.hypot(o.x - w3.spawn.x, o.z - w3.spawn.z) < 4, before, after: after && after.length, a, b2, o, spawn: w3.spawn };`),
+  step("the cave and hall carry no material, the sewer brick and water", `DF.newRun(99); const cave = G.world.mat === null || G.world.mat.every((m) => m === 0); DF.enterHub(); const hall = G.world.mat === null || G.world.mat.every((m) => m === 0);
+  const s = DF.genSewer(4), n1 = s.mat.filter((m) => m === 1).length, n2 = s.mat.filter((m) => m === 2).length;
+  return { pass: cave && hall && n1 > 0 && n2 > 0 && s.mat.length === s.pos.length / 3 };`),
+  { ...step("the cave still looks the same", `DF.newRun(99); DF.show("play"); G.state = "play";`), wait: 400, shot: "t22-cave99" }, // compare by eye with shots/play0.png from a run on main
+  // a gutter tunnel, looking along it
+  { ...sewer("a sewer tunnel, for looking at", `const g = w.bodies.find((b) => b.room === -1 && b.n > 20) || w.bodies.find((b) => b.room === -1);
+  let e0 = w.edges[0], k0 = 1, best = 1e9; for (const e of w.edges) for (let k = 1; k < e.pts.length - 1; k++) { const d = D(e.pts[k], g); if (d < best) { best = d; e0 = e; k0 = k; } }
+  const a = e0.pts[k0 - 1], b = e0.pts[k0 + 1]; return look(a.x, a.z, Math.atan2(b.x - a.x, b.z - a.z), 0.22);`), wait: 400, shot: "t22-tunnel" },
+  // a pool room from its walkway, looking across the water
+  { ...sewer("a pool room, for looking at", `const n = w.nodes.find((n) => n.kind === "pool"); return look(n.x, n.z - n.hd * 0.4, 0, 0.42);`), wait: 400, shot: "t22-pool" },
+  // the boss cavern from its entrance, looking at the centre pool
+  { ...sewer("the boss cavern, for looking at", `const b = w.boss, ent = w.nodes[w.path[w.path.length - 2]], a = Math.atan2(ent.x - b.x, ent.z - b.z);
+  return look(b.x + Math.sin(a) * (b.r - 3), b.z + Math.cos(a) * (b.r - 3), a + Math.PI, 0.3);`), wait: 400, shot: "t22-boss" },
 ];
