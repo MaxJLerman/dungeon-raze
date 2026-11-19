@@ -89,7 +89,7 @@ const base = [
   const f = e.fig, finite = () => { let ok = true; (function rec(n) { for (const v of [...n.p, ...n.r, ...n.s]) if (!Number.isFinite(v)) ok = false; n.ch.forEach(rec); })(f.root); return ok; };
   const set = (st, an, k) => { e.state = st; e.atk = an ? e.def.atks[an] : null; e.t = an && e.atk[st] ? e.atk[st] * k : k; e.speed = st === "chase" ? e.def.speed : 0; e.walk = 1.3; };
   let threw = null, finiteAll = true, n = 0;
-  for (const st of ["idle", "alert", "chase", "search", "return", "hit", "recoil", "stagger", "roar", "dead"]) for (const k of [0, 0.3, 1.5]) {
+  for (const st of ["idle", "alert", "chase", "search", "return", "hit", "recoil", "stagger", "roar", "hold", "dead"]) for (const k of [0, 0.3, 1.5]) {
     set(st, null, k); try { DF.poseEnemy(e); n++; if (!finite()) finiteAll = false; } catch (x) { threw = st + " " + x.message; } await draw(); }
   for (const an of Object.keys(e.def.atks)) for (const st of ["wind", "act", "rec"]) for (const k of [0, 0.3, 0.7, 1]) {
     set(st, an, k); try { DF.poseEnemy(e); n++; if (!finite()) finiteAll = false; } catch (x) { threw = st + " " + an + " " + x.message; } }
@@ -250,4 +250,69 @@ const crocSteps = [
   p.yaw = cam.yaw = Math.atan2(s.x - p.x, s.z - p.z); cam.pitch = 0.5; p.fig.root.s = [0.0001, 0.0001, 0.0001];
   return { pass: e.mode === "rise" && e.hidden, mode: e.mode };`), wait: 500, shot: "t25-rise" },
 ];
-export default [...base, ...crocSteps];
+// ---- the death roll ----
+// On the ring 4.5 m in from the moat (seed 5's moat starts about 22 m out), the crocodile up on
+// land and winding up its roll at a player 3 m further out: place() sets it all up, grab() runs
+// the wind and act until the player is held and returns the steps it took.
+const rolling = `begin(); until(() => e.mode === "land", 25); until(() => e.state === "chase", 3);
+  const H = DF.HOLD, a0 = ringAt(17.5).a, at = (r, s = 0) => ({ x: B.x + Math.sin(a0) * r + Math.cos(a0) * s, z: B.z + Math.cos(a0) * r - Math.sin(a0) * s });
+  const place = () => { const q = at(17.5);
+    Object.assign(e, { x: q.x, z: q.z, okx: q.x, okz: q.z, wet: false, landT: 20, cd: 0, plan: null, token: false, hitDone: false, rollCD: 0 });
+    put(at(20.5)); p.hp = p.maxHp; p.iframe = 0; G.grabGrace = 0;
+    e.yaw = Math.atan2(p.x - e.x, p.z - e.z); e.state = "wind"; e.atk = e.def.atks.roll; e.t = 0; };
+  const grab = () => DF.sim(e.atk.wind + e.atk.act + 0.2, () => { if (p.state === "held") return false; });`;
+const rstep = (name, body) => cstep(name, `${rolling}\n${body}`);
+const rollSteps = [
+  rstep("the death roll drags the player into the water", `
+  place(); const n = grab(), by = p.hold && p.hold.by === e, hold = p.hold && { dps: p.hold.dps, speed: p.hold.speed }, wet = e.wet;
+  const h0 = p.hp; DF.sim(1); const water = w.waterAt(p.x, p.z), lost = h0 - p.hp, still = p.state;
+  return { pass: n <= (e.def.atks.roll.wind + e.def.atks.roll.act) * 60 + 1 && by && hold.dps === C.rollDps && hold.speed === C.dragSpeed && wet === true &&
+    still === "held" && water >= 0.5 && Math.abs(lost - C.rollDps) <= C.rollDps * H.tick + 0.01, n, by, hold, wet, water, lost, still };`),
+  rstep("mashing dodge breaks the roll", `
+  place(); grab(); const held = p.state;
+  const n = DF.sim(H.max, (i) => { if (p.state !== "held") return false; if (i % 6 === 0) DF.taps[DF.BIND.dodge] = true; });
+  const cd = e.rollCD, st = e.state;
+  const c = { p, w, dx: Math.sin(e.yaw) * 3.5, dz: Math.cos(e.yaw) * 3.5, dist: 3.5, toP: e.yaw, alive: true };
+  const roll = e.def.atks.roll, count = () => { let k = 0; for (let i = 0; i < 200; i++) if (DF.chooseAtk(e, 3.5, c) === roll) k++; return k; };
+  const during = count(); DF.sim(1, keep); const cd1 = e.rollCD, later = count();
+  e.rollCD = 0; const after = count();
+  return { pass: held === "held" && n < H.max * 60 - 10 && p.state !== "held" && st !== "hold" && Math.abs(cd - C.rollCD) < 0.05 && Math.abs(cd1 - (C.rollCD - 1)) < 0.05 &&
+    during === 0 && later === 0 && after > 0, held, n, cd, cd1, st, during, later, after };`),
+  rstep("it climbs back out and fights on", `
+  place(); const L0 = e.landT; let steps = grab(), wentIn = false;
+  const track = () => { if (w.waterAt(e.x, e.z) >= 0.5) wentIn = true; };
+  steps += DF.sim(H.max + 0.2, () => { if (p.state !== "held") return false; track(); });
+  const ended = p.state, cd = e.rollCD;
+  const n = until(() => !e.wet && w.waterAt(e.x, e.z) < 0.5, 3, track); steps += n;
+  const res = { n: n / 60, wet: e.wet, water: w.waterAt(e.x, e.z), mode: e.mode, landT: e.landT, want: L0 - steps / 60, state: e.state };
+  return { pass: ended !== "held" && cd > 0 && wentIn && n < 3 * 60 && res.wet === false && res.water < 0.5 && res.mode === "land" && Math.abs(res.landT - res.want) < 0.02,
+    ended, wentIn, ...res };`),
+  rstep("a roll beside a wall or rubble", `
+  // rubble across the way from the player straight out to the moat, 6 m long
+  place(); const ids = [w.addRock(at(21.6, -3).x, at(21.6, -3).z, at(21.6, 3).x, at(21.6, 3).z, 0.4)];
+  try {
+    place(); const g = { x: p.x, z: p.z }, n = grab(), held = p.state === "held";
+    const t = held ? { x: p.hold.tx, z: p.hold.tz } : null, own = t && Math.hypot(t.x - g.x, t.z - g.z) < 0.01;
+    const tw = t && { water: w.waterAt(t.x, t.z), field: w.fieldAt(t.x, t.z), sight: w.los(g.x, g.z, t.x, t.z) };
+    DF.sim(H.max + 0.2, () => { if (p.state !== "held") return false; });
+    const f = { x: p.x, z: p.z }, field = w.fieldAt(f.x, f.z), toT = t && Math.hypot(f.x - t.x, f.z - t.z), toG = Math.hypot(f.x - g.x, f.z - g.z);
+    const okT = held && (own || (tw.water >= 0.5 && tw.field >= p.r && tw.sight));
+    // there, or on the straight way there when the hold ran out first: the way round is long
+    const L = t ? Math.hypot(t.x - g.x, t.z - g.z) : 0, k = L > 0.01 ? Math.max(0, Math.min(1, ((f.x - g.x) * (t.x - g.x) + (f.z - g.z) * (t.z - g.z)) / (L * L))) : 0;
+    const offLine = t ? Math.hypot(f.x - (g.x + (t.x - g.x) * k), f.z - (g.z + (t.z - g.z) * k)) : 0;
+    return { pass: held && okT && field >= p.r * 0.9 && (own ? toG < 0.35 : toT < 0.35 || (offLine < 0.2 && L - toT > H.max * C.dragSpeed - 0.5)),
+      held, own, tw, field, L, toT, toG, offLine, pr: p.r };
+  } finally { w.clearRocks(); }`),
+  rstep("dying in the roll resets it", `
+  place(); grab(); const held = p.state; p.hp = 1; DF.sim(1); const dead = p.state;
+  DF.respawn(); G.manual = true; const f = G.enemies.find((o) => o.type === "croc"); put(out); DF.sim(0.1, keep);
+  const re = { mode: f.mode, hidden: f.hidden, hp: f.hp === f.def.hp, hold: p.hold, pstate: p.state, fstate: f.state, rolling: !!f.rolling };
+  return { pass: held === "held" && dead === "dead" && re.mode === "wait" && re.hidden && re.hp && re.hold === null && re.pstate !== "held" && re.fstate !== "hold", held, dead, re };`),
+  { ...rstep("mid-roll, for looking at", `
+  place(); grab(); DF.sim(0.6);
+  // across the drag, the crocodile beside the player and the moat beyond; it turns over as G.t runs
+  DF.poseEnemy(e); const r0 = e.fig.spin.r[2]; G.t += 0.1; DF.poseEnemy(e); const r1 = e.fig.spin.r[2];
+  p.yaw = cam.yaw = Math.atan2(e.x - p.x, e.z - p.z) - 0.9; cam.pitch = 0.4; cam.px = p.x; cam.pz = p.z;
+  return { pass: p.state === "held" && e.state === "hold" && Math.abs(r1 - r0) > 0.5, pstate: p.state, estate: e.state, r0, r1 };`), wait: 500, shot: "t25-roll" },
+];
+export default [...base, ...crocSteps, ...rollSteps];

@@ -48,8 +48,9 @@ is what you need to change the code without breaking it.
   stays sealed on the published page. The crocodile, Old Sluicejaw, has its
   body, numbers and place in the cavern's centre pool, in place of the
   Warden, and its fight cycle: it waits under until the player enters the
-  cavern, swims under, surfaces with a warning and fights on land. Its
-  death roll and 25% marks are still to come. A D run made live by hand has
+  cavern, swims under, surfaces with a warning and fights on land, where
+  its death roll drags the player into the water. Its 25% marks are still
+  to come. A D run made live by hand has
   no E type in it. The design is in
   `docs/superpowers/specs/2026-11-19-d-enemies-design.md` for the enemies,
   `docs/superpowers/specs/2026-11-18-sewer-d-gate-design.md` for the sewer
@@ -1020,8 +1021,7 @@ table runs exactly as before.
   `ownPhases`, `fell` "OLD SLUICEJAW FALLS") is D's boss, spawned in the
   cavern's centre pool. Its attacks: `rear` (kind `"rear"`, no `trig`: only
   surfacing starts it), the bite chain `b1` to `b3`, `tail` (a sweep
-  all round) and `roll` (kind `"roll"`, the death roll, whose act does
-  nothing yet). It has `wade` 1, so water does not slow it. Its body
+  all round) and `roll` (kind `"roll"`, the death roll, below). It has `wade` 1, so water does not slow it. Its body
   (`makeCrocFig`, `poseCroc`) is built from scratch, facing +Z: `f.spin` is
   the body's centre, `CROC_H` up, and turns it about its long axis (`r[2]`:
   the roll, on its back when dead) and round itself (`r[1]`: the tail
@@ -1070,8 +1070,25 @@ table runs exactly as before.
     player within 3 m of the spot; over the act it moves there through
     `eStep`, and at the end it hits the player within `atk.radius` of that
     point in front of it, unblockable, unless the burst already hit them.
-  - `atkOk`: never `rear`; `b1` and `roll` only with the player within 1.2
-    rad of its facing; `tail` only past 1.9 rad. Its `chase` hook starts a
+  - **The death roll** (`crocRollAct`, `crocRollStep`, `crocRollSpot`).
+    Over the act it lunges through `eStep` until it is against the player,
+    and a player in reach, in its arc and in sight takes `atk.dmg` through
+    `hurtPlayer` and then `grabPlayer` toward `crocRollSpot`, at
+    `CROC.dragSpeed` (4 m/s) for `CROC.rollDps` (12) a second. On a grab
+    it is in `hold` with `e.rolling` and `e.wet` set, and each step moves
+    it round the player to beside the line of the drag and along with
+    them, never into them, through `eStep`, drawn turning over and over.
+    `crocRollSpot(e, c)`: the water point nearest the player that they can
+    be dragged to in a straight line with room for their body all the way,
+    `CROC.rollIn` (2 m) further along that line, walked back until it is
+    such a point; the player's own spot when there is none. When the hold
+    ends, however it ended, `e.rollCD = CROC.rollCD` (8 s), a holder still
+    in `hold` goes to `rec`, and the `e.wet` climb-out walks it back onto
+    dry floor (within 3 m, else 6 m) before the shared states run again.
+    The roll stays in the same land phase: `landT` keeps running through it.
+  - `atkOk`: never `rear`; never `roll` while `e.rollCD` is above 0; `b1`
+    and `roll` only with the player within 1.2 rad of its facing; `tail`
+    only past 1.9 rad. Its `chase` hook starts a
     planned `tail` at once, without turning to face the player first.
   - `drawWakes` (`07b_dfx.js`): under, a V of foam back from its heading
     and bubbles over it; rising, bubbles boiling up and rings widening on
@@ -1230,8 +1247,11 @@ The class picker and HUD read `CLASSES` and need no changes.
   enters, nothing finding it under, the spot and warning, the burst on a
   player on the spot, the land clock and the stagger bonus, the tail for a
   player behind it, the reset on leaving and on `respawn`, and no spot in
-  rubble. Shots go to `shots/t25-croc-*` (idle, rear, bite, tail, roll),
-  `t25-wake` and `t25-rise`: look at them.
+  rubble. Then the death roll: the drag into the water and its damage,
+  mashing free and the cooldown, climbing back out in the same land phase,
+  a drag target past rubble, and a death in the roll. Shots go to
+  `shots/t25-croc-*` (idle, rear, bite, tail, roll), `t25-wake`,
+  `t25-rise` and `t25-roll` (mid-roll): look at them.
 - Run `tests/t22.mjs` after any change to the sewer, water, `fieldFns`,
   `meshSink`, the world shader, `visiblePieces`, cleared grades or portal
   opening: `SCRIPT=$PWD/tests/t22.mjs node test.mjs smoke`. It makes D live
@@ -1314,8 +1334,7 @@ The class picker and HUD read `CLASSES` and need no changes.
   crocodile lands. A D made live by hand fights the D enemies everywhere (rat,
   drowned and brood mother in brood rooms and tunnels, siren or eels with
   rats and bloaters in pool rooms, bloaters in gutters, grabbers at grates)
-  and Old Sluicejaw in the cavern, which has no death roll or 25% marks
-  yet.
+  and Old Sluicejaw in the cavern, which has no 25% marks yet.
 - The rat, the drowned and the brood mother are untested by hand. Their
   numbers (speed, health, the cover's angle, the brood timer, cap and
   distances, placement odds) and how they look were set by tests and
@@ -1331,8 +1350,10 @@ The class picker and HUD read `CLASSES` and need no changes.
   room is too hard with rats and bloaters in it, are the questions.
 - Old Sluicejaw is untested by hand. Set without a playtest: `CROC` (3 to 5
   s under, 7 m/s swimming, the 0.9 s warning, 18 burst damage, 10 s on land,
-  3 s per stagger, spots 8 m apart and 4 m from the player) and how the wake
-  and warning look.
+  3 s per stagger, spots 8 m apart and 4 m from the player, the roll's 12 a
+  second, 4 m/s drag, 2 m into the water and 8 s cooldown) and how the wake,
+  warning and roll look. A drag target far round rubble can be out of
+  reach in the 2 s hold, which then ends on the way there.
 - A hidden grabber is invisible until it strikes, and its grate is the only
   sign. The grates are drawn for every tunnel, so a grate with no grabber
   looks the same as one with one.

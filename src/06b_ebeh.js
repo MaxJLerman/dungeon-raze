@@ -527,19 +527,38 @@ EBEH.grabber = {
 //   stagBonus what each stagger adds to the land phase
 //   minNew    how far a new spot must be from the last one
 //   near      how near the player a spot may be
-const CROC = { under: [3, 5], swim: 7, warn: 0.9, burst: 18, land: 10, stagBonus: 3, minNew: 8, near: 4 };
+//   rollDps   what the death roll's hold hurts a second
+//   dragSpeed how fast it drags a caught player, m/s
+//   rollIn    how far past the shore into the water it drags them
+//   rollCD    how long after a roll, however it ended, before it rolls again
+const CROC = {
+  under: [3, 5],
+  swim: 7,
+  warn: 0.9,
+  burst: 18,
+  land: 10,
+  stagBonus: 3,
+  minNew: 8,
+  near: 4,
+  rollDps: 12,
+  dragSpeed: 4,
+  rollIn: 2,
+  rollCD: 8,
+};
 // the rearing slam's hit is centred this far in front of it
 const CROC_SLAM_AHEAD = 1;
 // states in which it is busy in the water, and does not climb out yet
 const CROC_WET_BUSY = { wind: 1, act: 1, hold: 1, stagger: 1 };
-// The dry footing point on a 0.5 m lattice within 3 m of (x, z), and in a
-// clear line from it, nearest (tx, tz); null when there is none.
-function crocDry(e, w, x, z, tx, tz) {
+// The dry footing point on a 0.5 m lattice within R m (3 unless given) of
+// (x, z), and in a clear line from it, nearest (tx, tz); null when there is
+// none.
+function crocDry(e, w, x, z, tx, tz, R = 3) {
   let best = null,
     bd = 1e9;
-  for (let i = -6; i <= 6; i++)
-    for (let j = -6; j <= 6; j++) {
-      if (i * i + j * j > 36) continue;
+  const n = Math.round(R * 2);
+  for (let i = -n; i <= n; i++)
+    for (let j = -n; j <= n; j++) {
+      if (i * i + j * j > n * n) continue;
       const qx = x + i * 0.5,
         qz = z + j * 0.5,
         d = Math.hypot(qx - tx, qz - tz);
@@ -626,6 +645,8 @@ function crocReset(e) {
     wet: false,
     landT: 0,
     stagd: false,
+    rolling: false,
+    rollCD: 0,
   });
   G.bossSeen = false;
 }
@@ -762,6 +783,7 @@ EBEH.croc = {
   atkOk(e, a, c) {
     const A = e.def.atks;
     if (a === A.rear) return false;
+    if (a === A.roll && e.rollCD > 0) return false;
     if (!c) return true;
     const off = Math.abs(angDiff(e.yaw, c.toP));
     if (a === A.b1 || a === A.roll) return off <= 1.2;
@@ -783,6 +805,7 @@ EBEH.croc = {
     const w = c.w,
       p = c.p;
     if (e.mode === undefined) crocReset(e);
+    e.rollCD = Math.max(0, (e.rollCD || 0) - dt);
     // leaving the cavern or dying ends the fight, in every mode
     if (e.mode !== "wait" && (e.state === "return" || !G.inBoss || !c.alive)) crocReset(e);
     if (e.mode === "wait") {
@@ -879,9 +902,26 @@ EBEH.croc = {
     if (st && !e.stagd) e.landT += CROC.stagBonus;
     e.stagd = st;
     if (!st) e.landT -= dt;
+    // the death roll: it keeps beside the player it drags until the hold
+    // ends, however it ended, and then cannot roll for CROC.rollCD
+    if (e.rolling) {
+      if (e.state === "hold" && p.hold && p.hold.by === e) {
+        crocRollStep(e, dt, c);
+        return true;
+      }
+      e.rolling = false;
+      e.rollCD = CROC.rollCD;
+      if (e.state === "hold") {
+        e.state = "rec";
+        e.t = 0;
+        e.token = false;
+      }
+    }
     // in the water on purpose and done there: climb out onto dry floor
     if (e.wet && !CROC_WET_BUSY[e.state]) {
-      const q = w.waterAt(e.x, e.z) >= 0.5 && crocDry(e, w, e.x, e.z, e.x, e.z);
+      const q =
+        w.waterAt(e.x, e.z) >= 0.5 &&
+        (crocDry(e, w, e.x, e.z, e.x, e.z) || crocDry(e, w, e.x, e.z, e.x, e.z, 6));
       if (!q) e.wet = false;
       else {
         const dx = q.x - e.x,
@@ -934,6 +974,7 @@ EBEH.croc = {
   act(e, dt, c) {
     const a = e.atk,
       p = c.p;
+    if (a.kind === "roll") return crocRollAct(e, dt, c);
     if (a.kind !== "rear") return;
     const gx = e.rx - e.x,
       gz = e.rz - e.z,
@@ -952,3 +993,82 @@ EBEH.croc = {
     if (c.alive && !e.burstHit && Math.hypot(p.x - hx, p.z - hz) < a.radius) hurtPlayer(a.dmg, e, a);
   },
 };
+// The death roll's lunge: forward until it is up against the player, and a
+// grab of a player in reach, in its arc and in sight, as the siren's. A
+// caught player is dragged into the water at crocRollSpot, and it goes in
+// with them (e.wet), rolling.
+function crocRollAct(e, dt, c) {
+  const a = e.atk,
+    p = c.p,
+    sep = e.r + p.r + 0.15;
+  if (c.dist > sep)
+    eStep(e, Math.sin(e.yaw), Math.cos(e.yaw), Math.min(a.lunge / a.act, (c.dist - sep) / dt), dt);
+  if (e.hitDone || e.t < 0.02 || c.dist > a.reach + p.r) return;
+  if (Math.abs(angDiff(e.yaw, c.toP)) > a.arc / 2) return;
+  if (!c.w.los(e.x, e.z, p.x, p.z)) return;
+  e.hitDone = true;
+  // a parry that sent it reeling leaves nothing to grab with
+  if (hurtPlayer(a.dmg, e, a) === "none" || e.state !== "act") return;
+  const t = crocRollSpot(e, c);
+  if (!grabPlayer(e, { dps: CROC.rollDps, tx: t.x, tz: t.z, speed: CROC.dragSpeed })) return;
+  e.state = "hold";
+  e.t = 0;
+  e.rolling = true;
+  e.wet = true;
+  // it ends up beside the drag, on the side it is on: rollA is the bearing
+  // from the player to it, turned round the player toward that side
+  const ux = t.x - p.x,
+    uz = t.z - p.z,
+    side = Math.sign(-uz * (e.x - p.x) + ux * (e.z - p.z)) || 1;
+  e.rollA = Math.atan2(e.x - p.x, e.z - p.z);
+  e.rollTo = Math.hypot(ux, uz) > 0.05 ? Math.atan2(-uz * side, ux * side) : e.rollA;
+}
+// Each step of the hold: round the player toward its side of the drag and
+// along with them, never into them, facing them.
+function crocRollStep(e, dt, c) {
+  const p = c.p,
+    sep = e.r + p.r + 0.15;
+  e.rollA = turnTo(e.rollA, e.rollTo, 4 * dt);
+  const gx = p.x + Math.sin(e.rollA) * sep - e.x,
+    gz = p.z + Math.cos(e.rollA) * sep - e.z,
+    gd = Math.hypot(gx, gz);
+  if (gd > 0.02) eStep(e, gx / gd, gz / gd, Math.min(CROC.dragSpeed * 2, gd / dt), dt);
+  e.yaw = Math.atan2(p.x - e.x, p.z - e.z);
+}
+// Where the death roll drags the player: the water point nearest them that
+// they can be dragged to in a straight line (0.25 m lattice within 8 m, with
+// room for them all the way), then CROC.rollIn further along the same line,
+// walked back until it is water they can be dragged to the same way; the
+// player's own spot when there is no such point.
+function crocRollSpot(e, c) {
+  const p = c.p,
+    w = c.w,
+    cand = [],
+    // room for the player's body all along the line, so rock never stops
+    // the drag short
+    clear = (x, z) => {
+      const n = Math.ceil(Math.hypot(x - p.x, z - p.z) / 0.25);
+      for (let i = 1; i <= n; i++)
+        if (w.fieldAt(lerp(p.x, x, i / n), lerp(p.z, z, i / n)) < p.r - 0.05) return false;
+      return true;
+    };
+  for (let i = -32; i <= 32; i++)
+    for (let j = -32; j <= 32; j++) {
+      const d = Math.hypot(i, j) * 0.25,
+        x = p.x + i * 0.25,
+        z = p.z + j * 0.25;
+      if (d <= 8 && w.waterAt(x, z) >= 0.5 && w.fieldAt(x, z) >= p.r) cand.push({ x, z, d });
+    }
+  cand.sort((a, b) => a.d - b.d);
+  const W = cand.find((q) => clear(q.x, q.z));
+  if (!W) return { x: p.x, z: p.z };
+  // already in the water: on, away from the crocodile
+  const ux = W.d > 0.05 ? (W.x - p.x) / W.d : (p.x - e.x) / (c.dist || 1),
+    uz = W.d > 0.05 ? (W.z - p.z) / W.d : (p.z - e.z) / (c.dist || 1);
+  for (let k = CROC.rollIn; k > 1e-6; k -= 0.1) {
+    const x = W.x + ux * k,
+      z = W.z + uz * k;
+    if (w.waterAt(x, z) >= 0.5 && w.fieldAt(x, z) >= p.r && clear(x, z)) return { x, z };
+  }
+  return { x: W.x, z: W.z };
+}

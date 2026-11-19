@@ -1296,8 +1296,9 @@ function makeCrocFig() {
 EFIG.croc = makeCrocFig;
 // Walks low with a diagonal gait and a tail that waves behind; rears onto
 // its hind legs and slams down (rear); snaps its jaw (b1 to b3); coils and
-// whips round on itself (tail); gapes, then rolls about its long axis (roll);
-// lies flat when staggered and on its back when dead.
+// whips round on itself (tail); gapes, then rolls about its long axis (roll),
+// and over and over while it holds a player (hold); lies flat when staggered
+// and on its back when dead.
 function poseCroc(e) {
   const f = e.fig,
     d = e.def,
@@ -1425,6 +1426,18 @@ function poseCroc(e) {
       }
       break;
     }
+    case "hold":
+      // the death roll: the jaw shut on the player and the whole body
+      // turning over and over about its long axis, legs tucked, tail lashing
+      roll = -((G.t * 8) % TAU);
+      jaw = 0.12;
+      neck = 0.1;
+      lift = -0.04;
+      tuck = 1;
+      swing = 0;
+      wave = 0.35;
+      rate = 9;
+      break;
     case "hit":
     case "recoil": {
       const q = e.state === "hit" ? 1 - sat(e.t / 0.32) : 1;
