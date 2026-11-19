@@ -6,6 +6,31 @@ function setEm(f, r, g, b) {
     n.em[2] = n.em0[2] + b;
   }
 }
+// Drawing only: a body in water stands WATER.sink lower, in step with how
+// wet the spot under it is. Nothing else reads it.
+function sinkInWater(f, x, z) {
+  f.root.p[1] -= WATER.sink * sat(G.world.waterAt(x, z));
+}
+// Ripples round the feet of whatever walks in water: one ring a stride, from
+// the foot that has just come down.
+function drawWading(x, z, yaw, walk, speed, y) {
+  if (speed < 0.8 || y > 0.3 || G.world.waterAt(x, z) < 0.5) return;
+  const s = walk / PI,
+    k = s - Math.floor(s),
+    side = Math.floor(s) % 2 ? 1 : -1,
+    r = 0.12 + 0.5 * k;
+  R.ring(
+    x - Math.cos(yaw) * side * 0.12,
+    -WATER.sink + 0.03,
+    z + Math.sin(yaw) * side * 0.12,
+    r - 0.05,
+    r,
+    0.55,
+    0.85,
+    0.8,
+    0.55 * (1 - k),
+  );
+}
 function posePlayer(p) {
   const f = p.fig,
     o = f.o,
@@ -309,6 +334,7 @@ function posePlayer(p) {
       break;
     }
   }
+  sinkInWater(f, p.x, p.z);
 }
 // The dummy is a post: arms out as a crossbar, rocks back when struck and
 // slumps while staggered. It has no walk, attack or death pose.
@@ -331,6 +357,7 @@ function poseDummy(e) {
     (stag ? 0.3 + 0.15 * pu : 0) + e.flash * 0.85,
     e.flash * 0.7,
   );
+  sinkInWater(f, e.x, e.z);
 }
 function poseEnemy(e) {
   if (e.def.dummy) return poseDummy(e);
@@ -438,6 +465,7 @@ function poseEnemy(e) {
     f.core.em[1] += 0.25;
     f.weapon.em[0] += 0.5;
   }
+  sinkInWater(f, e.x, e.z);
 }
 // The glowing surface inside an open portal frame: a soft fill, three swirling
 // bands and a few rising motes, all in the grade's colour.
@@ -877,12 +905,19 @@ function render() {
   drawRifts();
   drawHoles();
   // ---- fx ----
-  if (p.state !== "dead") R.blob(p.x, p.z, 0.8, 0.55);
+  if (p.state !== "dead") {
+    R.blob(p.x, p.z, 0.8, 0.55);
+    drawWading(p.x, p.z, p.yaw, p.walk, p.speed, 0);
+  }
   for (const e of G.enemies) {
     if (!e.vis) continue;
     const f = e.fig,
       sc = f.o.sc;
-    if (!e.dead) R.blob(e.x, e.z, e.r * 1.7, 0.55);
+    if (!e.dead) {
+      R.blob(e.x, e.z, e.r * 1.7, 0.55);
+      if (!e.def.dummy && e.state !== "fall")
+        drawWading(e.x, e.z, e.yaw, e.walk, e.speed, e.y);
+    }
     if (e.dead && e.t > 0.6) continue;
     const ey = f.eye,
       pu = e.aware ? 1 : 0.45;
@@ -1099,6 +1134,7 @@ function render() {
       1.6 * (1 - k),
     );
   }
+  for (const q of G.drips) R.sprite(q.x, q.y, q.z, 0.07, 0.7, 0.9, 0.85, 1.2);
   for (const g of G.ghosts) {
     const a = 0.7 * (1 - g.t / 0.35),
       c = g.c || CYAN;
@@ -1286,6 +1322,10 @@ function render() {
         0.6 + 0.4 * Math.sin(G.t * 30),
       );
       R.ring(r.x, 0.15, r.z, 0, r.r * k, c[0], c[1], c[2], 0.22);
+    } else if (r.kind === "ripple") {
+      // a ring spreading on the water's face
+      const rr = r.r * (0.15 + 0.85 * k);
+      R.ring(r.x, r.y + 0.03, r.z, rr - 0.05, rr, c[0], c[1], c[2], 0.6 * (1 - k));
     } else {
       const rr = r.r * (0.2 + 0.8 * k);
       R.ring(r.x, 0.2, r.z, rr - 1.2, rr, c[0], c[1], c[2], 1.4 * (1 - k));

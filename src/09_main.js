@@ -699,6 +699,8 @@ window.DF = {
   openPlaque,
   closePlaque,
   posePlayer,
+  poseEnemy,
+  HUD,
   setPlaqueCode,
   codeText,
   inputMode,

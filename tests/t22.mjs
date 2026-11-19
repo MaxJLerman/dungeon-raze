@@ -144,4 +144,39 @@ export default [
   // the boss cavern from the dry ring, looking at the wall tunnels and their falls
   { ...sewer("the boss cavern's far wall, for looking at", `const b = w.boss, q = w.wallTunnels[(w.wallTunnels.length / 2) | 0], a = Math.atan2(q.x - b.x, q.z - b.z);
   return look(b.x + Math.sin(a) * 7, b.z + Math.cos(a) * 7, a, -0.05);`), wait: 500, shot: "t22-falls" },
+  // wading: a body in water is drawn sunk, drips fall only in the sewer, the
+  // map shows water in explored rooms
+  { ...sewer("a body in water is drawn sunk by WATER.sink", `p.x = w.spawn.x; p.z = w.spawn.z; w.waterAt = () => 1;`), wait: 100 },
+  step("the sunk body, read after two frames", `const y = DF.R.nodePos(G.player.fig.root, 0, 0, 0)[1]; return { pass: Math.abs(y + DF.WATER.sink) < 0.02, y };`),
+  sewer("a half wet spot sinks the body half as far, a dry one not at all", `const f = p.fig, at = (wet) => { w.waterAt = () => wet; DF.posePlayer(p); return f.root.p[1]; };
+  const d = at(0), h = at(0.5), c = at(1); w.waterAt = () => 0; for (const e of G.enemies) { w.waterAt = () => 1; DF.poseEnemy(e); }
+  const en = G.enemies.find((e) => !e.def.dummy); w.waterAt = () => 1; DF.poseEnemy(en); const ey = en.fig.root.p[1] - en.y;
+  return { pass: Math.abs(d) < 1e-9 && Math.abs(h + DF.WATER.sink / 2) < 1e-9 && Math.abs(c + DF.WATER.sink) < 1e-9 && Math.abs(ey + DF.WATER.sink) < 1e-9, d, h, c, ey };`),
+  sewer("drips fall in the sewer and not in the cave", `DF.sim(3); const n = G.drips.length; DF.newRun(99); DF.sim(3);
+  return { pass: n > 0 && n <= 40 && G.drips.length === 0, n };`),
+  sewer("a drip lands as a ripple, is gone, and a new run starts with none", `DF.sim(4); let ok = true, rip = 0, peak = 0;
+  for (let i = 0; i < 240; i++) { DF.sim(1 / 30); peak = Math.max(peak, G.drips.length); if (G.rings.some((r) => r.kind === "ripple")) rip++; }
+  for (const q of G.drips) if (!(q.y > -1 && q.y <= w.ceilAt(q.x, q.z) + 0.01 && Math.hypot(q.x - p.x, q.z - p.z) <= 15.5)) ok = false;
+  DF.newRun(5, "D"); return { pass: ok && rip > 0 && peak <= 40 && G.drips.length === 0, ok, rip, peak };`),
+  sewer("wading in the sewer plays the wade sound on each footfall, not outside water", `let n = 0; const old = DF.SFX.wade; DF.SFX.wade = () => { n++; };
+  p.x = w.spawn.x; p.z = w.spawn.z; w.waterAt = () => 1; DF.keys[DF.BIND.fwd] = true; DF.sim(2); DF.keys[DF.BIND.fwd] = false; const wet = n;
+  n = 0; w.waterAt = () => 0; DF.keys[DF.BIND.fwd] = true; DF.sim(2); DF.keys[DF.BIND.fwd] = false; const dry = n; DF.SFX.wade = old;
+  return { pass: wet >= 3 && wet <= 12 && dry === 0, wet, dry };`),
+  sewer("a dodge in water splashes", `w.waterAt = () => 1; const r0 = G.rings.length, n0 = G.parts.length; DF.keys[DF.BIND.fwd] = true; DF.taps[DF.BIND.dodge] = true; DF.sim(0.1); DF.keys[DF.BIND.fwd] = false;
+  const ok = p.state === "dodge" && G.rings.some((r) => r.kind === "ripple") && G.parts.length > n0; return { pass: ok, state: p.state, parts: G.parts.length - n0 };`),
+  { ...sewer("the player wading through a pool, for looking at", `const n = w.nodes.find((n) => n.kind === "pool"); const b = w.bodies.filter((q) => q.room === n.id).sort((a, c) => c.n - a.n)[0];
+  p.x = b.x; p.z = b.z; p.yaw = 0; DF.keys[DF.BIND.fwd] = true; DF.sim(0.3); DF.keys[DF.BIND.fwd] = false; for (const e of G.enemies) e.x += 500;
+  cam.yaw = p.yaw + 0.5; cam.pitch = 0.25; cam.px = p.x; cam.pz = p.z; cam.cd = 4; return { pass: w.waterAt(p.x, p.z) > 0.9, wet: w.waterAt(p.x, p.z), b, n: n.id };`), wait: 500, shot: "t22-wade" },
+  step("the minimap draws water only in seen rooms and tunnels", `DF.newRun(5, "D"); const w = G.world;
+  for (const n of w.nodes) n.seen = false; for (const e of w.edges) e.seen = false;
+  const none = DF.HUD.mapWater(w).length;
+  const pool = w.nodes.find((n) => n.kind === "pool"); pool.seen = true; const room = DF.HUD.mapWater(w);
+  const inPool = room.every((q) => Math.abs(q.x - pool.x) < pool.hw + 1 && Math.abs(q.z - pool.z) < pool.hd + 1);
+  for (const n of w.nodes) n.seen = true; for (const e of w.edges) e.seen = true; const all = DF.HUD.mapWater(w).length;
+  DF.newRun(99); const cave = DF.HUD.mapWater(G.world).length;
+  return { pass: none === 0 && room.length > 3 && inPool && all > room.length && cave === 0, none, room: room.length, inPool, all, cave };`),
+  { ...sewer("the minimap in a pool room, for looking at", `for (const n of w.nodes) n.seen = true; for (const e of w.edges) e.seen = true; const n = w.nodes.find((n) => n.kind === "pool");
+  // the map blown up to four times its size, to see what is on it
+  const m = document.getElementById("map"); m.style.cssText = "width:640px;height:640px;right:20px;top:20px";
+  return look(n.x, n.z - n.hd * 0.4, 0, 0.3);`), wait: 500, shot: "t22-map" },
 ];

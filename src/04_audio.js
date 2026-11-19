@@ -195,6 +195,15 @@ const SFX = (() => {
       noise(0.25, 3000, 300, 0.4, "bandpass", 2);
       tone(0.25, 1500, 300, 0.2, "sine");
     },
+    // a foot through water; heavy for a splash
+    wade(heavy) {
+      noise(heavy ? 0.3 : 0.2, 700, 220, heavy ? 0.5 : 0.22, "bandpass", 1.1);
+      if (heavy) noise(0.14, 2600, 900, 0.25, "highpass", 0.7);
+    },
+    // a drop falling into water, in the far dark
+    drip() {
+      tone(0.12, 1500 + Math.random() * 700, 600, 0.12, "sine");
+    },
     knife() {
       noise(0.1, 3000, 5000, 0.25, "highpass", 0.8);
     },

@@ -12,6 +12,7 @@ const G = {
   parts: [],
   arcs: [],
   rings: [],
+  drips: [],
   ghosts: [],
   pending: [],
   kills: 0,
@@ -1601,6 +1602,7 @@ function resetRun() {
   G.parts = [];
   G.arcs = [];
   G.rings = [];
+  G.drips = [];
   G.ghosts = [];
   G.msgs = [];
   G.pending = [];
@@ -1725,6 +1727,7 @@ function respawn() {
   G.projs = [];
   G.bombs = [];
   G.rings = [];
+  G.drips = [];
   G.pending = [];
   G.bossSeen = false;
   spawnEnemies();
@@ -1754,6 +1757,74 @@ function sparks(x, y, z, n, col, spd = 6, life = 0.4, size = 0.12) {
       g: 9,
     });
   }
+}
+// A splash on the water's face: droplets thrown up and two rings spreading.
+function splash(x, z, n = 14) {
+  const y = -WATER.sink + 0.03,
+    c = [0.55, 0.85, 0.8];
+  for (let i = 0; i < n && G.parts.length < 700; i++) {
+    const a = Math.random() * TAU,
+      v = 1.2 + Math.random() * 1.6;
+    G.parts.push({
+      x: x + Math.cos(a) * 0.2,
+      y,
+      z: z + Math.sin(a) * 0.2,
+      vx: Math.cos(a) * v,
+      vy: 2 + Math.random() * 2.2,
+      vz: Math.sin(a) * v,
+      t: 0,
+      life: 0.4 + Math.random() * 0.25,
+      size: 0.1,
+      c,
+      g: 11,
+      fl: y,
+    });
+  }
+  G.rings.push({ x, y: -WATER.sink, z, r: 1.5, t: 0, dur: 0.55, kind: "ripple", c });
+  G.rings.push({ x, y: -WATER.sink, z, r: 0.9, t: 0, dur: 0.4, kind: "ripple", c });
+}
+// Drips from the sewer's roof: they start at the ceiling within DRIP.range of
+// the player, more of them over water, fall, leave a ring and are gone.
+const DRIP = { range: 15, cap: 40, rate: 60, dry: 0.35, g: 9.8, near: 10, voice: 0.12 };
+function dripsUpdate(dt) {
+  const p = G.player,
+    w = G.world;
+  const want = DRIP.rate * dt;
+  for (let n = Math.floor(want) + (Math.random() < want % 1 ? 1 : 0); n > 0; n--) {
+    if (G.drips.length >= DRIP.cap) break;
+    const a = Math.random() * TAU,
+      d = DRIP.range * Math.sqrt(Math.random()),
+      x = p.x + Math.cos(a) * d,
+      z = p.z + Math.sin(a) * d;
+    if (w.fieldAt(x, z) < 0.3) continue;
+    if (w.waterAt(x, z) < 0.5 && Math.random() > DRIP.dry) continue;
+    G.drips.push({ x, y: w.ceilAt(x, z) - 0.05, z, vy: 0 });
+  }
+  const keep = [];
+  for (const q of G.drips) {
+    q.vy -= DRIP.g * dt;
+    q.y += q.vy * dt;
+    const wet = w.waterAt(q.x, q.z) > 0.5,
+      top = wet ? -WATER.sink : 0;
+    if (q.y > top) {
+      keep.push(q);
+      continue;
+    }
+    if (G.rings.length < 120)
+      G.rings.push({
+        x: q.x,
+        y: top,
+        z: q.z,
+        r: wet ? 0.45 : 0.3,
+        t: 0,
+        dur: 0.6,
+        kind: "ripple",
+        c: [0.55, 0.85, 0.8],
+      });
+    if (Math.hypot(q.x - p.x, q.z - p.z) < DRIP.near && Math.random() < DRIP.voice)
+      SFX.drip();
+  }
+  G.drips = keep;
 }
 function ghost(p) {
   G.ghosts.push({ x: p.x, z: p.z, t: 0, c: p.cls.col });
@@ -2326,6 +2397,10 @@ function startDodge(ix, iz, il, free) {
     SFX.blink();
     sparks(p.x, 1.1, p.z, 12, p.cls.col, 4, 0.4);
   } else SFX.dodge();
+  if (G.world.waterAt(p.x, p.z) > 0.5) {
+    splash(p.x, p.z);
+    SFX.wade(true);
+  }
   return true;
 }
 function startExecute(e) {
@@ -3462,6 +3537,17 @@ function playerUpdate(dt) {
   p.z += (mvz + p.kz) * dt;
   p.speed = Math.hypot(mvx, mvz);
   p.walk += p.speed * dt * 2.1;
+  // each stride in water is a wade, not a step
+  const stride = Math.floor(p.walk / PI);
+  if (stride !== p.stride) {
+    p.stride = stride;
+    if (
+      p.speed > 1.5 &&
+      (p.state === "free" || p.state === "guard") &&
+      G.world.waterAt(p.x, p.z) > 0.5
+    )
+      SFX.wade();
+  }
   if (p.stamDelay > 0) p.stamDelay -= dt;
   else
     p.stam = Math.min(
@@ -4831,8 +4917,9 @@ function update(dt) {
     q.x += q.vx * dt;
     q.y += q.vy * dt;
     q.z += q.vz * dt;
-    if (q.y < 0.05) {
-      q.y = 0.05;
+    const fl = q.fl === undefined ? 0.05 : q.fl;
+    if (q.y < fl) {
+      q.y = fl;
       q.vy *= -0.4;
       q.vx *= 0.6;
       q.vz *= 0.6;
@@ -4843,6 +4930,7 @@ function update(dt) {
   G.arcs = G.arcs.filter((a) => a.t < a.dur);
   for (const r of G.rings) r.t += dt;
   G.rings = G.rings.filter((r) => r.t < r.dur);
+  if (G.world.sewer) dripsUpdate(dt);
   for (const g of G.ghosts) g.t += dt;
   G.ghosts = G.ghosts.filter((g) => g.t < 0.35);
   if (G.gate) G.gate.t += dt;

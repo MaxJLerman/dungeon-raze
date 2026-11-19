@@ -249,6 +249,65 @@ const HUD = (() => {
         "px) translate(-50%,-100%)";
     }
   }
+  // The sewer's water as the map shows it: every other grid point of every
+  // body of water, in a room or tunnel the player has seen. Each point is tied
+  // once to its room (inside the room's box) or else to the nearest tunnel,
+  // and worlds without bodies of water give nothing.
+  const mapPts = new WeakMap();
+  function mapWater(w) {
+    if (!w.bodies || !w.bodies.length) return [];
+    let pts = mapPts.get(w);
+    if (!pts) {
+      pts = [];
+      const W1 = w.W + 1;
+      for (let j = 0; j <= w.H; j += 2)
+        for (let i = 0; i <= w.W; i += 2) {
+          if (w.bodyIds[j * W1 + i] < 0) continue;
+          const x = i + w.minX,
+            z = j + w.minZ;
+          let node = -1,
+            edge = -1;
+          for (const n of w.nodes) {
+            const inside =
+              n.kind === "boss"
+                ? Math.hypot(x - n.x, z - n.z) < n.r
+                : Math.abs(x - n.x) <= n.hw && Math.abs(z - n.z) <= n.hd;
+            if (inside) {
+              node = n.id;
+              break;
+            }
+          }
+          if (node < 0) {
+            let best = 36;
+            w.edges.forEach((e, ei) => {
+              for (const q of e.pts) {
+                const d = (q.x - x) * (q.x - x) + (q.z - z) * (q.z - z);
+                if (d < best) {
+                  best = d;
+                  edge = ei;
+                }
+              }
+            });
+            if (edge < 0) continue;
+          }
+          pts.push({ x, z, node, edge });
+        }
+      mapPts.set(w, pts);
+    }
+    return pts.filter((q) =>
+      q.node >= 0 ? w.nodes[q.node].seen : w.edges[q.edge].seen,
+    );
+  }
+  // a rounded box path for a sewer room, from its centre and half sizes
+  function roomPath(g, x0, y0, x1, y1, r) {
+    r = Math.min(r, (x1 - x0) / 2, (y1 - y0) / 2);
+    g.moveTo(x0 + r, y0);
+    g.arcTo(x1, y0, x1, y1, r);
+    g.arcTo(x1, y1, x0, y1, r);
+    g.arcTo(x0, y1, x0, y0, r);
+    g.arcTo(x0, y0, x1, y0, r);
+    g.closePath();
+  }
   function drawMap() {
     const c = el.map,
       g = c.getContext("2d"),
@@ -276,9 +335,28 @@ const HUD = (() => {
     for (const n of w.nodes) {
       if (!n.seen) continue;
       g.beginPath();
-      g.arc(X(n.x), Z(n.z), n.r * sc, 0, TAU);
+      // a sewer room is a rounded box; the boss cavern and cave rooms round
+      if (n.hw && n.kind !== "boss")
+        roomPath(
+          g,
+          X(n.x + n.hw),
+          Z(n.z + n.hd),
+          X(n.x - n.hw),
+          Z(n.z - n.hd),
+          SEWER.corner * sc,
+        );
+      else g.arc(X(n.x), Z(n.z), n.r * sc, 0, TAU);
       g.fillStyle =
         n.kind === "boss" ? "rgba(216,67,46,0.5)" : "rgba(150,190,205,0.4)";
+      g.fill();
+    }
+    const wet = mapWater(w);
+    if (wet.length) {
+      // one path, so squares that touch do not darken each other
+      g.beginPath();
+      const s2 = 2 * sc;
+      for (const q of wet) g.rect(X(q.x) - s2 / 2, Z(q.z) - s2 / 2, s2, s2);
+      g.fillStyle = "rgba(70,160,150,0.5)";
       g.fill();
     }
     for (const sh of w.shrines) {
@@ -422,5 +500,5 @@ const HUD = (() => {
       k("heal") +
       " flask";
   }
-  return { init, update, hint };
+  return { init, update, hint, mapWater };
 })();
