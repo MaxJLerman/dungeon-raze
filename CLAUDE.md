@@ -1195,9 +1195,12 @@ table runs exactly as before.
     `e.landT = CROC.land`, `y` 0, not aloft; the land fight carries on
     from there and `e.tun` stays, `knocked`, until the next leap. So one
     phase has at most one knock-down, and a plate from a mouth it has left
-    is only a hit. While a plate parried back from the mouth it stands at
-    is still in the air it does not move on from that mouth (at most the
-    reflect's 2 s), so a parry from across the cavern still lands.
+    is only a hit. While a plate from the mouth it stands at is still in
+    the air, on its way out or parried back, it does not move on from that
+    mouth, for at most `CROC.plateWait` (4 s) past the linger, so a parry
+    from across the cavern still knocks it down. A parried plate can still
+    arrive after it has moved on (a parry late in that wait, or a plate
+    bent by a rift), and is then only a hit.
     `poseCrocUp` (`05b_dbodies.js`) draws
     it lying in the outlet, `CROC_PERCH` out from the wall on the outlet's
     floor with its head over the lip, crouching with the head drawn aside
@@ -1384,10 +1387,11 @@ The class picker and HUD read `CLASSES` and need no changes.
   lose exactly `CROC.tunCap`, stop above the next mark and add no
   posture; a plate reaches a player right under the mouth; a parried
   plate climbs back to the mouth and knocks it down onto dry floor of the
-  ring, staggered; a parried plate from a mouth it has left only hurts
-  it, and none after the knock-down changes anything; it waits at its
-  mouth for a plate parried back from it and moves on once that has
-  missed; knocked down, it can be executed and later dives on its land
+  ring, staggered, and so does a real parry 30 m from the mouth; a
+  parried plate from a mouth it has left only hurts it, and none after
+  the knock-down changes anything; it waits at its mouth for a plate
+  parried back from it, and a plate of its own that never arrives holds
+  it there `CROC.plateWait` and no longer; knocked down, it can be executed and later dives on its land
   clock. Shots go to
   `shots/t25-croc-*` (idle, rear, bite, tail, roll), `t25-wake`,
   `t25-rise`, `t25-roll` (mid-roll), `t25-mouth-warn`,
@@ -1499,7 +1503,8 @@ The class picker and HUD read `CLASSES` and need no changes.
   warning and roll look, and the marks at a quarter of its health each.
   Whether a player in the water is punished too hard is a question. The
   tunnel phase's numbers (`leapT`, `mouthWarn`, `throwWind`, `throwGap`,
-  `linger`, `dropT`, a plate's 14 damage at 15 m/s, the 100 cap) and its
+  `linger`, `plateWait`, `dropT`, a plate's 14 damage at 15 m/s, the 100
+  cap) and its
   look were set without a playtest. Knocked down, it lands on the first
   dry footing past the fall pool, right at the shore. At a mouth its tail is inside the outlet, so the throw
   reads as a toss of the head more than a tail whip.

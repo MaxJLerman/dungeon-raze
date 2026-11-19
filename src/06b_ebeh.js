@@ -565,6 +565,10 @@ EBEH.grabber = {
 //   throwWind the whip before each plate
 //   throwGap  the time between one plate and the next at a mouth
 //   linger    how long it stays at a mouth after its last plate there
+//   plateWait how much longer than linger it stays at most while a plate
+//             from that mouth is still in the air, out or parried back, so
+//             a parry from across the cavern can still knock it down (a
+//             plate crosses 52 m in about 3.5 s, and comes back faster)
 //   plateSpeed, plateDmg  a plate's speed (m/s) and damage
 //   tunCap    the most that hits may take off it in one tunnel phase
 //   dropT     how long the drop from the last mouth into the water lasts,
@@ -594,6 +598,7 @@ const CROC = {
   plateDmg: 14,
   tunCap: 100,
   dropT: 0.6,
+  plateWait: 4,
 };
 // the rearing slam's hit is centred this far in front of it
 const CROC_SLAM_AHEAD = 1;
@@ -1043,9 +1048,11 @@ function crocTunnelStep(e, dt, c) {
       T.t = T.plates < T.n[T.k] ? CROC.throwGap : CROC.linger;
       return true;
     }
-    // a plate parried back from this mouth still in the air: it waits for it
+    // a plate from this mouth still in the air, on its way out or parried
+    // back: it waits for it, at most CROC.plateWait past the linger (T.t
+    // runs on below 0 while it waits)
     const at = T.list[T.k];
-    if (G.projs.some((r) => r.plate && r.own === "p" && r.src === e && r.mouth === at && r.life > 0))
+    if (T.t > -CROC.plateWait && G.projs.some((r) => r.plate && r.src === e && r.mouth === at && r.life > 0))
       return true;
     // done at this mouth: on through the wall to the next, which warns first
     if (++T.k < T.list.length) {

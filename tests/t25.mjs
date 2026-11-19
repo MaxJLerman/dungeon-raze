@@ -647,19 +647,36 @@ const tunnelSteps = [
   G.projs.push(far(20, toC + Math.PI)); let stayed = true;
   DF.sim(1.5, () => { keep(); if (e.mode !== "tunnel") return false; if (e.tun.k !== 0 || e.tun.sub !== "show") stayed = false; });
   const hit = { mode: e.mode, knocked: e.tun.knocked, stayed };
-  // once the one in the air has missed, it moves on
+  // a plate of its own from here that never arrives holds it no longer than CROC.plateWait past the linger
   until(() => e.mode === "land", 2); until(() => e.state === "chase", 6); until(() => e.mode === "under", 30); until(() => e.mode === "land", 25);
   leap(); two(1, 1); e.tun.plates = e.tun.n[0]; e.tun.t = 1 / 60; const j0 = e.tun.list[0];
-  const miss = far(2, toC); miss.mouth = j0; G.projs.push(miss); let left = 0;
-  DF.sim(3, () => { keep(); left++; if (e.tun.k === 1) return false; });
-  return { pass: hit.stayed && hit.mode === "drop" && hit.knocked === true && e.tun.k === 1 && !e.tun.knocked && !G.projs.includes(miss) && left <= 2.1 * 60,
+  const slow = { ...far(2, toC), vx: Math.sin(toC) * 0.5, vz: Math.cos(toC) * 0.5, life: 99, own: "e", kind: "plate", mouth: j0 }; G.projs.push(slow); let left = 0;
+  DF.sim(C.plateWait + 1, () => { keep(); left++; if (e.tun.k === 1) return false; });
+  return { pass: hit.stayed && hit.mode === "drop" && hit.knocked === true && e.tun.k === 1 && !e.tun.knocked && G.projs.includes(slow) && Math.abs(left / 60 - C.plateWait) < 0.05,
     hit, k: e.tun.k, left: left / 60 };`),
+  tstep("a real parry from across the cavern knocks it down", `
+  leap(); const i0 = e.tun.list[0], m = W[i0]; e.tun.n[0] = 1;
+  // the player about 30 m from the mouth on dry floor, guarding with a fresh parry as its one plate arrives
+  let q = null; for (let d = 30; d < 46 && !q; d += 0.5) for (const da of [0, 0.15, -0.15, 0.3, -0.3]) { const x = m.x + Math.sin(m.yaw + da) * d, z = m.z + Math.cos(m.yaw + da) * d;
+    if (w.waterAt(x, z) === 0 && w.fieldAt(x, z) >= 1 && w.los(x, z, mouthPt(i0).x, mouthPt(i0).z)) { q = { x, z }; break; } }
+  put(q); const dist = Math.hypot(q.x - m.x, q.z - m.z);
+  let rf = null, stayed = true, thrown = 0;
+  DF.keys[DF.BIND.guard] = true;
+  DF.sim(10, () => { keep(); p.x = q.x; p.z = q.z; p.kx = p.kz = 0; p.yaw = cam.yaw = Math.atan2(e.x - p.x, e.z - p.z); p.guardT = 0;
+    thrown = Math.max(thrown, e.tun ? e.tun.plates : 0);
+    if (e.mode === "tunnel" && (e.tun.k !== 0 || e.tun.sub !== "show")) stayed = false;
+    if (!rf) rf = G.projs.find((pr) => pr.src === e && pr.plate && pr.own === "p") || null;
+    if (e.mode === "land") return false; });
+  DF.keys[DF.BIND.guard] = false;
+  return { pass: dist >= 28 && thrown === 1 && !!rf && rf.kind === "reflect" && rf.mouth === i0 && stayed && e.mode === "land" && e.state === "stagger" && e.tun.knocked === true && e.y === 0,
+    dist, thrown, rf: !!rf, stayed, mode: e.mode, state: e.state };`),
   tstep("knocked down, the land fight carries on", `
   leap(); const i0 = e.tun.list[0]; e.tun.t = 99; back(i0);
   until(() => e.mode === "land", 2);
   const knocked = e.mode === "land" && e.state === "stagger";
   // open to an execution: the player beside it finds it
-  const side = ringAt(Math.hypot(e.x - B.x, e.z - B.z), Math.atan2(e.x - B.x, e.z - B.z) + 0.12); put(side);
+  let side = null; for (let k = 0; k < 32 && !side; k++) { const a = (k / 32) * Math.PI * 2, x = e.x + Math.sin(a) * (e.r + 1.2), z = e.z + Math.cos(a) * (e.r + 1.2);
+    if (w.fieldAt(x, z) >= p.r && w.los(e.x, e.z, x, z)) side = { x, z }; } put(side);
   const near = Math.hypot(p.x - e.x, p.z - e.z), exec = DF.nearestStaggered() === e;
   // the stagger ends and it fights on, then dives on its land clock
   put(view(i0, 14)); const n0 = until(() => e.state !== "stagger", 6);
