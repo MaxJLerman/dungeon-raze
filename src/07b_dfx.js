@@ -200,15 +200,44 @@ function drawWakes() {
           z = e.z + Math.cos(h * 7) * 0.7;
         if (wet(x, z)) R.sprite(x, wl + ph * 0.15, z, 0.1 + ph * 0.08, 0.8, 0.95, 0.9, 0.9 * (1 - ph));
       }
-      // where a shaft's light falls on the water its dark shape shows: a
-      // long shadow along its heading, a little back of its middle for the
-      // tail, full out to CROC_SHADOW_FADE short of CROC.shadowR and fading
-      // to nothing there (the water nearest a shaft is 3 to 4 m from it)
+      // near a shaft its dark shape shows through the water: the shaft's
+      // light lies on the water round it, in two soft bands out from the
+      // outline of its body (an ellipse along its heading, a little back of
+      // its middle for the tail), and none on the body, which a blob darkens
+      // further. Additive light is drawn after blobs, so it is kept off the
+      // body rather than drawn under it. Full out to CROC_SHADOW_FADE short
+      // of CROC.shadowR and fading to nothing there (the water nearest a
+      // shaft is 3 to 4 m from it).
       let sh = 0;
       if (wet(e.x, e.z))
         for (const h of w.shafts)
           sh = Math.max(sh, sat((CROC.shadowR - Math.hypot(e.x - h.x, e.z - h.z)) / CROC_SHADOW_FADE));
-      if (sh > 0) R.blob(e.x - fx * 0.6, e.z - fz * 0.6, 0.9, 0.95 * sh, e.yaw, 3, wl + 0.02);
+      if (sh > 0) {
+        const cx = e.x - fx * 0.6,
+          cz = e.z - fz * 0.6,
+          bw = 0.9,
+          bl = 2.7,
+          sky = SEWER_SKY,
+          fl = sh * (0.9 + 0.1 * Math.sin(t * 1.7)),
+          band = (d0, d1, a) =>
+            R.ribbon(
+              40,
+              (q, s) => {
+                const an = q * TAU,
+                  d = s ? d1 : d0,
+                  c = Math.cos(an) * (bw + d),
+                  n = Math.sin(an) * (bl + d);
+                return [cx + rx * c + fx * n, wl + 0.01, cz + rz * c + fz * n];
+              },
+              sky[0],
+              sky[1],
+              sky[2],
+              () => a * fl,
+            );
+        band(0, 1.4, 0.55);
+        band(0.6, 3.2, 0.3);
+        R.blob(cx, cz, bw, 0.95 * sh, e.yaw, bl / bw, wl + 0.02);
+      }
       continue;
     }
     // rising: k runs 0 to 1 over the warning

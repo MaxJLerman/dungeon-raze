@@ -931,36 +931,45 @@ const bloatSteps = [
   begin(); const net = DF.crocSwimNet(e, w).pts; let q = null, h = null, bd = 1e9;
   for (const s of w.shafts) for (const n of net) { const d = Math.hypot(n.x - s.x, n.z - s.z); if (d < bd) (bd = d), (q = n), (h = s); }
   const q2 = net.find((n) => { const d = Math.hypot(n.x - h.x, n.z - h.z); return d > bd + 1 && d < C.shadowR - 0.3; });
-  // the blobs of the last whole frame drawn (each frame starts with R.begin)
-  const real = DF.R.blob, rb = DF.R.begin; let frames = [[]];
-  DF.R.begin = (...a) => { frames.push([]); return rb(...a); };
-  DF.R.blob = (...a) => { frames[frames.length - 1].push(a); return real(...a); };
+  // the blobs and the count of ribbons of the last whole frame drawn (each frame starts with R.begin)
+  const real = DF.R.blob, rr = DF.R.ribbon, rb = DF.R.begin; let frames = [{ b: [], r: 0 }];
+  const last = () => frames[frames.length - 1];
+  DF.R.begin = (...a) => { frames.push({ b: [], r: 0 }); return rb(...a); };
+  DF.R.blob = (...a) => { last().b.push(a); return real(...a); };
+  DF.R.ribbon = (...a) => { last().r++; return rr(...a); };
   try {
-    const at = async (x, z) => { Object.assign(e, { mode: "under", hidden: true, x, z, yaw: 0.7, modeT: 1e6, speed: 0 }); frames = [[]]; await draw(); return frames[frames.length - 1]; };
-    const mine = (f) => f.filter((a) => a[4] === 0.7 && a[5] > 1);
-    const under = await at(q.x, q.z), away = await at(B.x, B.z), further = q2 ? mine(await at(q2.x, q2.z)) : [];
+    const at = async (x, z) => { Object.assign(e, { mode: "under", hidden: true, x, z, yaw: 0.7, modeT: 1e6, speed: 0 }); frames = [{ b: [], r: 0 }]; await draw(); return last(); };
+    const mine = (f) => f.b.filter((a) => a[4] === 0.7 && a[5] > 1);
+    const under = await at(q.x, q.z), away = await at(B.x, B.z), further = q2 ? await at(q2.x, q2.z) : null;
     // the dry floor under the shaft itself has no water for it to show through
     const dry = await at(h.x, h.z);
-    const extra = mine(under), a0 = extra[0] && extra[0][3], a1 = further[0] && further[0][3];
+    const extra = mine(under), a0 = extra[0] && extra[0][3], a1 = further && mine(further)[0] && mine(further)[0][3];
+    // the shaft's light on the water round it: two bands more than in the centre pool
+    const lit = under.r - away.r, litDry = dry.r - away.r;
     // rising, it is not drawn
-    e.mode = "rise"; e.modeT = C.warn; e.spot = { x: q.x, z: q.z }; frames = [[]]; await draw(); const rise = mine(frames[frames.length - 1]).length;
-    return { pass: !!q && bd < C.shadowR && under.length === away.length + 1 && extra.length === 1 && a0 > 0 && a0 <= 0.95 && !!q2 && further.length === 1 && a1 < a0 && dry.length === away.length && rise === 0,
-      bd: +bd.toFixed(2), under: under.length, away: away.length, dry: dry.length, a0, a1, q2: !!q2, rise };
-  } finally { DF.R.blob = real; DF.R.begin = rb; }`),
+    e.mode = "rise"; e.modeT = C.warn; e.spot = { x: q.x, z: q.z }; frames = [{ b: [], r: 0 }]; await draw(); const rise = mine(last()).length;
+    return { pass: !!q && bd < C.shadowR && under.b.length === away.b.length + 1 && extra.length === 1 && a0 > 0 && a0 <= 0.95 && lit === 2 && litDry === 0 &&
+      !!q2 && mine(further).length === 1 && a1 < a0 && dry.b.length === away.b.length && rise === 0,
+      bd: +bd.toFixed(2), under: under.b.length, away: away.b.length, dry: dry.b.length, lit, litDry, a0, a1, q2: !!q2, rise };
+  } finally { DF.R.blob = real; DF.R.ribbon = rr; DF.R.begin = rb; }`),
   { ...cstep("its shadow near a shaft, for looking at", `
   // of the swim-net points where its shadow is at full strength, the one in the most open water (the most of
   // a ring 1.5 m round it wet), nearest the shaft on a tie
   const net = DF.crocSwimNet(e, w).pts, wetRing = (n) => { let k = 0; for (let i = 0; i < 16; i++) if (w.waterAt(n.x + Math.sin(i * Math.PI / 8) * 1.5, n.z + Math.cos(i * Math.PI / 8) * 1.5) >= 0.5) k++; return k; };
   let q = null, h = null, bd = 1e9, bk = -1;
   for (const s of w.shafts) for (const n of net) { const d = Math.hypot(n.x - s.x, n.z - s.z), k = wetRing(n);
-    if (d < C.shadowR - 1.5 && (k > bk || (k === bk && d < bd))) (bd = d), (q = n), (h = s), (bk = k); }
+    if (d < C.shadowR - DF.CROC_SHADOW_FADE && (k > bk || (k === bk && d < bd))) (bd = d), (q = n), (h = s), (bk = k); }
   begin(); const ux = (q.x - h.x) / bd, uz = (q.z - h.z) / bd;
-  // seen from beside the shaft, looking down past its light onto the water
-  Object.assign(e, { mode: "under", hidden: true, x: q.x, z: q.z, yaw: Math.atan2(uz, -ux), modeT: 1e6, speed: 0 });
-  put({ x: q.x - ux * 3.5 + uz * 0.8, z: q.z - uz * 3.5 - ux * 0.8 }); w.resolve(p, p.r);
-  p.yaw = cam.yaw = Math.atan2(q.x - p.x, q.z - p.z); cam.pitch = 0.9; cam.px = p.x; cam.pz = p.z; p.fig.root.s = [0.0001, 0.0001, 0.0001];
-  await draw(); const sc = DF.R.toScreen(q.x, -0.25, q.z);
-  return { pass: true, bd, wet: bk, sc };`), wait: 500, shot: "t25-shadow" },
-  step("the player is put back once more", `G.player.fig.root.s = [1, 1, 1]; DF.newRun(99); return { pass: true };`),
+  // heading for the shore by the shaft, so its body lies out in the water; seen from the dry
+  // floor beside the shaft, out of its light, looking down onto the water. The player's own ground
+  // blob is left out of this shot (put back by the next step), so the only dark shape is its shadow
+  Object.assign(e, { mode: "under", hidden: true, x: q.x, z: q.z, yaw: Math.atan2(-ux, -uz), modeT: 1e6, speed: 0 });
+  window.__blob = DF.R.blob; DF.R.blob = (x, z, ...a) => (x === p.x && z === p.z ? undefined : window.__blob(x, z, ...a));
+  put({ x: h.x - ux * 1 + uz * 3.2, z: h.z - uz * 1 - ux * 3.2 }); w.resolve(p, p.r);
+  p.yaw = cam.yaw = Math.atan2(q.x - p.x, q.z - p.z); cam.pitch = 0.8; cam.px = p.x; cam.pz = p.z; p.fig.root.s = [0.0001, 0.0001, 0.0001];
+  await draw(); const sc = DF.R.toScreen(q.x, -0.25, q.z), off = Math.hypot(p.x - h.x, p.z - h.z), lit = h.r * 1.9;
+  return { pass: off > lit, bd, wet: bk, off, lit, sc };`), wait: 500, shot: "t25-shadow" },
+  step("the player is put back once more", `if (window.__blob) DF.R.blob = window.__blob; window.__blob = null;
+  G.player.fig.root.s = [1, 1, 1]; DF.newRun(99); return { pass: true };`),
 ];
 export default [...base, ...crocSteps, ...rollSteps, ...markSteps, ...tunnelSteps, ...ceilingSteps, ...bloatSteps];

@@ -1290,12 +1290,15 @@ table runs exactly as before.
     and bubbles over it; rising, bubbles boiling up and rings widening on
     the water. The foam and bubbles are drawn only where `waterAt` reads
     0.5 or more. Under, in water and within `CROC.shadowR` (5 m) of a
-    shaft's centre (`world.shafts`), its shadow, where the shaft's light
-    falls on the water: one `R.blob` 0.9 m in half width stretched 3
-    times along its heading, 0.6 m back of its middle, at the water's
-    surface, at full strength (0.95) out to `CROC_SHADOW_FADE` (1.5 m)
-    short of `shadowR` and fading to nothing at it, from the nearest
-    shaft. The shafts stand over the dry ring, so the water in reach is
+    shaft's centre (`world.shafts`), its shadow: the shaft's light on the
+    water round it, two soft additive `R.ribbon` bands in the shaft's
+    colour (`SEWER_SKY`) out from the outline of its body (an ellipse 0.9
+    m in half width and 2.7 m in half length along its heading, 0.6 m
+    back of its middle), 0 to 1.4 m and 0.6 to 3.2 m out; and one `R.blob`
+    on that outline darkening the body. Additive effects are drawn after
+    blobs, so the light is kept off the body rather than drawn under it.
+    Both are at full strength out to `CROC_SHADOW_FADE` (1.5 m) short of
+    `shadowR` and fade to nothing at it, from the nearest shaft. The shafts stand over the dry ring, so the water in reach is
     the edge of the centre pool or the moat nearest them, 2.8 to 4 m from
     a shaft at the nearest over seeds 1 to 12.
 
@@ -1508,14 +1511,16 @@ The class picker and HUD read `CLASSES` and need no changes.
   over seeds 1 to 12 some point of the real swim net (`DF.crocSwimNet`)
   is within `shadowR` of a shaft; at the swim-net point nearest a shaft
   one more blob is drawn in a frame than in the centre pool, along its
-  heading, fainter at a point further from the same shaft, none on the
-  dry floor under the shaft and none while it rises. Shots go to
+  heading, with two more light bands, fainter at a point further from the
+  same shaft, none of either on the dry floor under the shaft and none
+  while it rises. Shots go to
   `shots/t25-croc-*` (idle, rear, bite, tail, roll), `t25-wake`,
   `t25-rise`, `t25-roll` (mid-roll), `t25-mouth-warn`,
   `t25-mouth-throw`, `t25-knock` (falling, knocked down) and
   `t25-ceiling` (a warning, a chunk falling and a heap) and
-  `t25-shadow` (under at the swim-net point nearest a shaft, its shadow
-  at full strength): look at them.
+  `t25-shadow` (under at the swim-net point nearest a shaft, heading for
+  the shore, its shadow at full strength; the player's own blob is left
+  out of that shot): look at them.
 - Run `tests/t22.mjs` after any change to the sewer, water, `fieldFns`,
   `meshSink`, the world shader, `visiblePieces`, cleared grades or portal
   opening: `SCRIPT=$PWD/tests/t22.mjs node test.mjs smoke`. It makes D live
@@ -1648,9 +1653,9 @@ The class picker and HUD read `CLASSES` and need no changes.
   shaft, full out to 3.5 m (`CROC_SHADOW_FADE`); both were set without a
   playtest. The shafts stand over the dry ring, so the water in reach is
   only the edge of a pool nearest a shaft (7 to 21 swim-net points per
-  seed over seeds 1 to 12), and there part of the shadow lies under the
-  pool's kerb: it shows as a dark patch at the edge more than a whole
-  shape.
+  seed over seeds 1 to 12); the light it shows against there is drawn
+  for it, round its body. Swimming along the shore, part of it lies under
+  the pool's kerb.
 - A hidden grabber is invisible until it strikes, and its grate is the only
   sign. The grates are drawn for every tunnel, so a grate with no grabber
   looks the same as one with one.
