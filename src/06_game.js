@@ -47,6 +47,8 @@ const G = {
   clouds: [],
   // the pools an eel has shocked, { body, room, t, dur }
   shocks: [],
+  // chunks of the crocodile's cavern ceiling, falling and fallen (crocCeiling)
+  chunks: [],
 };
 const keys = {},
   taps = {},
@@ -1974,6 +1976,7 @@ function resetRun() {
   G.holes = [];
   G.clouds = [];
   G.shocks = [];
+  G.chunks = [];
   G.insp = null;
   G.grabGrace = 0;
   G.bossDead = false;
@@ -2112,6 +2115,7 @@ function respawn() {
   G.holes = [];
   G.clouds = [];
   G.shocks = [];
+  G.chunks = [];
   G.world.resolve(p, 0.6);
   G.projs = [];
   G.bombs = [];

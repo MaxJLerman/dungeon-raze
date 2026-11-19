@@ -304,3 +304,48 @@ function drawPlate(pr) {
   for (let i = 1; i <= 3; i++)
     R.sprite(pr.x - bx * 0.3 * i, pr.y - (pr.vy || 0) * 0.02 * i, pr.z - bz * 0.3 * i, 0.18 * (1 - i * 0.22), c[0] * 0.6, c[1] * 0.8, c[2] * 0.6, 0.5 - i * 0.12);
 }
+// The falling ceiling's warning, for each chunk still in the air: grit
+// pouring from the roof over the spot through a haze of dust, a puff where
+// it gives way, grit kicking up off the floor, the rock's shadow darkening
+// and a ring at CROC.fallR, with a second ring closing in from it to the
+// centre as it comes, landing as the two meet. The rock itself falls over
+// the last 0.3 s (drawChunks).
+function drawDust() {
+  const dust = [0.8, 0.7, 0.56],
+    warm = [1, 0.62, 0.3];
+  for (const c of G.chunks) {
+    if (c.id || Math.hypot(c.x - R.cam.x, c.z - R.cam.z) > 80) continue;
+    const k = sat(1 - c.t / CROC.fallWarn),
+      t = G.t,
+      top = c.ceil,
+      a = 0.5 + 0.5 * k;
+    // the grit, falling faster and faster
+    for (let i = 0; i < 26; i++) {
+      const h = Math.abs(Math.sin(i * 12.9898 + c.seed)),
+        h2 = Math.abs(Math.sin(i * 78.233 + c.seed * 0.7)),
+        u = (t * (0.7 + 0.6 * h) + h2) % 1,
+        rr = CROC.fallR * 0.6 * h2,
+        q = h * TAU;
+      R.sprite(c.x + Math.sin(q) * rr, top * (1 - u * u), c.z + Math.cos(q) * rr, 0.1 + 0.16 * h, dust[0], dust[1], dust[2], 0.9 * a);
+    }
+    // the haze in the column, and the puff at the roof
+    for (let i = 0; i < 5; i++) {
+      const y = top * (0.12 + 0.2 * i),
+        s = 0.9 + 0.25 * Math.sin(t * 2 + i * 1.7);
+      R.sprite(c.x, y, c.z, s, dust[0], dust[1], dust[2], 0.12 * a);
+    }
+    R.sprite(c.x, top - 0.4, c.z, 1.6 + k, dust[0], dust[1], dust[2], 0.35 * a);
+    // grit kicking up where it lands
+    for (let i = 0; i < 6; i++) {
+      const h = Math.abs(Math.sin(i * 4.37 + c.seed * 0.3)),
+        u = (t * 2.2 + h) % 1,
+        q = h * TAU * 3;
+      R.sprite(c.x + Math.sin(q) * (0.3 + 0.6 * u), 0.05 + 0.35 * u * (1 - u), c.z + Math.cos(q) * (0.3 + 0.6 * u), 0.22, dust[0], dust[1], dust[2], 0.5 * a * (1 - u));
+    }
+    R.blob(c.x, c.z, CROC.rockR * (0.6 + 0.5 * k), 0.45 + 0.5 * k);
+    const pulse = 0.75 + 0.25 * Math.sin(t * 18),
+      r = CROC.fallR * (1 - k);
+    R.ring(c.x, 0.06, c.z, CROC.fallR - 0.1, CROC.fallR, warm[0], warm[1], warm[2], 1.2 * a * pulse);
+    if (r > 0.12) R.ring(c.x, 0.06, c.z, r - 0.1, r, warm[0], warm[1], warm[2], 0.9 * a);
+  }
+}

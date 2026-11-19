@@ -706,4 +706,150 @@ const tunnelSteps = [
   return { pass: fin && e.mode === "drop" && e.tun.knocked === true, fin, y: e.y };`), wait: 500, shot: "t25-knock" },
   step("the player is put back", `G.player.fig.root.s = [1, 1, 1]; DF.newRun(99); return { pass: true };`),
 ];
-export default [...base, ...crocSteps, ...rollSteps, ...markSteps, ...tunnelSteps];
+// ---- the falling ceiling ----
+// Up on land, as for the marks. drop(x, z) brings a chunk down there (DF.crocDropChunk), fall(k)
+// runs the steps until it has landed and returns them, crossD(x, z) is how far a point is from
+// the entrance crossing (the dry gap in the moat where the one tunnel comes in, worked out here
+// from the tunnel's own points), away() sends the crocodile under at the far side to wait, dryIn(x,
+// z) is true when no water is within CROC.rockR on a 0.1 m lattice, and footAt(x, z) the dry
+// footing nearest a point within 3 m, as the crocodile's own check finds it.
+const ceiling = `${landed}
+  const drop = (x, z) => DF.crocDropChunk(x, z), fall = (k) => DF.sim(C.fallWarn + 0.5, () => { if (k.id) return false; });
+  const L = w.path.length, ent = w.edges.find((q) => (q.a === B.id && q.b === w.path[L - 2]) || (q.b === B.id && q.a === w.path[L - 2]));
+  const ep = ent.a === B.id ? ent.pts.slice().reverse() : ent.pts; let mo = ep[0];
+  for (const q of ep) if (Math.hypot(q.x - B.x, q.z - B.z) >= B.r) mo = q; else break;
+  const ea = Math.atan2(mo.x - B.x, mo.z - B.z), ex = Math.sin(ea), ez = Math.cos(ea), S = DF.SEWER;
+  const crossD = (x, z) => { const dx = x - B.x, dz = z - B.z, al = dx * ex + dz * ez, ac = Math.abs(dx * ez - dz * ex);
+    return Math.hypot(Math.max(0, B.r - S.moatW - al, al - B.r), Math.max(0, ac - S.crossW / 2)); };
+  const away = () => { const sh = DF.crocShores(e, w); let f = sh[0], fd = 0; for (const q of sh) { const d = Math.hypot(q.x - p.x, q.z - p.z); if (d > fd) (fd = d), (f = q); }
+    Object.assign(e, { mode: "under", hidden: true, modeT: 1e6, spot: f, path: null, state: "chase", atk: null, plan: null, wet: false, rolling: false }); };
+  const dryIn = (x, z) => { for (let i = -14; i <= 14; i++) for (let j = -14; j <= 14; j++) if (Math.hypot(i, j) * 0.1 <= C.rockR && w.waterAt(x + i * 0.1, z + j * 0.1) !== 0) return false; return true; };
+  const footAt = (x, z) => { let b = null, bd = 1e9; for (let i = -6; i <= 6; i++) for (let j = -6; j <= 6; j++) { const qx = x + i * 0.5, qz = z + j * 0.5, d = Math.hypot(i, j) * 0.5;
+    if (d <= 3 && d < bd && w.waterAt(qx, qz) < 0.5 && w.fieldAt(qx, qz) >= e.r && w.los(x, z, qx, qz)) (bd = d), (b = { x: qx, z: qz }); } return b; };`;
+const kstep = (name, body) => cstep(name, `${ceiling}\n${body}`);
+const ceilingSteps = [
+  step("it finds the entrance crossing", `const bad = [], S = DF.SEWER;
+  for (let s = 1; s <= 12; s++) { const w = DF.genSewer(s), B = w.boss, L = w.path.length;
+    const ent = w.edges.find((q) => (q.a === B.id && q.b === w.path[L - 2]) || (q.b === B.id && q.a === w.path[L - 2]));
+    const ep = ent.a === B.id ? ent.pts.slice().reverse() : ent.pts; let mo = ep[0];
+    for (const q of ep) if (Math.hypot(q.x - B.x, q.z - B.z) >= B.r) mo = q; else break;
+    const ea = Math.atan2(mo.x - B.x, mo.z - B.z), X = DF.crocCrossing({}, w), a = X && Math.atan2(X.bx - B.x, X.bz - B.z);
+    const off = X ? Math.abs(Math.atan2(Math.sin(a - ea), Math.cos(a - ea))) : null;
+    if (!X || off > 0.02 || X.hw < S.crossW / 2 || X.hw > S.crossW / 2 + 1.5 || Math.abs(Math.hypot(X.bx - X.ax, X.bz - X.az) - S.moatW) > 1e-6) bad.push({ s, off, hw: X && X.hw }); }
+  return { pass: bad.length === 0, bad };`),
+  kstep("no ceiling before half health", `
+  const list = Array.isArray(G.chunks); let most = 0;
+  e.marks = 0; DF.sim(30, () => { keep(); most = Math.max(most, G.chunks ? G.chunks.length : 0); });
+  e.marks = 1; e.hp = 600; DF.sim(30, () => { keep(); most = Math.max(most, G.chunks ? G.chunks.length : 0); });
+  return { pass: list && most === 0 && e.marks === 1 && e.mode !== "wait", list, most, marks: e.marks, mode: e.mode };`),
+  kstep("chunks fall on the dry ring with a warning", `
+  e.marks = 2; e.hp = 400;
+  // the player stands about the ring, a while beside the crossing's inner end
+  const at = [ringAt(14), { x: B.x + ex * (B.r - S.moatW - 2.5), z: B.z + ez * (B.r - S.moatW - 2.5) }, ringAt(10, 2), ringAt(18, 4)];
+  const seen = new Map(); let most = 0;
+  DF.sim(60, (i) => { keep();
+    for (const k of G.chunks) { if (!seen.has(k)) seen.set(k, { at: i, x: k.x, z: k.z, f: w.fieldAt(k.x, k.z), d: Math.hypot(k.x - p.x, k.z - p.z) });
+      const s = seen.get(k); if (k.id && s.land === undefined) { s.land = i; s.f1 = w.fieldAt(k.x, k.z); } }
+    most = Math.max(most, G.chunks.filter((k) => k.id).length);
+    if (i % 900 === 0) put(at[(i / 900) % at.length]); });
+  const all = [...seen.values()], bad = [];
+  for (const s of all) {
+    const why = [];
+    if (!dryIn(s.x, s.z)) why.push("wet");
+    if (Math.hypot(s.x - B.x, s.z - B.z) > B.r) why.push("out");
+    if (s.f < C.rockR + 0.5 - 1e-6) why.push("tight");
+    if (crossD(s.x, s.z) < 4 - 1e-6) why.push("crossing");
+    if (s.d < 3 - 1e-6 || s.d > 8 + 1e-6) why.push("far");
+    // one that appeared too near the end to have landed yet is only checked for where it is
+    const late = s.at > 3600 - (C.fallWarn + 0.1) * 60;
+    if (!late && (s.land === undefined || Math.abs(s.land - s.at - C.fallWarn * 60) > 2)) why.push("warn");
+    if (!late && !(s.f1 < 0)) why.push("rock");
+    if (why.length) bad.push({ ...s, why });
+  }
+  return { pass: all.length >= 4 && bad.length === 0 && most <= C.rockCap, n: all.length, most, bad: bad.slice(0, 4), near: Math.min(...all.map((s) => crossD(s.x, s.z))) };`),
+  kstep("a chunk hurts the player, not the crocodile", `
+  e.marks = 0; away(); p.buff = null; G.grabGrace = 0;
+  const hurt = (setup) => { p.hp = p.maxHp; p.iframe = 0; p.state = "free"; setup(); const k = drop(p.x + 0.3, p.z + 0.2), h0 = p.hp; fall(k);
+    const r = { lost: h0 - p.hp, clear: w.fieldAt(p.x, p.z), rock: w.fieldAt(k.x, k.z) }; DF.keys[DF.BIND.guard] = false; DF.sim(0.5, keep); return r; };
+  const open = hurt(() => {});
+  // a dodge's invulnerability avoids it; a guard does not
+  const dodge = hurt(() => { p.iframe = 9; });
+  p.iframe = 0;
+  const guard = hurt(() => { const k0 = { x: p.x + 0.3, z: p.z + 0.2 }; p.yaw = Math.atan2(k0.x - p.x, k0.z - p.z); DF.keys[DF.BIND.guard] = true; DF.sim(0.2); });
+  // one beside the crocodile up on land: it is not hurt and not left in the rock
+  begin(); until(() => e.mode === "land", 25); until(() => e.state === "chase", 3); e.landT = 30; e.hp = 700;
+  // the chunk follows it until it lands, so it lands on it wherever it goes
+  const k = drop(e.x, e.z), hp0 = e.hp; let worst = 1e9;
+  DF.sim(C.fallWarn + 1, () => { keep(); if (!k.id) { k.x = e.x + Math.sin(e.yaw) * 0.6; k.z = e.z + Math.cos(e.yaw) * 0.6; } else worst = Math.min(worst, w.fieldAt(e.x, e.z)); });
+  const croc = { hp: e.hp, hp0, worst, mode: e.mode, rock: w.fieldAt(k.x, k.z) };
+  return { pass: open.lost === C.fallDmg && open.clear >= p.r - 0.1 && open.rock < 0 && dodge.lost === 0 && dodge.clear >= p.r - 0.1 && guard.lost === C.fallDmg &&
+    croc.hp === hp0 && croc.rock < 0 && croc.worst >= e.r - 1e-3, open, dodge, guard, croc };`),
+  kstep("at most rockCap heaps", `
+  e.marks = 0; away();
+  const a0 = Math.atan2(p.x - B.x, p.z - B.z), spots = [];
+  for (let k = 0; k < 8; k++) spots.push(ringAt(15, a0 + 0.5 + k * 0.55));
+  const base = spots.map((q) => w.fieldAt(q.x, q.z)), ks = [], log = []; let most = 0;
+  for (let k = 0; k < 8; k++) { ks.push(drop(spots[k].x, spots[k].z)); fall(ks[k]); DF.sim(0.1, keep);
+    const up = G.chunks.filter((q) => q.id); most = Math.max(most, up.length);
+    log.push({ up: up.length, rocks: spots.map((q, i) => w.fieldAt(q.x, q.z) < 0 ? 1 : 0).join("") }); }
+  const stand = G.chunks.filter((q) => q.id), last5 = stand.length === 5 && stand.every((q, i) => q === ks[i + 3]);
+  const gone = [0, 1, 2].every((i) => Math.abs(w.fieldAt(spots[i].x, spots[i].z) - base[i]) < 1e-6), up = [3, 4, 5, 6, 7].every((i) => w.fieldAt(spots[i].x, spots[i].z) < 0);
+  // the sixth took the first, and only the first
+  const sixth = log[5].rocks === "01111100";
+  return { pass: most === C.rockCap && last5 && gone && up && sixth, most, last5, gone, up, sixth, log };`),
+  rstep("rubble never traps it", `
+  ${ceiling.slice(landed.length)}
+  e.marks = 2; e.hp = 400; place(); grab(); const held = p.state === "held";
+  const forced = { spot: 0, foot: 0, roll: 0, climb: 0, on: 0 }, bad = [], pbad = []; let lastSpot = null, lastHold = null, climbFor = null, onT = 0, ups = 0, was = e.mode;
+  DF.sim(60, (i) => { keep();
+    if (e.mode === "under" && e.spot && e.spot !== lastSpot) { lastSpot = e.spot;
+      if (forced.spot <= forced.foot) { drop(e.spot.x, e.spot.z); forced.spot++; } else { const q = footAt(e.spot.x, e.spot.z); if (q) { drop(q.x, q.z); forced.foot++; } } }
+    if (p.state === "held" && p.hold && p.hold.by === e && p.hold !== lastHold) { lastHold = p.hold; drop(p.hold.tx, p.hold.tz); drop((p.x + p.hold.tx) / 2, (p.z + p.hold.tz) / 2); forced.roll++; }
+    if (e.mode === "land" && e.wet && !e.rolling && !["wind", "act", "hold", "stagger"].includes(e.state) && climbFor !== e.lastSpot) { climbFor = e.lastSpot;
+      const q = footAt(e.x, e.z); if (q) { drop(q.x, q.z); forced.climb++; } }
+    if (e.mode === "land" && !e.hidden && i - onT > 7 * 60) { onT = i; drop(e.x, e.z); forced.on++; }
+    if (was !== "land" && e.mode === "land") ups++; was = e.mode;
+    const near = (o) => G.chunks.map((k) => ({ d: +Math.hypot(k.x - o.x, k.z - o.z).toFixed(2), id: k.id, t: +k.t.toFixed(2), wat: +w.waterAt(k.x, k.z).toFixed(2) })).filter((k) => k.d < 5);
+    if ((e.mode === "land" || e.mode === "dive") && !e.hidden && w.fieldAt(e.x, e.z) < e.r - 1e-3) bad.push({ i, mode: e.mode, state: e.state, f: w.fieldAt(e.x, e.z), wet: e.wet, wat: w.waterAt(e.x, e.z), ok: DF.footOk(e, e.x, e.z), okk: DF.footOk(e, e.okx, e.okz), near: near(e) });
+    if (w.fieldAt(p.x, p.z) < p.r - 0.1) pbad.push({ i, f: w.fieldAt(p.x, p.z), state: p.state, near: near(p), kx: p.kx, kz: p.kz, held: !!p.hold });
+    // the player keeps near it, so it keeps fighting
+    if (i % 240 === 0 && e.mode === "land" && Math.hypot(p.x - e.x, p.z - e.z) > 6) { const a = Math.atan2(p.x - e.x, p.z - e.z), q = { x: e.x + Math.sin(a) * 3.5, z: e.z + Math.cos(a) * 3.5 };
+      if (w.fieldAt(q.x, q.z) >= 1) put(q); } });
+  return { pass: held && bad.length === 0 && pbad.length === 0 && forced.spot >= 1 && forced.foot >= 1 && forced.roll >= 1 && forced.climb >= 1 && forced.on >= 1 && ups >= 2,
+    held, forced, ups, bad: bad.slice(0, 4), pbad: pbad.slice(0, 4) };`),
+  kstep("leaving clears the rubble", `
+  e.marks = 0; away();
+  const a0 = Math.atan2(p.x - B.x, p.z - B.z), spots = [0, 1, 2].map((k) => ringAt(15, a0 + 0.6 + k * 0.6)), base = spots.map((q) => w.fieldAt(q.x, q.z));
+  // a rock that is not the ceiling's (a cave-in's, say) stands elsewhere and is left alone
+  const o = ringAt(12, a0 + 3), other = w.addRock(o.x, o.z, o.x + 0.5, o.z, 1);
+  try {
+    for (const q of spots) fall(drop(q.x, q.z));
+    const before = { n: G.chunks.length, rocks: spots.every((q) => w.fieldAt(q.x, q.z) < 0) };
+    put(out); const n = until(() => e.mode === "wait", 1);
+    const after = { n: G.chunks.length, back: spots.every((q, i) => Math.abs(w.fieldAt(q.x, q.z) - base[i]) < 1e-6), other: w.fieldAt(o.x, o.z) < 0 };
+    // a respawn clears the list too
+    put(ring); DF.sim(0.2, keep); fall(drop(spots[0].x, spots[0].z)); const n1 = G.chunks.length; DF.respawn(); G.manual = true;
+    const re = { n1, n: G.chunks.length, back: Math.abs(w.fieldAt(spots[0].x, spots[0].z) - base[0]) < 1e-6 };
+    return { pass: before.n === 3 && before.rocks && n < 60 && after.n === 0 && after.back && after.other && re.n1 === 1 && re.n === 0 && re.back, before, after, re };
+  } finally { w.removeRock(other); }`),
+  kstep("its death leaves the heaps that have landed", `
+  e.marks = 3; e.hp = 50; e.landT = 30;
+  const a0 = Math.atan2(p.x - B.x, p.z - B.z), spots = [0, 1, 2].map((k) => ringAt(15, a0 + 0.6 + k * 0.6));
+  try {
+    fall(drop(spots[0].x, spots[0].z)); fall(drop(spots[1].x, spots[1].z)); const k2 = drop(spots[2].x, spots[2].z);
+    DF.hitEnemy(e, 500, 0, { heavy: true }); const dead = !!e.dead; DF.sim(3, keep);
+    const r = { dead, n: G.chunks.length, landed: G.chunks.every((q) => q.id), rocks: [0, 1].every((i) => w.fieldAt(spots[i].x, spots[i].z) < 0), pending: w.fieldAt(spots[2].x, spots[2].z) >= 0, k2: k2.id };
+    return { pass: r.dead && r.n === 2 && r.landed && r.rocks && r.pending && !r.k2, ...r };
+  } finally { DF.resetCleared(); G.bossDead = false; }`),
+  { ...kstep("a dust warning and a landed heap, for looking at", `
+  e.marks = 0; away();
+  const q = ringAt(13), a = Math.atan2(B.x - q.x, B.z - q.z) + 0.9; put(q);
+  const pt = (d, s) => ({ x: p.x + Math.sin(a) * d + Math.cos(a) * s, z: p.z + Math.cos(a) * d - Math.sin(a) * s });
+  const h = pt(8, 1.5); fall(drop(h.x, h.z));
+  const wv = pt(5.5, -1.8), fv = pt(9, -3.5); const kw = drop(wv.x, wv.z), kf = drop(fv.x, fv.z);
+  DF.sim(C.fallWarn * 0.45, keep); kf.t = 0.07;
+  p.yaw = cam.yaw = a; cam.pitch = 0.32; cam.px = p.x; cam.pz = p.z; p.fig.root.s = [0.0001, 0.0001, 0.0001];
+  return { pass: !!h && G.chunks.length === 3 && !kw.id && !kf.id, n: G.chunks.length };`), wait: 500, shot: "t25-ceiling" },
+  step("the player is put back again", `G.player.fig.root.s = [1, 1, 1]; DF.newRun(99); return { pass: true };`),
+];
+export default [...base, ...crocSteps, ...rollSteps, ...markSteps, ...tunnelSteps, ...ceilingSteps];

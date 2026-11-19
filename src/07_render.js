@@ -620,7 +620,9 @@ function buildLights() {
 // high, taller than a person, laid out once from the entry's seed so they do not flicker. Each rock
 // keeps where it lands in `hx`, `ty` and `hz`.
 const RUBBLE = [hexc(0x7a6656), hexc(0x66564a), hexc(0x8a7766)];
-function makeRubble(c) {
+// rows: the offsets of its rows of rocks across the ridge (along c.yaw); the
+// middle rows, within 0.3 of the ridge, stand a layer higher
+function makeRubble(c, rows = [-0.55, 0, 0.55]) {
   const root = new Nd(),
     r = rng(c.seed),
     L = Math.hypot(c.bx - c.ax, c.bz - c.az),
@@ -629,8 +631,8 @@ function makeRubble(c) {
     const s = i / n,
       x = lerp(c.ax, c.bx, s),
       z = lerp(c.az, c.bz, s);
-    for (const row of [-0.55, 0, 0.55]) {
-      const layers = row === 0 ? 4 : 3;
+    for (const row of rows) {
+      const layers = Math.abs(row) < 0.3 ? 4 : 3;
       for (let k = 0; k < layers; k++) {
         const sz = 0.6 + r() * 0.35 - k * 0.04,
           q = root.add(
@@ -787,6 +789,23 @@ function drawCaveIns() {
     R.drawNode(c.node);
   }
 }
+// A chunk of the crocodile's cavern ceiling: drawn as a cave-in's rubble, a
+// round heap the size of its rock, falling from the roof over the last 0.3 s
+// of its warning (the warning itself is drawDust's)
+const CHUNK_ROWS = [-0.95, 0, 0.95];
+function drawChunks() {
+  for (const k of G.chunks) {
+    const fall = k.id ? 1 : sat(1 - k.t / 0.3);
+    if (fall <= 0) continue;
+    if (!k.node) {
+      const ux = Math.cos(k.yaw) * 0.95,
+        uz = -Math.sin(k.yaw) * 0.95;
+      k.node = makeRubble({ seed: k.seed, yaw: k.yaw, ax: k.x - ux, az: k.z - uz, bx: k.x + ux, bz: k.z + uz }, CHUNK_ROWS);
+    }
+    for (const q of k.node.ch) q.p[1] = lerp(k.ceil, q.ty, fall * fall);
+    R.drawNode(k.node);
+  }
+}
 // The sewer's moving set, drawn each frame: water pouring from the boss
 // cavern's wall tunnels into the pools below, and shafts of light down from
 // the cracks in its dome. Nothing is drawn for a world without them.
@@ -922,6 +941,7 @@ function render() {
     R.drawNode(e.fig.root, e.fig.rim);
   }
   drawCaveIns();
+  drawChunks();
   drawMines();
   drawRifts();
   drawHoles();
@@ -930,6 +950,7 @@ function render() {
   drawSongs();
   drawWakes();
   drawMouths();
+  drawDust();
   // ---- fx ----
   if (p.state !== "dead") {
     R.blob(p.x, p.z, 0.8, 0.55);

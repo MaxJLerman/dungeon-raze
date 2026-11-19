@@ -573,6 +573,13 @@ EBEH.grabber = {
 //   tunCap    the most that hits may take off it in one tunnel phase
 //   dropT     how long the drop from the last mouth into the water lasts,
 //             and the fall to the ring when a parried plate knocks it down
+// and for the falling ceiling, from the 50% mark:
+//   fallEvery how often a chunk of the ceiling comes down, from and to, in s
+//   fallWarn  how long its dust warning shows on the floor before it lands
+//   fallR     how near its centre a player is hurt as it lands
+//   fallDmg   what that does to them
+//   rockR     the radius of the rubble it leaves (a short capsule)
+//   rockCap   how many heaps stand at once; a new one brings the oldest down
 const CROC = {
   under: [3, 5],
   swim: 7,
@@ -599,6 +606,12 @@ const CROC = {
   tunCap: 100,
   dropT: 0.6,
   plateWait: 4,
+  fallEvery: [6, 10],
+  fallWarn: 1.4,
+  fallR: 1.6,
+  fallDmg: 20,
+  rockR: 1.4,
+  rockCap: 5,
 };
 // the rearing slam's hit is centred this far in front of it
 const CROC_SLAM_AHEAD = 1;
@@ -715,7 +728,9 @@ function crocReset(e) {
     aloft: false,
     safe: false,
     tun: null,
+    fallT: crocFallT(),
   });
+  crocClearChunks(G.world);
   G.bossSeen = false;
 }
 // The water it swims under: points 1 m apart over the cavern with room for
@@ -1102,8 +1117,198 @@ function crocTunnelStep(e, dt, c) {
   crocUnder(e);
   return true;
 }
+// ---- the falling ceiling ----
+// From the 50% mark (e.marks 2) a chunk of the cavern's ceiling comes down
+// every CROC.fallEvery s while the fight is on. Each is an entry of G.chunks,
+// { x, z, t, id, yaw, seed, ceil }: t counts down its dust warning
+// (drawDust), and id is its rock once it lands (0 until then). It lands only
+// on the dry ring, never in water or on the entrance crossing, hurts a player
+// under it and never an enemy, and at most CROC.rockCap heaps stand at once.
+// Its death leaves the heaps that have landed; a reset takes them all away.
+// how far a chunk's capsule runs either side of its centre
+const CROC_CHUNK_HL = 0.4;
+// how far a chunk keeps from the entrance crossing
+const CROC_CROSS_KEEP = 4;
+const crocFallT = () => CROC.fallEvery[0] + Math.random() * (CROC.fallEvery[1] - CROC.fallEvery[0]);
+// The entrance crossing, the dry gap in the moat where the cavern's one
+// tunnel comes in: the longest arc of the circle through the middle of the
+// moat that is not all water (waterAt below 1, so the gap runs out to the
+// water's first grid points and is never narrower than the floor drawn dry).
+// { ax, az, bx, bz, hw }: its middle line, from the moat's inner edge to the
+// wall, and its half width. null when the moat has no gap. Cached on e.cross.
+function crocCrossing(e, w) {
+  if (e.cross !== undefined) return e.cross;
+  const B = w.boss,
+    r = B.r - SEWER.moatW / 2,
+    N = 1440,
+    dry = (k) => w.waterAt(B.x + Math.sin((k / N) * TAU) * r, B.z + Math.cos((k / N) * TAU) * r) < 1;
+  let s0 = 0;
+  while (s0 < N && dry(s0)) s0++;
+  let best = null;
+  // runs of dry samples, starting from a wet one so none is cut in two
+  for (let k = 1, run = 0; k <= N && s0 < N; k++) {
+    if (dry((s0 + k) % N)) run++;
+    else run = 0;
+    if (run && (!best || run > best.n)) best = { n: run, end: s0 + k };
+  }
+  if (!best) return (e.cross = null);
+  const a = ((best.end - (best.n - 1) / 2) / N) * TAU,
+    ux = Math.sin(a),
+    uz = Math.cos(a);
+  return (e.cross = {
+    ax: B.x + ux * (B.r - SEWER.moatW),
+    az: B.z + uz * (B.r - SEWER.moatW),
+    bx: B.x + ux * B.r,
+    bz: B.z + uz * B.r,
+    hw: ((best.n / N) * TAU * r) / 2,
+  });
+}
+// No water within CROC.rockR of (x, z): every grid point of the world's
+// field within rockR + 1.5 is dry, so no cell the disc reaches has a wet
+// corner and waterAt reads 0 all over it.
+function crocChunkDry(w, x, z) {
+  const R = CROC.rockR + 1.5,
+    ox = w.minX || 0,
+    oz = w.minZ || 0;
+  for (let i = Math.ceil(x - R - ox); i <= x + R - ox; i++)
+    for (let j = Math.ceil(z - R - oz); j <= z + R - oz; j++) {
+      const gx = ox + i,
+        gz = oz + j;
+      if (Math.hypot(gx - x, gz - z) <= R && w.waterAt(gx, gz) > 0) return false;
+    }
+  return true;
+}
+// Where the next chunk comes down: a point 3 to 8 m from the player inside
+// the cavern, dry within CROC.rockR, with fieldAt at least rockR + 0.5,
+// CROC_CROSS_KEEP from the entrance crossing, clear of the crocodile's body
+// and 2 rockR from every other chunk; null when none of 40 tries fits.
+function crocChunkSpot(e, w, p) {
+  const B = w.boss,
+    R = CROC.rockR,
+    X = crocCrossing(e, w);
+  for (let k = 0; k < 40; k++) {
+    const a = Math.random() * TAU,
+      d = 3 + Math.random() * 5,
+      x = p.x + Math.sin(a) * d,
+      z = p.z + Math.cos(a) * d;
+    if (Math.hypot(x - B.x, z - B.z) > B.r || w.fieldAt(x, z) < R + 0.5) continue;
+    if (X && segDist(x, z, X.ax, X.az, X.bx, X.bz) - X.hw < CROC_CROSS_KEEP) continue;
+    if (Math.hypot(x - e.x, z - e.z) < e.r + R) continue;
+    if (G.chunks.some((q) => Math.hypot(q.x - x, q.z - z) < 2 * R)) continue;
+    if (crocChunkDry(w, x, z)) return { x, z };
+  }
+  return null;
+}
+// A chunk starts to come down at (x, z): its warning shows from now.
+function crocDropChunk(x, z) {
+  const k = {
+    x,
+    z,
+    t: CROC.fallWarn,
+    id: 0,
+    yaw: Math.random() * TAU,
+    seed: (Math.random() * 1e9) | 0,
+    ceil: G.world.ceilAt(x, z),
+  };
+  G.chunks.push(k);
+  SFX.crumble();
+  return k;
+}
+// A heap gives way: its rock out of the field, and every route asked again.
+function crocChunkGone(w, k) {
+  w.removeRock(k.id);
+  for (const o of G.enemies) o.route = null;
+  sparks(k.x, 0.8, k.z, 14, [0.55, 0.5, 0.45], 3, 0.8, 0.22);
+  G.chunks = G.chunks.filter((q) => q !== k);
+}
+// Every chunk away, its rock out of the field: only the ceiling's own, so a
+// cave-in standing elsewhere stays.
+function crocClearChunks(w) {
+  for (const k of G.chunks || []) if (k.id) w.removeRock(k.id);
+  G.chunks = [];
+}
+// Moves o to the nearest point where ok holds, on rings 0.25 m apart out to
+// 10 m; false, and o where it was, when there is none.
+function crocFree(o, ok) {
+  if (ok(o.x, o.z)) return true;
+  for (let r = 0.25; r <= 10 + 1e-6; r += 0.25)
+    for (let i = 0, n = Math.max(16, Math.ceil(r * 8)); i < n; i++) {
+      const a = (i / n) * TAU,
+        x = o.x + Math.sin(a) * r,
+        z = o.z + Math.cos(a) * r;
+      if (ok(x, z)) {
+        o.x = x;
+        o.z = z;
+        return true;
+      }
+    }
+  return false;
+}
+// A chunk lands: the oldest heap gives way when rockCap stand, the rock goes
+// into the field, a player within CROC.fallR is hurt (unblockable; a
+// dodge's invulnerability avoids it), and nobody is left inside: each body
+// goes out from its line and is resolved, and one still in rock (a pocket
+// between heaps, which resolve cannot climb out of) goes to the nearest
+// point with room for it, for a body with a foot hook (the crocodile) the
+// nearest it may stand on.
+function crocChunkLand(w, k) {
+  const p = G.player,
+    stand = G.chunks.filter((q) => q.id);
+  if (stand.length >= CROC.rockCap) crocChunkGone(w, stand[0]);
+  const ux = Math.cos(k.yaw) * CROC_CHUNK_HL,
+    uz = -Math.sin(k.yaw) * CROC_CHUNK_HL;
+  Object.assign(k, { ax: k.x - ux, az: k.z - uz, bx: k.x + ux, bz: k.z + uz, t: 0 });
+  k.id = w.addRock(k.ax, k.az, k.bx, k.bz, CROC.rockR);
+  if (p.state !== "dead" && Math.hypot(p.x - k.x, p.z - k.z) < CROC.fallR)
+    hurtPlayer(CROC.fallDmg, null, { dmg: CROC.fallDmg, unb: true, px: k.x, pz: k.z });
+  const out = (o, r) => {
+    const sx = k.bx - k.ax,
+      sz = k.bz - k.az,
+      s = clamp(((o.x - k.ax) * sx + (o.z - k.az) * sz) / (sx * sx + sz * sz), 0, 1),
+      cx = k.ax + sx * s,
+      cz = k.az + sz * s;
+    let dx = o.x - cx,
+      dz = o.z - cz;
+    const d = Math.hypot(dx, dz),
+      need = CROC.rockR + r + 0.15;
+    if (d >= need) return;
+    if (d > 1e-3) (dx /= d), (dz /= d);
+    else (dx = Math.sin(k.yaw)), (dz = Math.cos(k.yaw));
+    o.x = cx + dx * need;
+    o.z = cz + dz * need;
+    w.resolve(o, r);
+  };
+  const room = (r) => (x, z) => w.fieldAt(x, z) >= r;
+  out(p, p.r);
+  crocFree(p, room(p.r));
+  for (const o of G.enemies) {
+    o.route = null;
+    if (o.dead || o.def.dummy || o.hidden || o.aloft || o.state === "fall") continue;
+    out(o, o.r);
+    if (!crocFree(o, (x, z) => w.fieldAt(x, z) >= o.r && footOk(o, x, z))) crocFree(o, room(o.r));
+    o.okx = o.x;
+    o.okz = o.z;
+  }
+  sparks(k.x, 0.5, k.z, 30, [0.55, 0.5, 0.45], 6, 0.8, 0.22);
+  G.shake = Math.max(G.shake, 0.8);
+  SFX.rumble();
+}
+// Each step of the fight: the chunks in the air come down when their warning
+// is up, and from the 50% mark a new one starts every CROC.fallEvery s (half
+// a second later when no spot fits).
+function crocCeiling(e, dt, c) {
+  for (const k of [...G.chunks]) if (!k.id && (k.t -= dt) <= 0) crocChunkLand(c.w, k);
+  if (e.marks < 2 || (e.fallT -= dt) > 0) return;
+  const q = crocChunkSpot(e, c.w, c.p);
+  e.fallT = q ? crocFallT() : 0.5;
+  if (q) crocDropChunk(q.x, q.z);
+}
 EBEH.croc = {
   foot: crocFoot,
+  // its death leaves the heaps that have landed, and no chunk still to fall
+  death() {
+    G.chunks = G.chunks.filter((k) => k.id);
+  },
   // no hit takes it past the floor (the next mark, or the tunnel cap); up
   // in the wall no hit adds posture, and a plate parried back from the
   // mouth it stands at knocks it down, once a phase
@@ -1143,6 +1348,7 @@ EBEH.croc = {
     e.rollCD = Math.max(0, (e.rollCD || 0) - dt);
     // leaving the cavern or dying ends the fight, in every mode
     if (e.mode !== "wait" && (e.state === "return" || !G.inBoss || !c.alive)) crocReset(e);
+    if (e.mode !== "wait") crocCeiling(e, dt, c);
     // a mark reached, once an execution of it has played out: it lets go of
     // a held player, drops its attack (a stagger too) and leaps at once
     if (

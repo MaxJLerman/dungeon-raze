@@ -56,7 +56,8 @@ is what you need to change the code without breaking it.
   cavern's wall tunnels and throws spiked plates from one mouth after
   another, then drops back into the water. Shots hurt it there up to a cap
   per phase, and a parried plate knocks it down onto the ring, staggered.
-  The falling ceiling, bloaters down the falls and its shadow remain. A D
+  Below half health chunks of the cavern's ceiling fall on the dry ring and
+  stay as rubble. Bloaters down the falls and its shadow remain. A D
   run made live by hand has
   no E type in it. The design is in
   `docs/superpowers/specs/2026-11-19-d-enemies-design.md` for the enemies,
@@ -154,8 +155,8 @@ is what you need to change the code without breaking it.
   out again. `fieldFns` keeps a copy of the base field on the first rock, and
   each point a rock covers (its box grown by `ROCK_PAD`) holds the least of
   the base and every live rock's distance, so overlapping rocks do not open
-  each other. This is how the Sapper's rubble blocks movement, sight, routes,
-  shots and the camera. **Rubble is only ever a change to the field.** Never
+  each other. This is how the Sapper's rubble and the crocodile's fallen
+  ceiling block movement, sight, routes, shots and the camera. **Rubble is only ever a change to the field.** Never
   give a reader of the field a rubble check of its own.
   In the cave, `ceilAt` is worked out from the field, so the ceiling the
   camera collides with drops near rubble while the drawn ceiling stays put.
@@ -344,7 +345,8 @@ is what you need to change the code without breaking it.
   `G.trans` is set, so `DF.sim` drives it in tests.
 - `resetRun()` clears everything that must not cross a world swap. Add new
   per-run state there. It clears `G.inBoss`, the flag for the player being
-  inside the boss chamber.
+  inside the boss chamber, and `G.chunks`, the crocodile's falling ceiling
+  (`respawn` clears it too).
 - `R.env` (ambient and fog) is set per zone from `ENV_HUB`, `ENV_CAVE` and, for
   the sewer, `ENV_SEWER` (damp green-dark, thicker fog), through `ENV_GRADE`.
   `setEnv` copies the preset.
@@ -1007,10 +1009,10 @@ table runs exactly as before.
   attack token while she stands off. `respawn` rebuilds the enemies, so her
   rats are gone and her timer starts fresh.
 - **D effects** live in `07b_dfx.js`, which `07_render.js` calls each frame:
-  `drawClouds`, `drawShocks`, `drawSongs`, `drawWakes` and `drawMouths`,
-  and for each plate in flight `drawPlate`. Each reads the
+  `drawClouds`, `drawShocks`, `drawSongs`, `drawWakes`, `drawMouths` and
+  `drawDust`, and for each plate in flight `drawPlate`. Each reads the
   game's list (`G.clouds`, `G.shocks`, the singing sirens, the crocodile
-  under the water or in its tunnels) and draws only effects
+  under the water or in its tunnels, `G.chunks`) and draws only effects
   (`R.sprite`, `R.ring`, `R.flat`), so it is all additive and the sewer's
   triangle budget is untouched. `resetRun` and `respawn` clear both lists.
 - **The bloater** (`bloater`, threat 0, `bound: "water"`) floats in a pool or
@@ -1093,7 +1095,9 @@ table runs exactly as before.
     cavern or the player dying, in any mode, and the shared give-up (state
     `return`) call `crocReset`: full health, `e.marks` 0, `wait`, hidden at
     its post, unaware, not aloft or safe, `y` 0, no `e.tun`, `G.bossSeen`
-    false. Plates already thrown fly on.
+    false, and every chunk of the falling ceiling gone with its rock (by
+    id, so a cave-in standing elsewhere stays). Plates already thrown fly
+    on.
   - `crocShores(e, w)` (cached on `e.shores`) is every water point on a
     1 m lattice centred on the cavern with `fieldAt` at least `e.r` and dry
     footing within 3 m (`crocDry`: a 0.5 m lattice in a clear line).
@@ -1207,6 +1211,45 @@ table runs exactly as before.
     before each plate and flinging it up and out as the plate flies; the
     tail lashes inside the outlet, out of sight. Knocked down, it rolls
     over once as it falls and lands flat.
+  - **The falling ceiling** (`crocCeiling`, run by its step in every mode
+    but `wait`). From the 50% mark (`e.marks` 2), every `CROC.fallEvery`
+    (6 to 10 s, `e.fallT`, set by `crocReset`) a chunk starts to fall at
+    `crocChunkSpot(e, w, p)`: of 40 random points 3 to 8 m from the
+    player, the first inside the cavern with no water within `CROC.rockR`
+    (1.4 m; `crocChunkDry` checks every grid point within `rockR + 1.5`,
+    so `waterAt` is 0 all over the disc), `fieldAt` at least `rockR +
+    0.5`, `CROC_CROSS_KEEP` (4 m) from the entrance crossing, `e.r +
+    rockR` from it and `2 * rockR` from every other chunk; none tried
+    again half a second later. `crocCrossing(e, w)` (cached on `e.cross`)
+    finds the crossing from the world: the longest arc of the circle
+    through the middle of the moat that is not all water (`waterAt` below
+    1), as `{ ax, az, bx, bz, hw }`, its middle line from the moat's inner
+    edge to the wall and its half width (2 to 3 m). A chunk is an entry of
+    `G.chunks`, `{ x, z, t, id, yaw, seed, ceil }` (`crocDropChunk(x, z)`
+    starts one; tests force them with it): `t` counts down its warning,
+    `CROC.fallWarn` (1.4 s), and `id` is its rock once it lands (0 till
+    then). Landing (`crocChunkLand`): with `CROC.rockCap` (5) heaps
+    standing the oldest gives way first; the rock goes in with `addRock`,
+    a capsule `CROC_CHUNK_HL` (0.4 m) either side of the centre of radius
+    `rockR`; a player within `CROC.fallR` (1.6 m) takes `CROC.fallDmg`
+    (20) through `hurtPlayer`, unblockable (a dodge's invulnerability
+    avoids it); and every body is put out of the rock, out from its line
+    and `resolve`d, then, if still in rock (a pocket between heaps that
+    `resolve` cannot climb out of), moved to the nearest point with room
+    for it (`crocFree`, rings out to 10 m), for the crocodile the nearest
+    it may stand on. It never hurts an enemy. Its routes are dropped as
+    for a cave-in. The crocodile's own checks keep it out of rubble: a
+    surfacing spot or its dry footing under rock is picked again
+    (`under`, `rise`), the climb-out and the slam's footing come from
+    `crocDry`, which needs room, and `keepFooting` puts it back on its
+    footing. Its death (`death` hook) keeps the heaps that have landed
+    and drops the chunks still in the air; a reset takes them all away.
+    `drawDust` (`07b_dfx.js`) draws the warning: grit pouring from the
+    roof through a haze, the rock's shadow growing on the floor and a ring
+    at `fallR` with a second closing in to land as they meet;
+    `drawChunks` (`07_render.js`) draws the rock falling over the last
+    0.3 s and the heap, built by the cave-in's `makeRubble` with wider
+    rows (`CHUNK_ROWS`).
   - `drawWakes` (`07b_dfx.js`): under, a V of foam back from its heading
     and bubbles over it; rising, bubbles boiling up and rings widening on
     the water. Everything is drawn only where `waterAt` reads 0.5 or more.
@@ -1392,10 +1435,23 @@ The class picker and HUD read `CLASSES` and need no changes.
   the knock-down changes anything; it waits at its mouth for a plate
   parried back from it, and a plate of its own that never arrives holds
   it there `CROC.plateWait` and no longer; knocked down, it can be executed and later dives on its land
-  clock. Shots go to
+  clock. Then the falling ceiling: the crossing it keeps clear of is the
+  entrance's over seeds 1 to 12; nothing falls before the 50% mark; from it
+  chunks fall over 60 s only on the dry ring (no water within `rockR`,
+  inside the cavern, 4 m from the crossing, 3 to 8 m from the player,
+  with the player a while beside the crossing), each `fallWarn` after it
+  appears and into rock; one on the player hurts for `fallDmg` (a dodge
+  avoids it, a guard does not) and leaves them out of the rock, and one
+  landing on the crocodile neither hurts it nor leaves it in rock; at
+  most `rockCap` heaps, the oldest going first; over 60 s with heaps
+  forced on its surfacing spots and their footing, its roll's target and
+  drag line, its climb-out and on itself, it never stands in rock on
+  land, nor does the player; leaving and `respawn` clear the heaps and
+  leave other rock; its death leaves the landed heaps. Shots go to
   `shots/t25-croc-*` (idle, rear, bite, tail, roll), `t25-wake`,
   `t25-rise`, `t25-roll` (mid-roll), `t25-mouth-warn`,
-  `t25-mouth-throw` and `t25-knock` (falling, knocked down): look at them.
+  `t25-mouth-throw`, `t25-knock` (falling, knocked down) and
+  `t25-ceiling` (a warning, a chunk falling and a heap): look at them.
 - Run `tests/t22.mjs` after any change to the sewer, water, `fieldFns`,
   `meshSink`, the world shader, `visiblePieces`, cleared grades or portal
   opening: `SCRIPT=$PWD/tests/t22.mjs node test.mjs smoke`. It makes D live
@@ -1479,7 +1535,8 @@ The class picker and HUD read `CLASSES` and need no changes.
   drowned and brood mother in brood rooms and tunnels, siren or eels with
   rats and bloaters in pool rooms, bloaters in gutters, grabbers at grates)
   and Old Sluicejaw in the cavern, which leaps into its wall tunnels and
-  throws plates at each mark until a parried plate knocks it down.
+  throws plates at each mark until a parried plate knocks it down, and
+  below half health its ceiling falls in on the ring.
 - The rat, the drowned and the brood mother are untested by hand. Their
   numbers (speed, health, the cover's angle, the brood timer, cap and
   distances, placement odds) and how they look were set by tests and
@@ -1507,7 +1564,14 @@ The class picker and HUD read `CLASSES` and need no changes.
   cap) and its
   look were set without a playtest. Knocked down, it lands on the first
   dry footing past the fall pool, right at the shore. At a mouth its tail is inside the outlet, so the throw
-  reads as a toss of the head more than a tail whip.
+  reads as a toss of the head more than a tail whip. The falling
+  ceiling's numbers (a chunk every 6 to 10 s from the 50% mark, the 1.4 s
+  warning, 20 damage within 1.6 m, rock 1.4 m in radius, 5 heaps at
+  most, 3 to 8 m from the player, 4 m from the crossing) and its look
+  were set without a playtest. A heap is drawn about 2.6 m across and
+  head high over a rock 2.8 by 3.6 m, and like the Sapper's rubble it
+  blocks sight and shots as a full wall. A player or enemy caught in a
+  pocket between heaps as one lands is moved to the nearest open point.
 - A hidden grabber is invisible until it strikes, and its grate is the only
   sign. The grates are drawn for every tunnel, so a grate with no grabber
   looks the same as one with one.
