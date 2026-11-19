@@ -259,12 +259,11 @@ const HUD = (() => {
     let pts = mapPts.get(w);
     if (!pts) {
       pts = [];
-      const W1 = w.W + 1;
       for (let j = 0; j <= w.H; j += 2)
         for (let i = 0; i <= w.W; i += 2) {
-          if (w.bodyIds[j * W1 + i] < 0) continue;
           const x = i + w.minX,
             z = j + w.minZ;
+          if (w.bodyAt(x, z) < 0) continue;
           let node = -1,
             edge = -1;
           for (const n of w.nodes) {

@@ -1445,6 +1445,7 @@ function makePlayer(id) {
     speed: 0,
     dspeed: 0,
     walk: 0,
+    stride: 0,
     sprint: false,
     fig: makePlayerFig(id),
     flash: 0,
