@@ -5,9 +5,9 @@ mobile browser.
 You pick one of five classes and start in a base of operations: a hall with six
 portal frames graded E to S and a training dummy. The open portal leads to a
 procedurally generated cave of looping tunnels, where you kill the boss in the
-deepest chamber and return to the hall through the gate it opens. The next gate,
-D, leads to a sewer. It is built but sealed in the published game until its boss
-is finished.
+deepest chamber and return to the hall through the gate it opens. Killing that
+boss opens the next gate, D, which leads to a sewer with its own enemies and its
+own boss.
 
 This is a spike: it exists to find out whether the combat feels good. It is not
 a finished game, and nothing in it is balanced by hand yet.
@@ -162,16 +162,17 @@ earlier ones.
   chamber no enemy but the boss hunts you.
 - **Enemy names:** every enemy shows its name on a black plate above its head
   when it notices you or when you look at it. The colour of the name compares
-  the enemy with you. White: weaker than you (Husk, Spitter, training dummy).
-  Orange: around your level or slightly above (Brute). Red: much stronger than
-  you (the Ossuary Warden). Levels are not implemented yet, so today the
-  colour is fixed per enemy type.
+  the enemy with you. White: weaker than you (Husk, Spitter, rat, bloater,
+  training dummy). Orange: around your level or slightly above (Brute,
+  drowned, brood mother, eel, drain grabber). Red: much stronger than you
+  (the Ossuary Warden, the siren, Old Sluicejaw). Levels are not implemented
+  yet, so today the colour is fixed per enemy type.
 - **Base of operations:** a built hall where every session starts. Six portal
-  frames stand along the far wall in rank order, E to S. Only E is open; the
-  rest are sealed until grades are given difficulty and rewards. Walking into
-  the open portal starts a new cave. The D frame opens once the boss of E has
-  been killed, but only in builds where D is marked live, which the published
-  game does not do yet. The pause, death and win screens return
+  frames stand along the far wall in rank order, E to S. E is open from the
+  start, and walking into it starts a new cave. D opens once the boss of E has
+  been killed, and walking into it starts a new sewer. C to S are sealed until
+  their zones are built. Grades do not yet change difficulty or rewards. The
+  pause, death and win screens return
   you to the hall. Three plaques hang on the left-hand wall; walk up to one and
   press Interact (G, or A / Cross) to look at it.
 - **Training dummy:** stands in the hall, takes every attack and ability, can
@@ -197,10 +198,15 @@ earlier ones.
   poison cloud when it dies, so kill it from range or step back.
   Gutters in the tunnels may hold a bloater, and some tunnel grates hide a
   drain grabber that reaches out and holds you until you mash dodge or beat it
-  back. The boss is Old Sluicejaw, a crocodile that swims the cavern's moat,
-  bursts out at the shore and death-rolls you into the water, and dives at
-  each quarter of its health; D stays sealed in the published game until its
-  tunnel phase is built.
+  back. The boss is Old Sluicejaw, a crocodile that swims the cavern's moat
+  under the water, bursts out at the shore with a warning, bites, sweeps its
+  tail and death-rolls you into the water. At each quarter of its health it
+  leaps into the tunnels high in the cavern wall and throws spiked plates
+  from one mouth after another. Shots still reach it there, and parrying a
+  plate back into its mouth knocks it down onto the floor, staggered. Below
+  half health the cavern's ceiling falls in on the dry ring, with a warning
+  ring first, and the rock stays. Bloaters wash down the falls during the
+  fight, and its shadow shows in the water under the light shafts.
 - **Menus:** class picker, controls menu with rebinding, mouse sensitivity and
   inverted look, and a How to play screen with the name colour key and combat
   tips. How to play opens from the title and pause screens.
@@ -229,7 +235,7 @@ Screenshots go to `shots/`.
 | `tests/t5.mjs`  | Forty generated caves for blocked tunnels and bad spawn points                          |
 | `tests/t6.mjs`  | Every class: chain, heavy, tool, ability, rebinding, bot run per class                  |
 | `tests/t7.mjs`  | Screenshots of the menus and each class                                                 |
-| `tests/t8.mjs`  | The hall, portals, transition, training dummy and return to base. Run in `hub` mode     |
+| `tests/t8.mjs`  | The hall, portals, D opening once E is cleared, transition, training dummy and return to base. Run in `hub` mode |
 | `tests/t9.mjs`  | Screenshots of the hall, portal, dummy and the arrival in the cave. Run in `hub` mode   |
 | `tests/t10.mjs` | Enemy name tags, threat colours, look zone, How to play screen                          |
 | `tests/t11.mjs` | Screenshots of the name tags and the How to play screen                                 |
@@ -246,7 +252,7 @@ Screenshots go to `shots/`.
 | `tests/t22.mjs` | The sewer: water, D opening and the save, the layout over many seeds, brick and water drawing, only drawing what is seen, screenshots. Run in `smoke` mode |
 | `tests/t23.mjs` | The D enemies: behaviour hooks, the rat, the drowned and the brood mother, their bodies, and where the sewer places them, with screenshots. Run in `smoke` mode |
 | `tests/t24.mjs` | The siren, eel, bloater and drain grabber: rules for enemies bound to water or a wall, the held player, each type, and where the sewer places them, with screenshots. Run in `smoke` mode |
-| `tests/t25.mjs` | Old Sluicejaw, the D boss: its body, place, modes, death roll and health marks, with screenshots. Run in `smoke` mode |
+| `tests/t25.mjs` | Old Sluicejaw, the D boss: its body, place, modes, death roll, health marks, a whole D run from the hall, the tunnel phase and its plates, the falling ceiling, the bloaters down the falls and its shadow, with screenshots. Run in `smoke` mode |
 
 The touch scripts `t14` and `t15` run under emulated phones and tablets. Run
 one device with `DEVICE=pixel-9 SCRIPT=$PWD/tests/t14.mjs node test.mjs smoke`,

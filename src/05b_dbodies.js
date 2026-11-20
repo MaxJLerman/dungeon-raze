@@ -1294,11 +1294,16 @@ function makeCrocFig() {
   return finishFigure(f);
 }
 EFIG.croc = makeCrocFig;
+// At a wall tunnel it is drawn lying in the outlet, this far out from the
+// wall, on the outlet's floor (CROC_LIP below the mouth's height), facing out
+// of it, with its head and forelegs out over the lip.
+const CROC_PERCH = 0.3,
+  CROC_LIP = 0.8;
 // Walks low with a diagonal gait and a tail that waves behind; rears onto
 // its hind legs and slams down (rear); snaps its jaw (b1 to b3); coils and
 // whips round on itself (tail); gapes, then rolls about its long axis (roll),
 // and over and over while it holds a player (hold); lies flat when staggered
-// and on its back when dead.
+// and on its back when dead. In the tunnel phase it is posed by poseCrocUp.
 function poseCroc(e) {
   const f = e.fig,
     d = e.def,
@@ -1326,9 +1331,41 @@ function poseCroc(e) {
     tailUp = 0,
     tr = 0,
     tg = 0,
-    tb = 0;
+    tb = 0,
+    pitch = 0;
+  // where the root is drawn and which way it faces
+  let px = e.x,
+    py = e.y,
+    pz = e.z,
+    yaw = e.yaw;
   const k = (st) => sat(e.t / a[st]);
-  switch (e.state) {
+  const up = e.tun && CROC_ALOFT[e.mode] ? poseCrocUp(e) : null;
+  // up in the tunnel phase: what poseCrocUp gives, the rest as they are
+  if (up)
+    ({
+      rear = rear,
+      turn = turn,
+      neck = neck,
+      neckY = neckY,
+      jaw = jaw,
+      roll = roll,
+      reach = reach,
+      splay = splay,
+      tuck = tuck,
+      swing = swing,
+      wave = wave,
+      rate = rate,
+      curl = curl,
+      tailUp = tailUp,
+      tr = tr,
+      tg = tg,
+      pitch = pitch,
+      px = px,
+      py = py,
+      pz = pz,
+      yaw = yaw,
+    } = up);
+  else switch (e.state) {
     case "idle":
       lift = Math.sin(G.t * 1.2 + e.ph) * 0.012;
       jaw = 0.05 + 0.25 * Math.max(0, Math.sin(G.t * 0.35 + e.ph) - 0.8) * 5;
@@ -1477,11 +1514,12 @@ function poseCroc(e) {
       break;
     }
   }
-  f.root.p[0] = e.x;
-  f.root.p[1] = e.y;
-  f.root.p[2] = e.z;
-  f.root.r[1] = e.yaw;
+  f.root.p[0] = px;
+  f.root.p[1] = py;
+  f.root.p[2] = pz;
+  f.root.r[1] = yaw;
   f.spin.p[1] = CROC_H + lift;
+  f.spin.r[0] = pitch;
   f.spin.r[1] = turn;
   f.spin.r[2] = roll;
   f.hip.r[0] = rear;
@@ -1507,6 +1545,127 @@ function poseCroc(e) {
     s.r[1] = wave * (0.3 + i * 0.1) * Math.sin(wph - i * 0.7) + curl;
   }
   setEm(f, tr + e.flash * 0.7, tg + e.flash * 0.65, tb + e.flash * 0.5);
-  sinkInWater(f, e.x, e.z);
+  if (!up) sinkInWater(f, e.x, e.z);
+}
+// The tunnel phase's pose, as the values poseCroc sets (any left out keep
+// its defaults). Leaping, it flies nose up and levels out, legs tucked,
+// turning round to face out of the mouth as it reaches it. At a mouth, its
+// head turns and dips toward the player; before each plate it crouches with
+// the head drawn down and aside, the body cocked and the tail lashing, then
+// whips round the other way and flings the head up and out as the plate
+// flies. Dropping, it pitches nose down into the water; knocked down, it
+// rolls over once as it falls and lands flat.
+function poseCrocUp(e) {
+  const w = G.world,
+    T = e.tun,
+    m = w.wallTunnels[T.list[Math.min(T.k, T.list.length - 1)]],
+    fx = Math.sin(m.yaw),
+    fz = Math.cos(m.yaw),
+    // the drawn perch less the point it stands on at the mouth
+    ox = -fx * (CROC.mouthIn - CROC_PERCH),
+    oz = -fz * (CROC.mouthIn - CROC_PERCH);
+  if (e.mode === "leap") {
+    const k = sat(1 - e.modeT / CROC.leapT),
+      s = smooth(sat((k - 0.4) / 0.6));
+    return {
+      px: e.x + ox * s,
+      py: e.y - CROC_LIP * s,
+      pz: e.z + oz * s,
+      yaw: e.yaw + angDiff(e.yaw, m.yaw) * s,
+      pitch: lerp(-0.55, 0.1, smooth(k)),
+      tuck: 1 - s,
+      swing: 0,
+      reach: 0.6 * (1 - s),
+      jaw: 0.3,
+      wave: 0.1,
+      tailUp: 0.15,
+    };
+  }
+  if (e.mode === "drop" && T.knocked) {
+    // knocked out of the wall: a full roll over as it falls, landing flat
+    // and turned the way it lands
+    const k = sat(1 - e.modeT / CROC.dropT);
+    return {
+      px: e.x + ox * (1 - k),
+      py: e.y - CROC_LIP * (1 - k),
+      pz: e.z + oz * (1 - k),
+      yaw: m.yaw + angDiff(m.yaw, e.yaw) * smooth(k),
+      pitch: lerp(0.3, 0, smooth(k)),
+      roll: -TAU * smooth(k),
+      tuck: 0.4 * (1 - k),
+      swing: 0,
+      reach: 0.6,
+      jaw: 0.5,
+      wave: 0.4,
+      rate: 8,
+      tailUp: 0.2 * (1 - k),
+    };
+  }
+  if (e.mode === "drop") {
+    const k = sat(1 - e.modeT / CROC.dropT);
+    return {
+      px: e.x + ox * (1 - k),
+      py: e.y - CROC_LIP * (1 - k),
+      pz: e.z + oz * (1 - k),
+      yaw: m.yaw,
+      pitch: lerp(0.2, 1.2, smooth(k)),
+      tuck: 0.6,
+      swing: 0,
+      reach: 0.8,
+      jaw: 0.25,
+      wave: 0.2,
+      rate: 6,
+      tailUp: -0.3 * k,
+    };
+  }
+  // at a mouth: the head toward the player, below
+  const p = G.player,
+    dh = Math.hypot(p.x - e.x, p.z - e.z),
+    o = {
+      px: e.x + ox,
+      py: e.y - CROC_LIP,
+      pz: e.z + oz,
+      yaw: m.yaw,
+      pitch: 0.12,
+      neckY: clamp(angDiff(m.yaw, Math.atan2(p.x - e.x, p.z - e.z)), -0.7, 0.7),
+      neck: clamp(Math.atan2(e.y - 0.6, dh), 0.1, 0.7),
+      reach: 0.5,
+      splay: CROC_SPLAY + 0.2,
+      swing: 0,
+      jaw: 0.12,
+      wave: 0.3,
+      rate: 3,
+    },
+    n = T.n[T.k];
+  if (T.sub !== "show") return o;
+  const left = T.plates < n,
+    since = (left ? CROC.throwGap : CROC.linger) - T.t;
+  if (left && T.t < CROC.throwWind) {
+    // the whip gathering: crouched, the head drawn down and aside with the
+    // plate in its jaws, the body cocked and the tail lashing behind
+    const u = smooth(1 - T.t / CROC.throwWind);
+    o.rear = 0.12 * u;
+    o.neck += 0.3 * u;
+    o.neckY -= 0.45 * u;
+    o.turn = 0.25 * u;
+    o.curl = -0.4 * u;
+    o.wave = 0.3 + 0.4 * u;
+    o.rate = 3 + 9 * u;
+    o.tr = 0.16 * u;
+    o.tg = 0.1 * u;
+  } else if (T.plates > 0 && since < 0.4) {
+    // the whip: the body round the other way and the head flung up and out,
+    // the jaw opening as the plate flies, then easing back
+    const q = 1 - smooth(since / 0.4);
+    o.rear = -0.15 * q;
+    o.neck -= 0.55 * q;
+    o.neckY += 0.3 * q;
+    o.jaw = 0.12 + 0.6 * q;
+    o.turn = -0.25 * q;
+    o.curl = 0.45 * q;
+    o.wave = 0.3 + 0.4 * q;
+    o.rate = 12;
+  }
+  return o;
 }
 EPOSE.croc = { pose: poseCroc };

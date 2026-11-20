@@ -1,8 +1,8 @@
 // The sewer: water, D opening, the generator, its look and its culling.
 // Run with: SCRIPT=$PWD/tests/t22.mjs node test.mjs smoke
 const step = (name, body) => ({ name, eval: `(() => { const { G, cam } = DF; G.manual = true; ${body} })()` });
-// a sewer run from a seed, with D live for the test
-const sewer = (name, body, seed = 5) => step(name, `DF.LIVE_GRADES.add("D"); DF.newRun(${seed}, "D"); DF.show("play"); G.state = "play";
+// a sewer run from a seed
+const sewer = (name, body, seed = 5) => step(name, `DF.newRun(${seed}, "D"); DF.show("play"); G.state = "play";
   const w = G.world, p = G.player, D = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
   const look = (x, z, yaw, pitch) => { p.x = x; p.z = z; p.yaw = yaw; cam.yaw = yaw; cam.pitch = pitch; cam.px = x; cam.pz = z; cam.cd = 5.6; for (const e of G.enemies) e.x += 500; return { pass: true }; };
   const routeLen = (ax, az, bx, bz) => { const r = w.route(ax, az, bx, bz, 0.6); if (!r) return Infinity; let l = 0, a = { x: ax, z: az }; for (const q of r) { l += D(a, q); a = q; } return l; };
@@ -44,17 +44,17 @@ export default [
     DF.taps[DF.BIND.light] = true; DF.sim(0.05);
     DF.keys[DF.BIND.fwd] = false; DF.keys[DF.BIND.sprint] = false;
     return { pass: p.state === "attack" && p.move === p.cls.dash && sp < run * 0.8 && ds > run * 0.8, move: p.move, state: p.state, sp, ds, run };`),
-  step("D is sealed until E is cleared and D is live", `DF.resetCleared(); DF.LIVE_GRADES.delete("D");
-  const c = { e: DF.portalOpen("E"), d0: !DF.portalOpen("D") };
+  step("D is sealed until E is cleared and D is live", `const had = DF.LIVE_GRADES.has("D"); DF.resetCleared(); DF.LIVE_GRADES.delete("D");
+  const c = { live: had, e: DF.portalOpen("E"), d0: !DF.portalOpen("D") };
   DF.clearGrade("E", "fighter"); c.notLive = !DF.portalOpen("D");
   DF.LIVE_GRADES.add("D"); c.open = DF.portalOpen("D") && DF.hubPortals().find((q) => q.grade === "D").open;
-  DF.resetCleared(); c.reset = !DF.portalOpen("D"); DF.LIVE_GRADES.delete("D");
+  DF.resetCleared(); c.reset = !DF.portalOpen("D"); if (!had) DF.LIVE_GRADES.delete("D");
   return { pass: Object.values(c).every(Boolean), c };`),
-  step("killing E's boss records E and says so once", `DF.resetCleared(); DF.LIVE_GRADES.add("D"); DF.newRun(99); DF.show("play"); G.state = "play";
+  step("killing E's boss records E and says so once", `DF.resetCleared(); DF.newRun(99); DF.show("play"); G.state = "play";
   const b = G.enemies.find((e) => e.def.boss); b.hp = 0; DF.kill(b);
   const said = G.msgs.some((m) => /new gate has opened/.test(m.text || m.t || ""));
   const c = { cleared: DF.gradeCleared("E"), said, saved: /"c":/.test(localStorage.getItem("dungeon-raze.v2")) };
-  DF.LIVE_GRADES.delete("D"); DF.resetCleared();
+  DF.resetCleared();
   return { pass: Object.values(c).every(Boolean), c };`),
   step("an old save, or a broken c, loads with nothing cleared", `const k = "dungeon-raze.v2", keep = localStorage.getItem(k);
   const d = JSON.parse(keep || "{}"); delete d.c; localStorage.setItem(k, JSON.stringify(d));
@@ -262,7 +262,7 @@ export default [
   sewer("entering D builds the sewer with its air and echo", `const c = { sewer: !!w.sewer, grade: G.grade === "D", env: DF.R.env.fogD === DF.ENV_SEWER.fogD, echo: DF.SFX.echo === true };
   DF.newRun(99); c.back = !G.world.sewer && G.grade === "E" && DF.SFX.echo === false && DF.R.env.fogD !== DF.ENV_SEWER.fogD;
   return { pass: Object.values(c).every(Boolean), c };`),
-  step("the reduced-motion cut into D lands in the sewer", `DF.LIVE_GRADES.add("D"); DF.enterHub(); DF.startTrans("D", true);
+  step("the reduced-motion cut into D lands in the sewer", `DF.enterHub(); DF.startTrans("D", true);
   return { pass: !!G.world.sewer && G.grade === "D" && DF.SFX.echo === true };`),
   sewer("a stand-in boss kill in D records D", `DF.resetCleared(); const b = G.enemies.find((e) => e.def.boss); b.hp = 0; DF.kill(b);
   const ok = DF.gradeCleared("D") && !!G.gate; DF.resetCleared(); return { pass: ok };`),
@@ -392,7 +392,7 @@ export default [
   // headings, five spots in every room at eight and every third point of
   // every tunnel at four. Every walkable point in sight within the fog cutoff
   // must be in a piece that visiblePieces lists for a full turn
-  step("everything the camera can see is in a drawn piece", `DF.LIVE_GRADES.add("D"); const cut = 2.146 / DF.ENV_SEWER.fogD, out = { views: 0, miss: 0, bad: [] };
+  step("everything the camera can see is in a drawn piece", `const cut = 2.146 / DF.ENV_SEWER.fogD, out = { views: 0, miss: 0, bad: [] };
   for (const s of [2, 5, 9, 11, 13, 21]) { DF.newRun(s, "D"); const w = G.world, P = [], bn = w.nodes.find((n) => n.kind === "boss");
     const camAt = (x, z, yaw, pitch, D) => { const fx = Math.sin(yaw), fz = Math.cos(yaw); let so = 0.6; if (w.fieldAt(x - fz * so, z + fx * so) < 0.5) so = 0;
       const vx = x - fz * so, vz = z + fx * so, cp = Math.cos(pitch), sp = Math.sin(pitch); let t = 1;
@@ -416,7 +416,7 @@ export default [
   // whole count
   { name: "the sewer draws no more in a frame than the whole of E cave 99", eval: `(async () => { const { G, cam } = DF; G.manual = true;
     DF.newRun(99); const cap = G.world.pos.length / 9, frame = () => new Promise((r) => requestAnimationFrame(() => r()));
-    DF.LIVE_GRADES.add("D"); let most = 0, at = null, fewest = 1e9;
+    let most = 0, at = null, fewest = 1e9;
     for (const s of [2, 5, 9]) { DF.newRun(s, "D"); DF.show("play"); G.state = "play"; const w = G.world, p = G.player; for (const e of G.enemies) e.x += 500;
       const r = [w.spawn, ...w.route(w.spawn.x, w.spawn.z, w.boss.x, w.boss.z, 0.6)], cum = [0];
       for (let i = 1; i < r.length; i++) cum.push(cum[i - 1] + Math.hypot(r[i].x - r[i - 1].x, r[i].z - r[i - 1].z));

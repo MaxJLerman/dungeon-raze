@@ -26,7 +26,7 @@ const PORTAL_WALL = 1,
 // a portal, so opening or moving one is a change to this list.
 // Grades whose gate is built and can be entered. A gate also needs the grade
 // before it cleared, see portalOpen.
-const LIVE_GRADES = new Set(["E"]);
+const LIVE_GRADES = new Set(["E", "D"]);
 function portalOpen(grade) {
   if (grade === "E") return true;
   const i = GRADE_IDS.indexOf(grade);

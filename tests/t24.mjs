@@ -9,7 +9,7 @@ const step = (name, body) => ({
 // a real sewer pool (D, seed 5): a bound enemy "__w" at the deepest point of the largest pool, and
 // `P`, dry floor three metres past the shore along the nearest heading with such a spot
 const pool = (name, body, cls = "fighter", T = "__w") =>
-  step(name, `DF.setClass("${cls}"); DF.LIVE_GRADES.add("D"); DF.newRun(5, "D"); DF.LIVE_GRADES.delete("D"); DF.show("play"); G.state = "play";
+  step(name, `DF.setClass("${cls}"); DF.newRun(5, "D"); DF.show("play"); G.state = "play";
   const p = G.player, w = G.world; G.enemies = []; G.projs = [];
   if ("${T}" === "__w") { DF.EDEF.__w = { ...DF.EDEF.rat, bound: "water", hp: 9999 }; DF.EBEH.__w = { foot: DF.waterFoot }; }
   const keep = () => { p.hp = p.maxHp; p.stam = p.maxStam; };
@@ -126,7 +126,7 @@ const hold = (name, body) =>
 // and unhurt; F and R are those two directions. Async, so a step can wait for the HUD.
 const grabber = (name, body, cls = "fighter") => ({
   name,
-  eval: `(async () => { const { G, cam } = DF; G.manual = true; DF.setClass("${cls}"); DF.LIVE_GRADES.add("D"); DF.newRun(5, "D"); DF.LIVE_GRADES.delete("D"); DF.show("play"); G.state = "play";
+  eval: `(async () => { const { G, cam } = DF; G.manual = true; DF.setClass("${cls}"); DF.newRun(5, "D"); DF.show("play"); G.state = "play";
   const p = G.player, w = G.world; G.projs = []; ${draw}
   const slots = () => [...document.querySelectorAll("#ebars .eb")].filter((d) => d.style.display !== "none").map((d) => ({ name: d.querySelector(".tag").textContent }));
   const keep = () => { p.hp = p.maxHp; p.stam = p.maxStam; }, D = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
@@ -451,7 +451,7 @@ export default [
   // ---- the bloater ----
   pool("a bloater stays in water", STAYS, "fighter", "bloater"),
   step("a bloater in a gutter follows the player along the tunnel without leaving it", `
-    DF.setClass("fighter"); DF.LIVE_GRADES.add("D"); DF.newRun(5, "D"); DF.LIVE_GRADES.delete("D"); DF.show("play"); G.state = "play";
+    DF.setClass("fighter"); DF.newRun(5, "D"); DF.show("play"); G.state = "play";
     const p = G.player, w = G.world; G.enemies = []; G.projs = [];
     // a tunnel gutter (a body with no room) with a straight run: its water points ordered along the long axis,
     // and for each metre of the run a dry spot 2.8 m to the side
@@ -532,7 +532,7 @@ export default [
     p.x = e.x - 1; p.z = e.z; cam.px = p.x; cam.pz = p.z; keep(); DF.kill(e); let max = G.clouds.length;
     DF.sim(3, () => { keep(); max = Math.max(max, G.clouds.length); });
     return { pass: b2.dead && max === 2, dead: b2.dead, hp: b2.hp, max };`, "fighter", "bloater"),
-  { name: "the bloater, one on the water", eval: `(() => { const { G, cam } = DF; G.manual = true; DF.setClass("fighter"); DF.LIVE_GRADES.add("D"); DF.newRun(5, "D"); DF.LIVE_GRADES.delete("D"); DF.show("play"); G.state = "play";
+  { name: "the bloater, one on the water", eval: `(() => { const { G, cam } = DF; G.manual = true; DF.setClass("fighter"); DF.newRun(5, "D"); DF.show("play"); G.state = "play";
     const p = G.player, w = G.world; G.enemies = []; G.projs = [];
     const big = w.bodies.filter((b) => w.nodes[b.room] && w.nodes[b.room].kind === "pool").sort((a, b) => b.n - a.n)[0];
     let at = null, bd = -1; for (let x = big.x - 25; x <= big.x + 25; x += 0.5) for (let z = big.z - 25; z <= big.z + 25; z += 0.5) {
@@ -543,7 +543,7 @@ export default [
     ${SHOTCAM}
     e.yaw = a + 2.6; DF.sim(0.2);
     return { pass: true, at, bd }; })()`, wait: 400, shot: "t24-bloater" },
-  { name: "the cloud a moment after a burst", eval: `(() => { const { G, cam } = DF; G.manual = true; DF.setClass("fighter"); DF.LIVE_GRADES.add("D"); DF.newRun(5, "D"); DF.LIVE_GRADES.delete("D"); DF.show("play"); G.state = "play";
+  { name: "the cloud a moment after a burst", eval: `(() => { const { G, cam } = DF; G.manual = true; DF.setClass("fighter"); DF.newRun(5, "D"); DF.show("play"); G.state = "play";
     const p = G.player, w = G.world; G.enemies = []; G.projs = [];
     const big = w.bodies.filter((b) => w.nodes[b.room] && w.nodes[b.room].kind === "pool").sort((a, b) => b.n - a.n)[0];
     let at = null, bd = -1; for (let x = big.x - 25; x <= big.x + 25; x += 0.5) for (let z = big.z - 25; z <= big.z + 25; z += 0.5) {
@@ -870,7 +870,7 @@ export default [
   ...["siren", "eel"].map((kind) => ({ ...step("a " + kind + " room with its enemies awake, for looking at", `window.__cd0 = window.__cd0 || cam.dist;
   let seed = 0; for (let s = 1; s <= 12 && !seed; s++) { const w = DF.genSewer(s); if (w.spawns.some((q) => q.type === "${kind}" && w.nodes[q.node].kind === "pool" && w.waterAt(q.x, q.z) === 1)) seed = s; }
   if (!seed) return { pass: false, why: "no ${kind} room" };
-  DF.LIVE_GRADES.add("D"); DF.newRun(seed, "D"); DF.show("play"); G.state = "play"; DF.LIVE_GRADES.delete("D");
+  DF.newRun(seed, "D"); DF.show("play"); G.state = "play";
   const w = G.world, p = G.player, T = G.enemies.find((e) => e.type === "${kind}"), n = w.nodes[T.node];
   const nb = n.adj.map((j) => w.nodes[j]).sort((a, b) => a.depth - b.depth)[0], ed = w.edges.find((e) => (e.a === n.id && e.b === nb.id) || (e.b === n.id && e.a === nb.id));
   const pts = ed.a === n.id ? ed.pts : ed.pts.slice().reverse(); let mouth = pts[0]; for (const q of pts) { mouth = q; if (Math.abs(q.x - n.x) >= n.hw || Math.abs(q.z - n.z) >= n.hd) break; }
