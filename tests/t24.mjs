@@ -102,7 +102,7 @@ const SIRENSET = `
     const q = bank(d); p.x = q.x; p.z = q.z; p.yaw = sh.a + Math.PI; cam.yaw = p.yaw; cam.px = p.x; cam.pz = p.z;
     p.state = "free"; p.hold = null; p.iframe = 0; p.kx = p.kz = 0; keep(); G.grabGrace = 0;
     DF.alertE(e, true); e.aware = true; e.state = "chase"; return q; };
-  const force = (k) => { e.atk = A[k]; e.state = k === "lunge" ? "wind" : "act"; e.t = 0; e.hitDone = false; };
+  const force = (k) => { e.atk = A[k]; e.state = k === "song" ? "act" : "wind"; e.t = 0; e.hitDone = false; };
   const SHOT = () => { const face = Math.atan2(e.x - p.x, e.z - p.z); cam.yaw = face + 0.45; cam.pitch = 0.22; p.yaw = face; cam.px = p.x; cam.pz = p.z; };
 `;
 // the player 2.5 m short of the bloater at `at` and to its right, the camera behind the player looking down on both
@@ -681,11 +681,40 @@ export default [
     force("lunge"); let held = false;
     DF.sim(4, () => { keep(); if (p.state === "held") held = true; else if (held) return false; });
     if (!held || p.state === "held") return { pass: false, why: "no hold", held };
-    // the player back on the bank in her reach, where she would attack at once
-    const pin = () => { keep(); p.x = P0.x; p.z = P0.z; };
-    let wind = false; DF.sim(S.grabCD - 0.5, () => { pin(); if (e.state === "wind") wind = true; });
-    let again = null; DF.sim(8, (i) => { pin(); if (e.state === "wind") { again = i / 60; return false; } });
+    // the player back on the bank in her reach, where she would grab at once (she may rake meanwhile); then
+    // further back, out of the rake's reach and in the lunge's and the song's, so the next attack is one of those
+    const P5 = bank(5), pin = (q) => () => { keep(); p.x = q.x; p.z = q.z; };
+    const grab = () => e.state === "wind" && e.atk && e.atk.kind;
+    let wind = false; DF.sim(S.grabCD - 0.5, () => { pin(P0)(); if (grab()) wind = true; });
+    let again = null; DF.sim(8, (i) => { pin(P5)(); if (grab()) { again = i / 60; return false; } });
     return { pass: !wind && again !== null, wind, again, cd: e.grabCD };`, "fighter", "siren"),
+  pool("she plans no attack she cannot start from the water", SIRENSET + `
+    // a player on the bank 8 m from her, past every trigger but the song's: she only ever plans or winds up an
+    // attack whose trigger the player is inside, and does not stand idle at the shore
+    const P8 = setUp(8); if (!dry(P8)) return { pass: false, why: "the bank is not dry", P8 };
+    const T = (a) => a.trig + e.r * 0.3; let bad = [], winds = 0, prev = null;
+    DF.sim(10, () => { keep(); p.x = P8.x; p.z = P8.z; if (e.state === "wind" && prev !== "wind") { winds++; if (D(e, p) > T(e.atk) + 0.3) bad.push(D(e, p)); }
+      if (e.plan && D(e, p) > T(e.plan) + 0.31) bad.push({ plan: D(e, p) }); prev = e.state; if (p.state === "held") return false; });
+    return { pass: bad.length === 0 && winds > 0, bad: bad.slice(0, 5), winds };`, "fighter", "siren"),
+  pool("while she cannot grab she rakes a player close by, and it can be blocked", SIRENSET + `
+    const P0 = setUp(2.6); if (!dry(P0)) return { pass: false, why: "the bank is not dry", P0 };
+    e.grabCD = S.grabCD; e.cd = 0; const pin = () => { p.stam = p.maxStam; p.x = P0.x; p.z = P0.z; };
+    let raked = null, other = false, hp0 = p.hp, rake2 = false;
+    DF.sim(4, (i) => { pin(); if (e.state === "wind" && e.atk) { if (e.atk.kind) other = true; if (e.atk === A.rake && raked === null) raked = i / 60; if (e.atk === A.rake2) rake2 = true; }
+      if (rake2 && e.state === "rec" && e.atk === A.rake2) return false; });
+    const lost = hp0 - p.hp;
+    // the same rake against a guard: chip at most, no flinch
+    setUp(2.6); e.grabCD = S.grabCD; e.cd = 99; const h1 = p.hp; let flinch = false, st = [];
+    DF.keys[DF.BIND.guard] = true;
+    try { DF.sim(0.6, () => { pin(); e.cd = 99; e.state = "chase"; }); force("rake"); DF.sim(1, () => { pin(); e.cd = 99; if (p.state === "hit") flinch = true; if (!st.includes(p.state)) st.push(p.state); if (e.state === "rec") return false; }); }
+    finally { DF.keys[DF.BIND.guard] = false; }
+    const c = { raked: raked !== null && raked < 2, chained: rake2, hurt: lost >= A.rake.dmg, noGrab: !other, blocked: !flinch && h1 - p.hp < A.rake.dmg, stillCD: e.grabCD > 0 };
+    return { pass: Object.values(c).every(Boolean), c, raked, lost, chip: h1 - p.hp, st };`, "fighter", "siren"),
+  pool("while she cannot grab she goes home from a player out of rake range", SIRENSET + `
+    const P0 = setUp(8); if (!dry(P0)) return { pass: false, why: "the bank is not dry", P0 };
+    e.grabCD = S.grabCD; e.cd = 0; let wind = false;
+    DF.sim(2, () => { keep(); p.x = P0.x; p.z = P0.z; if (e.state === "wind") wind = true; });
+    return { pass: !wind, wind };`, "fighter", "siren"),
   pool("the song pulls and a dodge breaks it", SIRENSET + `
     const P8 = setUp(8); if (!dry(P8)) return { pass: false, why: "the bank is not dry", P8 };
     force("song"); const d0 = D(p, e); DF.sim(1, () => { keep(); e.cd = 99; }); const pulled = d0 - D(p, e);
@@ -729,6 +758,11 @@ export default [
   { ...pool("the siren half way through the lunge's wind", SIRENSET + `
     setUp(3.5); force("lunge"); SHOT(); DF.sim(DF.EDEF.siren.atks.lunge.wind / 2, () => { keep(); SHOT(); });
     return { pass: e.state === "wind", st: e.state };`, "fighter", "siren"), wait: 400, shot: "t24-siren-lunge" },
+  { ...pool("the siren raking at a player on the bank", SIRENSET + `
+    // seen from the side, so the player does not hide her (the last step puts the boom back)
+    setUp(2.4); force("rake"); const side = () => { SHOT(); cam.yaw += 0.75; cam.dist = 3; cam.pitch = 0.3; };
+    side(); DF.sim(A.rake.wind + A.rake.act * 0.6, () => { keep(); e.cd = 99; side(); });
+    return { pass: e.state === "act" && e.atk === A.rake, st: e.state };`, "fighter", "siren"), wait: 400, shot: "t24-siren-rake" },
   { ...pool("the siren singing to a player on the bank", SIRENSET + `
     setUp(6); force("song"); DF.sim(0.4, () => { keep(); e.cd = 99; }); SHOT();
     return { pass: e.sing === true, st: e.state };`, "fighter", "siren"), wait: 400, shot: "t24-siren-song" },
