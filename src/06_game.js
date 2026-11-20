@@ -2178,7 +2178,8 @@ function splash(x, z, n = 14) {
 }
 // Drips from the sewer's roof: they start at the ceiling within DRIP.range of
 // the player, more of them over water, fall, leave a ring and are gone.
-const DRIP = { range: 15, cap: 40, rate: 60, dry: 0.35, g: 9.8, near: 10, voice: 0.12 };
+// `rate` is drips a second; `voice` the chance a landing within `near` is heard.
+const DRIP = { range: 15, cap: 25, rate: 15, dry: 0.35, g: 9.8, near: 10, voice: 0.25 };
 function dripsUpdate(dt) {
   const p = G.player,
     w = G.world;

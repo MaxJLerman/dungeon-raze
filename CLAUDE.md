@@ -354,9 +354,12 @@ is what you need to change the code without breaking it.
   `setEnv` copies the preset.
 - The sewer's own game-side parts: `WATER` (`slow` 0.6 and `sink` 0.3), drips
   from the roof (`dripsUpdate`, `G.drips`, only while `G.world.sewer`),
-  wading ripples and the wade sound, and `SFX.setEcho`, a short echo in
-  `04_audio.js` that is on only in the sewer. The hall and cave keep their
-  sound. `resetRun()` clears `G.drips`.
+  wading ripples and the wade sound, and `SFX.setEcho`, an echo in
+  `04_audio.js` that is on only in the sewer. Only the drip sound goes
+  through it (`tone`'s `send`, `echoIn`); every other sound stays dry. The
+  hall and cave keep their sound. `DRIP` sets how many drips fall (`rate`
+  15 a second) and how often a landing is heard (`voice`). `resetRun()`
+  clears `G.drips`.
 - In the hall, focus and tool charges refill on their own, the minimap is
   hidden and the run timer does not advance.
 - Plaques. `hubPlaques()` lists `{ id, cls, x, z, yaw }` for the three plaques

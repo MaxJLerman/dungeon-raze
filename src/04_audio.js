@@ -1,31 +1,34 @@
 // ---------- synthesized audio ----------
+const ECHO_WET = 0.6;
 const SFX = (() => {
   let ac = null,
     master = null,
     nbuf = null,
     wet = null,
+    echoIn = null,
     echo = false,
     on = true;
-  // A short echo send off the master, for tunnels. Built with the context and
-  // faded by setEcho, so the flag can be set before audio has started.
+  // An echo for the sewer's drips. Only a sound sent to echoIn (the drip) goes
+  // through it; everything else stays dry. Built with the context and faded
+  // by setEcho, so the flag can be set before audio has started. It runs
+  // through master so mute silences it too.
   function buildEcho() {
-    const send = ac.createGain(),
-      delay = ac.createDelay(1),
+    const delay = ac.createDelay(1),
       fb = ac.createGain(),
       lp = ac.createBiquadFilter();
-    delay.delayTime.value = 0.18;
-    fb.gain.value = 0.35;
+    delay.delayTime.value = 0.22;
+    fb.gain.value = 0.45;
     lp.type = "lowpass";
-    lp.frequency.value = 1800;
+    lp.frequency.value = 2200;
     wet = ac.createGain();
-    wet.gain.value = echo ? 0.3 : 0;
-    master.connect(send);
-    send.connect(delay);
+    wet.gain.value = echo ? ECHO_WET : 0;
+    echoIn = ac.createGain();
+    echoIn.connect(delay);
     delay.connect(lp);
     lp.connect(fb);
     fb.connect(delay);
     lp.connect(wet);
-    wet.connect(ac.destination);
+    wet.connect(master);
   }
   function init() {
     if (ac) {
@@ -72,7 +75,7 @@ const SFX = (() => {
     s.start(t, Math.random() * 0.5);
     s.stop(t + dur + 0.05);
   }
-  function tone(dur, f0, f1, peak, type = "sine", delay = 0) {
+  function tone(dur, f0, f1, peak, type = "sine", delay = 0, send = null) {
     if (!ac || !on) return;
     const t = ac.currentTime + delay;
     const o = ac.createOscillator();
@@ -83,6 +86,7 @@ const SFX = (() => {
     env(g, t, 0.006, dur, peak);
     o.connect(g);
     g.connect(master);
+    if (send) g.connect(send);
     o.start(t);
     o.stop(t + dur + 0.05);
   }
@@ -120,7 +124,7 @@ const SFX = (() => {
     init,
     setEcho(v) {
       echo = !!v;
-      if (wet) wet.gain.setTargetAtTime(echo ? 0.3 : 0, ac.currentTime, 0.05);
+      if (wet) wet.gain.setTargetAtTime(echo ? ECHO_WET : 0, ac.currentTime, 0.05);
     },
     get echo() {
       return echo;
@@ -200,9 +204,9 @@ const SFX = (() => {
       noise(heavy ? 0.3 : 0.2, 700, 220, heavy ? 0.5 : 0.22, "bandpass", 1.1);
       if (heavy) noise(0.14, 2600, 900, 0.25, "highpass", 0.7);
     },
-    // a drop falling into water, in the far dark
+    // a drop falling into water, in the far dark, echoing in the sewer
     drip() {
-      tone(0.12, 1500 + Math.random() * 700, 600, 0.12, "sine");
+      tone(0.12, 1500 + Math.random() * 700, 600, 0.12, "sine", 0, echoIn);
     },
     knife() {
       noise(0.1, 3000, 5000, 0.25, "highpass", 0.8);
