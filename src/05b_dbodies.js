@@ -821,12 +821,27 @@ function poseSiren(e) {
     tr = 0,
     tg = 0,
     tb = 0,
-    roll = 0;
+    roll = 0,
+    // a rake: the clawing hand (1 right, -1 left), its swing and spread
+    // (as armX and armZ) and the chest's twist round Y
+    claw = (e.state === "wind" || e.state === "act" || e.state === "rec") && e.atk ? e.atk.claw || 0 : 0,
+    cX = 0,
+    cZ = 0,
+    twist = 0;
   switch (e.state) {
     case "wind": {
       const k = smooth(sat(e.t / e.atk.wind));
       hip = lerp(SIREN_LOW, SIREN_UP, k) + bob * (1 - k);
-      if (e.atk.kind === "song") {
+      if (claw) {
+        // turned away with the clawing hand drawn back and out to the side
+        lean = lerp(lean, 0.1, k);
+        cX = lerp(armX, 0.5, k);
+        cZ = lerp(armZ, 1.35, k);
+        twist = -0.55 * k * claw;
+        head = 0.1 * k;
+        amp = 0.25 + 0.4 * k;
+        rate = 2.2 + 4 * k;
+      } else if (e.atk.kind === "song") {
         // rising with her arms opening and her face lifted
         lean = lerp(lean, -0.12, k);
         armX = lerp(armX, -0.75, k);
@@ -844,7 +859,19 @@ function poseSiren(e) {
       break;
     }
     case "act": {
-      if (e.atk.kind === "song") {
+      if (claw) {
+        // the claw sweeps forward and across her body as she turns into it
+        const k = smooth(sat(e.t / e.atk.act));
+        hip = SIREN_UP + 0.04 * Math.sin(k * PI);
+        lean = lerp(0.1, 0.45, k);
+        cX = lerp(0.5, -1.45, k);
+        cZ = lerp(1.35, -0.35, k);
+        twist = lerp(-0.55, 0.5, k) * claw;
+        head = -0.1;
+        surge = Math.sin(k * PI * 0.5) * 0.3;
+        amp = 0.8;
+        rate = 8;
+      } else if (e.atk.kind === "song") {
         // singing: arms wide and beckoning, face up, swaying
         const w = Math.sin(G.t * 3 + e.ph);
         hip = SIREN_UP + Math.sin(G.t * 2.2) * 0.02;
@@ -885,6 +912,14 @@ function poseSiren(e) {
       const k = smooth(sat(e.t / e.atk.rec)),
         song = e.atk.kind === "song";
       hip = lerp(SIREN_UP, SIREN_LOW, k) + bob * k;
+      if (claw) {
+        lean = lerp(0.45, lean, k);
+        cX = lerp(-1.45, armX, k);
+        cZ = lerp(-0.35, armZ, k);
+        twist = lerp(0.5, 0, k) * claw;
+        head = lerp(-0.1, head, k);
+        break;
+      }
       lean = lerp(song ? -0.12 : 0.6, lean, k);
       armX = lerp(song ? -0.85 : -1.2, armX, k);
       armZ = lerp(song ? 1.25 : 0.25, armZ, k);
@@ -938,7 +973,7 @@ function poseSiren(e) {
   f.hips.p[1] = hip / sc;
   f.hips.r[0] = f.hips.r[1] = f.hips.r[2] = 0;
   f.chest.r[0] = lean;
-  f.chest.r[1] = Math.sin(e.wph * 0.5) * 0.06 * amp;
+  f.chest.r[1] = Math.sin(e.wph * 0.5) * 0.06 * amp + twist;
   f.chest.r[2] = 0;
   // armX is the arms' swing in the world: turned back by the chest's lean
   f.armR.r[0] = armX - lean;
@@ -947,6 +982,11 @@ function poseSiren(e) {
   f.armL.r[1] = -armY;
   f.armR.r[2] = -armZ;
   f.armL.r[2] = armZ;
+  if (claw) {
+    const a = claw > 0 ? f.armR : f.armL;
+    a.r[0] = cX - lean;
+    a.r[2] = claw > 0 ? -cZ : cZ;
+  }
   f.headN.r[0] = head - lean * 0.6;
   f.headN.r[1] = headY;
   f.headN.r[2] = 0;

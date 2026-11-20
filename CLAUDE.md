@@ -354,9 +354,12 @@ is what you need to change the code without breaking it.
   `setEnv` copies the preset.
 - The sewer's own game-side parts: `WATER` (`slow` 0.6 and `sink` 0.3), drips
   from the roof (`dripsUpdate`, `G.drips`, only while `G.world.sewer`),
-  wading ripples and the wade sound, and `SFX.setEcho`, a short echo in
-  `04_audio.js` that is on only in the sewer. The hall and cave keep their
-  sound. `resetRun()` clears `G.drips`.
+  wading ripples and the wade sound, and `SFX.setEcho`, an echo in
+  `04_audio.js` that is on only in the sewer. Only the drip sound goes
+  through it (`tone`'s `send`, `echoIn`); every other sound stays dry. The
+  hall and cave keep their sound. `DRIP` sets how many drips fall (`rate`
+  15 a second) and how often a landing is heard (`voice`). `resetRun()`
+  clears `G.drips`.
 - In the hall, focus and tool charges refill on their own, the minimap is
   hidden and the run timer does not advance.
 - Plaques. `hubPlaques()` lists `{ id, cls, x, z, yaw }` for the three plaques
@@ -1050,12 +1053,17 @@ table runs exactly as before.
   one never glow.
 - **The siren** (`siren`, threat 2, `bound: "water"`) comes to the shore
   nearest the player. She starts no attack without a clear line to the
-  player (`canAttack`). Her lunge (`kind: "grab"`, unblockable, reach 4,
+  player (`canAttack`), and plans only an attack whose trigger the player is
+  already inside (`atkOk`, `sirenTrig`), since she cannot leave the water
+  to close in. Up close she rakes (`rake`, then `rake2` from the other
+  hand: plain melee, blockable and parryable, `claw` naming the hand for
+  `poseSiren`). Her lunge (`kind: "grab"`, unblockable, reach 4,
   never through a wall or pier) calls `grabPlayer` with a target `SIREN.drag` (2 m) past the shore into her pool,
   at `SIREN.dragSpeed` (5 m/s) for `SIREN.dps` (8) a second (`sirenDrag`
   finds the spot; she backs off along the line as she drags so the player
-  reaches the water). When the hold ends however it ended she cannot attack
-  for `SIREN.grabCD` (6 s) and goes back toward her post. Her song
+  reaches the water). When the hold ends however it ended she cannot lunge
+  or sing for `SIREN.grabCD` (6 s) and goes back toward her post, but she
+  still rakes a player within `SIREN.near` (3.6 m). Her song
   (`kind: "song"`) pulls the player toward her at `SIREN.pull` (2.6 m/s,
   about half a walk, so walking away wins) while she can see them, never into
   her and never through a wall; a dodge breaks it. `drawSongs` draws it.
@@ -1627,7 +1635,8 @@ The class picker and HUD read `CLASSES` and need no changes.
 - The bloater, eel, siren and drain grabber, the hold and their placement are
   untested by hand. Set without a playtest: `CLOUD` (size, length, tick),
   `EEL` (the 8 s count, the 1.2 s glow, 22 damage), `SIREN` (the song's
-  pull of 2.6 m/s, the 2 m drag, the 5 m/s drag speed, the 6 s cooldown),
+  pull of 2.6 m/s, the 2 m drag, the 5 m/s drag speed, the 6 s cooldown,
+  the rake's 10 and 12 damage and its 3.6 m reach during the cooldown),
   `GRAB` (reach, arc, the 15 damage that drives it back, the 4 s rearm),
   `HOLD` (the 2 s hold, 0.35 s per mash, the 1.5 s grace), the placement odds
   (0.5 siren room, 0.4 second eel, 0.35 gutter bloater, a third of grates)

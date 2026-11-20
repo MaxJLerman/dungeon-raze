@@ -1191,8 +1191,9 @@ const EEL = { every: 8, glow: 1.2, dmg: 22, post: 20, lit: 0.4 };
 // The siren: her lunge drags a caught player `drag` m past the shore into
 // her pool at `dragSpeed` m/s, hurting them `dps` a second, and she cannot
 // grab again for `grabCD` s after. Her song pulls the player toward her at
-// `pull` m/s, about half a walk, so walking away still wins.
-const SIREN = { drag: 2, grabCD: 6, pull: 2.6, dps: 8, dragSpeed: 5 };
+// `pull` m/s, about half a walk, so walking away still wins. While she
+// cannot grab she still rakes a player within `near` m of her with her claws.
+const SIREN = { drag: 2, grabCD: 6, pull: 2.6, dps: 8, dragSpeed: 5, near: 3.6 };
 // The drain grabber: it strikes a player within `r` m and `arc` rad either side
 // of its grate's facing, stays shown `show` s after a strike or a hold, and
 // hides at once when it has taken `back` damage while shown. It cannot strike
@@ -1419,7 +1420,9 @@ const EDEF = {
   },
   // D gate: a siren, who guards a pool room's crossing from the water and
   // never leaves it. Her lunge grabs a player on the bank and drags them into
-  // her pool (held); her song pulls them toward her (EBEH.siren, SIREN).
+  // her pool (held); her song pulls them toward her (EBEH.siren, SIREN). Up
+  // close she rakes with one claw and then the other (`claw` is the hand:
+  // 1 right, -1 left), a plain melee hit that can be blocked and parried.
   siren: {
     name: "Siren",
     threat: 2,
@@ -1430,11 +1433,36 @@ const EDEF = {
     turn: 5,
     r: 0.6,
     sight: 18,
-    cd: 2.0,
+    cd: 1.4,
     poise: 1,
     top: 1.4,
     bound: "water",
     atks: {
+      rake: {
+        style: "thrust",
+        wind: 0.45,
+        act: 0.16,
+        rec: 0.3,
+        dmg: 10,
+        reach: 2.4,
+        arc: 1.8,
+        lunge: 0.5,
+        trig: 2.6,
+        w: 2,
+        claw: 1,
+        chain: "rake2",
+      },
+      rake2: {
+        style: "thrust",
+        wind: 0.3,
+        act: 0.16,
+        rec: 0.7,
+        dmg: 12,
+        reach: 2.4,
+        arc: 1.8,
+        lunge: 0.4,
+        claw: -1,
+      },
       lunge: {
         kind: "grab",
         style: "thrust",
@@ -2178,7 +2206,8 @@ function splash(x, z, n = 14) {
 }
 // Drips from the sewer's roof: they start at the ceiling within DRIP.range of
 // the player, more of them over water, fall, leave a ring and are gone.
-const DRIP = { range: 15, cap: 40, rate: 60, dry: 0.35, g: 9.8, near: 10, voice: 0.12 };
+// `rate` is drips a second; `voice` the chance a landing within `near` is heard.
+const DRIP = { range: 15, cap: 25, rate: 15, dry: 0.35, g: 9.8, near: 10, voice: 0.25 };
 function dripsUpdate(dt) {
   const p = G.player,
     w = G.world;

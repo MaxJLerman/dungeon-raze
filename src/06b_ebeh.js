@@ -293,14 +293,20 @@ function eelShock(e, w, p) {
 // player (goal). Her lunge (kind "grab") catches a player in reach in front
 // of her and drags them into her pool (held); once the hold is over, however
 // it ended, she sinks back toward her post and cannot attack for
-// SIREN.grabCD s. Her song (kind "song") pulls the player toward her while
-// she can see them; a dodge breaks it.
+// SIREN.grabCD s, but for her rake, which she still uses on a player within
+// SIREN.near. Her song (kind "song") pulls the player toward her while she
+// can see them; a dodge breaks it. The rake (rake, then rake2) is a plain
+// melee attack run by the shared states.
 EBEH.siren = {
   foot: waterFoot,
   goal: waterGoal,
-  // she starts neither the lunge nor the song without a clear line to the
-  // player, so a pier between them stops both
-  canAttack: (e, c) => !(e.grabCD > 0) && c.w.los(e.x, e.z, c.p.x, c.p.z),
+  // she starts no attack without a clear line to the player, so a pier
+  // between them stops all of them
+  canAttack: (e, c) => c.w.los(e.x, e.z, c.p.x, c.p.z),
+  // she cannot leave the water to close in, so she plans only an attack she
+  // can start from where she is (else she would wait at the shore for a
+  // player out of its reach); while she cannot grab, only the rake
+  atkOk: (e, a, c) => c.dist <= sirenTrig(e, a) && (!(e.grabCD > 0) || !a.kind),
   step(e, dt, c) {
     if (e.body === undefined) e.body = c.w.bodyAt(e.x, e.z);
     e.grabCD = Math.max(0, (e.grabCD || 0) - dt);
@@ -329,9 +335,13 @@ EBEH.siren = {
     }
     return false;
   },
-  // while she cannot grab she makes for her post, watching the player
+  // while she cannot grab she makes for her post, watching the player,
+  // unless they are close enough to rake
   chase(e, dt, c) {
-    if (!(e.grabCD > 0)) return false;
+    // a plan the player has stepped out of, or a grab or song she may not
+    // use yet, is dropped and chosen again
+    if (e.plan && (c.dist > sirenTrig(e, e.plan) + 0.3 || (e.grabCD > 0 && e.plan.kind))) e.plan = null;
+    if (!(e.grabCD > 0) || c.dist <= SIREN.near) return false;
     e.token = false;
     e.yaw = turnTo(e.yaw, c.toP, e.def.turn * dt);
     const hx = e.hx - e.x,
@@ -382,6 +392,10 @@ EBEH.siren = {
     e.sing = true;
   },
 };
+// The distance at which the shared chase starts the siren's attack `a`.
+function sirenTrig(e, a) {
+  return a.trig + e.r * 0.3;
+}
 // Where the siren drags a player she has caught: where the line from the
 // player through her crosses into the water, SIREN.drag m further along it,
 // walked back toward the shore until it is footing of hers (her own spot when

@@ -11,8 +11,8 @@ Todo:
     [] toggle god mode (no damage, unlimited consumables/stamina)
 
   Fix:
-    [] D rank dungeon should only have the echoey water droplets noise, not everything being echoey (& reduce the frequency of the water dropping from ceiling)
-    [] Sirens don't have a melee attack while they aren't singing or dragging you
+    [x] D rank dungeon should only have the echoey water droplets noise, not everything being echoey (& reduce the frequency of the water dropping from ceiling)
+    [x] Sirens don't have a melee attack while they aren't singing or dragging you, so it feels like they're just looking at you or waiting a while for you to attack
 
   Research:
     [] Better engine to build the game
