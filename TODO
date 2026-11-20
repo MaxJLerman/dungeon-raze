@@ -4,15 +4,25 @@ Todo:
     [] gates of malvorn
     [] gates of kargalgan
 
-  Add dev options menu:
-    [] enable the hidden classes
-    [] enter any of the gates
-    [] jump to any boss fight
-    [] toggle god mode (no damage, unlimited consumables/stamina)
+  Add:
+    dev options menu:
+      [] enable the hidden classes
+      [] enter any of the gates
+      [] jump to any boss fight
+      [] toggle god mode (no damage, unlimited consumables/stamina)
+
+    Main menu:
+      [] changelog
+      [] cheat code
+      [] start
+      [] github page
+      [] support the dev
 
   Fix:
     [x] D rank dungeon should only have the echoey water droplets noise, not everything being echoey (& reduce the frequency of the water dropping from ceiling)
     [x] Sirens don't have a melee attack while they aren't singing or dragging you, so it feels like they're just looking at you or waiting a while for you to attack
+    [] Mages can't hit eels with any of their attacks (reported by Finn)
+    [] Sirens can't jump over/swim under to another close pool
 
   Research:
     [] Better engine to build the game
@@ -20,3 +30,13 @@ Todo:
 
   Music:
     [] Rok Nardin - The Mad Princess as a boss fight theme
+
+  Gate ideas:
+    [] C rank dungeon - stormy night with lightning and thunder periodically flashing the sky, rain and muddy puddles on the ground & set in a ruined town overrun by zombies
+    [] B rank dungeon - lava and fire with smoke and heat haze like the nether in minecraft, set in a volcano (start at the top, need to descend down to begin)
+    [] A rank dungeon - ice and snow with blizzards and icy surfaces with tall spruce tree forests all on mountains high up
+    [] S rank dungeon - 100 floor demon's castle
+    [] Red gate ? - a dungeon that is a giant maze with traps and puzzles, set in an ancient temple with booby traps and hidden passages (hard mode difficulty)
+    [] Black gate ? - a dungeon that is a dark, twisted version of the player's hometown, filled with corrupted versions of familiar NPCs and enemies (insane mode difficulty)
+    [] Agility zone ? - a dungeon that is a giant pit with no walls or floors, where the player must navigate through a series of rising and falling floating platforms and avoid falling into the abyss below as the floor is quicksand and is rising steadily as time goes on. If the player is caught by the quicksand, it's an insta-kill (requires jump mechanic first)
+    [] Penalty zone - endless dessert with varying height sand dunes/hills where the player is hunted by giant sand worms that can burrow underground and pop up to attack the player, and the player must find a way to survive and escape the desert while avoiding the sand worms all for 10 minutes on a timer that's ticking down
