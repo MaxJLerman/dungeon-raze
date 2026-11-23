@@ -45,6 +45,23 @@ function devBoss(grade, seed) {
   snapCam();
   play();
 }
+// God mode: hurtPlayer takes nothing and grabPlayer refuses while it is on,
+// and tick keeps everything full. It stays on through world swaps and is
+// off on every page load. Returns the new setting.
+function devGod(on = !DEV.god) {
+  DEV.god = !!on;
+  devRender();
+  return DEV.god;
+}
+function devTick() {
+  const p = G.player;
+  if (!DEV.god || !p || p.state === "dead") return;
+  p.hp = p.maxHp;
+  p.stam = p.maxStam;
+  p.flasks = 3;
+  p.tool = p.cls.tool.max;
+  p.focus = 100;
+}
 // Refreshes the labels that show the menu's state.
 function devRender() {
   const u = $("devUnlock");
@@ -53,6 +70,10 @@ function devRender() {
     u.textContent = all ? "Hidden classes unlocked" : "Unlock hidden classes";
     u.disabled = all;
   }
+  const g = $("devGod");
+  if (g) g.textContent = "God mode: " + (DEV.god ? "on" : "off");
+  const b = $("devBadge");
+  if (b) b.hidden = !DEV.god;
 }
 // The backquote key: from play it opens the menu over pause, so Back lands
 // on the pause screen; on the menu it goes back. A player who has bound the
@@ -71,7 +92,8 @@ function devBuild() {
   scr.innerHTML =
     '<h1 class="sm">Dev</h1>' +
     '<p class="sub">Local builds only. Nothing here is saved.</p>' +
-    '<div class="row"><button type="button" id="devUnlock"></button></div>' +
+    '<div class="row"><button type="button" id="devUnlock"></button>' +
+    '<button type="button" id="devGod"></button></div>' +
     '<p class="sub">Enter a gate</p><div class="row">' +
     GRADE_IDS.map(
       (g) =>
@@ -99,6 +121,18 @@ function devBuild() {
   $("scr-title").querySelector(".row").append(open("btnDev"));
   $("btnBase").before(open("btnDevPause"));
   $("devUnlock").addEventListener("click", devUnlockAll);
+  $("devGod").addEventListener("click", () => devGod());
+  // shown over the game while god mode is on, so it is never forgotten
+  const badge = document.createElement("div");
+  badge.id = "devBadge";
+  badge.textContent = "GOD";
+  badge.hidden = true;
+  badge.style.cssText =
+    "position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:50;" +
+    "padding:2px 8px;font:700 12px/1.4 monospace;letter-spacing:2px;" +
+    "color:#ffd166;background:rgba(0,0,0,.55);border:1px solid #ffd166;" +
+    "border-radius:3px;pointer-events:none";
+  document.body.append(badge);
   for (const b of scr.querySelectorAll("[data-dev-gate]"))
     b.addEventListener("click", () => devGate(b.dataset.devGate));
   for (const b of scr.querySelectorAll("[data-dev-boss]"))
@@ -113,8 +147,8 @@ function devBuild() {
   devRender();
 }
 if (devHost(location)) {
-  DEV = { god: false, unlocked: new Set(), tick() {} };
-  Object.assign(DF, { DEV, devUnlockAll, devGate, devBoss });
+  DEV = { god: false, unlocked: new Set(), tick: devTick };
+  Object.assign(DF, { DEV, devUnlockAll, devGate, devBoss, devGod });
   devBuild();
 }
 DF.devHost = devHost;

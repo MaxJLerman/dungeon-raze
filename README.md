@@ -131,6 +131,11 @@ from disk) has a Dev button on the title and pause screens, and the backquote
 key opens it. The menu only turns on for `localhost`, `127.0.0.1`, `[::1]` and
 `file://`.
 
+It unlocks the hidden classes for the session, enters any gate (C to S load
+the cave for now), jumps to the Warden or Old Sluicejaw from the last rest
+point before them, and toggles god mode: no damage, no grabs, and health,
+stamina, flasks, tool charges and focus kept full. Nothing it does is saved.
+
 ## Source layout
 
 | File                 | What it holds                                                                               |

@@ -402,6 +402,14 @@ is what you need to change the code without breaking it.
   in `DEV_BOSSES`) starts a fresh run at its last rest point, lit and made
   the checkpoint, facing `world.boss`. Seeds 1 to 12 of E and D all have a
   rest point before the boss; a cave with only one would start at arrival.
+- **God mode** (`#devGod`, `devGod(on?)`) sets `DEV.god`, off on each load
+  and kept through world swaps. `hurtPlayer` returns `"none"` first thing
+  (before guard, parry and dodge, so nothing is parried either),
+  `grabPlayer` refuses, and `DEV.tick()` at the end of `update` keeps
+  health, stamina, flasks (3), tool charges and focus (100) full. `#devBadge`
+  ("GOD") shows at the top of the screen while it is on. A new way of
+  hurting or holding the player must go through those two functions, as it
+  already must.
   Run `tests/t26.mjs` after any change to it:
   `node build.mjs && SCRIPT=$PWD/tests/t26.mjs node test.mjs hub`.
 

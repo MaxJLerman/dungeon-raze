@@ -98,4 +98,50 @@ export default [
   const sh = G.checkpoint; G.player.hp = 0; DF.respawn();
   const p = G.player, d = Math.hypot(p.x - sh.x, p.z - sh.z);
   return { pass: G.checkpoint === sh && d < 3, d };`),
+  step("god takes no damage and refuses grabs", `
+  DF.devGate("E"); G.state = "play";
+  const p = G.player, rat = DF.makeEnemy({ type: "rat", x: p.x + 1, z: p.z, yaw: 0, node: -1 });
+  const hit = () => { p.hp = p.maxHp; p.iframe = 0; p.state = "free"; G.grabGrace = 0;
+    return [DF.hurtPlayer(50, null, { px: p.x + 1, pz: p.z }), p.hp, DF.hurtPlayer(5, null, { px: p.x + 1, pz: p.z, dot: true }), p.hp,
+      DF.grabPlayer(rat, { dps: 8, tx: p.x, tz: p.z, speed: 4 })]; };
+  const off = hit(); p.state = "free"; p.hold = null;
+  DF.devGod(true); const on = hit();
+  const pass = off[0] === "hit" && off[1] < p.maxHp && off[4] === true &&
+    on[0] === "none" && on[1] === p.maxHp && on[2] === "none" && on[3] === p.maxHp && on[4] === false;
+  return { pass, off, on };`),
+  step("god keeps everything full", `
+  const p = G.player; p.stam = 0; p.flasks = 0; p.tool = 0; p.focus = 0; p.hp = 1;
+  DF.sim(1 / 60);
+  const out = { hp: p.hp, stam: p.stam, flasks: p.flasks, tool: p.tool, focus: p.focus };
+  return { pass: p.hp === p.maxHp && p.stam === p.maxStam && p.flasks === 3 && p.tool === p.cls.tool.max && p.focus === 100, ...out };`),
+  step("god holds through world swaps", `
+  DF.enterCave("D"); DF.enterHub(); DF.enterCave("E"); G.player.hp = 0; DF.respawn(); await draw();
+  const badge = $("#devBadge"), shown = !!badge && !badge.hidden, btn = $("#devGod").textContent;
+  return { pass: DF.DEV.god === true && shown && btn === "God mode: on", god: DF.DEV.god, shown, btn };`),
+  step("god holds through a crocodile fight", `
+  const fight = (god) => {
+    DF.devGod(god); DF.devBoss("D", 5); G.state = "play";
+    const p = G.player, w = G.world, B = w.boss;
+    for (let k = 0; k < 32; k++) { const q = (k / 32) * Math.PI * 2, x = B.x + Math.sin(q) * 16, z = B.z + Math.cos(q) * 16;
+      if (w.waterAt(x, z) === 0 && w.fieldAt(x, z) >= 3) { p.x = x; p.z = z; break; } }
+    DF.cam.px = p.x; DF.cam.pz = p.z; G.flashRed = 0;
+    let hurt = 0, held = 0, low = p.maxHp, chunk = false;
+    DF.sim(25, (i) => {
+      if (G.inBoss && !chunk) { DF.crocDropChunk(p.x, p.z); chunk = true; }
+      if (G.flashRed > 0) hurt++; if (p.state === "held") held++; low = Math.min(low, p.hp);
+      if (!god) { p.hp = p.maxHp; if (p.state === "dead") return false; }
+    });
+    return { hurt, held, low, inBoss: G.inBoss, chunk };
+  };
+  const off = fight(false), on = fight(true);
+  return { pass: off.hurt > 0 && on.hurt === 0 && on.held === 0 && on.low === G.player.maxHp && on.chunk, off, on };`),
+  step("god off hurts again", `
+  DF.devGod(false); await draw();
+  const p = G.player; p.hp = p.maxHp; p.iframe = 0; p.state = "free"; G.state = "play";
+  const r = DF.hurtPlayer(10, null, { px: p.x + 1, pz: p.z }), badge = $("#devBadge");
+  return { pass: r === "hit" && p.hp < p.maxHp && badge.hidden && $("#devGod").textContent === "God mode: off", r, hp: p.hp };`),
+  step("the dev screen over the title", `
+  DF.enterHub(); DF.show("title"); DF.openMenu("dev"); await draw(); await draw();
+  return { pass: G.state === "dev" };`),
+  { shot: "t26-dev" },
 ];

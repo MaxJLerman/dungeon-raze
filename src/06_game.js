@@ -2627,6 +2627,8 @@ function hitEnemy(e, dmg, post, o = {}) {
   }
 }
 function hurtPlayer(dmg, e, atk) {
+  // the dev menu's god mode takes nothing, before any guard or dodge rule
+  if (DEV && DEV.god) return "none";
   const p = G.player,
     c = p.cls;
   if (p.state === "dead" || G.state !== "play" || G.trans) return "none";
@@ -2728,6 +2730,7 @@ const HOLD = { max: 2, mash: 0.35, safe: 0.4, grace: 1.5, tick: 0.5 };
 function grabPlayer(e, o) {
   const p = G.player;
   if (
+    (DEV && DEV.god) ||
     G.state !== "play" ||
     p.iframe > 0 ||
     G.grabGrace > 0 ||
@@ -5711,6 +5714,8 @@ function update(dt) {
       }
     }
   if (p.state === "dead" && p.t > 1.6 && G.state === "play") G.state = "dead";
+  // the dev menu's god mode tops the player up (null in a release build)
+  if (DEV) DEV.tick();
   // open portals in the hall: stepping into the arch starts the trip. This
   // must stay the last thing update does, because a cut swaps the world here.
   if (G.zone === "hub" && p.state !== "dead")
