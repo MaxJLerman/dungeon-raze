@@ -8,8 +8,24 @@ function devHost(loc) {
     ["localhost", "127.0.0.1", "[::1]"].includes(loc.hostname)
   );
 }
-// Refreshes the labels that show the menu's state. Each action adds its own.
-function devRender() {}
+// Opens every hidden class for this session. They go in DEV.unlocked, never
+// in UNLOCKED, so the save does not learn of them. Returns the ids added.
+function devUnlockAll() {
+  const added = CLASS_IDS.filter((id) => !classOpen(id));
+  for (const id of added) DEV.unlocked.add(id);
+  renderPicker();
+  devRender();
+  return added;
+}
+// Refreshes the labels that show the menu's state.
+function devRender() {
+  const u = $("devUnlock");
+  if (u) {
+    const all = CLASS_IDS.every(classOpen);
+    u.textContent = all ? "Hidden classes unlocked" : "Unlock hidden classes";
+    u.disabled = all;
+  }
+}
 // The backquote key: from play it opens the menu over pause, so Back lands
 // on the pause screen; on the menu it goes back. A player who has bound the
 // key to an action keeps that action.
@@ -27,6 +43,7 @@ function devBuild() {
   scr.innerHTML =
     '<h1 class="sm">Dev</h1>' +
     '<p class="sub">Local builds only. Nothing here is saved.</p>' +
+    '<div class="row"><button type="button" id="devUnlock"></button></div>' +
     '<div class="row"><button type="button" data-back="1">Back</button></div>';
   $("scr-title").after(scr);
   scr
@@ -42,6 +59,7 @@ function devBuild() {
   };
   $("scr-title").querySelector(".row").append(open("btnDev"));
   $("btnBase").before(open("btnDevPause"));
+  $("devUnlock").addEventListener("click", devUnlockAll);
   SCREENS.push("dev");
   MENUS.push("dev");
   addEventListener("keydown", (e) => {
@@ -53,7 +71,7 @@ function devBuild() {
 }
 if (devHost(location)) {
   DEV = { god: false, unlocked: new Set(), tick() {} };
-  DF.DEV = DEV;
+  Object.assign(DF, { DEV, devUnlockAll });
   devBuild();
 }
 DF.devHost = devHost;

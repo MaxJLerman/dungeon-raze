@@ -212,7 +212,10 @@ const UNLOCKED = new Set();
 // `DEV &&` check is inert.
 let DEV = null;
 function classOpen(id) {
-  return Object.hasOwn(CLASSES, id) && (!CLASSES[id].hidden || UNLOCKED.has(id));
+  return (
+    Object.hasOwn(CLASSES, id) &&
+    (!CLASSES[id].hidden || UNLOCKED.has(id) || !!(DEV && DEV.unlocked.has(id)))
+  );
 }
 function pickable() {
   return CLASS_IDS.filter(classOpen);

@@ -48,4 +48,25 @@ export default [
   key("Backquote"); await draw();
   const s = G.state; DF.show("title");
   return { pass: s === "controls", state: s };`),
+  step("unlock adds every hidden class to the picker", `
+  const hid = ["enforcer", "sapper", "riftwalker"];
+  const before = hid.filter((id) => DF.pickable().includes(id));
+  DF.show("title"); DF.openMenu("dev"); await draw();
+  $("#devUnlock").click(); await draw();
+  const after = hid.filter((id) => DF.pickable().includes(id));
+  const card = !!$('.picker .card[data-cls="sapper"]'), off = $("#devUnlock").disabled;
+  return { pass: before.length === 0 && after.length === 3 && card && off, before, after, card, off };`),
+  step("unlocks never reach the save", `
+  DF.saveOpt();
+  const u = JSON.parse(localStorage.getItem("dungeon-raze.v2")).u;
+  const inSet = ["enforcer", "sapper", "riftwalker"].filter((id) => DF.UNLOCKED.has(id));
+  return { pass: u.length === 0 && inSet.length === 0, u, inSet };`),
+  step("a dev class does not survive a reload", `
+  DF.setClass("enforcer"); DF.saveOpt();
+  const kept = new Set(DF.DEV.unlocked); DF.DEV.unlocked.clear();
+  DF.loadOpt();
+  const cls = DF.OPT.cls, first = DF.pickable()[0];
+  for (const id of kept) DF.DEV.unlocked.add(id);
+  DF.setClass("fighter"); DF.saveOpt();
+  return { pass: cls === first && cls !== "enforcer", cls, first };`),
 ];

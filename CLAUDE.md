@@ -390,7 +390,11 @@ is what you need to change the code without breaking it.
   it pauses and opens the menu over pause, on the menu it goes back, and on
   any other screen it does nothing. A player who binds backquote to an
   action keeps the action and loses the shortcut. `devRender()` refreshes
-  the menu's labels. Run `tests/t26.mjs` after any change to it:
+  the menu's labels.
+- **Unlock hidden classes** (`#devUnlock`, `devUnlockAll()`) puts every
+  locked class in `DEV.unlocked`, which `classOpen` reads beside
+  `UNLOCKED`. It is never saved; a dev class chosen and saved falls back to
+  the first pickable class on the next load. Run `tests/t26.mjs` after any change to it:
   `node build.mjs && SCRIPT=$PWD/tests/t26.mjs node test.mjs hub`.
 
 ### Game state and time (`06_game.js`, `09_main.js`)
