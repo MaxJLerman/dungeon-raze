@@ -382,6 +382,16 @@ is what you need to change the code without breaking it.
   dev file set `DEV` (`{ god, unlocked, tick }`) and `DF.DEV`.
 - `let DEV = null` sits beside `UNLOCKED` in `06_game.js`. Core code reads it
   only as `DEV && ...`, so a release build behaves as if it were never there.
+- The dev file runs after `boot()`, so it builds `#scr-dev` in JS (the
+  template carries nothing), binds its own clicks, and pushes `"dev"` onto
+  `SCREENS` and `MENUS`. `#btnDev` sits on the title screen and
+  `#btnDevPause` on the pause screen; Back, Esc and the pad's back button
+  return as from any menu. The backquote key runs `devToggle()`: from play
+  it pauses and opens the menu over pause, on the menu it goes back, and on
+  any other screen it does nothing. A player who binds backquote to an
+  action keeps the action and loses the shortcut. `devRender()` refreshes
+  the menu's labels. Run `tests/t26.mjs` after any change to it:
+  `node build.mjs && SCRIPT=$PWD/tests/t26.mjs node test.mjs hub`.
 
 ### Game state and time (`06_game.js`, `09_main.js`)
 
