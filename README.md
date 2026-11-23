@@ -119,6 +119,26 @@ Because the files are concatenated rather than imported, they share one scope.
 The numeric prefixes set the order, and later files may use anything declared in
 earlier ones.
 
+The files in `src/dev/` (the dev menu) come after the rest. `node build.mjs
+--release` leaves them out, and the GitHub Pages workflow builds that way, so
+the published page has no dev menu. `--out <file>` writes somewhere other than
+`dist/index.html`.
+
+### Dev menu
+
+A local build (`npm run dev`, then http://localhost:8000, or `dist/index.html`
+from disk) has a Dev button on the title and pause screens, and the backquote
+key opens it. The menu only turns on for `localhost`, `127.0.0.1`, `[::1]` and
+`file://`.
+
+It unlocks the hidden classes for the session, enters any gate (C to S load
+the cave for now), jumps to the Warden or Old Sluicejaw from the last rest
+point before them, and toggles god mode: no damage, no grabs, and health,
+stamina, flasks, tool charges and focus kept full (dodge, parry and block
+still work). Nothing it does is saved: a boss killed in a run it started, or
+under god mode, does not count as a cleared grade. Any copy of the page that
+is published must be built with `node build.mjs --release`.
+
 ## Source layout
 
 | File                 | What it holds                                                                               |
@@ -140,6 +160,7 @@ earlier ones.
 | `src/08c_touch.js`   | `TOUCH`: draws the buttons, tracks fingers, switches touch mode, fullscreen and Back        |
 | `src/08d_pad.js`     | `PAD`: reads controllers, sticks, camera, sprint latch, menu focus, rebinding, rumble       |
 | `src/09_main.js`     | Input events, menus, camera, main loop, test hook `window.DF`                               |
+| `src/dev/10_dev.js`  | The dev menu, left out of release builds                                                    |
 | `build.mjs`          | The build script                                                                            |
 | `test.mjs`, `tests/` | Headless test runner and scenario scripts                                                   |
 

@@ -70,7 +70,14 @@ is what you need to change the code without breaking it.
 
 - `node build.mjs` after every source change. The page that runs is
   `dist/index.html`, and it is not committed. A push to `main` builds it
-  and publishes it to GitHub Pages (`.github/workflows/pages.yml`).
+  with `--release` and publishes it to GitHub Pages
+  (`.github/workflows/pages.yml`).
+- `src/dev/*.js` (the dev menu) is appended after `src/*.js`, and only when
+  `--release` is not passed. **Every published copy of the page, on GitHub
+  Pages or the hosted single page, is built with `--release`;** a plain
+  build is for this machine only. Nothing outside `src/dev/` may name anything
+  declared there; core code reads `DEV` alone, which stays `null` in a
+  release build. `node tests/t26-build.mjs` checks both builds.
 - All `src/*.js` files are concatenated into one function scope. There are no
   imports or exports. Declare a name once across the whole of `src/`.
 - No dependencies, no network requests at run time except Google Fonts. The
@@ -369,6 +376,49 @@ is what you need to change the code without breaking it.
   and `plaqueAt()` the plaque the player is near and facing, or `null`. The
   glow is drawn as sprites each frame, because the hall mesh is built once
   and the glow brightens on unlock.
+
+### Dev menu (`src/dev/10_dev.js`)
+
+- Local builds only (see Rules of the build). `devHost(loc)` is true for
+  `file:` and for `localhost`, `127.0.0.1` and `[::1]`; only then does the
+  dev file set `DEV` (`{ god, unlocked, tick }`) and `DF.DEV`.
+- `let DEV = null` sits beside `UNLOCKED` in `06_game.js`. Core code reads it
+  only as `DEV && ...`, so a release build behaves as if it were never there.
+- The dev file runs after `boot()`, so it builds `#scr-dev` in JS (the
+  template carries nothing), binds its own clicks, and pushes `"dev"` onto
+  `SCREENS` and `MENUS`. `#btnDev` sits on the title screen and
+  `#btnDevPause` on the pause screen; Back, Esc and the pad's back button
+  return as from any menu. The backquote key runs `devToggle()`: from play
+  it pauses and opens the menu over pause, on the menu it goes back, and on
+  any other screen it does nothing. A player who binds backquote to an
+  action keeps the action and loses the shortcut. `devRender()` refreshes
+  the menu's labels.
+- **Unlock hidden classes** (`#devUnlock`, `devUnlockAll()`) puts every
+  locked class in `DEV.unlocked`, which `classOpen` reads beside
+  `UNLOCKED`. It is never saved; a dev class chosen and saved falls back to
+  the first pickable class on the next load.
+- **Enter a gate** (`[data-dev-gate]`, `devGate(grade)`) runs `enterCave`
+  for any of `GRADE_IDS`, ignoring `portalOpen`; C to S get the cave. It
+  clears nothing (`CLEARED` is untouched).
+- **Jump to a boss** (`[data-dev-boss]`, `devBoss(grade, seed?)`, the list
+  in `DEV_BOSSES`) starts a fresh run at its last rest point, lit and made
+  the checkpoint, facing `world.boss`. Seeds 1 to 12 of E and D all have a
+  rest point before the boss; a cave with only one would start at arrival.
+- **Nothing is saved.** `devGate` and `devBoss` set `DEV.run` to the world
+  they built (kept through `respawn`, which keeps the world), and
+  `DEV.noSave()` is true for that world or while god mode is on; `kill`
+  then skips `clearGrade`, so a dev kill opens no gate for good.
+- **God mode** (`#devGod`, `devGod(on?)`) sets `DEV.god`, off on each load
+  and kept through world swaps. `hurtPlayer` still runs the dodge (and
+  perfect dodge), parry and block branches, so plates can be parried back;
+  a block costs no stamina or chip, and any hit past them returns `"none"`.
+  `grabPlayer` refuses, and `DEV.tick()` at the end of `update` keeps
+  health, stamina, flasks (3), tool charges and focus (100) full. `#devBadge`
+  ("GOD") shows at the top of the screen while it is on. A new way of
+  hurting or holding the player must go through those two functions, as it
+  already must.
+  Run `tests/t26.mjs` after any change to it:
+  `node build.mjs && SCRIPT=$PWD/tests/t26.mjs node test.mjs hub`.
 
 ### Game state and time (`06_game.js`, `09_main.js`)
 
