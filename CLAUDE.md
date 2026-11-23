@@ -70,7 +70,12 @@ is what you need to change the code without breaking it.
 
 - `node build.mjs` after every source change. The page that runs is
   `dist/index.html`, and it is not committed. A push to `main` builds it
-  and publishes it to GitHub Pages (`.github/workflows/pages.yml`).
+  with `--release` and publishes it to GitHub Pages
+  (`.github/workflows/pages.yml`).
+- `src/dev/*.js` (the dev menu) is appended after `src/*.js`, and only when
+  `--release` is not passed. Nothing outside `src/dev/` may name anything
+  declared there; core code reads `DEV` alone, which stays `null` in a
+  release build. `node tests/t26-build.mjs` checks both builds.
 - All `src/*.js` files are concatenated into one function scope. There are no
   imports or exports. Declare a name once across the whole of `src/`.
 - No dependencies, no network requests at run time except Google Fonts. The
@@ -369,6 +374,14 @@ is what you need to change the code without breaking it.
   and `plaqueAt()` the plaque the player is near and facing, or `null`. The
   glow is drawn as sprites each frame, because the hall mesh is built once
   and the glow brightens on unlock.
+
+### Dev menu (`src/dev/10_dev.js`)
+
+- Local builds only (see Rules of the build). `devHost(loc)` is true for
+  `file:` and for `localhost`, `127.0.0.1` and `[::1]`; only then does the
+  dev file set `DEV` (`{ god, unlocked, tick }`) and `DF.DEV`.
+- `let DEV = null` sits beside `UNLOCKED` in `06_game.js`. Core code reads it
+  only as `DEV && ...`, so a release build behaves as if it were never there.
 
 ### Game state and time (`06_game.js`, `09_main.js`)
 

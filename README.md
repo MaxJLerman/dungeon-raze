@@ -119,6 +119,18 @@ Because the files are concatenated rather than imported, they share one scope.
 The numeric prefixes set the order, and later files may use anything declared in
 earlier ones.
 
+The files in `src/dev/` (the dev menu) come after the rest. `node build.mjs
+--release` leaves them out, and the GitHub Pages workflow builds that way, so
+the published page has no dev menu. `--out <file>` writes somewhere other than
+`dist/index.html`.
+
+### Dev menu
+
+A local build (`npm run dev`, then http://localhost:8000, or `dist/index.html`
+from disk) has a Dev button on the title and pause screens, and the backquote
+key opens it. The menu only turns on for `localhost`, `127.0.0.1`, `[::1]` and
+`file://`.
+
 ## Source layout
 
 | File                 | What it holds                                                                               |
@@ -140,6 +152,7 @@ earlier ones.
 | `src/08c_touch.js`   | `TOUCH`: draws the buttons, tracks fingers, switches touch mode, fullscreen and Back        |
 | `src/08d_pad.js`     | `PAD`: reads controllers, sticks, camera, sprint latch, menu focus, rebinding, rumble       |
 | `src/09_main.js`     | Input events, menus, camera, main loop, test hook `window.DF`                               |
+| `src/dev/10_dev.js`  | The dev menu, left out of release builds                                                    |
 | `build.mjs`          | The build script                                                                            |
 | `test.mjs`, `tests/` | Headless test runner and scenario scripts                                                   |
 

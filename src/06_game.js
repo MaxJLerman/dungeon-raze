@@ -207,6 +207,10 @@ function actKey(a) {
 // Hidden classes unlocked at their plaques, saved under "u". A class without
 // `hidden` is always open.
 const UNLOCKED = new Set();
+// The dev menu (the dev folder), set only on a local page of a build that includes
+// it. A release build leaves that folder out, so this stays null and every
+// `DEV &&` check is inert.
+let DEV = null;
 function classOpen(id) {
   return Object.hasOwn(CLASSES, id) && (!CLASSES[id].hidden || UNLOCKED.has(id));
 }
