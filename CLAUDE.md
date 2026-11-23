@@ -394,7 +394,15 @@ is what you need to change the code without breaking it.
 - **Unlock hidden classes** (`#devUnlock`, `devUnlockAll()`) puts every
   locked class in `DEV.unlocked`, which `classOpen` reads beside
   `UNLOCKED`. It is never saved; a dev class chosen and saved falls back to
-  the first pickable class on the next load. Run `tests/t26.mjs` after any change to it:
+  the first pickable class on the next load.
+- **Enter a gate** (`[data-dev-gate]`, `devGate(grade)`) runs `enterCave`
+  for any of `GRADE_IDS`, ignoring `portalOpen`; C to S get the cave. It
+  clears nothing (`CLEARED` is untouched).
+- **Jump to a boss** (`[data-dev-boss]`, `devBoss(grade, seed?)`, the list
+  in `DEV_BOSSES`) starts a fresh run at its last rest point, lit and made
+  the checkpoint, facing `world.boss`. Seeds 1 to 12 of E and D all have a
+  rest point before the boss; a cave with only one would start at arrival.
+  Run `tests/t26.mjs` after any change to it:
   `node build.mjs && SCRIPT=$PWD/tests/t26.mjs node test.mjs hub`.
 
 ### Game state and time (`06_game.js`, `09_main.js`)

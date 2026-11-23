@@ -69,4 +69,33 @@ export default [
   for (const id of kept) DF.DEV.unlocked.add(id);
   DF.setClass("fighter"); DF.saveOpt();
   return { pass: cls === first && cls !== "enforcer", cls, first };`),
+  step("every gate opens from the menu", `
+  const cleared = JSON.stringify(DF.CLEARED), out = [];
+  for (const g of ["E", "D", "C", "B", "A", "S"]) {
+    DF.show("title"); DF.openMenu("dev"); await draw();
+    $('[data-dev-gate="' + g + '"]').click();
+    out.push({ g, ok: G.zone === "cave" && G.grade === g && G.state === "play" && !!G.world.sewer === (g === "D") });
+  }
+  const same = JSON.stringify(DF.CLEARED) === cleared;
+  return { pass: out.every((o) => o.ok) && same, out, same };`),
+  step("boss jump lands at the last rest point", `
+  const bad = []; let single = 0;
+  for (const [g, type] of [["E", "warden"], ["D", "croc"]])
+    for (let seed = 1; seed <= 12; seed++) {
+      DF.devBoss(g, seed);
+      const w = G.world, p = G.player, sh = w.shrines.at(-1), cp = G.checkpoint;
+      if (w.shrines.length === 1) single++;
+      const near = Math.hypot(p.x - sh.x, p.z - sh.z) < 3;
+      const closer = w.shrines.length === 1 ||
+        Math.hypot(p.x - w.boss.x, p.z - w.boss.z) < Math.hypot(w.spawn.x - w.boss.x, w.spawn.z - w.boss.z);
+      const boss = G.enemies.some((e) => e.def.boss && e.type === type);
+      if (!(cp === sh && sh.lit && near && closer && boss && G.state === "play" && G.grade === g))
+        bad.push({ g, seed, cp: cp === sh, lit: sh.lit, near, closer, boss });
+    }
+  return { pass: bad.length === 0, bad, single };`),
+  step("a death after a boss jump wakes at that rest point", `
+  DF.devBoss("D", 5);
+  const sh = G.checkpoint; G.player.hp = 0; DF.respawn();
+  const p = G.player, d = Math.hypot(p.x - sh.x, p.z - sh.z);
+  return { pass: G.checkpoint === sh && d < 3, d };`),
 ];

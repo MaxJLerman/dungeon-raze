@@ -17,6 +17,34 @@ function devUnlockAll() {
   devRender();
   return added;
 }
+// Through any gate, open or not, into a fresh world of that grade. Grades
+// with no world of their own get the cave, as WORLD_GEN says.
+function devGate(grade) {
+  enterCave(grade);
+  play();
+}
+// The bosses there are to jump to, by grade.
+const DEV_BOSSES = [
+  ["E", "The Warden"],
+  ["D", "Old Sluicejaw"],
+];
+// A fresh run of the grade that starts at its last rest point, the one
+// nearest the boss, lit and made the checkpoint so a death wakes there too.
+// A cave too short for one starts at its arrival rest point.
+function devBoss(grade, seed) {
+  enterCave(grade, seed);
+  const w = G.world,
+    p = G.player,
+    sh = w.shrines[w.shrines.length - 1];
+  sh.lit = true;
+  G.checkpoint = sh;
+  p.x = sh.x;
+  p.z = sh.z - 1.6;
+  w.resolve(p, 0.6);
+  if (w.boss) p.yaw = Math.atan2(w.boss.x - p.x, w.boss.z - p.z);
+  snapCam();
+  play();
+}
 // Refreshes the labels that show the menu's state.
 function devRender() {
   const u = $("devUnlock");
@@ -44,6 +72,17 @@ function devBuild() {
     '<h1 class="sm">Dev</h1>' +
     '<p class="sub">Local builds only. Nothing here is saved.</p>' +
     '<div class="row"><button type="button" id="devUnlock"></button></div>' +
+    '<p class="sub">Enter a gate</p><div class="row">' +
+    GRADE_IDS.map(
+      (g) =>
+        '<button type="button" data-dev-gate="' + g + '">' + GRADES[g].name + "</button>",
+    ).join("") +
+    '</div><p class="sub">Jump to a boss</p><div class="row">' +
+    DEV_BOSSES.map(
+      ([g, name]) =>
+        '<button type="button" data-dev-boss="' + g + '">' + name + "</button>",
+    ).join("") +
+    "</div>" +
     '<div class="row"><button type="button" data-back="1">Back</button></div>';
   $("scr-title").after(scr);
   scr
@@ -60,6 +99,10 @@ function devBuild() {
   $("scr-title").querySelector(".row").append(open("btnDev"));
   $("btnBase").before(open("btnDevPause"));
   $("devUnlock").addEventListener("click", devUnlockAll);
+  for (const b of scr.querySelectorAll("[data-dev-gate]"))
+    b.addEventListener("click", () => devGate(b.dataset.devGate));
+  for (const b of scr.querySelectorAll("[data-dev-boss]"))
+    b.addEventListener("click", () => devBoss(b.dataset.devBoss));
   SCREENS.push("dev");
   MENUS.push("dev");
   addEventListener("keydown", (e) => {
@@ -71,7 +114,7 @@ function devBuild() {
 }
 if (devHost(location)) {
   DEV = { god: false, unlocked: new Set(), tick() {} };
-  Object.assign(DF, { DEV, devUnlockAll });
+  Object.assign(DF, { DEV, devUnlockAll, devGate, devBoss });
   devBuild();
 }
 DF.devHost = devHost;
