@@ -73,7 +73,9 @@ is what you need to change the code without breaking it.
   with `--release` and publishes it to GitHub Pages
   (`.github/workflows/pages.yml`).
 - `src/dev/*.js` (the dev menu) is appended after `src/*.js`, and only when
-  `--release` is not passed. Nothing outside `src/dev/` may name anything
+  `--release` is not passed. **Every published copy of the page, on GitHub
+  Pages or the hosted single page, is built with `--release`;** a plain
+  build is for this machine only. Nothing outside `src/dev/` may name anything
   declared there; core code reads `DEV` alone, which stays `null` in a
   release build. `node tests/t26-build.mjs` checks both builds.
 - All `src/*.js` files are concatenated into one function scope. There are no
@@ -402,9 +404,14 @@ is what you need to change the code without breaking it.
   in `DEV_BOSSES`) starts a fresh run at its last rest point, lit and made
   the checkpoint, facing `world.boss`. Seeds 1 to 12 of E and D all have a
   rest point before the boss; a cave with only one would start at arrival.
+- **Nothing is saved.** `devGate` and `devBoss` set `DEV.run` to the world
+  they built (kept through `respawn`, which keeps the world), and
+  `DEV.noSave()` is true for that world or while god mode is on; `kill`
+  then skips `clearGrade`, so a dev kill opens no gate for good.
 - **God mode** (`#devGod`, `devGod(on?)`) sets `DEV.god`, off on each load
-  and kept through world swaps. `hurtPlayer` returns `"none"` first thing
-  (before guard, parry and dodge, so nothing is parried either),
+  and kept through world swaps. `hurtPlayer` still runs the dodge (and
+  perfect dodge), parry and block branches, so plates can be parried back;
+  a block costs no stamina or chip, and any hit past them returns `"none"`.
   `grabPlayer` refuses, and `DEV.tick()` at the end of `update` keeps
   health, stamina, flasks (3), tool charges and focus (100) full. `#devBadge`
   ("GOD") shows at the top of the screen while it is on. A new way of

@@ -2445,7 +2445,8 @@ function kill(e) {
     const grade = G.grade || "E";
     const next = GRADE_IDS[GRADE_IDS.indexOf(grade) + 1];
     const before = next ? portalOpen(next) : true;
-    clearGrade(grade, OPT.cls);
+    // a kill in a run the dev menu started, or under its god mode, is not saved
+    if (!(DEV && DEV.noSave())) clearGrade(grade, OPT.cls);
     G.bossDead = true;
     G.gate = { x: G.world.boss.x, z: G.world.boss.z, t: 0 };
     G.slowT = 1.2;
@@ -2627,8 +2628,6 @@ function hitEnemy(e, dmg, post, o = {}) {
   }
 }
 function hurtPlayer(dmg, e, atk) {
-  // the dev menu's god mode takes nothing, before any guard or dodge rule
-  if (DEV && DEV.god) return "none";
   const p = G.player,
     c = p.cls;
   if (p.state === "dead" || G.state !== "play" || G.trans) return "none";
@@ -2675,9 +2674,11 @@ function hurtPlayer(dmg, e, atk) {
       }
       return "parry";
     }
-    p.stam -= dmg * c.blockMul;
+    // god mode (a local build's test switch) blocks for nothing
+    const take = DEV && DEV.god ? 0 : 1;
+    p.stam -= dmg * c.blockMul * take;
     p.stamDelay = 0.9;
-    p.hp -= dmg * c.chip;
+    p.hp -= dmg * c.chip * take;
     p.kx = -kdx * 4;
     p.kz = -kdz * 4;
     SFX.block();
@@ -2692,6 +2693,8 @@ function hurtPlayer(dmg, e, atk) {
     if (p.hp <= 0) playerDie();
     return "block";
   }
+  // god mode takes the hit as nothing; dodge, parry and block above still work
+  if (DEV && DEV.god) return "none";
   const armored = (c.armor && p.state === "attack") || p.buff === "berserk";
   if (armored) dmg *= 0.85;
   p.hp -= dmg;
@@ -5714,7 +5717,7 @@ function update(dt) {
       }
     }
   if (p.state === "dead" && p.t > 1.6 && G.state === "play") G.state = "dead";
-  // the dev menu's god mode tops the player up (null in a release build)
+  // a local build's test switches top the player up (null in a release build)
   if (DEV) DEV.tick();
   // open portals in the hall: stepping into the arch starts the trip. This
   // must stay the last thing update does, because a cut swaps the world here.

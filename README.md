@@ -134,7 +134,10 @@ key opens it. The menu only turns on for `localhost`, `127.0.0.1`, `[::1]` and
 It unlocks the hidden classes for the session, enters any gate (C to S load
 the cave for now), jumps to the Warden or Old Sluicejaw from the last rest
 point before them, and toggles god mode: no damage, no grabs, and health,
-stamina, flasks, tool charges and focus kept full. Nothing it does is saved.
+stamina, flasks, tool charges and focus kept full (dodge, parry and block
+still work). Nothing it does is saved: a boss killed in a run it started, or
+under god mode, does not count as a cleared grade. Any copy of the page that
+is published must be built with `node build.mjs --release`.
 
 ## Source layout
 

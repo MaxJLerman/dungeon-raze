@@ -135,6 +135,29 @@ export default [
   };
   const off = fight(false), on = fight(true);
   return { pass: off.hurt > 0 && on.hurt === 0 && on.held === 0 && on.low === G.player.maxHp && on.chunk, off, on };`),
+  step("god keeps parry, block and the perfect dodge", `
+  DF.devGod(true); DF.devGate("E"); G.state = "play";
+  const p = G.player, rat = DF.makeEnemy({ type: "rat", x: p.x, z: p.z + 1, yaw: Math.PI, node: -1 });
+  G.enemies.push(rat); p.yaw = 0;
+  const atk = { pp: 0 };
+  p.state = "guard"; p.guardT = 0; p.iframe = 0;
+  const parry = DF.hurtPlayer(20, rat, atk), recoil = rat.state;
+  p.state = "guard"; p.guardT = 5; p.iframe = 0; const stam = p.stam;
+  const block = DF.hurtPlayer(20, rat, atk), hpB = p.hp, stamB = p.stam;
+  p.state = "dodge"; p.iframe = 0.3; p.pdUsed = false;
+  const dodge = DF.hurtPlayer(20, rat, atk), pd = p.pdUsed;
+  p.state = "free"; p.iframe = 0;
+  const pass = parry === "parry" && (recoil === "recoil" || recoil === "stagger") && block === "block" && hpB === p.maxHp && stamB === stam &&
+    dodge === "none" && pd === true;
+  return { pass, parry, recoil, block, hpB, stamB, stam, dodge, pd };`),
+  step("a boss killed in a dev run or under god is not saved", `
+  DF.resetCleared(); const p0 = localStorage.getItem("dungeon-raze.v2");
+  const bossKill = () => { const b = G.enemies.find((e) => e.def.boss); b.hp = 0; DF.kill(b); return DF.gradeCleared("E"); };
+  DF.devGod(false); DF.devBoss("E", 3); const dev = bossKill();
+  DF.devGod(true); DF.newRun(3, "E"); G.state = "play"; const god = bossKill();
+  DF.devGod(false); DF.newRun(3, "E"); G.state = "play"; const plain = bossKill();
+  DF.resetCleared();
+  return { pass: dev === false && god === false && plain === true, dev, god, plain };`),
   step("god off hurts again", `
   DF.devGod(false); await draw();
   const p = G.player; p.hp = p.maxHp; p.iframe = 0; p.state = "free"; G.state = "play";

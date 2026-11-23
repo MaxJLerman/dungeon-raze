@@ -21,6 +21,7 @@ function devUnlockAll() {
 // with no world of their own get the cave, as WORLD_GEN says.
 function devGate(grade) {
   enterCave(grade);
+  DEV.run = G.world;
   play();
 }
 // The bosses there are to jump to, by grade.
@@ -33,6 +34,7 @@ const DEV_BOSSES = [
 // A cave too short for one starts at its arrival rest point.
 function devBoss(grade, seed) {
   enterCave(grade, seed);
+  DEV.run = G.world;
   const w = G.world,
     p = G.player,
     sh = w.shrines[w.shrines.length - 1];
@@ -147,7 +149,15 @@ function devBuild() {
   devRender();
 }
 if (devHost(location)) {
-  DEV = { god: false, unlocked: new Set(), tick: devTick };
+  // run: the world a dev action started, kept through respawn (same world)
+  DEV = {
+    god: false,
+    unlocked: new Set(),
+    run: null,
+    tick: devTick,
+    // a boss kill now is not saved as a cleared grade
+    noSave: () => DEV.god || (!!G.world && DEV.run === G.world),
+  };
   Object.assign(DF, { DEV, devUnlockAll, devGate, devBoss, devGod });
   devBuild();
 }
