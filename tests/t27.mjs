@@ -254,6 +254,88 @@ export default [
     },
   },
   {
+    name: "after slow motion the clock catches up and puppets stay on the host's path",
+    eval: () => {
+      const { G } = DF,
+        co = window.__co;
+      G.manual = true;
+      // one run per slow-motion length a perfect dodge or parry gives
+      const one = (slow) => {
+        const r = co.solo({ ping: 200 }),
+          h = r.host,
+          he = co.husk(37),
+          pe = co.pup(37);
+        co.near(he, 13);
+        const hist = [];
+        const log = () => hist.push({ t: h.S.step / 60, x: he.x, z: he.z, s: he.state });
+        // the host's husk at host time t, between the steps round it
+        const hostAt = (t) => {
+          for (let i = 1; i < hist.length; i++)
+            if (hist[i].t >= t) {
+              const A = hist[i - 1],
+                B = hist[i],
+                k = Math.min(1, Math.max(0, (t - A.t) / (B.t - A.t)));
+              return { x: A.x + (B.x - A.x) * k, z: A.z + (B.z - A.z) * k, s: [A.s, B.s] };
+            }
+          return null;
+        };
+        // a frame as the frame loop runs it: slow motion scales the step
+        const frame = () => {
+          DF.net().frame(1 / 60);
+          co.here();
+          log();
+          let sim = 1 / 60;
+          if (G.slowT > 0) {
+            G.slowT -= 1 / 60;
+            sim *= 0.3;
+          }
+          DF.update(sim);
+          for (const k in DF.taps) DF.taps[k] = false;
+        };
+        // until the husk starts its run at this player, from well off, so it
+        // runs at full speed through the time the drawn clock catches up
+        for (let i = 0; i < 300 && he.state !== "chase"; i++) frame();
+        const from = Math.hypot(he.x - G.player.x, he.z - G.player.z),
+          chased = he.state === "chase" && from > 9;
+        G.slowT = slow;
+        let worst = 0,
+          n = 0,
+          behind = 0,
+          caught = 0;
+        for (let i = 0; i < 90; i++) {
+          frame();
+          const gap = DF.CC.est - 0.1 - DF.CC.rt;
+          behind = Math.max(behind, gap);
+          const q = hostAt(DF.CC.rt);
+          if (!q || q.s.some((s) => s !== "chase")) continue;
+          n++;
+          if (G.slowT <= 0 && gap > 0.05) caught++;
+          worst = Math.max(worst, Math.hypot(pe.x - q.x, pe.z - q.z));
+        }
+        return { slow, chased, from: +from.toFixed(1), samples: n, catchUpSamples: caught, behind: +behind.toFixed(3), worst: +worst.toFixed(3) };
+      };
+      const res = [one(0.4), one(0.8)];
+      return {
+        pass: res.every((o) => o.chased && o.samples >= 40 && o.catchUpSamples >= 5 && o.behind > 0.2 && o.worst < 0.15),
+        runs: res,
+      };
+    },
+  },
+  {
+    name: "a respawn in a co-op run does not throw",
+    eval: () => {
+      const { G } = DF,
+        co = window.__co;
+      G.manual = true;
+      co.solo({ ping: 100 });
+      co.run(0.5);
+      DF.respawn();
+      co.run(1);
+      const ok = !!DF.net() && G.state === "play";
+      return { pass: ok, enemies: G.enemies.length };
+    },
+  },
+  {
     name: "a wind-up becomes a swing on the table's time",
     eval: () => {
       const { G } = DF,

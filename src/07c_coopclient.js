@@ -221,28 +221,34 @@ function coopFrame(dt) {
 // Simulation time, in place of the enemy loop: moves the drawn time on,
 // faster when it has fallen behind and slower when ahead, and brings every
 // puppet to it. Hit-stop and slow motion stop or slow it with the rest.
+// An enemy that is not a puppet (no snapshots: one a single-player respawn
+// made in place of the puppets) is stepped as single player steps it.
 function coopEnemies(dt) {
   if (G.world !== CC.world) {
     coopEnd("world");
     for (const e of G.enemies) enemyUpdate(e, dt);
     return;
   }
+  const rt0 = CC.rt;
   if (CC.est >= 0) {
     const target = CC.est - COOP.DELAY,
       behind = target - CC.rt;
     if (CC.rt < 0 || Math.abs(behind) > 0.6) CC.rt = target;
     else CC.rt += dt * clamp(1 + (behind - dt) * 4, 0.5, 2);
   }
-  const rt = CC.rt;
+  const rt = CC.rt,
+    drt = Math.abs(rt - rt0);
   for (const e of G.enemies) {
-    if (e.dead) {
+    if (!e.nb) enemyUpdate(e, dt);
+    else if (e.dead) {
       enemyUpdate(e, dt);
       if (e.gone) CC.byId.delete(e.id);
-    } else coopPuppet(e, dt, rt);
+    } else coopPuppet(e, dt, rt, drt);
   }
 }
-// One enemy as the host had it at the drawn time.
-function coopPuppet(e, dt, rt) {
+// One enemy as the host had it at the drawn time rt, which moved drt this
+// step.
+function coopPuppet(e, dt, rt, drt) {
   const p = G.player,
     d = e.def;
   e.flash = Math.max(0, e.flash - dt * 6);
@@ -257,10 +263,11 @@ function coopPuppet(e, dt, rt) {
     tx = B ? lerp(A.x, B.x, k) : A.x,
     tz = B ? lerp(A.z, B.z, k) : A.z;
   // After a stall the drawn spot can be well off the host's: glide there.
-  // The host's own pace between the two snapshots lets a charge or a lunge
-  // through at its real speed.
+  // The limit is in drawn time, so while the clock catches up (after slow
+  // motion, say) a puppet keeps up with its spot, and the host's own pace
+  // between the two snapshots lets a charge or a lunge through at its speed.
   const pace = B ? Math.hypot(B.x - A.x, B.z - A.z) / Math.max(1e-3, B.t - A.t) : 0,
-    lim = dt * Math.max(COOP_GLIDE * d.speed, 1.2 * pace),
+    lim = drt * Math.max(COOP_GLIDE * d.speed, 1.2 * pace),
     gap = Math.hypot(tx - e.gx, tz - e.gz);
   if (gap <= lim || gap > COOP_SNAP_D) {
     e.gx = tx;
