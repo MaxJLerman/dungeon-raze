@@ -123,6 +123,37 @@ check("joining sends the cave and every enemy", () => {
   const c = fakeClient(h, 3, "fighter");
   assert.deepEqual(c.join.dead, [5]);
 });
+check("a hello joins a matching version and refuses another", () => {
+  const h = cave(),
+    got = new Map();
+  h.send = (pid, buf) => {
+    if (h.wire.type(buf) !== 3) return;
+    if (!got.has(pid)) got.set(pid, []);
+    got.get(pid).push(h.wire.eventDecode(buf));
+  };
+  const hello = (pid, v, cls) => h.recv(pid, h.wire.eventEncode(["hello", 0, v, cls]));
+  hello(1, 1, "fighter");
+  assert.ok(h.S.px.has(1), "a matching hello joins");
+  assert.equal(h.S.px.get(1).clsId, "fighter");
+  assert.equal(got.get(1).length, 1);
+  assert.equal(got.get(1)[0][0], "join");
+  assert.equal(got.get(1)[0][1].pid, 1);
+  // another version: told so, and no proxy
+  hello(2, 2, "mage");
+  assert.ok(!h.S.px.has(2), "a wrong version does not join");
+  assert.deepEqual(got.get(2), [["no", "version"]]);
+  // a hello from a player already in is ignored
+  const px = h.S.px.get(1);
+  hello(1, 1, "mage");
+  assert.equal(h.S.px.get(1), px);
+  assert.equal(got.get(1).length, 1);
+  // a frame that is not a hello does not join anyone
+  h.recv(3, h.wire.eventEncode(["hit", 1, 37, 10, 0]));
+  h.recv(3, h.wire.stateEncode({ x: 0, z: 0, yaw: 0, vx: 0, vz: 0, state: "free", t: 0, move: null, hp: 1, maxHp: 1, speed: 0, guardT: 0, sprint: false }));
+  h.recv(3, new ArrayBuffer(0));
+  assert.ok(!h.S.px.has(3));
+  assert.equal(got.has(3), false);
+});
 check("an enemy hunts the nearer player and keeps it within 3 m", () => {
   const h = cave(),
     e = husk(h, 37);

@@ -346,14 +346,24 @@ const COOP_HOST = COOP_HEADLESS_HERE
         }
       }
 
+      // From a pid that has not joined only a hello is heard: ["hello", seq,
+      // v, cls] joins it when v is this build's COOP_V, and otherwise it is
+      // told ["no", "version"] and stays out.
+      function hello(pid, ev) {
+        if (!Array.isArray(ev) || ev[0] !== "hello") return;
+        if (ev[2] === COOP_V) join(pid, ev[3]);
+        else tell(pid, ["no", "version"]);
+      }
       // A STATE frame moves its proxy; an EVENT is a request. Anything that
       // does not decode is dropped. After the run has ended nothing is heard.
       const recv = (pid, buf) => {
         const px = S.px.get(pid);
-        if (!px || S.ended) return;
+        if (S.ended) return;
         try {
           const k = coopType(buf);
-          if (k === COOP.STATE) {
+          if (!px) {
+            if (k === COOP.EVENT) hello(pid, coopEventDecode(buf));
+          } else if (k === COOP.STATE) {
             const s = coopStateDecode(buf);
             px.x = s.x;
             px.z = s.z;

@@ -340,6 +340,8 @@ function frame(now) {
   if (!(dt > 0)) dt = 0.016;
   // tests set G.manual and poll the pads themselves
   if (!G.manual) PAD.poll(dt);
+  // a co-op run's link and clock move on real time, whatever the screen
+  if (NET && !G.manual) NET.frame(dt);
   if (!G.manual && (G.state === "play" || G.state === "dead")) {
     let sim = dt;
     if (G.hitstop > 0) {
@@ -750,6 +752,12 @@ window.DF = {
   openMenu,
   loadOpt,
   saveOpt,
+  net: () => NET,
+  CC,
+  coopBegin,
+  coopEnter,
+  coopEnd,
+  coopMakeHost,
   sim(sec, each) {
     const n = Math.round(sec * 60);
     for (let i = 0; i < n; i++) {
