@@ -20,9 +20,37 @@ const files = [
   ...list(new URL("./src/", import.meta.url)),
   ...(release ? [] : list(new URL("./src/dev/", import.meta.url))),
 ];
+const read = (f) => fs.readFileSync(f, "utf8"),
+  base = (f) => f.pathname.split("/").pop();
+// The co-op host is a second copy of the simulation: files 01 to 06d, which
+// need no browser, a few stand-ins for what later files declare, and the
+// source ends by returning COOP_HOST. Every build carries it as a string,
+// COOP_HOST_SRC, which a Worker or a Node test evaluates. COOP_HEADLESS comes
+// first because 06c reads it with typeof, which a const declared later would
+// make a ReferenceError.
+const HOST_HEAD = "const COOP_HEADLESS = true;\n";
+const HOST_STUBS = `
+const PAD = { rumble() {}, move: { x: 0, y: 0, mag: 0 }, active: false, sprint: false, fam: "xb" },
+  TOUCH = { move: { x: 0, y: 0, mag: 0 }, on: false },
+  RM = false;
+function padName() { return ""; }
+R.setWorld = () => {};
+`;
+const hostSrc =
+  "'use strict';\n" +
+  HOST_HEAD +
+  files
+    .filter((f) => /^0[1-6]/.test(base(f)))
+    .map(read)
+    .join("\n") +
+  HOST_STUBS +
+  "\nreturn COOP_HOST;";
 const js =
   "(() => {\n'use strict';\n" +
-  files.map((f) => fs.readFileSync(f, "utf8")).join("\n") +
+  "const COOP_HOST_SRC = " +
+  JSON.stringify(hostSrc).replace(/</g, "\\u003c") +
+  ";\n" +
+  files.map(read).join("\n") +
   "\n})();";
 const tpl = fs.readFileSync(
   new URL("./index.tpl.html", import.meta.url),

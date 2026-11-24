@@ -28,6 +28,14 @@ try {
   check("the release build has no devHost", !rel.includes("devHost"));
   check("the release build has no dev screen", !rel.includes("scr-dev"));
   check("the release build keeps the inert seam", rel.includes("let DEV = null"));
+  check("the release build carries the co-op host copy", rel.includes("const COOP_HOST_SRC = "));
+  check(
+    "the release host copy has no devHost",
+    (() => {
+      const m = rel.match(/^const COOP_HOST_SRC = (".*");$/m);
+      return !!m && !JSON.parse(m[1]).includes("devHost");
+    })(),
+  );
   const start = Date.now() - 1000;
   build();
   check(
