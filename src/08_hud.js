@@ -83,6 +83,7 @@ const HUD = (() => {
   function update(dt) {
     const p = G.player;
     if (!p) return;
+    coopHud();
     hpLag = p.hp > hpLag ? p.hp : damp(hpLag, p.hp, 3, dt);
     el.hp.style.width = sat(p.hp / p.maxHp) * 100 + "%";
     el.hpL.style.width = sat(hpLag / p.maxHp) * 100 + "%";

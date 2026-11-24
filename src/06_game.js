@@ -2066,6 +2066,8 @@ function newRun(seed, grade = "E") {
 // Puts the player in the hall. With fromGrade they step out of that grade's
 // portal, facing into the hall; otherwise they stand at the start point.
 function enterHub(fromGrade = null) {
+  // leaving a co-op run for the base ends co-op before the world goes
+  if (NET && NET.client) coopEnd("left");
   G.zone = "hub";
   setEnv(ENV_HUB);
   G.world = genHub();
@@ -2161,7 +2163,9 @@ function respawn() {
   G.drips = [];
   G.pending = [];
   G.bossSeen = false;
-  spawnEnemies();
+  // in a co-op run the host owns the enemies: one death rebuilds none
+  if (NET) NET.onRespawn();
+  else spawnEnemies();
   cam.px = p.x;
   cam.pz = p.z;
   G.state = "play";
@@ -2672,7 +2676,9 @@ function hurtPlayer(dmg, e, atk) {
     c = p.cls;
   // a co-op host never judges a hit on a player: their own machine does
   if (p.remote) return "remote";
-  if (p.state === "dead" || G.state !== "play" || G.trans) return "none";
+  // in a co-op run the dungeon does not pause, so a paused player can be hit
+  if (p.state === "dead" || (G.state !== "play" && !(NET && NET.live)) || G.trans)
+    return "none";
   if (p.state === "execute" || p.state === "blink") return "none";
   if (p.iframe > 0) {
     if (p.state === "dodge" && !p.pdUsed && !atk.dot) {
@@ -3548,6 +3554,87 @@ function useTool(ix, iz, il) {
   p.toolCD = 0.35;
   return true;
 }
+// The slash a melee move leaves as it lands: a straight thrust, a cut out of
+// a small tear beside its target, or an arc (two for a double). A co-op run
+// draws the other player's swings with it too, from their move and timing.
+function swingArcs(p, m) {
+  const c = p.cls;
+  if (m.lance)
+    G.arcs.push({
+      lance: true,
+      x: p.x,
+      y: 1.2,
+      z: p.z,
+      yaw: p.yaw,
+      len: m.range + 0.3,
+      t: 0,
+      dur: 0.2,
+      c: c.col,
+      wd: m.anim === "bash" ? 0.7 : 0.26,
+    });
+  else if (m.reach) {
+    // the cut comes out of a small tear 1.4 m short of the target, to
+    // one side
+    const e = G.enemies.find(
+        (e) =>
+          !e.dead &&
+          !e.hidden &&
+          !e.aloft &&
+          Math.hypot(e.x - p.x, e.z - p.z) < m.range + e.r &&
+          Math.abs(angDiff(p.yaw, Math.atan2(e.x - p.x, e.z - p.z))) <
+            m.arc / 2 + 0.2,
+      ),
+      d = e ? Math.max(0.8, Math.hypot(e.x - p.x, e.z - p.z) - 1.4) : 2,
+      sx = -Math.cos(p.yaw) * 0.5 * m.dir,
+      sz = Math.sin(p.yaw) * 0.5 * m.dir;
+    G.arcs.push({
+      x: p.x + Math.sin(p.yaw) * d + sx,
+      y: 1.2,
+      z: p.z + Math.cos(p.yaw) * d + sz,
+      yaw: p.yaw,
+      tilt: m.tilt,
+      r0: 0.2,
+      r1: 1.6,
+      a0: 1.25 * m.dir,
+      a1: -1.25 * m.dir,
+      t: 0,
+      dur: 0.24,
+      c: c.col,
+      tear: true,
+    });
+  } else {
+    const wd = m.wide || 1;
+    G.arcs.push({
+      x: p.x,
+      y: 1.2,
+      z: p.z,
+      yaw: p.yaw,
+      tilt: m.tilt,
+      r0: 0.9,
+      r1: m.range - 0.1,
+      a0: m.arc >= TAU ? 0 : 1.25 * m.dir * (m.tilt > 1.2 ? 1.5 : 1),
+      a1: m.arc >= TAU ? TAU : -1.25 * m.dir * (m.tilt > 1.2 ? 0.2 : 1),
+      t: 0,
+      dur: 0.2 * wd,
+      c: c.col,
+    });
+    if (m.dbl)
+      G.arcs.push({
+        x: p.x,
+        y: 1.2,
+        z: p.z,
+        yaw: p.yaw,
+        tilt: -m.tilt,
+        r0: 0.9,
+        r1: m.range - 0.1,
+        a0: -1.25,
+        a1: 1.25,
+        t: 0,
+        dur: 0.2,
+        c: c.col,
+      });
+  }
+}
 function playerUpdate(dt) {
   const p = G.player,
     w = G.world,
@@ -3830,81 +3917,7 @@ function playerUpdate(dt) {
           else if (m.proj.kind === "pellet") SFX.shotgun();
           else if (m.proj.kind === "bullet") SFX.gun(m.proj.heavy);
           else SFX.shot();
-        } else if (m.lance)
-          G.arcs.push({
-            lance: true,
-            x: p.x,
-            y: 1.2,
-            z: p.z,
-            yaw: p.yaw,
-            len: m.range + 0.3,
-            t: 0,
-            dur: 0.2,
-            c: c.col,
-            wd: m.anim === "bash" ? 0.7 : 0.26,
-          });
-        else if (m.reach) {
-          // the cut comes out of a small tear 1.4 m short of the target, to
-          // one side
-          const e = G.enemies.find(
-              (e) =>
-                !e.dead &&
-                !e.hidden &&
-                !e.aloft &&
-                Math.hypot(e.x - p.x, e.z - p.z) < m.range + e.r &&
-                Math.abs(angDiff(p.yaw, Math.atan2(e.x - p.x, e.z - p.z))) <
-                  m.arc / 2 + 0.2,
-            ),
-            d = e ? Math.max(0.8, Math.hypot(e.x - p.x, e.z - p.z) - 1.4) : 2,
-            sx = -Math.cos(p.yaw) * 0.5 * m.dir,
-            sz = Math.sin(p.yaw) * 0.5 * m.dir;
-          G.arcs.push({
-            x: p.x + Math.sin(p.yaw) * d + sx,
-            y: 1.2,
-            z: p.z + Math.cos(p.yaw) * d + sz,
-            yaw: p.yaw,
-            tilt: m.tilt,
-            r0: 0.2,
-            r1: 1.6,
-            a0: 1.25 * m.dir,
-            a1: -1.25 * m.dir,
-            t: 0,
-            dur: 0.24,
-            c: c.col,
-            tear: true,
-          });
-        } else {
-          const wd = m.wide || 1;
-          G.arcs.push({
-            x: p.x,
-            y: 1.2,
-            z: p.z,
-            yaw: p.yaw,
-            tilt: m.tilt,
-            r0: 0.9,
-            r1: m.range - 0.1,
-            a0: m.arc >= TAU ? 0 : 1.25 * m.dir * (m.tilt > 1.2 ? 1.5 : 1),
-            a1: m.arc >= TAU ? TAU : -1.25 * m.dir * (m.tilt > 1.2 ? 0.2 : 1),
-            t: 0,
-            dur: 0.2 * wd,
-            c: c.col,
-          });
-          if (m.dbl)
-            G.arcs.push({
-              x: p.x,
-              y: 1.2,
-              z: p.z,
-              yaw: p.yaw,
-              tilt: -m.tilt,
-              r0: 0.9,
-              r1: m.range - 0.1,
-              a0: -1.25,
-              a1: 1.25,
-              t: 0,
-              dur: 0.2,
-              c: c.col,
-            });
-        }
+        } else swingArcs(p, m);
       }
       if (
         !m.proj &&
@@ -4234,8 +4247,12 @@ function playerUpdate(dt) {
     G.gate.t > 1.2 &&
     Math.hypot(G.gate.x - p.x, G.gate.z - p.z) < 1.5
   ) {
-    G.state = "win";
-    SFX.win();
+    // in a co-op run the host ends it, for both players
+    if (NET) NET.onGate();
+    else {
+      G.state = "win";
+      SFX.win();
+    }
   }
 }
 
@@ -5549,6 +5566,8 @@ function projUpdate(dt) {
       pr.life = -1;
       continue;
     }
+    // the other player's shot in a co-op run is only drawn here
+    if (pr.own === "m") continue;
     if (pr.own === "e") {
       if (Math.hypot(pr.x - p.x, pr.z - p.z) < 0.8) {
         const res = hurtPlayer(pr.dmg, null, {
@@ -5770,7 +5789,10 @@ function update(dt) {
         }
       }
     }
-  if (p.state === "dead" && p.t > 1.6 && G.state === "play") G.state = "dead";
+  // in a co-op run a death under the pause screen or a menu shows the dead
+  // screen too, since the dungeon ran on under it
+  if (p.state === "dead" && p.t > 1.6 && (G.state === "play" || (NET && NET.live)))
+    G.state = "dead";
   // a local build's test switches top the player up (null in a release build)
   if (DEV) DEV.tick();
   // open portals in the hall: stepping into the arch starts the trip. This

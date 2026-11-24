@@ -332,6 +332,16 @@ function camUpdate(dt) {
   }
   R.setCam(eye[0], eye[1], eye[2], look[0], look[1], look[2], cam.fov);
 }
+// In a co-op run the simulation runs whatever the screen; off the play
+// screen nothing this player holds moves them, so a paused player stands
+// where they were (and can still be hit).
+function coopStill() {
+  if (!(NET && NET.live) || G.state === "play") return;
+  for (const k in keys) keys[k] = false;
+  for (const k in taps) taps[k] = false;
+  PAD.move = { x: 0, y: 0, mag: 0 };
+  TOUCH.move.x = TOUCH.move.y = TOUCH.move.mag = 0;
+}
 let last = 0;
 function frame(now) {
   requestAnimationFrame(frame);
@@ -342,7 +352,9 @@ function frame(now) {
   if (!G.manual) PAD.poll(dt);
   // a co-op run's link and clock move on real time, whatever the screen
   if (NET && !G.manual) NET.frame(dt);
-  if (!G.manual && (G.state === "play" || G.state === "dead")) {
+  // a co-op run's dungeon runs on under every screen, where this player stands
+  if (!G.manual && (G.state === "play" || G.state === "dead" || (NET && NET.live))) {
+    coopStill();
     let sim = dt;
     if (G.hitstop > 0) {
       G.hitstop -= dt;
@@ -758,10 +770,13 @@ window.DF = {
   coopEnter,
   coopEnd,
   coopMakeHost,
+  coopSay,
   sim(sec, each) {
     const n = Math.round(sec * 60);
     for (let i = 0; i < n; i++) {
       if (each && each(i) === false) return i;
+      // as the frame loop does, for a co-op run under another screen
+      coopStill();
       update(1 / 60);
       for (const k in taps) taps[k] = false;
     }

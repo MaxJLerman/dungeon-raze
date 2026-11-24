@@ -139,7 +139,10 @@ export default [
         co = window.__co;
       G.manual = true;
       const r = co.solo({ ping: 100, jit: 8 });
-      // a pack awake and moving
+      // a pack awake and moving. The player is kept alive: dying alone is a
+      // wipe, whose reset puts them at the shrine, out of the pack's range
+      // (Task 8), and the pack would then leave the snapshots mid-count.
+      DF.devGod(true);
       co.near(co.husk(18), 9);
       co.run(2);
       r.cfg.ping = 300;
@@ -162,6 +165,7 @@ export default [
         }
       });
       const pct = +((100 * bare) / Math.max(1, n)).toFixed(2);
+      DF.devGod(false);
       return { pass: n > 100 && pct < 3, samples: n, noLaterSnapshotPct: pct, unsent };
     },
   },

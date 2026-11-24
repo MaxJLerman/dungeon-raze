@@ -38,6 +38,11 @@
 //            the host has not yet answered (see coopFinCheck)
 //   judged   how the swings judged here on this player came out, by
 //            hurtPlayer's result
+//   gate     this player has asked the host to end the run at the gate
+//
+// The other player is in NET.mates: a player from makePlayer, flagged remote,
+// never stepped by playerUpdate, moved from its snapshot records (nb) as the
+// puppets are. It blocks nothing and nothing hits it.
 const CC = {};
 function coopClear() {
   Object.assign(CC, {
@@ -68,6 +73,7 @@ function coopClear() {
     exPre: null,
     fin: null,
     judged: { hit: 0, block: 0, parry: 0, none: 0 },
+    gate: false,
   });
 }
 coopClear();
@@ -78,7 +84,9 @@ const COOP_GLIDE = 1.4,
   COOP_SNAP_D = 6,
   COOP_HEAR = 30, // sounds of puppets further off than this are not played
   COOP_GUESS = 2, // seconds a guess stands without the host's answer
-  COOP_FIN_WAIT = 5; // seconds an execution's rewards wait for the host's answer
+  COOP_FIN_WAIT = 5, // seconds an execution's rewards wait for the host's answer
+  COOP_AWAY = [0.42, 0.42, 0.42], // the other player's marker while it is away
+  COOP_MATE_HIT = 0.4; // how loud a hit of the other player's sounds here
 
 // A fresh host copy of the simulation, from the source every build embeds,
 // with the page's storage and screen out of its reach.
@@ -94,6 +102,7 @@ function coopMakeHost() {
 function coopBegin(link, { cls, drive = null, onRefuse = null } = {}) {
   if (NET || CC.link) coopEnd("restart");
   coopClear();
+  coopSay("");
   CC.link = link;
   CC.cls = cls;
   CC.drive = drive;
@@ -102,7 +111,7 @@ function coopBegin(link, { cls, drive = null, onRefuse = null } = {}) {
     if (CC.link === link) coopRecv(buf);
   };
   link.onclose = () => {
-    if (CC.link === link) coopEnd("closed");
+    if (CC.link === link) coopEnd("host");
   };
   link.send(coopEventEncode(["hello", 0, COOP_V, cls]));
 }
@@ -111,11 +120,18 @@ function coopEnter() {
   if (NET && NET.client) NET.live = true;
 }
 // Leaves co-op, whatever state it was in, and leaves single player working:
-// the link is closed and NET and CC are cleared. The run's enemies, if it
-// was in one, are plain enemies from here.
+// the link is closed and NET (with its mates) and CC are cleared. The run's
+// enemies, if it was in one, are plain enemies from here. why "host" (the
+// host has gone quiet or closed the link) goes back to the base and the title
+// screen and says so; "end" (the run is over) leaves the win screen up; any
+// other reason leaves the screen as it is.
 function coopEnd(why) {
-  const L = CC.link;
-  if (NET && NET.client) NET = null;
+  const L = CC.link,
+    inRun = !!CC.world && G.world === CC.world;
+  if (NET && NET.client) {
+    NET.mates.length = 0;
+    NET = null;
+  }
   coopClear();
   CC.why = why;
   if (L) {
@@ -126,6 +142,11 @@ function coopEnd(why) {
     } catch (e) {
       /* already closed */
     }
+  }
+  if (why === "host") {
+    if (inRun) enterHub();
+    show("title");
+    coopSay("The host has left.");
   }
 }
 function coopRefuse(why) {
@@ -158,6 +179,7 @@ function coopRecv(buf) {
     if (!NET && m[1] && typeof m[1] === "object") coopJoin(m[1]);
   } else if (m[0] === "no") coopRefuse(typeof m[1] === "string" ? m[1] : "no");
   else if (NET && Object.hasOwn(COOP_TAKE, m[0]) && COOP_TAKE[m[0]](m)) CC.evq.push(m);
+  else if (NET && Object.hasOwn(COOP_NOW, m[0]) && COOP_NOW[m[0]](m)) coopNow(m);
 }
 // The host events that wait for the drawn time, each with the index of its
 // host time and its check: every field a number and any enemy named known.
@@ -175,6 +197,19 @@ const COOP_TAKE = {
   // ["kill", eid, pid, t]
   kill: (m) => coopNums(m, 4) && CC.byId.has(m[1]),
 };
+// The host events applied as they arrive, with their checks.
+const COOP_NOW = {
+  // ["peer", pid, class], or class null when that player has left
+  peer: (m) => coopNum(m[1]) && (m[2] === null || typeof m[2] === "string"),
+  // ["reset", { enemies, dead, bossDead }, t]: after a wipe
+  reset: (m) => !!m[1] && typeof m[1] === "object" && Array.isArray(m[1].enemies),
+  // ["end", run time]: a player took the gate
+  end: (m) => coopNums(m, 2),
+  // ["pshot", pid, x, y, z, vx, vz, r, g, b]: the other player's shot
+  pshot: (m) => coopNums(m, 10),
+  // ["pblast", pid, x, z, radius, r, g, b]: the other player's blast
+  pblast: (m) => coopNums(m, 8) && m[4] > 0,
+};
 
 // The join: the same cave from the seed, checked against the host's sum,
 // and the host's enemies as puppets. Nothing here reads the cave's own
@@ -185,14 +220,8 @@ function coopJoin(j) {
   CC.world = G.world;
   if (coopWorldSum(G.world) !== j.sum) return coopRefuse("cave");
   CC.pid = j.pid;
-  const dead = new Set(j.dead || []);
-  G.enemies = [];
-  for (const [id, type, x, z, yaw] of j.enemies || []) {
-    if (!EDEF[type] || dead.has(id)) continue;
-    const e = makeEnemy({ type, x, z, yaw });
-    coopAdopt(e, id);
-    G.enemies.push(e);
-  }
+  CC.heard = CC.now;
+  coopPuppets(j);
   G.bossDead = !!j.bossDead;
   NET = {
     client: true,
@@ -203,12 +232,31 @@ function coopJoin(j) {
     onHit: coopHit,
     onShoot() {},
     onKill: coopKilled,
+    // the host owns the enemies: a death here rebuilds nothing
     onRespawn() {},
-    onGate() {},
+    onGate: coopGate,
     onPShot: coopPShot,
     onBlast: coopBlast,
     taken: coopTaken,
   };
+  for (const q of Array.isArray(j.peers) ? j.peers : [])
+    if (Array.isArray(q) && coopNum(q[0]) && typeof q[1] === "string") coopPeer(q[0], q[1]);
+}
+// The puppets, from the host's list as the join and reset events carry it:
+// [id, type, x, z, yaw] each, leaving out the ids in dead and any entry that
+// is malformed or names a type this page does not know.
+function coopPuppets(r) {
+  const dead = new Set(Array.isArray(r.dead) ? r.dead : []);
+  CC.byId.clear();
+  G.enemies = [];
+  for (const q of Array.isArray(r.enemies) ? r.enemies : []) {
+    if (!Array.isArray(q)) continue;
+    const [id, type, x, z, yaw] = q;
+    if (![id, x, z, yaw].every(coopNum) || !Object.hasOwn(EDEF, type) || dead.has(id)) continue;
+    const e = makeEnemy({ type, x, z, yaw });
+    coopAdopt(e, id);
+    G.enemies.push(e);
+  }
 }
 // gx, gz: where the puppet is drawn, kept apart from x and z, which the
 // shared code (separate) may push. nb: snapshots heard, oldest first.
@@ -237,6 +285,12 @@ function coopSnap(s) {
     r.t = s.t;
     r.ack = s.ack;
     coopBuf(e.nb, r);
+  }
+  for (const r of s.players) {
+    const m = NET.mates.find((o) => o.pid === r.pid);
+    if (!m) continue;
+    r.t = s.t;
+    coopBuf(m.nb, r);
   }
 }
 // Keeps a short list of snapshots, oldest first; one older than the last is
@@ -275,6 +329,8 @@ function coopFrame(dt) {
   }
   if (CC.drive) CC.drive(dt);
   if (!NET) return;
+  // a host not heard from for COOP.GONE seconds of real time has gone
+  if (CC.now - CC.heard > COOP.GONE) return coopEnd("host");
   const o = CC.offs;
   while (o.length > 1 && o[0].at < CC.now - COOP.CLOCK_WIN) o.shift();
   if (o.length) {
@@ -322,6 +378,17 @@ function coopEnemies(dt) {
   }
   for (const q of CC.pend) q.life -= dt;
   CC.pend = CC.pend.filter((q) => q.seq > CC.ackR && q.life > 0);
+  for (const m of NET.mates) coopMate(m, dt, rt);
+  // an enemy's shot stops at the other player's body, as it would at this one's
+  for (const pr of G.projs) {
+    if (pr.own !== "e" || pr.life <= 0) continue;
+    for (const m of NET.mates)
+      if (!m.away && m.state !== "dead" && Math.hypot(pr.x - m.x, pr.z - m.z) < 0.8) {
+        pr.life = -1;
+        sparks(pr.x, pr.y, pr.z, 6, pr.c, 4, 0.3);
+        break;
+      }
+  }
 }
 // One enemy as the host had it at the drawn time rt, which moved drt this
 // step.
@@ -373,6 +440,14 @@ function coopPuppet(e, dt, rt, drt) {
   e.posture = Math.min(d.posture, A.post * d.posture + pp);
   e.an = A.an;
   const near = Math.hypot(p.x - e.x, p.z - e.z) < COOP_HEAR;
+  // Its health fell by more than this player's own hits explain: the other
+  // player's hit (hpV is the health drawn last step, less this player's hits
+  // since, which coopHit takes off it).
+  if (e.hpV !== undefined && e.hp < e.hpV - 0.25) {
+    e.flash = 1;
+    if (near) SFX.hit(false, COOP_MATE_HIT);
+  }
+  e.hpV = e.hp;
   if (A.aware && !e.aware && near) SFX.alert();
   e.aware = A.aware;
   e.phase = A.phase;
@@ -671,6 +746,7 @@ function coopHit(e, dmg, post, o, mult = 1) {
   CC.pend.push({ seq, e, dmg: dm, post: pe, life: COOP_GUESS });
   // what hitEnemy shows from here on
   e.flash = 1;
+  if (e.hpV !== undefined) e.hpV -= dm;
   hitShow(e, o, mult);
   // the guess: health and posture for every enemy, and for all but a boss
   // its death, stagger or flinch, held until the host has had the hit
@@ -739,4 +815,118 @@ function coopPShot(pr) {
 }
 function coopBlast(x, z, r, c) {
   coopAsk("pblast", coopR2(x), coopR2(z), coopR2(r), ...coopCol(c));
+}
+
+// ---- the other player, and the party's rules ----
+
+// A host event that does not wait for the drawn time.
+function coopNow(m) {
+  const k = m[0];
+  if (k === "peer") coopPeer(m[1], m[2]);
+  else if (k === "reset") coopReset(m[1]);
+  else if (k === "end") {
+    // a player took the gate: the run is over for both, and so is the room
+    G.runT = m[1];
+    G.state = "win";
+    SFX.win();
+    coopEnd("end");
+  } else if (k === "pshot") {
+    // drawn and flown, and hurts nothing here (projUpdate passes over "m")
+    const [, , x, y, z, vx, vz, r, g, b] = m;
+    G.projs.push({ x, y, z, vx, vz, life: 3, own: "m", dmg: 0, kind: "arrow", c: [r, g, b] });
+  } else if (k === "pblast") {
+    // explode's look and sound, with no hit
+    const [, , x, z, r, cr, cg, cb] = m,
+      p = G.player,
+      c = [cr, cg, cb];
+    G.rings.push({ x, z, r, t: 0, dur: 0.4, kind: "shock", c });
+    sparks(x, 0.8, z, 30, c, 9, 0.6, 0.15);
+    if (Math.hypot(x - p.x, z - p.z) < COOP_HEAR) {
+      G.shake = Math.max(G.shake, 0.3);
+      SFX.slam();
+    }
+  }
+}
+// The other player joining (cls a class id) or leaving (cls null). A class
+// co-op does not offer plays as the first base class, as on the host.
+function coopPeer(pid, cls) {
+  const ms = NET.mates,
+    i = ms.findIndex((m) => m.pid === pid);
+  if (i >= 0) ms.splice(i, 1);
+  if (cls === null || pid === CC.pid) return;
+  const id =
+    Object.hasOwn(CLASSES, cls) && !CLASSES[cls].hidden
+      ? cls
+      : Object.keys(CLASSES).find((k) => !CLASSES[k].hidden);
+  const m = makePlayer(id);
+  // away until a snapshot says otherwise: the host has not heard it yet
+  Object.assign(m, { remote: true, pid, nb: [], away: true, ddur: m.cls.dodge.dur, swing: null });
+  ms.push(m);
+}
+// The other player at the drawn time rt: where it was, what it was doing and
+// how long it had been at it, so posePlayer animates it; a flash when its
+// health falls; and the slash of each swing as it lands.
+function coopMate(m, dt, rt) {
+  m.flash = Math.max(0, m.flash - dt * 5);
+  const at = coopAt(m.nb, rt);
+  if (!at) return;
+  const { A, B, k } = at,
+    x = B ? lerp(A.x, B.x, k) : A.x,
+    z = B ? lerp(A.z, B.z, k) : A.z;
+  m.x = x;
+  m.z = z;
+  m.yaw = B ? A.yaw + angDiff(A.yaw, B.yaw) * k : A.yaw;
+  m.move = A.move && MOVES[A.move] ? A.move : null;
+  m.state = A.state === "attack" && !m.move ? "free" : A.state;
+  m.t = A.tt + (rt - A.t);
+  m.speed = A.speed;
+  m.walk += m.speed * dt * 2.1;
+  m.guardT = A.guardT;
+  m.sprint = A.sprint;
+  m.away = A.away;
+  const hp = A.hp * m.maxHp;
+  if (hp < m.hp - 0.5) m.flash = 1;
+  m.hp = hp;
+  coopMateSwing(m, rt);
+}
+// One slash per swing, made here from its move and timing as playerUpdate
+// makes this player's. A swing is its move and the drawn time it began.
+function coopMateSwing(m, rt) {
+  if (m.state !== "attack") return;
+  const mv = MOVES[m.move],
+    start = rt - m.t,
+    s = m.swing;
+  if (!s || s.move !== m.move || Math.abs(s.start - start) > 0.1)
+    m.swing = { move: m.move, start, done: false };
+  if (m.swing.done || m.t < mv.wind) return;
+  m.swing.done = true;
+  // a shot or a blast arrives as its own event
+  if (mv.proj || mv.blast) return;
+  swingArcs(m, mv);
+  const p = G.player;
+  if (Math.hypot(m.x - p.x, m.z - p.z) < COOP_HEAR) SFX.whoosh(mv.heavy);
+}
+// After a wipe: the host's enemies, fresh, in place of the puppets, as the
+// join makes them, with every guess and pending hit of this page dropped. A
+// dead player here comes back at their checkpoint as respawn puts them, with
+// the dead screen kept up (Rise again goes on from there). The kill count,
+// the run's time and the boss's death are kept.
+function coopReset(r) {
+  const p = G.player;
+  coopPuppets(r);
+  CC.pend = [];
+  CC.evq = [];
+  CC.fin = null;
+  CC.exE = null;
+  p.lock = null;
+  if (p.state === "dead") {
+    respawn();
+    G.state = "dead";
+  }
+}
+// The exit gate: asked of the host once; its end event closes the run.
+function coopGate() {
+  if (CC.gate) return;
+  CC.gate = true;
+  coopAsk("gate");
 }

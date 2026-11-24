@@ -144,13 +144,14 @@ const SFX = (() => {
         1.4,
       );
     },
-    hit(heavy) {
-      noise(0.12, 2400, 500, 0.7, "bandpass", 0.8);
+    // v scales its loudness (a co-op run's other player's hits are quieter)
+    hit(heavy, v = 1) {
+      noise(0.12, 2400, 500, 0.7 * v, "bandpass", 0.8);
       tone(
         heavy ? 0.22 : 0.13,
         heavy ? 150 : 190,
         50,
-        heavy ? 0.9 : 0.6,
+        (heavy ? 0.9 : 0.6) * v,
         "triangle",
       );
     },

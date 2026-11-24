@@ -541,6 +541,49 @@
       body.touch #hint {
         display: none;
       }
+      /* co-op: the other player's health, a thin bar just under the vitals
+         (under touch, under the vitals box the layout gives, in the gap
+         before anything below it) */
+      #mateBar {
+        position: absolute;
+        left: 0;
+        top: calc(100% + 6px);
+        width: 62%;
+        height: 5px;
+      }
+      #mateBar i {
+        background: var(--bone);
+      }
+      #mateBar.away {
+        opacity: 0.4;
+      }
+      body.touch #mateBar {
+        top: calc(100% + 1px);
+        height: 4px;
+      }
+      #coopWait {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 42%;
+        text-align: center;
+        font-family: var(--display);
+        font-size: clamp(22px, 3.4vw, 34px);
+        letter-spacing: 0.08em;
+        color: var(--bone);
+        text-shadow: 0 0 14px #000, 0 0 4px #000;
+      }
+      #mateBar[hidden],
+      #coopWait[hidden],
+      #pauseCoop[hidden],
+      #coopMsg[hidden] {
+        display: none;
+      }
+      #coopMsg {
+        color: var(--ember);
+        font-size: 18px;
+        margin: 0;
+      }
       /* the Flask and Tool buttons show these counts; only the readout stays,
          on one line, so it cannot wrap out of the vitals box */
       body.touch #flasks,
@@ -1204,6 +1247,7 @@
           <span id="flasks"></span><span id="knives"></span
           ><span id="blinkR"></span>
         </div>
+        <div class="bar" id="mateBar" hidden><i id="mateF"></i></div>
       </div>
       <canvas id="map" width="170" height="170"></canvas>
       <div id="msgs"></div>
@@ -1225,6 +1269,7 @@
       </div>
       <div id="cross"></div>
       <div id="hint"></div>
+      <div id="coopWait" hidden>Waiting for the host</div>
     </div>
     <div id="touch"><svg></svg></div>
     <div id="treadout"></div>
@@ -1249,6 +1294,7 @@
         On a phone or tablet, turn it sideways. The controls appear when you
         start.
       </p>
+      <p id="coopMsg" role="status" hidden></p>
       <div class="picker"></div>
       <div class="row">
         <button id="btnPlay" type="button" data-padfirst>Enter the hall</button
@@ -1258,6 +1304,7 @@
     </div>
     <div id="scr-pause" class="scr">
       <h1>Paused</h1>
+      <p class="sub" id="pauseCoop" hidden>The dungeon does not pause in co-op.</p>
       <div class="row">
         <button id="btnResume" type="button">Resume</button
         ><button type="button" data-open="class">Change class</button
