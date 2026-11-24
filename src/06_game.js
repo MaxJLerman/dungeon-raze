@@ -2444,23 +2444,27 @@ function kill(e) {
       }
     p.lock = b;
   }
-  if (e.def.boss) {
-    const grade = G.grade || "E";
-    const next = GRADE_IDS[GRADE_IDS.indexOf(grade) + 1];
-    const before = next ? portalOpen(next) : true;
-    // a kill in a run the dev menu started, or under its god mode, is not saved
-    if (!(DEV && DEV.noSave())) clearGrade(grade, OPT.cls);
-    G.bossDead = true;
-    G.gate = { x: G.world.boss.x, z: G.world.boss.z, t: 0 };
-    G.slowT = 1.2;
-    say(e.def.fell, "big", 4);
-    say("A gate opens. Step through to leave.", "", 6);
-    if (next && !before && portalOpen(next))
-      say("A new gate has opened in the base.", "good", 6);
-    SFX.win();
-  }
+  if (e.def.boss) bossFell(e);
   const b = EBEH[e.type];
   if (b && b.death) b.death(e);
+  if (NET) NET.onKill(e);
+}
+// A boss has died: the grade is cleared and the gate out opens.
+function bossFell(e) {
+  const grade = G.grade || "E";
+  const next = GRADE_IDS[GRADE_IDS.indexOf(grade) + 1];
+  const before = next ? portalOpen(next) : true;
+  // a kill in a run the dev menu started, or under its god mode, is not
+  // saved; nor on a co-op host, which has no save and no player of its own
+  if (!(DEV && DEV.noSave()) && !(NET && NET.host)) clearGrade(grade, OPT.cls);
+  G.bossDead = true;
+  G.gate = { x: G.world.boss.x, z: G.world.boss.z, t: 0 };
+  G.slowT = 1.2;
+  say(e.def.fell, "big", 4);
+  say("A gate opens. Step through to leave.", "", 6);
+  if (next && !before && portalOpen(next))
+    say("A new gate has opened in the base.", "good", 6);
+  SFX.win();
 }
 // What any hit does to the one it lands on, before damage and knock: it
 // flashes, hunts (past the leash), learns where the player is and fills
@@ -2522,7 +2526,10 @@ function hitEnemy(e, dmg, post, o = {}) {
   // An enemy that the boss chamber rule keeps from waking is not caught off
   // guard: without this every hit on it would be an ambush.
   const held = G.inBoss && !e.def.boss && !e.inArena;
-  if (
+  // o.pre: a co-op client's proposal, its multipliers already in the damage
+  if (o.pre) {
+    // nothing more
+  } else if (
     !e.aware &&
     !held &&
     o.src !== "reflect" &&
@@ -2542,10 +2549,12 @@ function hitEnemy(e, dmg, post, o = {}) {
     say("BACKSTAB", "crit", 0.8);
     SFX.crit();
   }
-  if (p.buff === "berserk") {
+  if (p.buff === "berserk" && !o.pre) {
     mult *= 1.4;
     p.hp = Math.min(p.maxHp, p.hp + dmg * 0.15);
   }
+  // a co-op client proposes its hit to the host and shows its own guess
+  if (NET && NET.onHit(e, dmg * mult, post, o)) return;
   e.hp -= dmg * mult;
   if (e.def.dummy) e.hp = e.def.hp;
   // a type's least health after a hit, past every multiplier (the crocodile's marks)

@@ -11,9 +11,12 @@ const COOP_HOST = COOP_HEADLESS_HERE
   ? (() => {
       // px: proxies by pid. byId: enemies by id (the index in world.spawns).
       // step: host steps since start; host time is step * COOP.STEP.
-      const S = { px: new Map(), byId: new Map(), step: 0 };
+      // ended: the run is over (a player took the gate); nothing more happens.
+      const S = { px: new Map(), byId: new Map(), step: 0, ended: false };
       let acc = 0,
-        ph = null; // the placeholder
+        ph = null, // the placeholder
+        armed = true, // a wipe may fire; cleared by one, set again by a living player
+        by = 0; // the pid whose proposal is being applied, 0 outside one
       const now = () => S.step * COOP.STEP;
       const send = (pid, buf) => {
         if (host.send) host.send(pid, buf);
@@ -21,6 +24,9 @@ const COOP_HOST = COOP_HEADLESS_HERE
       const tell = (pid, ev) => send(pid, coopEventEncode(ev));
       const others = (pid, ev) => {
         for (const id of S.px.keys()) if (id !== pid) tell(id, ev);
+      };
+      const all = (ev) => {
+        for (const id of S.px.keys()) tell(id, ev);
       };
       const r2 = (v) => Math.round(v * 100) / 100;
       // co-op offers the base classes; anything else plays as the first
@@ -66,21 +72,76 @@ const COOP_HOST = COOP_HEADLESS_HERE
           }
         }
       }
-      function enemies(dt) {
-        present();
+      // Runs fn with G.player and G.inBoss pointed at px, and puts them back.
+      function as(px, fn) {
         const p0 = G.player,
           b0 = G.inBoss;
+        G.player = px;
+        G.inBoss = px.inBoss;
+        try {
+          fn();
+        } finally {
+          G.player = p0;
+          G.inBoss = b0;
+        }
+      }
+      function enemies(dt) {
+        present();
         for (const e of G.enemies) {
           const s0 = e.state,
             tg = pick(e);
-          G.player = tg;
-          G.inBoss = tg.inBoss;
-          enemyUpdate(e, dt);
+          as(tg, () => enemyUpdate(e, dt));
           // a new swing gets a new number, so a client can tell swings apart
           if (e.state === "wind" && s0 !== "wind") e.an = (e.an + 1) & 255;
+          // the slam's warning ring, which a client cannot work out itself
+          if (e.state === "act" && s0 !== "act" && e.atk && e.atk.kind === "slam")
+            all(["ring", r2(e.tx), r2(e.tz), e.atk.radius, e.atk.act, now()]);
+          // a pin lasts as long as the stagger it was given in
+          if (e.pin && e.state !== "stagger" && !e.dead) e.pin = 0;
         }
-        G.player = p0;
-        G.inBoss = b0;
+      }
+      // Every present player (joined and not away) dead: the enemies are
+      // made again as a respawn makes them. Once per wipe: it fires again
+      // only after a present player has been alive.
+      function wipe() {
+        let n = 0,
+          up = false;
+        for (const px of S.px.values())
+          if (!px.away) {
+            n++;
+            if (px.state !== "dead") up = true;
+          }
+        if (up) armed = true;
+        if (!n || up || !armed) return;
+        armed = false;
+        spawnEnemies();
+        number();
+        all(["reset", roster(), now()]);
+      }
+      // Ids are spawn indices. spawnEnemies makes one enemy per spawn, in
+      // order, leaving out a boss once it is dead, so the same walk finds
+      // each enemy's spawn.
+      function number() {
+        S.byId.clear();
+        let k = 0;
+        G.world.spawns.forEach((s, i) => {
+          if (G.bossDead && EDEF[s.type] && EDEF[s.type].boss) return;
+          const e = G.enemies[k++];
+          e.id = i;
+          e.an = 0;
+          e.pin = 0;
+          e.tg = 0;
+          S.byId.set(i, e);
+        });
+      }
+      // The enemies as the join and reset events carry them.
+      function roster() {
+        const list = [...S.byId.values()];
+        return {
+          enemies: list.map((e) => [e.id, e.type, r2(e.x), r2(e.z), r2(e.yaw)]),
+          dead: list.filter((e) => e.dead || e.gone).map((e) => e.id),
+          bossDead: G.bossDead,
+        };
       }
 
       // What a client is sent: every other proxy, and each enemy that is
@@ -108,17 +169,12 @@ const COOP_HOST = COOP_HEADLESS_HERE
       const start = ({ seed, grade }) => {
         newRun(seed, grade);
         S.px.clear();
-        S.byId.clear();
         S.step = 0;
+        S.ended = false;
         acc = 0;
-        // a fresh run spawns every entry of world.spawns, in order
-        G.enemies.forEach((e, i) => {
-          e.id = i;
-          e.an = 0;
-          e.pin = 0;
-          e.tg = 0;
-          S.byId.set(i, e);
-        });
+        armed = true;
+        by = 0;
+        number();
         ph = G.player;
         // off the field's grid, where resolve leaves it alone
         Object.assign(ph, {
@@ -135,8 +191,8 @@ const COOP_HOST = COOP_HEADLESS_HERE
           enemies,
           frame() {},
           onHit: () => false,
-          onShoot() {},
-          onKill() {},
+          onShoot,
+          onKill,
           onRespawn() {},
           onGate() {},
           onPShot() {},
@@ -159,7 +215,6 @@ const COOP_HOST = COOP_HEADLESS_HERE
         S.px.delete(pid);
         const peers = [...S.px.values()].map((o) => [o.pid, o.clsId]);
         S.px.set(pid, px);
-        const all = [...S.byId.values()];
         tell(pid, [
           "join",
           {
@@ -168,9 +223,7 @@ const COOP_HOST = COOP_HEADLESS_HERE
             seed: G.seed,
             grade: G.grade,
             sum: coopWorldSum(G.world),
-            enemies: all.map((e) => [e.id, e.type, r2(e.x), r2(e.z), r2(e.yaw)]),
-            dead: all.filter((e) => e.dead || e.gone).map((e) => e.id),
-            bossDead: G.bossDead,
+            ...roster(),
             peers,
             t: now(),
           },
@@ -181,11 +234,123 @@ const COOP_HOST = COOP_HEADLESS_HERE
         if (!S.px.delete(pid)) return;
         others(pid, ["peer", pid, null]);
       };
-      // A STATE frame moves its proxy; events wait for later tasks. Anything
-      // that does not decode is dropped.
+      // An enemy shot: each client flies its own copy.
+      function onShoot(pr) {
+        all([
+          "shot", pr.src ? pr.src.id : -1, r2(pr.x), r2(pr.y), r2(pr.z),
+          r2(pr.vx), r2(pr.vz), pr.dmg, now(),
+        ]);
+      }
+      // Every death is announced once, with whose proposal caused it.
+      function onKill(e) {
+        if (e.kSent) return;
+        e.kSent = true;
+        e.kBy = by;
+        all(["kill", e.id, by, now()]);
+      }
+
+      // What a client may ask. Each handler gets the proxy and the event's
+      // arguments after its seq; anything of the wrong shape is ignored.
+      const num = (v) => typeof v === "number" && Number.isFinite(v);
+      const live1 = (eid) => {
+        const e = num(eid) ? S.byId.get(eid) : undefined;
+        return e && !e.dead ? e : null;
+      };
+      const ASK = {
+        hit(px, [eid, dmg, post, flags, src, fx, fz, seenState, seenAn]) {
+          const e = live1(eid);
+          if (!e || !num(dmg) || dmg < 0 || dmg > COOP.MAX_DMG) return;
+          if (!num(post) || post < 0) return;
+          const fl = num(flags) ? flags : 0,
+            heavy = !!(fl & 1),
+            dot = !!(fl & 2),
+            d = e.def;
+          // Favour the attacker: the client saw the enemy before this swing
+          // and its hit would flinch it, so the flinch stands here too.
+          const flinch =
+            !dot && (d.poise === 0 || (d.poise === 1 && heavy && seenState !== "wind"));
+          if (flinch && seenState !== "act" && e.state === "act" && e.an === seenAn)
+            e.state = "chase";
+          // a hit from a player it can see turns it on them
+          if (e.tg !== px.pid && G.world.los(e.x, e.z, px.x, px.z)) e.tg = px.pid;
+          const ph0 = e.phase;
+          as(px, () =>
+            hitEnemy(e, dmg, post, {
+              src: typeof src === "string" ? src : "",
+              heavy,
+              dot,
+              fx: num(fx) ? fx : undefined,
+              fz: num(fz) ? fz : undefined,
+              pre: true,
+            }),
+          );
+          if (d.boss && ph0 !== 2 && e.phase === 2) all(["roar", e.id, now()]);
+        },
+        // as hurtPlayer's parry branch does to the enemy; one staggered or
+        // roaring on the host has nothing to be thrown out of
+        parry(px, [eid, , pp]) {
+          const e = live1(eid);
+          if (!e || !num(pp) || pp < 0 || e.state === "stagger" || e.state === "roar") return;
+          e.posture += pp;
+          e.postT = 0;
+          if (e.posture >= e.def.posture) as(px, () => stagger(e));
+          else {
+            e.state = "recoil";
+            e.t = 0;
+            e.dur = e.def.boss ? 0.55 : 1.0;
+            e.token = false;
+            e.y = 0;
+          }
+        },
+        // an execution begun: the first to ask keeps it open
+        pin(px, [eid]) {
+          const e = live1(eid);
+          if (!e || e.state !== "stagger" || e.pin) return;
+          e.pin = px.pid;
+          e.dur = Math.max(e.dur, e.t + 1.5);
+        },
+        exec(px, [eid]) {
+          const e = live1(eid);
+          if (!e || e.pin !== px.pid) return;
+          e.hp = 0;
+          as(px, () => kill(e));
+        },
+        gate() {
+          if (!G.bossDead) return;
+          all(["end", G.runT]);
+          S.ended = true;
+        },
+        pshot(px, a) {
+          if (a.length < 8 || !a.slice(0, 8).every(num)) return;
+          others(px.pid, ["pshot", px.pid, ...a.slice(0, 8)]);
+        },
+        pblast(px, a) {
+          if (a.length < 6 || !a.slice(0, 6).every(num)) return;
+          others(px.pid, ["pblast", px.pid, ...a.slice(0, 6)]);
+        },
+      };
+      // Applies one event from px. Unknown names (including "spawn", which
+      // only the host sends) are ignored. A numeric seq is acknowledged
+      // whether or not the event was honoured.
+      function ask(px, ev) {
+        if (!Array.isArray(ev)) return;
+        const [name, seq, ...args] = ev;
+        try {
+          if (typeof name === "string" && Object.hasOwn(ASK, name)) {
+            by = px.pid;
+            ASK[name](px, args);
+          }
+        } finally {
+          by = 0;
+          if (num(seq)) px.ack = Math.max(px.ack, seq);
+        }
+      }
+
+      // A STATE frame moves its proxy; an EVENT is a request. Anything that
+      // does not decode is dropped. After the run has ended nothing is heard.
       const recv = (pid, buf) => {
         const px = S.px.get(pid);
-        if (!px) return;
+        if (!px || S.ended) return;
         try {
           const k = coopType(buf);
           if (k === COOP.STATE) {
@@ -203,19 +368,20 @@ const COOP_HOST = COOP_HEADLESS_HERE
             px.guardT = s.guardT;
             px.sprint = s.sprint;
             px.heard = now();
-          } else if (k === COOP.EVENT) coopEventDecode(buf);
+          } else if (k === COOP.EVENT) ask(px, coopEventDecode(buf));
         } catch (e) {
           /* a malformed frame is ignored */
         }
       };
       const tick = (dt) => {
-        if (!S.px.size) return;
+        if (!S.px.size || S.ended) return;
         acc = Math.min(acc + dt, 0.25);
         while (acc >= COOP.STEP) {
           acc -= COOP.STEP;
           // the host has no screens: its world never pauses or ends
           G.state = "play";
           update(COOP.STEP);
+          wipe();
           G.msgs.length = 0;
           S.step++;
           if (S.step % COOP.SNAP_EVERY === 0) for (const px of S.px.values()) snap(px);

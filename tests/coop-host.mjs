@@ -11,6 +11,7 @@ function cave() {
   return h;
 }
 const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+const named = (c, name) => c.events.filter((ev) => ev[0] === name);
 // A walkable point d metres from enemy e, in its line of sight, searching
 // round from angle a0.
 function spot(h, e, d, a0 = 0) {
@@ -173,24 +174,39 @@ check("an away player is not hunted", () => {
   run(h, 1 / 60);
   assert.equal(h.S.px.get(1).away, false);
 });
-check("a dead player is not hunted, and with nobody the enemy goes home", () => {
+// With every present player dead the host wipes (below), so B stays alive
+// in the boss chamber, where no regular enemy may hunt them.
+check("a dead player is not hunted, and with nobody to hunt the enemy goes home", () => {
   const h = cave(),
-    e = husk(h, 37);
-  const a = fakeClient(h, 1, "fighter");
+    e = husk(h, 37),
+    bc = h.G.world.boss;
+  const a = fakeClient(h, 1, "fighter"),
+    b = fakeClient(h, 2, "fighter");
   const q = spot(h, e, 4);
-  run(h, 1, hold(a, q));
+  const inBoss = () => b.at(bc.x, bc.z);
+  const live = () => {
+      a.at(q.x, q.z);
+      inBoss();
+    },
+    dead = () => {
+      a.at(q.x, q.z, { state: "dead", hp: 0 });
+      inBoss();
+    };
+  run(h, 1, live);
   assert.equal(e.aware, true, "the husk did not wake");
   assert.equal(e.tg, 1);
-  run(h, 1 / 60, hold(a, q, { state: "dead", hp: 0 }));
-  assert.equal(e.tg, 0);
-  const w = dropsHunt(h, e, 1.6, hold(a, q, { state: "dead", hp: 0 }));
+  run(h, 1 / 60, dead);
+  assert.notEqual(e.tg, 1);
+  const w = dropsHunt(h, e, 1.6, dead);
   assert.equal(w, 0, "a new swing at a dead player");
   assert.equal(e.aware, false, "still hunting: " + e.state);
   assert.equal(e.state, "return");
   // it walks home and stays unaware with the dead player in sight
-  run(h, 12, hold(a, q, { state: "dead", hp: 0 }));
+  run(h, 12, dead);
   assert.equal(e.aware, false);
   assert.ok(Math.hypot(e.x - e.hx, e.z - e.hz) < 1.5, "not home");
+  assert.equal(h.G.enemies[37], e, "the enemies were reset");
+  assert.equal(named(a, "reset").length, 0);
 });
 check("the boss chamber rule is per player", () => {
   const h = cave(),
@@ -383,5 +399,589 @@ check("a malformed frame is ignored", () => {
   assert.equal(h.S.px.size, 1);
   run(h, 0.1, () => a.at(s.x + 2, s.z));
   assert.equal(h.S.step, 6);
+});
+// Task 5: what clients can ask of the host.
+// A walkable point d metres from e that it cannot see, searching outward.
+function unseen(h, e, d0) {
+  const w = h.G.world;
+  for (let d = d0; d < d0 + 20; d += 0.5)
+    for (let i = 0; i < 72; i++) {
+      const a = (i * Math.PI) / 36,
+        x = e.x + Math.sin(a) * d,
+        z = e.z + Math.cos(a) * d;
+      if (w.fieldAt(x, z) > 0.6 && !w.los(e.x, e.z, x, z)) return { x, z };
+    }
+  throw new Error("no hidden spot near the enemy");
+}
+// A hit event's arguments after the seq: eid, dmg, post, flags, src, fx, fz,
+// seenState, seenAn.
+const hit = (c, e, dmg, o = {}) =>
+  c.ev(
+    "hit",
+    e.id,
+    dmg,
+    o.post ?? 0,
+    o.flags ?? 0,
+    o.src ?? "melee",
+    o.fx ?? null,
+    o.fz ?? null,
+    o.seen ?? "chase",
+    o.an ?? e.an,
+  );
+const warden = (h) => h.G.enemies.find((e) => e.def.boss);
+// Kills the Warden through hit events from c, below COOP.MAX_DMG each.
+function killWarden(c, w) {
+  for (let i = 0; i < 4 && !w.dead; i++) hit(c, w, Math.min(400, w.hp + 1));
+  assert.equal(w.dead, true, "the Warden did not die");
+}
+
+check("a proposed hit takes exactly the damage sent", () => {
+  const h = cave(),
+    e = husk(h, 37);
+  const a = fakeClient(h, 1, "fighter");
+  const q = spot(h, e, 4);
+  run(h, 1, hold(a, q));
+  assert.equal(e.aware, true, "the husk did not wake");
+  assert.equal(e.hp, 42);
+  const p0 = e.posture,
+    k = e.state === "wind" ? 1.25 : 1;
+  const seq = hit(a, e, 10, { post: 5 });
+  assert.equal(e.hp, 32);
+  assert.equal(e.posture, p0 + 5 * k);
+  assert.equal(e.state, "hit", "a husk flinches");
+  run(h, 3 / 60, hold(a, q));
+  assert.equal(a.snap.ack, seq);
+  const r = a.snap.en.find((x) => x.id === e.id);
+  assert.equal(r.hp, 32);
+  // a hit with a blast centre, sent from behind: no backstab either
+  e.yaw = Math.atan2(e.x - q.x, e.z - q.z);
+  const s2 = hit(a, e, 7.5, { fx: e.x + 1, fz: e.z, src: "melee" });
+  assert.equal(e.hp, 24.5);
+  run(h, 3 / 60, hold(a, q));
+  assert.equal(a.snap.ack, s2);
+});
+check("the host adds no ambush bonus to a proposal", () => {
+  const h = cave(),
+    e = husk(h, 37);
+  const a = fakeClient(h, 1, "assassin");
+  assert.ok(h.S.px.get(1).cls.ambush > 1);
+  const s = h.G.world.spawn;
+  run(h, 0.5, () => a.at(s.x, s.z));
+  assert.equal(e.aware, false);
+  hit(a, e, 10, { seen: "idle" });
+  assert.equal(e.hp, 32, "not 42 - 10 * ambush");
+  // nor berserk's
+  h.S.px.get(1).buff = "berserk";
+  hit(a, e, 10);
+  assert.equal(e.hp, 22);
+});
+check("a hit that kills sends one kill with the killer's pid", () => {
+  const h = cave(),
+    e = husk(h, 37);
+  const a = fakeClient(h, 1, "fighter"),
+    b = fakeClient(h, 2, "fighter");
+  const q = spot(h, e, 4);
+  run(h, 0.5, () => {
+    a.at(q.x, q.z);
+    b.at(q.x + 0.5, q.z);
+  });
+  const f0 = h.G.player.focus;
+  hit(b, e, 20);
+  assert.equal(named(a, "kill").length, 0);
+  hit(b, e, 30);
+  assert.equal(e.dead, true);
+  for (const c of [a, b]) {
+    const k = named(c, "kill");
+    assert.equal(k.length, 1, "client " + c.pid + " got " + k.length);
+    assert.equal(k[0][1], e.id);
+    assert.equal(k[0][2], 2);
+    assert.equal(typeof k[0][3], "number");
+  }
+  // the rewards went to the killer's proxy, not the placeholder
+  assert.ok(h.S.px.get(2).focus > h.S.px.get(1).focus);
+  assert.equal(h.G.player.focus, f0);
+  // the dead stay dead and are announced once
+  hit(a, e, 20);
+  run(h, 3, () => {
+    a.at(q.x, q.z);
+    b.at(q.x + 0.5, q.z);
+  });
+  assert.equal(named(a, "kill").length, 1);
+  assert.equal(named(b, "kill").length, 1);
+});
+check("favour the attacker: a flinch seen before the swing still lands", () => {
+  const h = cave(),
+    e = husk(h, 37);
+  const a = fakeClient(h, 1, "fighter");
+  const q = spot(h, e, 2);
+  run(h, 1, hold(a, q));
+  const swing = () => {
+    e.state = "act";
+    e.t = 0;
+    e.atk = Object.values(e.def.atks)[0];
+    e.hitDone = true;
+    e.an = 5;
+    e.hp = 42;
+    e.posture = 0;
+  };
+  swing();
+  hit(a, e, 1, { seen: "wind", an: 5 });
+  assert.equal(e.state, "hit", "the flinch did not land");
+  // a different swing: the hit lands, the swing goes on
+  swing();
+  hit(a, e, 1, { seen: "wind", an: 4 });
+  assert.equal(e.state, "act");
+  assert.equal(e.hp, 41);
+  // the client saw the swing itself: no flinch
+  swing();
+  hit(a, e, 1, { seen: "act", an: 5 });
+  assert.equal(e.state, "act");
+  // a dot tick never flinches
+  swing();
+  hit(a, e, 1, { seen: "chase", an: 5, flags: 2 });
+  assert.equal(e.state, "act");
+  // a brute (poise 1) flinches only on a heavy hit seen outside wind
+  const br = h.G.enemies[9];
+  assert.equal(br.def.poise, 1);
+  const bs = () => {
+    br.state = "act";
+    br.t = 0;
+    br.atk = Object.values(br.def.atks)[0];
+    br.hitDone = true;
+    br.an = 9;
+    br.posture = 0;
+  };
+  bs();
+  hit(a, br, 1, { seen: "chase", an: 9 });
+  assert.equal(br.state, "act", "a light hit flinched a brute");
+  bs();
+  hit(a, br, 1, { seen: "wind", an: 9, flags: 1 });
+  assert.equal(br.state, "act", "a heavy hit seen in wind flinched a brute");
+  bs();
+  hit(a, br, 1, { seen: "chase", an: 9, flags: 1 });
+  assert.equal(br.state, "hit");
+});
+check("a hit over the ceiling, on a dead enemy or an unknown id does nothing", () => {
+  const h = cave(),
+    e = husk(h, 37),
+    br = h.G.enemies[9];
+  const a = fakeClient(h, 1, "fighter");
+  const s = h.G.world.spawn;
+  a.at(s.x, s.z);
+  let seq = hit(a, br, 501);
+  assert.equal(br.hp, 120);
+  run(h, 3 / 60, () => a.at(s.x, s.z));
+  assert.equal(a.snap.ack, seq, "a refused hit is still acknowledged");
+  hit(a, br, 500);
+  assert.equal(br.dead, true, "a hit of exactly the ceiling is applied");
+  const kills = named(a, "kill").length;
+  hit(a, br, 10);
+  assert.equal(named(a, "kill").length, kills);
+  const hp = h.G.enemies.map((o) => o.hp);
+  // unknown ids, wrong types, missing fields and unknown names
+  const bad = [
+    ["hit", 99, 9999, 10, 0, 0, "melee", null, null, "chase", 0],
+    ["hit", 99, String(e.id), 10, 0, 0, "melee", null, null, "chase", 0],
+    ["hit", 99, null, 10],
+    ["hit", 99, e.id, "10", 0, 0, "melee"],
+    ["hit", 99, e.id, -10, 0, 0, "melee"],
+    ["hit", 99, e.id, NaN, 0, 0, "melee"],
+    ["hit", 99, e.id],
+    ["hit", 99, { id: e.id }, 10],
+    ["parry", 99, e.id, 0, "lots"],
+    ["parry", 99, e.id],
+    ["pin", 99, "x"],
+    ["exec", 99, -1],
+    ["pshot", 99, 1, 2],
+    ["pblast", 99, "a", 1, 1, 1, 1, 1],
+    ["spawn", 99, 50, "husk", 0, 0],
+    ["no such event", 99, 1, 2, 3],
+    ["hit"],
+    [],
+    [1, 2, 3],
+    { hit: 1 },
+    "hit",
+    null,
+    42,
+  ];
+  for (const ev of bad)
+    assert.doesNotThrow(() => h.recv(1, h.wire.eventEncode(ev)), JSON.stringify(ev));
+  assert.deepEqual(
+    h.G.enemies.map((o) => o.hp),
+    hp,
+  );
+  assert.equal(e.dead, false);
+  run(h, 3 / 60, () => a.at(s.x, s.z));
+  assert.equal(a.snap.ack, 99, "the numbered ones are acknowledged");
+  // and the host goes on applying good ones
+  seq = hit(a, e, 2);
+  assert.equal(e.hp, 40);
+  run(h, 3 / 60, () => a.at(s.x, s.z));
+  assert.equal(a.snap.ack, 99, "an older seq does not lower the ack");
+  assert.ok(seq < 99);
+});
+check("a hit pulls the enemy onto the hitter", () => {
+  const h = cave(),
+    e = husk(h, 37);
+  const a = fakeClient(h, 1, "fighter"),
+    b = fakeClient(h, 2, "fighter");
+  const qa = spot(h, e, 4);
+  let qb = unseen(h, e, 5);
+  const both = () => {
+    a.at(qa.x, qa.z);
+    b.at(qb.x, qb.z);
+  };
+  run(h, 1, both);
+  assert.equal(e.aware, true, "the husk did not wake");
+  assert.equal(e.tg, 1);
+  // B out of its sight: the hit lands, the target stays
+  assert.equal(h.G.world.los(e.x, e.z, qb.x, qb.z), false);
+  hit(b, e, 1);
+  assert.equal(e.hp, 41);
+  assert.equal(e.tg, 1);
+  // B in sight, half a metre further than A: B becomes the target and
+  // stays it (the hit's knockback is within the 3 m hysteresis)
+  run(h, 1, both);
+  const qa2 = spot(h, e, 4);
+  qb = spot(h, e, 4.5, qa2.a + Math.PI);
+  a.at(qa2.x, qa2.z);
+  b.at(qb.x, qb.z);
+  run(h, 1 / 60, () => {
+    a.at(qa2.x, qa2.z);
+    b.at(qb.x, qb.z);
+  });
+  assert.equal(e.tg, 1);
+  hit(b, e, 1);
+  assert.equal(e.tg, 2);
+  // it keeps B and hunts B: what it last saw of its quarry is where B is
+  run(h, 1.5, () => {
+    a.at(qa2.x, qa2.z);
+    b.at(qb.x, qb.z);
+    assert.equal(e.tg, 2);
+  });
+  assert.equal(e.aware, true);
+  assert.ok(Math.hypot(e.lsx - qb.x, e.lsz - qb.z) < 0.05, "it tracks A, not B");
+});
+check("a parry adds posture and recoils, or staggers when full", () => {
+  const h = cave(),
+    br = h.G.enemies[9];
+  const a = fakeClient(h, 1, "fighter");
+  const q = spot(h, br, 3);
+  run(h, 1, hold(a, q));
+  assert.equal(br.aware, true);
+  br.state = "chase";
+  br.posture = 0;
+  a.ev("parry", br.id, br.an, 30);
+  assert.equal(br.posture, 30);
+  assert.equal(br.state, "recoil");
+  assert.equal(br.dur, 1.0);
+  assert.equal(br.t, 0);
+  run(h, 0.1, hold(a, q));
+  a.ev("parry", br.id, br.an, br.def.posture);
+  assert.equal(br.state, "stagger");
+  // a parry on a staggered enemy changes nothing
+  run(h, 0.5, hold(a, q));
+  const t = br.t,
+    dur = br.dur;
+  a.ev("parry", br.id, br.an, 30);
+  assert.equal(br.state, "stagger");
+  assert.equal(br.t, t);
+  assert.equal(br.dur, dur);
+  // the Warden recoils for less
+  const w = warden(h);
+  w.state = "chase";
+  w.posture = 0;
+  a.ev("parry", w.id, w.an, 30);
+  assert.equal(w.state, "recoil");
+  assert.equal(w.dur, 0.55);
+});
+check("an execution: the first pin wins and only that player's exec kills", () => {
+  const h = cave(),
+    e = husk(h, 37);
+  const a = fakeClient(h, 1, "fighter"),
+    b = fakeClient(h, 2, "fighter");
+  const q = spot(h, e, 2);
+  const both = () => {
+    a.at(q.x, q.z);
+    b.at(q.x + 0.3, q.z);
+  };
+  run(h, 1, both);
+  // not staggered: a pin does nothing
+  a.ev("pin", e.id);
+  assert.equal(e.pin, 0);
+  a.ev("parry", e.id, e.an, e.def.posture);
+  assert.equal(e.state, "stagger");
+  run(h, 0.5, both);
+  a.ev("pin", e.id);
+  b.ev("pin", e.id);
+  assert.equal(e.pin, 1);
+  assert.ok(e.dur - e.t >= 1.5 - 1e-9);
+  run(h, 3 / 60, both);
+  assert.equal(a.snap.en.find((r) => r.id === e.id).pin, 1);
+  assert.equal(b.snap.en.find((r) => r.id === e.id).pin, 1);
+  b.ev("exec", e.id);
+  assert.equal(e.dead, false);
+  assert.equal(named(a, "kill").length, 0);
+  a.ev("exec", e.id);
+  assert.equal(e.dead, true);
+  const k = named(b, "kill");
+  assert.equal(k.length, 1);
+  assert.deepEqual(k[0].slice(0, 3), ["kill", e.id, 1]);
+  // a pin that is never finished lets go when the stagger ends
+  const e2 = husk(h, 18),
+    q2 = spot(h, e2, 2);
+  const near2 = () => {
+    a.at(q2.x, q2.z);
+    b.at(q2.x + 0.3, q2.z);
+  };
+  run(h, 1, near2);
+  a.ev("parry", e2.id, e2.an, e2.def.posture);
+  b.ev("pin", e2.id);
+  assert.equal(e2.pin, 2);
+  run(h, 5, () => {
+    near2();
+    if (e2.state !== "stagger") return false;
+  });
+  assert.notEqual(e2.state, "stagger");
+  run(h, 1 / 60, near2);
+  assert.equal(e2.pin, 0);
+  b.ev("exec", e2.id);
+  assert.equal(e2.dead, false);
+});
+check("an enemy shot is announced once and never hits a proxy", () => {
+  const h = cave(),
+    sp = h.G.enemies[2];
+  assert.equal(sp.type, "spit");
+  const a = fakeClient(h, 1, "fighter");
+  // in front of it, where an idle enemy looks
+  const q = spot(h, sp, 8, sp.yaw);
+  const px = h.S.px.get(1);
+  // each swing of the shot fires one shot as it enters act; a shot that
+  // meets a wall in the step it is made is never seen in G.projs
+  const reached = new Map();
+  let passed = 0,
+    fired = 0,
+    s0 = sp.state;
+  run(h, 8, (i) => {
+    a.at(q.x, q.z);
+    if (sp.state === "act" && s0 !== "act") fired++;
+    s0 = sp.state;
+    for (const pr of h.G.projs) {
+      if (pr.src !== sp) continue;
+      if (reached.has(pr) && reached.get(pr) === i - 1 && pr.life > 0) passed++;
+      if (Math.hypot(pr.x - px.x, pr.z - px.z) < 0.8 && !reached.has(pr)) reached.set(pr, i);
+    }
+    assert.equal(px.hp, px.maxHp);
+    assert.equal(px.state, "free");
+  });
+  const shots = named(a, "shot").filter((ev) => ev[1] === sp.id);
+  if (sp.state === "act" && s0 !== "act") fired++;
+  assert.ok(fired > 0, "the spitter never shot");
+  assert.equal(shots.length, fired);
+  assert.ok(passed > 0, "no shot flew on through the proxy");
+  for (const [, , x, y, z, vx, vz, dmg, t] of shots) {
+    for (const v of [x, y, z, vx, vz, t]) assert.equal(typeof v, "number");
+    assert.ok(Math.hypot(vx, vz) > 10);
+    assert.equal(dmg, sp.def.atks[Object.keys(sp.def.atks).find((k) => sp.def.atks[k].kind === "shot")].dmg);
+  }
+});
+check("the Warden's slam sends a ring and its second phase a roar", () => {
+  const h = cave(),
+    w = warden(h),
+    bc = h.G.world.boss;
+  const a = fakeClient(h, 1, "fighter"),
+    b = fakeClient(h, 2, "fighter");
+  const q = spot(h, w, 10);
+  const both = () => {
+    a.at(q.x, q.z);
+    b.at(h.G.world.spawn.x, h.G.world.spawn.z);
+  };
+  assert.ok(dist(q, bc) < bc.r);
+  run(h, 1, both);
+  assert.equal(w.aware, true, "the Warden did not wake");
+  assert.equal(named(a, "ring").length, 0);
+  Object.assign(w, { state: "wind", atk: w.def.atks.slam, t: 0, hitDone: false });
+  run(h, 1, both);
+  for (const c of [a, b]) {
+    const r = named(c, "ring");
+    assert.equal(r.length, 1, "client " + c.pid + " got " + r.length + " rings");
+    const [, x, z, radius, dur, t] = r[0];
+    assert.ok(Math.abs(x - w.tx) < 0.01 && Math.abs(z - w.tz) < 0.01);
+    assert.equal(radius, 5.4);
+    assert.equal(dur, 0.6);
+    assert.equal(typeof t, "number");
+  }
+  // the roar: once, when a hit takes it under half
+  hit(a, w, w.hp - 311);
+  assert.equal(w.phase, 1);
+  assert.equal(named(a, "roar").length, 0);
+  hit(a, w, 2);
+  assert.equal(w.phase, 2);
+  for (const c of [a, b]) {
+    const r = named(c, "roar");
+    assert.equal(r.length, 1);
+    assert.equal(r[0][1], w.id);
+    assert.equal(typeof r[0][2], "number");
+  }
+  hit(a, w, 2);
+  run(h, 1, both);
+  assert.equal(named(a, "roar").length, 1);
+});
+check("one death resets nothing; both dead resets the enemies", () => {
+  const h = cave(),
+    s = h.G.world.spawn;
+  const a = fakeClient(h, 1, "fighter"),
+    b = fakeClient(h, 2, "fighter");
+  let da = false,
+    db = false;
+  const both = () => {
+    a.at(s.x, s.z, da ? { state: "dead", hp: 0 } : {});
+    b.at(s.x + 1, s.z, db ? { state: "dead", hp: 0 } : {});
+  };
+  run(h, 0.5, both);
+  for (const i of [37, 41, 43]) hit(a, husk(h, i), 42);
+  da = true;
+  run(h, 1, both);
+  assert.equal(h.G.enemies.filter((e) => e.dead).length, 3);
+  assert.equal(named(a, "reset").length, 0);
+  db = true;
+  run(h, 1 / 60, both);
+  for (const c of [a, b]) assert.equal(named(c, "reset").length, 1);
+  const [, r, t] = named(a, "reset")[0];
+  assert.equal(typeof t, "number");
+  assert.equal(r.enemies.length, 47);
+  assert.deepEqual(r.dead, []);
+  assert.equal(r.bossDead, false);
+  assert.equal(h.G.enemies.length, 47);
+  assert.equal(h.G.enemies.filter((e) => e.dead).length, 0);
+  const sp = h.G.world.spawns;
+  h.G.enemies.forEach((e, i) => {
+    assert.equal(e.id, i);
+    assert.equal(e.type, sp[i].type);
+    assert.equal(h.S.byId.get(i), e);
+    assert.equal(e.an, 0);
+    assert.equal(e.pin, 0);
+  });
+  r.enemies.forEach(([id, type], i) => {
+    assert.equal(id, i);
+    assert.equal(type, sp[i].type);
+  });
+  // not again while the same players stay dead
+  run(h, 2, both);
+  assert.equal(named(a, "reset").length, 1);
+  // one back on their feet, then both dead again: a second
+  da = false;
+  run(h, 0.5, both);
+  assert.equal(named(a, "reset").length, 1);
+  da = true;
+  run(h, 0.5, both);
+  assert.equal(named(a, "reset").length, 2);
+  // with the boss dead it stays dead, and its id is skipped
+  da = db = false;
+  run(h, 0.5, both);
+  const w = warden(h);
+  killWarden(a, w);
+  assert.equal(h.G.bossDead, true);
+  da = db = true;
+  run(h, 0.5, both);
+  const last = named(b, "reset");
+  assert.equal(last.length, 3);
+  const r3 = last[2][1];
+  assert.equal(r3.bossDead, true);
+  assert.equal(r3.enemies.length, 46);
+  assert.ok(!r3.enemies.some(([id]) => id === w.id));
+  assert.equal(h.G.enemies.length, 46);
+  assert.ok(!h.G.enemies.some((e) => e.def.boss));
+  h.G.enemies.forEach((e, i) => assert.equal(e.id, i));
+  assert.equal(h.S.byId.has(w.id), false);
+  // a hit on the reset enemies lands on the new ones
+  da = db = false;
+  run(h, 0.1, both);
+  hit(a, husk(h, 37), 2);
+  assert.equal(h.S.byId.get(37).hp, 40);
+});
+check("an away player does not hold up the wipe", () => {
+  const h = cave(),
+    s = h.G.world.spawn;
+  const a = fakeClient(h, 1, "fighter"),
+    b = fakeClient(h, 2, "fighter");
+  run(h, 0.5, () => {
+    a.at(s.x, s.z);
+    b.at(s.x + 1, s.z);
+  });
+  hit(a, husk(h, 37), 42);
+  // A falls silent; B is dead
+  const deadB = () => b.at(s.x + 1, s.z, { state: "dead", hp: 0 });
+  run(h, 1.5, deadB);
+  assert.equal(h.S.px.get(1).away, false);
+  assert.equal(named(b, "reset").length, 0, "reset while A was still there");
+  run(h, 1, deadB);
+  assert.equal(h.S.px.get(1).away, true);
+  assert.equal(named(b, "reset").length, 1);
+  assert.equal(husk(h, 37).dead, false);
+  // nobody present: no wipe
+  const h2 = cave(),
+    c = fakeClient(h2, 1, "fighter");
+  c.at(s.x, s.z, { state: "dead", hp: 0 });
+  run(h2, 1 / 60);
+  assert.equal(named(c, "reset").length, 1, "a lone dead player is a wipe");
+  run(h2, 0.5);
+  c.at(s.x, s.z);
+  run(h2, 0.5);
+  // dead and gone silent at once: away before the next check matters
+  c.at(s.x, s.z, { state: "dead", hp: 0 });
+  h2.S.px.get(1).heard = -10;
+  run(h2, 1);
+  assert.equal(named(c, "reset").length, 1, "a wipe with nobody present");
+});
+check("the gate ends the run only once the boss is dead", () => {
+  const h = cave(),
+    s = h.G.world.spawn;
+  const a = fakeClient(h, 1, "fighter"),
+    b = fakeClient(h, 2, "fighter");
+  const both = () => {
+    a.at(s.x, s.z);
+    b.at(s.x + 1, s.z);
+  };
+  run(h, 1, both);
+  b.ev("gate");
+  assert.equal(named(a, "end").length, 0);
+  run(h, 0.5, both);
+  assert.equal(h.S.step, 90);
+  killWarden(a, warden(h));
+  run(h, 0.5, both);
+  const seq = b.ev("gate");
+  for (const c of [a, b]) {
+    const e = named(c, "end");
+    assert.equal(e.length, 1);
+    assert.deepEqual(e[0], ["end", h.G.runT]);
+  }
+  assert.ok(Math.abs(h.G.runT - 2) < 0.05, "runT " + h.G.runT);
+  const step = h.S.step,
+    na = a.nsnap,
+    ne = a.events.length;
+  run(h, 1, both);
+  b.ev("gate");
+  hit(a, husk(h, 37), 10);
+  assert.equal(h.S.step, step);
+  assert.equal(a.nsnap, na);
+  assert.equal(a.events.length, ne);
+  assert.equal(husk(h, 37).hp, 42);
+  assert.ok(seq > 0);
+});
+check("a player's shots and blasts go to the other player only", () => {
+  const h = cave(),
+    s = h.G.world.spawn;
+  const a = fakeClient(h, 1, "fighter"),
+    b = fakeClient(h, 2, "fighter");
+  a.ev("pshot", 1, 1.25, 2, 10, -3, 0.2, 0.5, 1);
+  a.ev("pblast", 4, 5, 3.5, 1, 0.4, 0.1);
+  assert.deepEqual(named(b, "pshot"), [["pshot", 1, 1, 1.25, 2, 10, -3, 0.2, 0.5, 1]]);
+  assert.deepEqual(named(b, "pblast"), [["pblast", 1, 4, 5, 3.5, 1, 0.4, 0.1]]);
+  assert.equal(named(a, "pshot").length + named(a, "pblast").length, 0);
+  b.ev("pblast", 1, 2, 3, 0, 0, 0);
+  assert.deepEqual(named(a, "pblast"), [["pblast", 2, 1, 2, 3, 0, 0, 0]]);
+  run(h, 3 / 60, () => a.at(s.x, s.z));
+  assert.equal(a.snap.ack, 2);
 });
 done();
