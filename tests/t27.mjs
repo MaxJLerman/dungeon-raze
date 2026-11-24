@@ -140,32 +140,35 @@ export default [
       G.manual = true;
       const r = co.solo({ ping: 100, jit: 8 });
       // a pack awake and moving. The player is kept alive: dying alone is a
-      // wipe, whose reset puts them at the shrine, out of the pack's range
-      // (Task 8), and the pack would then leave the snapshots mid-count.
+      // wipe (Task 8), whose reset replaces every puppet mid-count and sends
+      // the pack home.
       DF.devGod(true);
-      co.near(co.husk(18), 9);
-      co.run(2);
-      r.cfg.ping = 300;
-      co.run(2);
       let n = 0,
         bare = 0,
         unsent = 0;
-      co.run(5, () => {
-        const rt = DF.CC.rt;
-        for (const e of G.enemies) {
-          if (e.dead || !e.nb.length) continue;
-          // one the host stopped sending (idle and far off) has no later
-          // snapshot by design
-          if (rt - e.nb[e.nb.length - 1].t > 0.2) {
-            unsent++;
-            continue;
+      try {
+        co.near(co.husk(18), 9);
+        co.run(2);
+        r.cfg.ping = 300;
+        co.run(2);
+        co.run(5, () => {
+          const rt = DF.CC.rt;
+          for (const e of G.enemies) {
+            if (e.dead || !e.nb.length) continue;
+            // one the host stopped sending (idle and far off) has no later
+            // snapshot by design
+            if (rt - e.nb[e.nb.length - 1].t > 0.2) {
+              unsent++;
+              continue;
+            }
+            n++;
+            if (!e.nb.some((s) => s.t > rt)) bare++;
           }
-          n++;
-          if (!e.nb.some((s) => s.t > rt)) bare++;
-        }
-      });
+        });
+      } finally {
+        DF.devGod(false);
+      }
       const pct = +((100 * bare) / Math.max(1, n)).toFixed(2);
-      DF.devGod(false);
       return { pass: n > 100 && pct < 3, samples: n, noLaterSnapshotPct: pct, unsent };
     },
   },
@@ -1293,9 +1296,15 @@ export default [
         co = window.__co;
       G.manual = true;
       co.solo({ ping: 200, jit: 10, loss: 2 });
+      // on through the screenshot; "end the run" turns it off, and so does a throw
       DF.devGod(true);
-      co.near(co.husk(18), 5);
-      co.run(2.2);
+      try {
+        co.near(co.husk(18), 5);
+        co.run(2.2);
+      } catch (err) {
+        DF.devGod(false);
+        throw err;
+      }
       DF.cam.yaw = G.player.yaw;
       DF.cam.px = G.player.x;
       DF.cam.pz = G.player.z;

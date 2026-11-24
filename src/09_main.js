@@ -332,11 +332,11 @@ function camUpdate(dt) {
   }
   R.setCam(eye[0], eye[1], eye[2], look[0], look[1], look[2], cam.fov);
 }
-// In a co-op run the simulation runs whatever the screen; off the play
-// screen nothing this player holds moves them, so a paused player stands
-// where they were (and can still be hit).
+// In a co-op run the simulation runs whatever the screen; off the play and
+// dead screens nothing this player holds moves them, so a paused player
+// stands where they were (and can still be hit).
 function coopStill() {
-  if (!(NET && NET.live) || G.state === "play") return;
+  if (!(NET && NET.live) || G.state === "play" || G.state === "dead") return;
   for (const k in keys) keys[k] = false;
   for (const k in taps) taps[k] = false;
   PAD.move = { x: 0, y: 0, mag: 0 };

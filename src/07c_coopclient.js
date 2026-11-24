@@ -907,10 +907,12 @@ function coopMateSwing(m, rt) {
   if (Math.hypot(m.x - p.x, m.z - p.z) < COOP_HEAR) SFX.whoosh(mv.heavy);
 }
 // After a wipe: the host's enemies, fresh, in place of the puppets, as the
-// join makes them, with every guess and pending hit of this page dropped. A
-// dead player here comes back at their checkpoint as respawn puts them, with
-// the dead screen kept up (Rise again goes on from there). The kill count,
-// the run's time and the boss's death are kept.
+// join makes them. Everything that pointed at the old puppets goes with them:
+// every guess and pending hit, the enemies' shots, this player's bombs and
+// blasts still due, the lock, and an execution under way (it ends, and sends
+// nothing more). A dead player stays dead where they fell, on the dead
+// screen; Rise again respawns them as in single player. The kill count, the
+// run's time and the boss's death are kept.
 function coopReset(r) {
   const p = G.player;
   coopPuppets(r);
@@ -918,10 +920,14 @@ function coopReset(r) {
   CC.evq = [];
   CC.fin = null;
   CC.exE = null;
+  G.projs = G.projs.filter((o) => o.own !== "e");
+  G.bombs = [];
+  G.pending = [];
   p.lock = null;
-  if (p.state === "dead") {
-    respawn();
-    G.state = "dead";
+  p.exT = null;
+  if (p.state === "execute") {
+    p.state = "free";
+    p.t = 0;
   }
 }
 // The exit gate: asked of the host once; its end event closes the run.

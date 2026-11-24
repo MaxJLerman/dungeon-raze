@@ -328,7 +328,7 @@ export default [
     },
   },
   {
-    name: "both dead resets the enemies, keeps the kills and the mate, and brings me back",
+    name: "both dead resets the enemies, keeps the kills and the mate, and leaves me dead until I rise",
     eval: () => {
       const { G } = DF,
         c8 = window.__c8;
@@ -352,36 +352,143 @@ export default [
         boss = G.bossDead;
       r.mate.kill();
       c8.step(0.5);
-      c8.die();
-      c8.step(3, () => (resets ? false : undefined));
-      c8.step(0.5);
       const p = G.player,
         cp = G.checkpoint,
         h = r.host;
+      c8.die();
+      const fell = { x: p.x, z: p.z };
+      c8.step(3, () => (resets ? false : undefined));
+      c8.step(0.5);
+      // still dead where they fell, on the dead screen, the fall playing on
+      const afterReset = {
+        me: p.state,
+        moved: +Math.hypot(p.x - fell.x, p.z - fell.z).toFixed(3),
+        t: +p.t.toFixed(2),
+        alive: G.enemies.filter((e) => !e.dead).length,
+      };
+      // the fall plays out and the dead screen comes up as in single player
+      c8.step(1.5);
+      afterReset.screen = G.state;
+      afterReset.stillDead = p.state === "dead" && Math.hypot(p.x - fell.x, p.z - fell.z) === 0;
+      const puppets = new Set(G.enemies);
+      // staying on the dead screen brings no second wipe
+      c8.step(5);
+      const resetsWhileDead = resets;
+      DF.respawn();
+      DF.show("play");
+      c8.step(0.5);
       return {
         pass:
           resets === 1 &&
+          resetsWhileDead === 1 &&
           kills === 1 &&
           G.kills === 1 &&
           G.runT >= runT &&
           G.bossDead === boss &&
+          afterReset.me === "dead" &&
+          afterReset.screen === "dead" &&
+          afterReset.stillDead &&
+          afterReset.moved === 0 &&
+          afterReset.t > 0.4 &&
+          afterReset.alive === 47 &&
           G.enemies.length === 47 &&
           G.enemies.filter((e) => !e.dead).length === 47 &&
+          G.enemies.every((e) => puppets.has(e)) &&
           h.G.enemies.filter((e) => !e.dead).length === 47 &&
           G.enemies.every((e) => DF.CC.byId.get(e.id) === e) &&
           DF.CC.pend.length === 0 &&
-          p.state !== "dead" &&
+          p.state === "free" &&
           Math.hypot(p.x - cp.x, p.z - cp.z) < 3 &&
-          G.state === "dead" &&
           DF.net().mates.length === 1 &&
           r.mate.p.state === "free",
         resets,
+        resetsWhileDead,
         kills: [kills, G.kills],
+        afterReset,
         alive: G.enemies.filter((e) => !e.dead).length,
         hostAlive: h.G.enemies.filter((e) => !e.dead).length,
         me: p.state,
-        screen: G.state,
+        atCheckpoint: +Math.hypot(p.x - cp.x, p.z - cp.z).toFixed(2),
         mate: r.mate.p.state,
+      };
+    },
+  },
+  {
+    name: "a reset mid-execution ends it: no pin or exec after, and no bomb, blast, shot or lock left",
+    eval: () => {
+      const { G } = DF,
+        c8 = window.__c8;
+      G.manual = true;
+      const r = c8.solo({ ping: 200, mate: "idle" }),
+        h = r.host,
+        p = G.player,
+        he = c8.husk(37),
+        pe = c8.pup(37);
+      c8.near(he, 2);
+      c8.step(0.5);
+      Object.assign(he, { state: "stagger", t: 0, dur: 3.0, posture: he.def.posture, token: false });
+      c8.step(1, () => (pe.state === "stagger" ? false : undefined));
+      // every event this page sends once the reset is in
+      let applied = false;
+      const sent = [],
+        L = DF.CC.link,
+        send = L.send;
+      L.send = (buf) => {
+        if (applied && h.wire.type(buf) === 3) sent.push(h.wire.eventDecode(buf)[0]);
+        return send(buf);
+      };
+      DF.startExecute(pe);
+      c8.step(1 / 60);
+      const executing = p.state === "execute",
+        pinned = DF.CC.exE === pe;
+      // things riding the old puppets: a bomb on it, a blast due, a spit in
+      // the air far off, and the lock
+      G.bombs.push({ x: pe.x, y: 1.1, z: pe.z, e: pe, ox: 0, oz: 0, t: 3 });
+      G.pending.push({ x: pe.x, z: pe.z, r: 3, dmg: 10, post: 0, c: [1, 1, 1], t: 0.5 });
+      G.projs.push({ x: p.x + 30, y: 1.2, z: p.z, vx: 10, vz: 0, life: 2, own: "e", dmg: 8, src: pe, kind: "spit", c: [1, 0.45, 0.2] });
+      p.lock = pe;
+      const list = [...h.S.byId.values()];
+      c8.tell([
+        "reset",
+        { enemies: list.map((e) => [e.id, e.type, e.x, e.z, e.yaw]), dead: list.filter((e) => e.dead).map((e) => e.id), bossDead: false },
+        h.S.step / 60,
+      ]);
+      let at = null;
+      c8.step(1.5, () => {
+        if (!applied && !G.enemies.includes(pe)) {
+          applied = true;
+          at = {
+            state: p.state,
+            exT: p.exT,
+            bombs: G.bombs.length,
+            pending: G.pending.length,
+            spits: G.projs.filter((o) => o.own === "e").length,
+            lock: p.lock,
+          };
+        }
+      });
+      L.send = send;
+      return {
+        pass:
+          executing &&
+          pinned &&
+          applied &&
+          at.state === "free" &&
+          !at.exT &&
+          at.bombs === 0 &&
+          at.pending === 0 &&
+          at.spits === 0 &&
+          at.lock === null &&
+          !sent.includes("pin") &&
+          !sent.includes("exec") &&
+          p.state === "free" &&
+          !DF.CC.fin,
+        executing,
+        pinned,
+        applied,
+        atReset: at && { ...at, exT: !!at.exT, lock: !!at.lock },
+        sentAfter: sent,
+        now: p.state,
       };
     },
   },
@@ -619,9 +726,9 @@ export default [
       c8.step(0.5);
       await c8.frames();
       const bar = c8.shown("mateBar"),
-        vb = document.getElementById("vitals").querySelector(".bar.fo").getBoundingClientRect(),
+        vb = document.getElementById("vitals").getBoundingClientRect(),
         mb = document.getElementById("mateBar").getBoundingClientRect(),
-        under = mb.top >= vb.bottom && mb.height > 0 && mb.height <= 8;
+        under = mb.top >= vb.bottom && mb.top - vb.bottom < 12 && mb.height > 0 && mb.height <= 8;
       r.mate.leave();
       c8.step(0.5);
       const left = DF.net().mates.length === 0;
