@@ -307,7 +307,6 @@ Screenshots go to `shots/`.
 | `tests/t23.mjs` | The D enemies: behaviour hooks, the rat, the drowned and the brood mother, their bodies, and where the sewer places them, with screenshots. Run in `smoke` mode |
 | `tests/t24.mjs` | The siren, eel, bloater and drain grabber: rules for enemies bound to water or a wall, the held player, each type, and where the sewer places them, with screenshots. Run in `smoke` mode |
 | `tests/t25.mjs` | Old Sluicejaw, the D boss: its body, place, modes, death roll, health marks, a whole D run from the hall, the tunnel phase and its plates, the falling ceiling, the bloaters down the falls and its shadow, with screenshots. Run in `smoke` mode |
-
 | `tests/t27.mjs` | Co-op client against a hand-stepped host over a fake link: puppets, hits, parries, executions, the cave checksum. Run in `smoke` mode |
 | `tests/t28.mjs` | Co-op: the other player on screen and the party rules. Run in `smoke` mode |
 | `tests/t29.mjs` | Co-op room screen up to the network: the button, codes, messages, the class fallback, a Worker host. Run in `title` mode, also with `DEVICE=oneplus-13` |

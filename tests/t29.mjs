@@ -15,6 +15,7 @@ const MSG = {
   version: "You and the host are on different versions of the game. Both reload the page.",
   cave: "This browser built a different cave from the host's. Co-op cannot run here.",
   worker: "This browser cannot host a room.",
+  stopped: "The host's game stopped. The room is closed.",
 };
 // The helpers every step shares, made once, on window.__c9.
 const HELP = `
@@ -73,6 +74,20 @@ const HELP = `
       open() { if (DF.G.state !== "title") document.querySelector("#scr-coop [data-back]").click(); DF.show("title"); DF.openMenu("coop"); },
       join(code) { document.getElementById("coopCode").value = code; document.getElementById("coopJoin").click(); },
       back() { document.querySelector("#scr-coop [data-back]").click(); },
+      wait: (ms) => new Promise((r) => setTimeout(r, ms)),
+      // hosts a room on this page: POST /new answered here, a real Worker
+      // host on cave 99, a relay address nothing listens on. Resolves once
+      // the page has joined its own Worker.
+      async hostLocal() {
+        h.stubFetch("ABCDEF"); h.countWorkers();
+        DF.coopLoc({ protocol: "http:", hostname: "localhost" });
+        DF.coopRelay("ws://localhost:1");
+        DF.coopSeed(99);
+        h.open();
+        document.getElementById("coopHost").click();
+        for (let i = 0; i < 200 && !DF.net(); i++) await h.wait(50);
+        return !!DF.net();
+      },
     };
     return h;
   })());
@@ -341,5 +356,121 @@ export default [
   c.backEnds = had && DF.G.state === "title" && DF.net() === null && DF.CC.link === null && DF.G.zone === "hub" && !!w2 && w2.dead === true && DF.CC.why === "left";
   DF.setClass(Object.keys(DF.CLASSES).find((k) => !DF.CLASSES[k].hidden));
   DF.show("title");
+  return { pass: Object.values(c).every(Boolean), c };`),
+  step("a room that never answers the hello times out", `
+  const c = {};
+  c9.stubSockets();
+  DF.coopLoc({ protocol: "http:", hostname: "localhost" });
+  DF.coopRelay("ws://localhost:1");
+  // setTimeout for 5 s or more is held here, to be fired by hand
+  const timers = [], st0 = window.setTimeout;
+  window.setTimeout = (fn, ms, ...a) => (ms >= 5000 ? (timers.push({ fn, ms }), 0) : st0(fn, ms, ...a));
+  try {
+    const enter = document.getElementById("coopEnter");
+    c9.open();
+    c9.join("ABCDEF");
+    const s = c9.socks[0];
+    c.noneBeforeOpen = timers.length === 0;
+    s.open();
+    c.timer = timers.length === 1 && timers[0].ms === 10000;
+    c.waiting = DF.CC.link !== null && enter.disabled && c9.msg() === "";
+    // the time runs out with no join
+    if (timers[0]) timers[0].fn();
+    c.timedOut = c9.msg() === MSG.relay && s.readyState === 3 && DF.CC.link === null && DF.net() === null &&
+      DF.G.state === "coop" && !c9.shown(enter) && c9.shown(document.getElementById("coopPick"));
+    // and the screen is ready to try again
+    c9.join("ABCDEF");
+    c.again = c9.socks.length === 2 && DF.CC.link !== null && c9.msg() === "";
+    if (!c.again) return { pass: false, c };
+    // a join in time is not undone when the time runs out
+    const s2 = c9.socks[1], h = DF.coopMakeHost();
+    h.start({ seed: 99, grade: "E" });
+    h.send = (pid, buf) => s2.hear(new Uint8Array(buf));
+    s2.open();
+    for (const b of s2.sent) h.recv(2, b.slice().buffer);
+    c.joined = !!DF.net() && DF.CC.link !== null;
+    if (timers[1]) timers[1].fn();
+    c.kept = timers.length === 2 && !!DF.net() && DF.CC.link !== null && s2.readyState === 1 && c9.msg() === "";
+    c9.back();
+    c.cleanedUp = DF.net() === null && DF.G.zone === "hub";
+  } finally {
+    window.setTimeout = st0;
+  }
+  return { pass: Object.values(c).every(Boolean), c };`),
+
+  step("Start that play() refuses can be pressed again, and Back still ends the run", `
+  // play() refuses while touch is on and the page is upright: touch is
+  // turned on and innerHeight made taller than innerWidth here
+  const c = {}, enter = document.getElementById("coopEnter");
+  const d0 = Object.getOwnPropertyDescriptor(window, "innerHeight");
+  const upright = (on) => {
+    if (on) Object.defineProperty(window, "innerHeight", { configurable: true, get: () => innerWidth + 200 });
+    else if (d0) Object.defineProperty(window, "innerHeight", d0);
+    else delete window.innerHeight;
+  };
+  const touch0 = DF.TOUCH.on;
+  try {
+    // refused, then turned: Start works
+    c.hosted = await c9.hostLocal();
+    DF.TOUCH.setOn(true);
+    upright(true);
+    await c9.frames();
+    enter.click();
+    c.refused = DF.G.state === "coop" && !!DF.net() && DF.net().live;
+    upright(false);
+    await c9.frames();
+    c.enabled = c9.shown(enter) && !enter.disabled;
+    enter.click();
+    c.plays = DF.G.state === "play" && !!DF.net() && DF.net().live;
+    const w = c9.workers[0];
+    DF.toBase();
+    for (let i = 0; i < 40 && !(w && w.dead); i++) await c9.wait(50);
+    c.ended = DF.net() === null && !!w && w.dead === true;
+    // refused, then Back: the run, its cave and its Worker end
+    DF.show("title");
+    c.hosted2 = await c9.hostLocal();
+    const w2 = c9.workers[0];
+    upright(true);
+    await c9.frames();
+    enter.click();
+    c.refused2 = DF.G.state === "coop" && !!DF.net() && DF.net().live;
+    c9.back();
+    for (let i = 0; i < 40 && !(w2 && w2.dead); i++) await c9.wait(50);
+    c.backEnds = DF.G.state === "title" && DF.net() === null && DF.CC.link === null && DF.G.zone === "hub" && !!w2 && w2.dead === true;
+  } finally {
+    upright(false);
+    DF.TOUCH.setOn(touch0);
+    DF.show("title");
+  }
+  return { pass: Object.values(c).every(Boolean), c };`),
+
+  step("a Worker that fails ends the room with a message, before or after the join", `
+  const c = {};
+  // before the join: a stand-in Worker that never answers and then errs
+  c9.stubFetch("ABCDEF");
+  DF.coopLoc({ protocol: "http:", hostname: "localhost" });
+  DF.coopRelay("ws://localhost:1");
+  const stand = [];
+  window.Worker = function () {
+    const w = { onmessage: null, onerror: null, dead: false, postMessage() {}, terminate() { w.dead = true; } };
+    stand.push(w);
+    return w;
+  };
+  c9.open();
+  document.getElementById("coopHost").click();
+  for (let i = 0; i < 40 && !stand.length; i++) await c9.wait(25);
+  if (stand[0] && stand[0].onerror) stand[0].onerror(new Event("error"));
+  c.before = c9.msg() === MSG.worker && DF.CC.link === null && DF.G.state === "coop" && !!stand[0] && stand[0].dead;
+  c9.back();
+  c9.restore();
+  // after the join and in play: the real Worker errs
+  c.hosted = await c9.hostLocal();
+  const w = c9.workers[0];
+  await c9.frames();
+  document.getElementById("coopEnter").click();
+  c.play = DF.G.state === "play" && DF.net().live;
+  w.onerror(new Event("error"));
+  c.after = DF.G.state === "title" && c9.msg() === MSG.stopped && DF.net() === null && DF.CC.link === null &&
+    DF.G.zone === "hub" && w.dead === true && DF.CC.why === "stopped";
   return { pass: Object.values(c).every(Boolean), c };`),
 ];

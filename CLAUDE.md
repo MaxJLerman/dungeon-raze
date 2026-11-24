@@ -1487,8 +1487,9 @@ Two players through grade E's cave over the internet. The design is
   gave are taken back if the other player's pin or kill came first.
   `coopBegin(link, { cls, drive, onRefuse })` sends the hello; `coopEnter()`
   makes the run live; `coopEnd(why)` leaves co-op from anything (`"host"`
-  goes to the title and says "The host has left.", `"end"` keeps the win
-  screen, any other reason leaves the screen as it is). A link is `{
+  goes to the title and says "The host has left.", `"stopped"` does the
+  same with "The host's game stopped. The room is closed.", `"end"` keeps
+  the win screen, any other reason leaves the screen as it is). A link is `{
   send(buf), onmessage, onclose(why), close() }`; a close before the join is
   applied goes to `onRefuse` with the link's reason, after it is the host
   leaving. A hidden class plays as the first base class (`coopBaseCls`), on
@@ -1521,13 +1522,20 @@ Two players through grade E's cave over the internet. The design is
   relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
   for the page alone. On `stop`, or once the run has ended, it closes its
   socket and timer; the page then terminates it (`{ stopped: true }`, or
-  after 0.5 s).
+  after 0.5 s). The page's side is `coopWorkerLink()`: a Worker error at
+  any time closes the link with `"worker"`, which before the join is the
+  refusal "This browser cannot host a room." and after it ends the run
+  with `coopEnd("stopped")`.
 - **The friend's link** (`coopSocketLink(url)`) hides the relay's framing:
   game frames pass through; `[0, 2]` (the host left) closes the link and the
   socket; `[0, 1]` is ignored; events sent before the socket opens wait for
   it; once open, a state frame is dropped rather than queued while
-  `bufferedAmount` is over `COOP.SOCK_FULL`. A close says `"noroom"`
-  (4004), `"full"` (4001) or `"relay"` (anything else).
+  `bufferedAmount` is over `COOP.SOCK_FULL`. A socket that opens and has
+  no join within `COOP.GONE` (10 s of real time; `coopJoin` sets
+  `link.joined`) is closed: a silent host, or a host whose own socket never
+  arrived so the friend took seat 1. A close says `"noroom"` (4004),
+  `"full"` (4001) or `"relay"` (anything else, that timeout included), and
+  the room screen is left ready to try again.
 - **The relay's framing** (`relay/README.md` is the contract). `POST /new`
   gives `{ code }`, six characters without O, 0, 1, I or L. `GET
   /room/CODE` upgrades; the first socket in is the host. Friend to host the
@@ -1536,9 +1544,10 @@ Two players through grade E's cave over the internet. The design is
   hears `[0, 1, 2]` (joined) and `[0, 2, 2]` (left), the friend `[0, 2]`
   (the host left; the friend must then close its socket). Closes: 4004 no
   such room, 4001 full, 4009 a frame over 16,384 bytes, 4008 more than 120
-  frames in a second, 1003 a text frame. HTTP 403 for an origin that is not
-  the Pages site, `localhost` or `127.0.0.1`, 429 past the per-address
-  limit. Game frames never start with 0.
+  frames in a second, 1003 a text frame. HTTP 403 for a request whose `Origin`
+  is not in the relay's `ALLOWED_ORIGINS` (the Pages site, as deployed) and
+  not `http://localhost` or `http://127.0.0.1` on any port; a request with no
+  `Origin` header is let through. 429 past the per-address limit. Game frames never start with 0.
 - **The room screen** (`08e`, screen `coop` in `SCREENS` and `MENUS`).
   `#btnCoop` ("Play with a friend") on the title shows only when the
   address has `?coop=1` (`coopButton`). `#coopHost` posts to `/new`,
@@ -1550,9 +1559,11 @@ Two players through grade E's cave over the internet. The design is
   opens the socket; `#coopEnter` reads "Waiting for the host to start",
   disabled, until the join arrives, then "Enter the cave". Entering is
   `coopEnter()` then `play()`, from the click. A second click while one is
-  under way does nothing. Back, Esc or the pad's back button on this screen
-  ends a room not yet entered (`coopLeaveRoom`), its Worker and the cave the
-  join built. Before any network use, in order (`coopCheck`): the page must
+  under way does nothing. `play()` refuses on an upright touch device; the
+  run is live all the same, and a later click (once the device is turned)
+  calls `play()` again. Back, Esc or the pad's back button on this screen
+  ends a room not yet in play (`coopLeaveRoom`), its Worker and the cave the
+  join built, live or not. Before any network use, in order (`coopCheck`): the page must
   be the Pages site, `localhost`, `127.0.0.1` or a `file:`; `COOP_RELAY`
   must be set; a `file:` page is told to run `npm run dev`; a code must be
   six characters of the alphabet. `#coopMsg` is one element, written only by
@@ -1852,7 +1863,9 @@ The class picker and HUD read `CLASSES` and need no changes.
     `tests/t28.mjs` (the other player and the party rules), both with
     `smoke`; `tests/t29.mjs` (the room screen up to the network: the button,
     the code's tidying and refusal, every message, the order of the checks,
-    the class fallback, a Worker host on the page, Back) with `title`, on
+    the class fallback, a Worker host on the page, Back, a room that never
+    answers, a Start that `play()` refuses, a Worker that fails) with
+    `title`, on
     the desktop page and on a phone:
     `DEVICE=oneplus-13 SCRIPT=$PWD/tests/t29.mjs node test.mjs title`. Look
     at `shots/t29-room.png` and `shots/oneplus-13-t29-room.png`.
@@ -1861,8 +1874,9 @@ The class picker and HUD read `CLASSES` and need no changes.
     code, both enter, the friend sees the host move, an old version
     refused, the friend reloads and rejoins, a host page that stops drawing
     (marked away after 2 s while the dungeon runs on), a full room, the host
-    leaving, and the gate ending the run and the room. It allows no request
-    but to localhost. Afterwards `lsof -i :8787` and `lsof -i :8123` must
+    leaving, and the gate ending the run and the room. Every HTTP request but
+    to localhost is aborted (Playwright's routing does not see WebSockets;
+    the only socket address the test gives the pages is the local relay). Afterwards `lsof -i :8787` and `lsof -i :8123` must
     show nothing.
 - A test step that returns an object with a `pass` value other than `true`
   fails the run with exit code 1.
@@ -2021,7 +2035,8 @@ The class picker and HUD read `CLASSES` and need no changes.
 - A guessed-dead enemy that is still alive on the host but further than
   45 m away stays dead on that client.
 - A co-op run with more than 65,535 events from one player stops being
-  acknowledged (the seq and ack are 16 bits).
+  acknowledged: the seq travels in the JSON event and never wraps, but the
+  ack in a snapshot is 16 bits, and the host refuses a seq above 65,535.
 - The checksum that refuses a different cave covers the world mesh
   positions only.
 - In co-op, a dead player's screen still says the enemies come back, which

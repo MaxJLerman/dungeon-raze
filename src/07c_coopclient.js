@@ -105,8 +105,8 @@ function coopBaseCls(id) {
 // The link's send transfers the buffer. close() asks the Worker to stop
 // (it closes its relay socket) and terminates it once it says it has, or
 // after half a second. link.onrelay(state) hears the Worker's relay socket
-// change ("open", "error", "closed"). A Worker that fails to start closes
-// the link with "worker". Throws when no Worker can be made.
+// change ("open", "error", "closed"). A Worker that fails, at any time,
+// closes the link with "worker". Throws when no Worker can be made.
 function coopWorkerLink() {
   const url = URL.createObjectURL(
     new Blob(
@@ -122,7 +122,6 @@ function coopWorkerLink() {
     throw e;
   }
   let done = false,
-    heard = false,
     gone = null;
   const end = () => {
     clearTimeout(gone);
@@ -154,16 +153,15 @@ function coopWorkerLink() {
   };
   worker.onmessage = (ev) => {
     const d = ev.data;
-    heard = true;
     if (d instanceof ArrayBuffer) {
       if (!done && link.onmessage) link.onmessage(d);
     } else if (d && d.stopped) {
       if (done) end();
     } else if (d && typeof d.relay === "string" && !done && link.onrelay) link.onrelay(d.relay);
   };
-  // only a Worker that never started is fatal; a later error is its own
+  // the host's simulation threw or never started: the run cannot go on
   worker.onerror = () => {
-    if (heard || done) return;
+    if (done) return;
     done = true;
     end();
     if (link.onclose) link.onclose("worker");
@@ -177,11 +175,13 @@ function coopWorkerLink() {
 // Events sent before the socket opens wait for it; once open, a state frame
 // is dropped rather than queued while the socket is backed up. onclose(why)
 // says why it closed: "noroom" (4004), "full" (4001) or "relay" (anything
-// else, a failed socket included).
+// else, a failed socket included, and a socket that opened but had no join
+// within COOP.GONE: link.joined is set by the join).
 function coopSocketLink(url) {
   const ws = new WebSocket(url);
   ws.binaryType = "arraybuffer";
-  let done = false;
+  let done = false,
+    hush = null;
   const early = [];
   const link = {
     onmessage: null,
@@ -199,9 +199,11 @@ function coopSocketLink(url) {
         }
       }
     },
+    joined: false,
     close() {
       if (done) return;
       done = true;
+      clearTimeout(hush);
       ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
       try {
         ws.close(1000);
@@ -218,6 +220,10 @@ function coopSocketLink(url) {
   };
   ws.onopen = () => {
     for (const b of early.splice(0)) link.send(b);
+    // a room that never answers (a silent host, or a seat taken in its place)
+    hush = setTimeout(() => {
+      if (!link.joined) fin("relay");
+    }, COOP.GONE * 1000);
   };
   ws.onmessage = (ev) => {
     const d = ev.data;
@@ -235,7 +241,8 @@ function coopSocketLink(url) {
 
 // Joins the host at the other end of link as class cls. On the join event
 // the cave is built and the puppets made, and NET is set with live false;
-// coopEnter() then lets this player into it. drive(dt), if given, is called
+// coopEnter() then lets this player into it. A Worker host that fails after
+// the join ends the run with "stopped". drive(dt), if given, is called
 // every frame to pump a hand-stepped host and link. onRefuse(why) is called
 // with the reason when the run cannot go ahead here: "version" or "cave"
 // from the host or the join, or the reason a link gives for closing before
@@ -253,7 +260,7 @@ function coopBegin(link, { cls, drive = null, onRefuse = null } = {}) {
   };
   link.onclose = (why) => {
     if (CC.link !== link) return;
-    if (NET) coopEnd("host");
+    if (NET) coopEnd(why === "worker" ? "stopped" : "host");
     else coopRefuse(typeof why === "string" ? why : "relay");
   };
   link.send(coopEventEncode(["hello", 0, COOP_V, cls]));
@@ -265,9 +272,10 @@ function coopEnter() {
 // Leaves co-op, whatever state it was in, and leaves single player working:
 // the link is closed and NET (with its mates) and CC are cleared. The run's
 // enemies, if it was in one, are plain enemies from here. why "host" (the
-// host has gone quiet or closed the link) goes back to the base and the title
-// screen and says so; "end" (the run is over) leaves the win screen up; any
-// other reason leaves the screen as it is.
+// host has gone quiet or closed the link) and "stopped" (the host's Worker
+// failed) go back to the base and the title screen and say so; "end" (the
+// run is over) leaves the win screen up; any other reason leaves the screen
+// as it is.
 function coopEnd(why) {
   const L = CC.link,
     inRun = !!CC.world && G.world === CC.world;
@@ -286,10 +294,10 @@ function coopEnd(why) {
       /* already closed */
     }
   }
-  if (why === "host") {
+  if (why === "host" || why === "stopped") {
     if (inRun) enterHub();
     show("title");
-    coopSay("The host has left.");
+    coopSay(COOP_SAY[why]);
   }
 }
 function coopRefuse(why) {
@@ -371,6 +379,7 @@ function coopJoin(j) {
   }
   CC.pid = j.pid;
   CC.heard = CC.now;
+  CC.link.joined = true;
   coopPuppets(j);
   G.bossDead = !!j.bossDead;
   NET = {

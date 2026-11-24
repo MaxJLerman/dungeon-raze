@@ -1,6 +1,8 @@
 // Co-op end to end: the built page served from dist/ on localhost:8123, the
 // relay under wrangler dev on localhost:8787, and several Chromium pages
-// hosting and joining by code. Nothing is requested from anywhere else.
+// hosting and joining by code. Every HTTP request but to localhost is
+// aborted. Playwright's routing does not see WebSockets: the only socket
+// address the pages are given is the local relay (DF.coopRelay).
 // Run with: node build.mjs && node tests/coop-e2e.mjs
 import assert from "node:assert/strict";
 import http from "node:http";
@@ -123,7 +125,8 @@ function versionZero() {
 }
 async function openPage(name, { v0 = false } = {}) {
   const ctx = await browser.newContext({ viewport: { width: 480, height: 270 } });
-  // only this machine: the page, the relay and its sockets
+  // HTTP to this machine only: the page and the relay (WebSockets pass by
+  // routing; the only address the pages are given for one is the local relay)
   await ctx.route("**/*", (r) => {
     const u = r.request().url();
     return /^(http|ws):\/\/(localhost|127\.0\.0\.1):(8123|8787)\//.test(u) ? r.continue() : r.abort();

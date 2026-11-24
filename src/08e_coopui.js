@@ -23,6 +23,7 @@ const COOP_SAY = {
   version: "You and the host are on different versions of the game. Both reload the page.",
   worker: "This browser cannot host a room.",
   host: "The host has left.",
+  stopped: "The host's game stopped. The room is closed.",
   code: "That code is not valid.",
 };
 // CR is the room screen's state:
@@ -91,12 +92,13 @@ function coopRoomOpen() {
   coopRoomRender();
 }
 // Ends a room that was not entered (Back on the room screen) and drops
-// anything still on its way. A cave built by the join goes with it.
+// anything still on its way. A cave built by the join goes with it, and so
+// does a run let in whose play() refused (an upright touch device).
 function coopLeaveRoom() {
   CR.try++;
   const mine = CR.link && CC.link === CR.link;
   coopRoomClear();
-  if (!mine || (NET && NET.live)) return;
+  if (!mine) return;
   if (NET && NET.client) enterHub();
   else coopEnd("left");
 }
@@ -104,6 +106,7 @@ function coopLeaveRoom() {
 function coopRoomRefused(why) {
   coopRoomClear();
   coopSay(COOP_SAY[why] || COOP_SAY.relay);
+  if (G.state === "coop") coopRoomRender();
 }
 
 async function coopHostRoom() {
@@ -163,9 +166,11 @@ function coopJoinRoom() {
   coopBegin(link, { cls: coopMyCls(), onRefuse: coopRoomRefused });
   coopRoomRender();
 }
-// Into the run the join built, from this player's click.
+// Into the run the join built, from this player's click. play() can refuse
+// (an upright touch device): the run is let in all the same, and the next
+// click tries play() again.
 function coopEnterRoom() {
-  if (!coopRoomLive() || !NET || !NET.client || NET.live || CC.link !== CR.link) return;
+  if (!coopRoomLive() || !NET || !NET.client || CC.link !== CR.link || G.state === "play") return;
   coopEnter();
   play();
 }
