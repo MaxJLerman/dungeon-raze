@@ -228,14 +228,25 @@ export default [
       // at. The glide's limit is in drawn time (coopPuppet), and the drawn
       // clock runs up to twice as fast while it catches up with the
       // estimate, which the burst can move by a jitter's worth: so a step is
-      // measured against the drawn time it covered, not 1/60 s.
+      // measured against the drawn time it covered, not 1/60 s. The drawn
+      // time itself must never advance by more than the clock's own cap,
+      // twice a step (coopEnemies): a jump would carry every puppet with it
+      // in one frame, so a puppet never moves more than 3x its type's speed
+      // in a real step.
       const prev = new Map();
       for (const e of G.enemies) prev.set(e, { x: e.x, z: e.z, rt: DF.CC.rt });
       let worstK = 0,
         fastSteps = 0,
         bad = null,
-        steps = 0;
+        steps = 0,
+        rtPrev = DF.CC.rt,
+        clockMax = 0;
+      const clock = () => {
+        clockMax = Math.max(clockMax, DF.CC.rt - rtPrev);
+        rtPrev = DF.CC.rt;
+      };
       co.run(2, () => {
+        clock();
         log();
         for (const e of G.enemies) {
           const q = prev.get(e);
@@ -254,17 +265,20 @@ export default [
           prev.set(e, { x: e.x, z: e.z, rt: DF.CC.rt });
         }
       });
+      clock();
+      const clockOk = clockMax <= 2 / 60 + 1e-6;
       const gap = DF.CC.est - DF.CC.rt;
       // and every puppet is back where the host had it at the drawn time.
-      // One whose host enemy moved faster than its type's walk within 0.1 s
-      // of then (a lunge, which 20 snapshots a second cannot follow step by
-      // step) is measured against its snapshots instead, as the step above
-      // leaves such moves to the host's pace.
+      // One whose host enemy moved fast within 0.1 s of then (1.3 times its
+      // pace over 1.5 times its type's speed, the step above's rule: a lunge,
+      // which 20 snapshots a second cannot follow step by step) is measured
+      // against its snapshots instead, as the step above leaves such moves
+      // to the host's pace.
       let off = 0;
       for (const e of G.enemies) {
         const o = hostAt(e.id, DF.CC.rt);
         if (!o || e.dead || !e.nb.length || DF.CC.rt - e.nb[e.nb.length - 1].t >= 0.2) continue;
-        if (hostFast(e.id, DF.CC.rt) * 60 <= e.def.speed) off = Math.max(off, Math.hypot(o.x - e.x, o.z - e.z));
+        if (hostFast(e.id, DF.CC.rt) * 60 * 1.3 <= e.def.speed * 1.5) off = Math.max(off, Math.hypot(o.x - e.x, o.z - e.z));
         else {
           const A = e.nb[0],
             B = e.nb[1],
@@ -275,8 +289,9 @@ export default [
         }
       }
       return {
-        pass: awake >= 3 && !bad && steps > 1000 && Math.abs(gap - 0.1) <= 0.02 && off < 0.3,
+        pass: awake >= 3 && !bad && clockOk && steps > 1000 && Math.abs(gap - 0.1) <= 0.02 && off < 0.3,
         awake,
+        clockMaxStep: +(clockMax * 60).toFixed(3),
         worstSpeedMul: +worstK.toFixed(2),
         fastHostSteps: fastSteps,
         over: bad,
