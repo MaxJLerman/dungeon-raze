@@ -182,6 +182,55 @@ check("the fake link delays, keeps order and never drops", () => {
   near(back, 10.05, 0.0101, "ping read live at each send");
 });
 
+check("the fake link draws its loss and jitter from cfg.rnd when it is set", () => {
+  // arrival times of 40 frames sent 10 ms apart, with cfg.rnd as given
+  const arrivals = (rnd) => {
+    const cfg = { ping: 100, jit: 10, loss: 30, hold: false, rnd };
+    const { client, host: hostEnd, step } = W.fakePair(cfg);
+    const at = [];
+    let now = 0;
+    hostEnd.onmessage = () => at.push(now);
+    for (let i = 0; i < 40; i++) {
+      now = i * 0.01;
+      step(now);
+      client.send(new ArrayBuffer(1));
+    }
+    for (let k = 1; k <= 200; k++) {
+      now = 0.39 + k * 0.005;
+      step(now);
+    }
+    return at;
+  };
+  const real = Math.random;
+  let calls = 0;
+  Math.random = () => {
+    calls++;
+    return real();
+  };
+  try {
+    // a draw of 0: jitter -jit and lost (0 < loss), so ping / 2 - jit + ping + 60
+    const zero = arrivals(() => 0);
+    assert.equal(zero.length, 40);
+    near(zero[0], 0.05 - 0.01 + 0.16, 0.0051, "first frame, all draws 0");
+    // a draw of 0.5: no jitter, and lost only when loss is over 50
+    const half = arrivals(() => 0.5);
+    near(half[0], 0.05, 0.0051, "first frame, all draws 0.5");
+    // a seeded generator: the same seed gives the same arrivals
+    const seeded = (seed) => {
+      let s = seed >>> 0;
+      return () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296);
+    };
+    assert.deepEqual(arrivals(seeded(7)), arrivals(seeded(7)));
+    assert.notDeepEqual(arrivals(seeded(7)), arrivals(seeded(8)));
+    assert.equal(calls, 0, "Math.random is not read while cfg.rnd is set");
+    // without cfg.rnd it is Math.random
+    arrivals(undefined);
+    assert.ok(calls >= 80, "Math.random read " + calls + " times without cfg.rnd");
+  } finally {
+    Math.random = real;
+  }
+});
+
 check("the link hands over the same ArrayBuffer", () => {
   const cfg = { ping: 0, jit: 0, loss: 0, hold: false };
   const { client, host: hostEnd, step } = W.fakePair(cfg);

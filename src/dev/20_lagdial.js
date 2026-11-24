@@ -2,7 +2,7 @@
 // A co-op run alone: a host copy stepped by hand on this page, joined over
 // the fake link, whose ping, jitter and loss can be changed while it runs.
 //
-// coopSolo({ seed, ping, jit, loss, mate, before, tamper, save }) returns
+// coopSolo({ seed, ping, jit, loss, rnd, mate, before, tamper, save }) returns
 // { host, cfg, step(sec, each), mate, refused, halt } once the join has been
 // applied or refused. before(host) runs before anyone joins. tamper(ev), if
 // given, sees every event the host sends this page and returns the event to
@@ -13,12 +13,16 @@
 // coopMateBot). While halt is true the host is not stepped and the link
 // carries nothing, as if the host had gone quiet. link is this page's end of
 // the fake link, and bytes counts what has gone down (host to this page) and
-// up over it, for the lag dial's readout.
+// up over it, for the lag dial's readout. rnd draws the link's jitter and
+// loss; without one a generator from LAG_SEED is made for each run, so every
+// test run sees the same jitter and loss. The lag dial passes Math.random.
+const LAG_SEED = 20261124;
 function coopSolo({
   seed = 99,
   ping = 0,
   jit = 0,
   loss = 0,
+  rnd = null,
   mate = null,
   before = null,
   tamper = null,
@@ -26,7 +30,7 @@ function coopSolo({
 } = {}) {
   if (NET || CC.link) coopEnd("restart");
   const host = coopMakeHost(),
-    cfg = { ping, jit, loss, hold: false },
+    cfg = { ping, jit, loss, hold: false, rnd: rnd || rng(LAG_SEED) },
     pair = coopFakePair(cfg),
     bytes = { down: 0, up: 0 };
   for (const [end, k] of [[pair.host, "down"], [pair.client, "up"]]) {
@@ -299,7 +303,7 @@ function lagLive() {
 function devCoop() {
   if (NET || CC.link) coopEnd("restart");
   lagRun = null;
-  const out = coopSolo({ ...LAG_START });
+  const out = coopSolo({ ...LAG_START, rnd: Math.random });
   if (!NET) return out;
   lagRun = { out, at: performance.now(), down: out.bytes.down, up: out.bytes.up, kbDown: 0, kbUp: 0 };
   lagSync();

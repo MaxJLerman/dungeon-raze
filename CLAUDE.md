@@ -1579,7 +1579,13 @@ Two players through grade E's cave over the internet. The design is
   `coopSolo` runs a co-op run alone over the fake link (`coopFakePair`)
   with a host stepped on the page, and the dev menu's "Co-op alone, with
   lag" button opens a panel with ping, jitter, loss and a scripted second
-  player. It is the tool for checking feel.
+  player. It is the tool for checking feel. The fake link draws its jitter
+  and loss from `cfg.rnd` (`Math.random` when unset); `coopSolo` takes
+  `rnd` and otherwise makes a generator from the fixed `LAG_SEED` for each
+  run, so a test sees the same jitter and loss every time, while the lag
+  dial passes `Math.random`. The game's own random choices (which enemy
+  attacks, and when) are not seeded, so a test step must not rest on when
+  a hit lands or which frame a loss falls on.
 
 ## Recipes
 

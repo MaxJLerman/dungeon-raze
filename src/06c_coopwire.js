@@ -237,7 +237,9 @@ function coopEventDecode(buf) {
 
 // A fake network for tests. coopFakePair(cfg) joins two links, each
 // { send(buf), onmessage, onclose, close() }. cfg is read at every send:
-// { ping, jit, loss, hold } (ms, ms, percent, boolean). The caller owns the
+// { ping, jit, loss, hold, rnd } (ms, ms, percent, boolean, and a function
+// giving a number in [0, 1) for the jitter and loss, Math.random when it is
+// not set, so a test can give it a seeded one). The caller owns the
 // clock and passes it, in seconds, to step(now); a frame is stamped with the
 // time of the last step. A frame arrives ping / 2 +- jit later; one that is
 // "lost" arrives ping + 60 ms later, as a retransmit would. Order is kept.
@@ -256,8 +258,9 @@ function coopFakePair(cfg) {
       name,
       send(buf) {
         if (L.closed || out.closed) return;
-        let due = now + (cfg.ping / 2 + (Math.random() * 2 - 1) * cfg.jit) / 1000;
-        if (Math.random() * 100 < cfg.loss) due += (cfg.ping + 60) / 1000;
+        const rnd = cfg.rnd || Math.random;
+        let due = now + (cfg.ping / 2 + (rnd() * 2 - 1) * cfg.jit) / 1000;
+        if (rnd() * 100 < cfg.loss) due += (cfg.ping + 60) / 1000;
         due = Math.max(due, out.last);
         out.last = due;
         if (cfg.hold) for (const m of out.q) m.held = true;

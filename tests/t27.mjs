@@ -67,6 +67,11 @@ export default [
           return w;
         },
       });
+      // the fake link's jitter and loss come from a seeded generator, the
+      // same in every run
+      const a = DF.coopSolo({ ping: 0 }).cfg.rnd,
+        b = DF.coopSolo({ ping: 0 }).cfg.rnd,
+        seeded = typeof a === "function" && a !== Math.random && [1, 2, 3].every(() => a() === b());
       const r = co.solo({ ping: 0 });
       co.run(3, null, false);
       const h = r.host,
@@ -80,12 +85,14 @@ export default [
           worst < 0.5 &&
           DF.net().live === true &&
           h.S.step >= 170 &&
-          DF.CC.est > 0,
+          DF.CC.est > 0 &&
+          seeded,
         enemies: G.enemies.length,
         worst: +worst.toFixed(3),
         hostSteps: h.S.step,
         est: +DF.CC.est.toFixed(3),
         rt: +DF.CC.rt.toFixed(3),
+        seeded,
       };
     },
   },
@@ -217,7 +224,11 @@ export default [
       r.cfg.hold = true;
       co.run(0.4, log);
       r.cfg.hold = false;
-      // each puppet's position before every step, and the drawn time it was at
+      // Each puppet's position before every step, and the drawn time it was
+      // at. The glide's limit is in drawn time (coopPuppet), and the drawn
+      // clock runs up to twice as fast while it catches up with the
+      // estimate, which the burst can move by a jitter's worth: so a step is
+      // measured against the drawn time it covered, not 1/60 s.
       const prev = new Map();
       for (const e of G.enemies) prev.set(e, { x: e.x, z: e.z, rt: DF.CC.rt });
       let worstK = 0,
@@ -230,25 +241,38 @@ export default [
           const q = prev.get(e);
           if (q && !e.dead) {
             const d = Math.hypot(e.x - q.x, e.z - q.z),
-              type = (e.def.speed * 1.5) / 60,
-              host = hostFast(e.id, q.rt) * 1.3;
+              drt = DF.CC.rt - q.rt,
+              type = e.def.speed * 1.5 * drt,
+              host = hostFast(e.id, q.rt) * 60 * 1.3 * drt;
             steps++;
             if (host > type) fastSteps++;
-            const k = d / (e.def.speed / 60);
+            const k = d / (e.def.speed * drt);
             if (d > Math.max(type, host) + 1e-3) {
               if (!bad || k > bad.k) bad = { id: e.id, type: e.type, d: +d.toFixed(3), k: +k.toFixed(2) };
-            } else if (host <= type) worstK = Math.max(worstK, k);
+            } else if (host <= type && drt > 0) worstK = Math.max(worstK, k);
           }
           prev.set(e, { x: e.x, z: e.z, rt: DF.CC.rt });
         }
       });
       const gap = DF.CC.est - DF.CC.rt;
-      // and every puppet is back where the host had it at the drawn time
+      // and every puppet is back where the host had it at the drawn time.
+      // One whose host enemy moved faster than its type's walk within 0.1 s
+      // of then (a lunge, which 20 snapshots a second cannot follow step by
+      // step) is measured against its snapshots instead, as the step above
+      // leaves such moves to the host's pace.
       let off = 0;
       for (const e of G.enemies) {
         const o = hostAt(e.id, DF.CC.rt);
-        if (o && !e.dead && e.nb.length && DF.CC.rt - e.nb[e.nb.length - 1].t < 0.2)
-          off = Math.max(off, Math.hypot(o.x - e.x, o.z - e.z));
+        if (!o || e.dead || !e.nb.length || DF.CC.rt - e.nb[e.nb.length - 1].t >= 0.2) continue;
+        if (hostFast(e.id, DF.CC.rt) * 60 <= e.def.speed) off = Math.max(off, Math.hypot(o.x - e.x, o.z - e.z));
+        else {
+          const A = e.nb[0],
+            B = e.nb[1],
+            k = B ? Math.min(1, Math.max(0, (DF.CC.rt - A.t) / (B.t - A.t))) : 0,
+            sx = B ? A.x + (B.x - A.x) * k : A.x,
+            sz = B ? A.z + (B.z - A.z) * k : A.z;
+          off = Math.max(off, Math.hypot(sx - e.x, sz - e.z));
+        }
       }
       return {
         pass: awake >= 3 && !bad && steps > 1000 && Math.abs(gap - 0.1) <= 0.02 && off < 0.3,
@@ -732,7 +756,16 @@ export default [
         stopped = 0,
         drop = 0,
         melee = -1;
+      // Once the first hit is judged, no later one lands: the host's copy of
+      // this player's health is compared below, and a hit judged here in the
+      // last moments before that would still be on its way (a link delay
+      // late, more for a lost frame) and read as a mismatch. Which enemy hits
+      // again and when moves with the game's own random choices.
+      const shield = () => {
+        if (drop) p.iframe = Math.max(p.iframe, 0.5);
+      };
       co.go(12, (i) => {
+        shield();
         if (G.projs.some((q) => q.own === "e" && q.src === ps)) local = true;
         // the host's own copy of each shot: it flies on through the proxy
         const px = h.S.px.get(1);
@@ -750,7 +783,8 @@ export default [
         }
         if (drop && passed + stopped > 0) return false;
       });
-      co.go(0.5);
+      const hpEnd = p.hp;
+      co.go(0.5, shield);
       const px = h.S.px.get(1);
       return {
         pass:
@@ -760,6 +794,7 @@ export default [
           melee === 0 &&
           passed >= 1 &&
           stopped === 0 &&
+          p.hp === hpEnd &&
           Math.abs(px.hp - p.hp) <= px.maxHp / 255,
         local,
         drop,
@@ -1146,6 +1181,18 @@ export default [
         }
         return send0(pid, buf);
       };
+      // when each ring reached this page, as the drawn time then was: a ring
+      // whose frame (or one queued before it) was lost arrives after its time
+      const arrived = [],
+        link = r.link,
+        recv0 = link.onmessage;
+      link.onmessage = (buf) => {
+        if (h.wire.type(buf) === 3) {
+          const ev = h.wire.eventDecode(buf);
+          if (ev[0] === "ring") arrived.push({ x: ev[1], z: ev[2], t: ev[5], rt: DF.CC.rt });
+        }
+        return recv0(buf);
+      };
       co.near(hw, 9);
       co.go(2, keep);
       const awake = hw.aware;
@@ -1157,16 +1204,28 @@ export default [
       co.go(2.5, () => {
         keep();
         const q = G.rings.find((g) => !old.has(g) && g.kind === "warn" && g.r === hw.def.atks.slam.radius);
-        if (q && !ring) ring = { x: q.x, z: q.z, rt: DF.CC.rt };
+        if (q && !ring) ring = { x: q.x, z: q.z, rt: DF.CC.rt, age: q.t };
       });
       h.send = send0;
-      // drawn where the host aimed it, once the drawn time reached its time
-      // (its own slam and the forced one can land on the same spot: the
-      // latest event at or before the drawn time is the one drawn)
+      link.onmessage = recv0;
+      // drawn where the host aimed it, never before its time, and within
+      // 0.05 s of when it could first be drawn: its time, or its arrival
+      // when the link brought it later than that. A late one is drawn as
+      // far through as it is late, so it lands when the host's does.
+      // (Its own slam and the forced one can land on the same spot: the
+      // latest event at or before the drawn time is the one drawn.)
       const from =
         ring && sent.filter((q) => Math.hypot(q.x - ring.x, q.z - ring.z) < 1e-6 && q.t <= ring.rt + 1e-6).pop();
+      const got = from && arrived.find((q) => q.x === from.x && q.z === from.z && q.t === from.t);
+      if (got) from.arrRt = got.rt;
       const ringOk =
-        !!from && Math.hypot(ring.x - from.tx, ring.z - from.tz) < 0.02 && ring.rt >= from.t - 1e-6 && ring.rt - from.t < 0.05;
+        !!from &&
+        !!got &&
+        Math.hypot(ring.x - from.tx, ring.z - from.tz) < 0.02 &&
+        ring.rt >= from.t - 1e-6 &&
+        ring.rt - Math.max(from.t, got.rt) < 0.05 &&
+        // pushed as far through as it is late, then one step of the ring loop
+        Math.abs(ring.age - (ring.rt - from.t) - 1 / 60) < 1e-6;
       // a hit on it changes its health here and not its state
       co.near(hw, hw.r + 1.1);
       const net = DF.net(),
