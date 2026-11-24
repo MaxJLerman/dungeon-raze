@@ -18,6 +18,19 @@ const COOP_HOST = COOP_HEADLESS_HERE
         S,
         worker: none,
         sum: coopWorldSum,
+        wire: {
+          type: coopType,
+          snapEncode: coopSnapEncode,
+          snapDecode: coopSnapDecode,
+          stateEncode: coopStateEncode,
+          stateDecode: coopStateDecode,
+          eventEncode: coopEventEncode,
+          eventDecode: coopEventDecode,
+          fakePair: coopFakePair,
+          moves: COOP_MOVES,
+          ps: COOP_PS,
+          es: COOP_ES,
+        },
       };
     })()
   : null;
