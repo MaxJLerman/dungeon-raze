@@ -1,5 +1,30 @@
 # Keep the simulation, network it first
 
+## Update of 24 November 2026: scope narrowed to closed lobbies with friends, on JavaScript
+
+This section is the current decision. It supersedes the update of 23 November below and the original recommendation where they differ.
+
+The owner narrowed the scope for now to playing over the internet with friends in closed lobbies. Strangers, Steam and ready-made character assets are deferred, not dropped. On that scope the owner chose to keep JavaScript, which is Route A stopped before its renderer and art phases.
+
+- **In scope:** Phase 0 (the latency prototype and Gate 1), then A1 to A8: modules, events and inputs, the multi-player simulation, the wire format, room codes and transport, the party flow, bosses and D grade for a party, and a friends beta.
+- **Deferred:** A9 to A13 (Three.js behind `R`, skinned characters, the art pass, the Steam wrapper, store apps). These are the parts a later Godot rebuild would discard, so they wait until the engine question is reopened.
+- **Why JavaScript on this scope:** Godot led the 23 November update on Steam lobbies for strangers and on importing ready-made characters, and neither is needed for friends with a room code. JavaScript reaches a first four-player session in an estimated 10 to 16 weeks against 6 to 12 months for a rebuild, keeps the existing tests running, and lets friends join from a link at no running cost.
+- **What carries to Godot later:** the multi-player redesign, the party rules and the host and client split are the same on any engine, and the logic translates. The room and connection code, a few weeks of work, would not carry.
+- **Transport order (the assistant's judgement, differing from A5 only in emphasis):** send everything through the WebSocket relay first, and add direct WebRTC connections only if the lag feels bad in play.
+- **Known cautions, untested on real networks:** a host whose tab goes to the background freezes the dungeon for everyone, and 10 to 22% of links cannot connect directly and need the relay.
+
+### Gate 1 result, 24 November 2026: passed
+
+The owner played a cave pack as the client on the lag rig (branch `spike/lag-rig`, a throwaway, uncommitted) with a scripted second player, up to 300 ms round trip.
+
+- **Verdict (the owner's):** at 200 ms dodge, parry and block feel the same as single player. Slow motion on a perfect dodge or parry stays on. An enemy the player visibly interrupted stays interrupted even if its swing had started on the host ("favor the attacker"), also on.
+- **So the authority model is settled:** the host owns the world and the enemies, each player's machine judges hits on that player against what it drew, and a player's own hits show at once and are proposed to the host.
+- **Clock (found in play):** raising the ping mid-fight made every enemy move at 20 steps a second, because the client's estimate of the host clock could only move forward. The estimate must follow the connection both ways; the rig now uses the fastest snapshot of the last 0.6 s.
+- **Same dungeon from a seed (step 0.1, partly):** Chrome's and Safari's JavaScript engines built seven dungeons with identical meshes, enemy counts, types and order, but a few spawn points differed by about 1e-14 m, from differently rounded maths functions. The host should therefore send the enemy list on join and not rely on each browser deriving it. Firefox was not tested.
+- **Bandwidth (step 0.6, partly):** with the rig's uncompressed 19 bytes an enemy at 20 snapshots a second, the most crowded spot of four dungeons cost 5.0 to 12.0 kB/s down to one client (14 to 31 enemies in range), so 163 to 392 kbit/s of host upload for four clients by multiplication, not by a four-client run. The largest snapshot was 612 bytes.
+- **Not covered by the rig:** a grab or hold across the link and two players executing at once (step 0.5), D-grade types, class tools that change the world or move enemies, the Warden beyond a rough pass, and any real network.
+- **What the rig showed about the build (the assistant's reading, not yet a decision):** a host copy of the simulation builds by concatenating files 01 to 06b with five stand-in names, with no conversion to modules, and a remote player on the host is a record of where its own machine says it is, not a simulated character, so per-player input frames are not needed for remote players.
+
 ## Update of 23 November 2026: the owner's answers change the recommendation
 
 This section was added after the report was written and supersedes the recommendation below where they differ. The rest of the report is unchanged.
