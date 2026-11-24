@@ -7,6 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
 import { spawn } from "node:child_process";
+import net from "node:net";
 import { fileURLToPath } from "node:url";
 
 const PORT = 8787;
@@ -14,7 +15,6 @@ const BASE = "http://127.0.0.1:" + PORT;
 const WS = "ws://127.0.0.1:" + PORT;
 const WAIT_MS = 3000; // the first-socket window, shortened for the expiry check
 const relayDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "relay");
-const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "relay-state-"));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let failed = 0;
@@ -29,51 +29,77 @@ async function check(name, fn) {
 }
 
 // wrangler dev in its own process group, so that npx, node and workerd can
-// all be stopped together.
+// all be stopped together. The group's pid is kept apart from the child, so
+// stop() reaches workerd even when npx has already gone.
 let child = null;
+let groupPid = null;
+let stateDir = null;
 let log = "";
-function start() {
+
+// Fails with a plain message when something already holds the port.
+function portFree() {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer();
+    srv.once("error", () =>
+      reject(new Error("port " + PORT + " is in use: see `lsof -i :" + PORT + "` and stop what holds it")),
+    );
+    srv.listen(PORT, "127.0.0.1", () => srv.close(() => resolve()));
+  });
+}
+async function start(vars) {
+  await portFree();
+  stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "relay-state-"));
+  log = "";
+  const flags = Object.entries(vars).flatMap(([k, v]) => ["--var", k + ":" + v]);
   child = spawn(
     "npx",
-    ["wrangler", "dev", "--port", String(PORT), "--ip", "127.0.0.1", "--persist-to", stateDir, "--var", "ROOM_WAIT_MS:" + WAIT_MS],
+    ["wrangler", "dev", "--port", String(PORT), "--ip", "127.0.0.1", "--persist-to", stateDir, ...flags],
     { cwd: relayDir, detached: true, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, WRANGLER_SEND_METRICS: "false", CI: "1" } },
   );
+  groupPid = child.pid;
   child.stdout.on("data", (d) => (log += d));
   child.stderr.on("data", (d) => (log += d));
   child.on("exit", () => (child = null));
 }
+const groupAlive = () => {
+  try {
+    process.kill(-groupPid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
 async function stop() {
-  const c = child;
-  if (!c) return;
-  const gone = new Promise((r) => c.once("exit", r));
-  for (const sig of ["SIGTERM", "SIGKILL"]) {
-    try {
-      process.kill(-c.pid, sig);
-    } catch {}
-    const ok = await Promise.race([gone.then(() => true), sleep(4000).then(() => false)]);
-    if (ok) break;
-  }
-  // workerd may outlive its parent for a moment
-  for (let i = 0; i < 20; i++) {
-    try {
-      process.kill(-c.pid, 0);
-    } catch {
-      break;
+  if (groupPid !== null) {
+    for (const sig of ["SIGTERM", "SIGKILL"]) {
+      try {
+        process.kill(-groupPid, sig);
+      } catch {}
+      for (let i = 0; i < 16 && groupAlive(); i++) await sleep(250);
+      if (!groupAlive()) break;
     }
-    await sleep(250);
+    groupPid = null;
+  }
+  if (stateDir) fs.rmSync(stateDir, { recursive: true, force: true });
+  stateDir = null;
+}
+// Last resort, synchronous, for the exit handler.
+function killNow() {
+  if (groupPid !== null) {
     try {
-      process.kill(-c.pid, "SIGKILL");
+      process.kill(-groupPid, "SIGKILL");
     } catch {}
   }
-  fs.rmSync(stateDir, { recursive: true, force: true });
+  if (stateDir) fs.rmSync(stateDir, { recursive: true, force: true });
 }
+// Answers on a path that is not rate limited and costs nothing.
 async function ready() {
   const t0 = Date.now();
   while (Date.now() - t0 < 90000) {
     if (!child) throw new Error("wrangler dev exited early:\n" + log);
     try {
-      const r = await fetch(BASE + "/new", { method: "POST" });
-      if (r.ok) return;
+      const r = await fetch(BASE + "/nope");
+      if (r.status === 404) return;
     } catch {}
     await sleep(300);
   }
@@ -97,7 +123,12 @@ function sock(code) {
       wake && wake();
     });
   });
-  s.opened = new Promise((res) => ws.addEventListener("open", res));
+  s.opened = new Promise((res, rej) => {
+    ws.addEventListener("open", res);
+    ws.addEventListener("close", () => rej(new Error("socket closed before it opened")));
+    setTimeout(() => rej(new Error("socket did not open in 5 s")), 5000);
+  });
+  s.opened.catch(() => {}); // a test that never awaits it is not an unhandled rejection
   ws.addEventListener("error", () => {});
   ws.addEventListener("message", (ev) => {
     q.push(typeof ev.data === "string" ? ev.data : Array.from(new Uint8Array(ev.data)));
@@ -135,7 +166,7 @@ async function pair() {
   return { code, host, friend };
 }
 // An upgrade request with node:http, so that it can carry any Origin.
-function upgrade(code, origin) {
+function upgrade(code, origin, ip) {
   return new Promise((resolve, reject) => {
     const req = http.request(BASE + "/room/" + code, {
       headers: {
@@ -144,6 +175,7 @@ function upgrade(code, origin) {
         "Sec-WebSocket-Version": "13",
         "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
         ...(origin ? { Origin: origin } : {}),
+        ...(ip ? { "CF-Connecting-IP": ip } : {}),
       },
     });
     req.on("response", (res) => {
@@ -162,8 +194,47 @@ function upgrade(code, origin) {
 const open = [];
 const track = (s) => (open.push(s), s);
 
+// The per-address limit, with the real counts (10 /new and 30 room requests)
+// over a window shortened to 4 s so that it can be seen to end. Under
+// wrangler dev every request comes from one address, unless a request names
+// another in CF-Connecting-IP.
+async function limitTests() {
+  await start({ RATE_WINDOW_MS: 4000 });
+  await ready();
+  const post = (headers = {}) => fetch(BASE + "/new", { method: "POST", headers });
+
+  await check("the 11th POST /new in a window gets 429 and the first 10 do not", async () => {
+    for (let i = 0; i < 10; i++) assert.equal((await post()).status, 200, "call " + (i + 1));
+    const r = await post();
+    assert.equal(r.status, 429);
+    assert.ok(Number(r.headers.get("retry-after")) >= 1, "Retry-After");
+    assert.equal((await post()).status, 429);
+  });
+
+  await check("a refused origin still gets 403, not 429, and another address is not limited", async () => {
+    assert.equal((await post({ Origin: "https://example.com" })).status, 403);
+    assert.equal((await post({ "CF-Connecting-IP": "203.0.113.9" })).status, 200);
+  });
+
+  await check("the limit ends with the window", async () => {
+    await sleep(4500);
+    assert.equal((await post()).status, 200);
+  });
+
+  await check("the 31st room request in a window gets 429 and the first 30 do not", async () => {
+    await sleep(4500);
+    for (let i = 0; i < 30; i++) assert.equal((await upgrade("ZZZZZZ", null)).status, 101, "call " + (i + 1));
+    assert.equal((await upgrade("ZZZZZZ", null)).status, 429);
+    // /new has its own count
+    assert.equal((await post()).status, 200);
+    assert.equal((await upgrade("ZZZZZZ", null, "203.0.113.9")).status, 101);
+  });
+
+  await stop();
+}
+
 async function main() {
-  start();
+  await start({ ROOM_WAIT_MS: WAIT_MS, RATE_NEW: 100000, RATE_ROOM: 100000 });
   await ready();
 
   await check("POST /new returns a six character code from the alphabet", async () => {
@@ -199,6 +270,10 @@ async function main() {
     // frame bytes pass untouched, including a zero type byte
     friend.send([0, 255, 0]);
     assert.deepEqual(await host.next(), [2, 0, 255, 0]);
+    // a host frame that is only its address byte carries nothing and is dropped
+    host.send([2]);
+    host.send([2, 7]);
+    assert.deepEqual(await friend.next(), [7], "the empty payload was forwarded");
     const big = new Uint8Array(16384).map((_, i) => i & 255);
     host.ws.send(Uint8Array.from([2, ...big.subarray(0, 16383)]));
     const got = await friend.next();
@@ -374,14 +449,21 @@ async function main() {
   });
 }
 
-for (const sig of ["SIGINT", "SIGTERM"]) {
-  process.on(sig, async () => {
-    await stop();
-    process.exit(130);
-  });
+// Whatever goes wrong, the server goes with it.
+const WATCHDOG_MS = 150000;
+async function bail(why, code) {
+  console.log("FAIL harness\n     " + why);
+  killNow();
+  process.exit(code);
 }
+setTimeout(() => bail("the test ran past " + WATCHDOG_MS / 1000 + " s", 1), WATCHDOG_MS).unref();
+for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => bail(sig, 130));
+process.on("uncaughtException", (e) => bail("uncaught: " + (e && e.stack ? e.stack : e), 1));
+process.on("unhandledRejection", (e) => bail("unhandled rejection: " + (e && e.stack ? e.stack : e), 1));
+process.on("exit", killNow);
 
 try {
+  await limitTests();
   await main();
 } catch (e) {
   console.log("FAIL harness\n     " + (e && e.message ? e.message : e));

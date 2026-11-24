@@ -20,6 +20,11 @@ const CODE_RE = /^[A-HJKMNP-Z2-9]{6}$/;
 const MAX_FRAME = 16384; // bytes, as sent
 const MAX_RATE = 120; // frames in any one second, per socket
 const WAIT_MS = 10 * 60 * 1000; // a code is good for a first socket this long
+// Per connecting address, in a window: calls to /new, and room upgrades.
+const RATE_NEW = 10;
+const RATE_ROOM = 30;
+const RATE_WINDOW_MS = 60 * 1000;
+const RATE_TABLE_MAX = 5000; // addresses remembered at once
 const LOCAL_RE = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 
 function allowed(origin, env) {
@@ -40,6 +45,51 @@ function cors(origin) {
     "Access-Control-Max-Age": "86400",
     Vary: "Origin",
   };
+}
+
+// A send that cannot throw. True when the frame went.
+function safeSend(ws, bytes) {
+  try {
+    ws.send(bytes);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Best-effort limit per connecting address, kept in this isolate's memory
+// only: each isolate counts for itself, and the table is lost when it is
+// recycled. Addresses are never stored or logged. Returns the seconds to
+// wait when the address is over its limit, else 0.
+const seen = { new: new Map(), room: new Map() };
+function over(kind, req, env) {
+  const limit = Number(env[kind === "new" ? "RATE_NEW" : "RATE_ROOM"]) || (kind === "new" ? RATE_NEW : RATE_ROOM);
+  const window = Number(env.RATE_WINDOW_MS) || RATE_WINDOW_MS;
+  const now = Date.now();
+  const table = seen[kind];
+  const addr = req.headers.get("CF-Connecting-IP") || "-";
+  const times = (table.get(addr) || []).filter((t) => now - t < window);
+  if (times.length >= limit) {
+    table.delete(addr); // re-insert so that the busiest stay newest
+    table.set(addr, times);
+    return Math.max(1, Math.ceil((times[0] + window - now) / 1000));
+  }
+  times.push(now);
+  table.delete(addr);
+  table.set(addr, times);
+  if (table.size > RATE_TABLE_MAX) {
+    for (const [a, ts] of table) if (now - ts[ts.length - 1] >= window) table.delete(a);
+    // still too many: forget the longest quiet first (Map order is insertion order)
+    for (const a of table.keys()) {
+      if (table.size <= RATE_TABLE_MAX) break;
+      table.delete(a);
+    }
+  }
+  return 0;
+}
+
+function tooMany(wait, headers) {
+  return new Response("too many requests", { status: 429, headers: { "Retry-After": String(wait), ...headers } });
 }
 
 function makeCode() {
@@ -70,6 +120,8 @@ export default {
     if (url.pathname === "/new") {
       if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(origin) });
       if (req.method !== "POST") return new Response("POST only", { status: 405 });
+      const wait = over("new", req, env);
+      if (wait) return tooMany(wait, cors(origin));
       for (let i = 0; i < 8; i++) {
         const code = makeCode();
         const room = env.ROOMS.get(env.ROOMS.idFromName(code));
@@ -88,6 +140,8 @@ export default {
       if ((req.headers.get("Upgrade") || "").toLowerCase() !== "websocket") {
         return new Response("WebSocket only", { status: 426 });
       }
+      const wait = over("room", req, env);
+      if (wait) return tooMany(wait, {});
       if (!CODE_RE.test(m[1])) return refuse(4004, "no such room");
       return env.ROOMS.get(env.ROOMS.idFromName(m[1])).fetch(req);
     }
@@ -120,27 +174,29 @@ export class Room {
   }
 
   // A room is in use while it has a seat taken, or its code is still fresh.
-  async live() {
-    const room = await this.state.storage.get("room");
-    if (!room) return false;
-    return this.seats().length > 0 || Date.now() - room.issued < this.wait();
+  isLive(room) {
+    return !!room && (this.seats().length > 0 || Date.now() - room.issued < this.wait());
   }
 
+  // Forgets the room. A code that was never issued has nothing to forget, so
+  // a probe costs no writes.
   async end() {
+    if (!(await this.state.storage.get("room"))) return;
     await this.state.storage.deleteAll();
     await this.state.storage.deleteAlarm();
   }
 
   async fetch(req) {
     if (new URL(req.url).pathname === "/init") {
-      if (await this.live()) return new Response("in use", { status: 409 });
+      if (this.isLive(await this.state.storage.get("room"))) return new Response("in use", { status: 409 });
       await this.state.storage.put("room", { issued: Date.now() });
       await this.state.storage.setAlarm(Date.now() + this.wait());
       return new Response("ok");
     }
 
-    if (!(await this.live())) {
-      await this.end();
+    const room = await this.state.storage.get("room");
+    if (!this.isLive(room)) {
+      if (room) await this.end();
       return refuse(4004, "no such room");
     }
     const host = this.seats(1)[0];
@@ -149,7 +205,7 @@ export class Room {
     const [client, server] = Object.values(new WebSocketPair());
     this.state.acceptWebSocket(server, [String(pid)]);
     server.serializeAttachment({ pid });
-    if (pid === 2) host.send(Uint8Array.of(0, 1, 2));
+    if (pid === 2) safeSend(host, Uint8Array.of(0, 1, 2));
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -188,10 +244,11 @@ export class Room {
       const out = new Uint8Array(bytes.length + 1);
       out[0] = 2;
       out.set(bytes, 1);
-      host.send(out);
-    } else if (bytes[0] === 2) {
+      safeSend(host, out);
+    } else if (bytes[0] === 2 && bytes.length > 1) {
+      // a frame that is only its address byte carries nothing
       const friend = this.seats(2)[0];
-      if (friend) friend.send(bytes.subarray(1));
+      if (friend) safeSend(friend, bytes.subarray(1));
     }
   }
 
@@ -226,12 +283,12 @@ export class Room {
     const pid = this.retire(ws);
     if (pid === 2) {
       const host = this.seats(1)[0];
-      if (host) host.send(Uint8Array.of(0, 2, 2));
+      if (host) safeSend(host, Uint8Array.of(0, 2, 2));
     } else if (pid === 1) {
       for (const friend of this.seats(2)) {
         this.retire(friend);
+        safeSend(friend, Uint8Array.of(0, 2));
         try {
-          friend.send(Uint8Array.of(0, 2));
           friend.close(1000, "host left");
         } catch {}
       }
