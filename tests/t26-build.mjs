@@ -27,6 +27,8 @@ try {
   check("the dev build has the dev file", dev.includes("function devHost"));
   check("the release build has no devHost", !rel.includes("devHost"));
   check("the release build has no dev screen", !rel.includes("scr-dev"));
+  check("the dev build has the lag dial", dev.includes("lagDial"));
+  check("the release build has no lag dial", !rel.includes("lagDial") && !rel.includes("devCoop"));
   check("the release build keeps the inert seam", rel.includes("let DEV = null"));
   check("the release build carries the co-op host copy", rel.includes("const COOP_HOST_SRC = "));
   check(

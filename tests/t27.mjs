@@ -476,7 +476,9 @@ export default [
         // runs the client alone: its own state reaches the host through the link
         go: (sec, each) => co.r.step(sec, each),
       });
-      const r = co.solo({ ping: 200, jit: 10, loss: 2 });
+      // no loss: this step measures the send rate, and a lost frame arrives
+      // too late to be heard inside the second
+      const r = co.solo({ ping: 200, jit: 10, loss: 0 });
       const h = r.host,
         L = DF.CC.link,
         send = L.send,
