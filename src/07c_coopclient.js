@@ -31,6 +31,11 @@
 //   inHit    the seq of the hit being guessed while kill runs from it
 //   quiet    true while kill runs for the host's kill event
 //   exE      the enemy of the execution under way, once its pin is sent
+//   exPin    the seq of that pin; exSkip: its finish was withheld; exRec:
+//            its finish has been recorded; exPre: health, focus, tool and
+//            kills before its finish
+//   fin      { e, pin, seq, at, pre, gain }: a finish that ran here and that
+//            the host has not yet answered (see coopFinCheck)
 //   judged   how the swings judged here on this player came out, by
 //            hurtPlayer's result
 const CC = {};
@@ -57,6 +62,11 @@ function coopClear() {
     inHit: 0,
     quiet: false,
     exE: null,
+    exPin: 0,
+    exSkip: false,
+    exRec: false,
+    exPre: null,
+    fin: null,
     judged: { hit: 0, block: 0, parry: 0, none: 0 },
   });
 }
@@ -67,7 +77,8 @@ coopClear();
 const COOP_GLIDE = 1.4,
   COOP_SNAP_D = 6,
   COOP_HEAR = 30, // sounds of puppets further off than this are not played
-  COOP_GUESS = 2; // seconds a guess stands without the host's answer
+  COOP_GUESS = 2, // seconds a guess stands without the host's answer
+  COOP_FIN_WAIT = 5; // seconds an execution's rewards wait for the host's answer
 
 // A fresh host copy of the simulation, from the source every build embeds,
 // with the page's storage and screen out of its reach.
@@ -528,6 +539,11 @@ function coopApply(ev, rt) {
     const [, eid, pid] = ev,
       e = CC.byId.get(eid);
     if (!e) return;
+    // an execution's finish that paid here: kept only if this player killed it
+    if (CC.fin && CC.fin.e === e) {
+      if (pid === CC.pid) CC.fin = null;
+      else coopTakeBack();
+    }
     if (e.dead) e.gd = 0;
     else if (pid === CC.pid && !e.paid) {
       CC.quiet = true;
@@ -543,26 +559,91 @@ function coopApply(ev, rt) {
 
 // An execution: its pin is asked for as it begins, and the staggered puppet
 // (not a boss, whose state is never guessed) held for it. Once the other
-// player is known to have pinned it first, it plays out and gives nothing:
-// the finish (and with it every reward) is marked done before it comes.
+// player is known to have pinned it first, or to have killed it, it plays
+// out and gives nothing: the finish (and with it every reward) is marked
+// done before it comes. A finish that does run is recorded (CC.fin) until
+// the host has answered it, and what it gave is taken back if the kill or
+// the pin turns out to have been the other player's.
 function coopExec() {
   const p = G.player,
     e = p.exT;
+  coopFinCheck();
   if (p.state !== "execute" || !e || !e.nb) {
     CC.exE = null;
     return;
   }
   if (CC.exE !== e) {
     CC.exE = e;
+    CC.exPin = 0;
+    CC.exSkip = false;
+    CC.exRec = false;
     if (!e.dead) {
-      coopAsk("pin", e.id);
+      CC.exPin = coopAsk("pin", e.id);
       if (!e.def.boss) e.ov = { seq: Infinity, life: 1.6 };
     }
   }
-  if (!p.exDone && coopTaken(e)) {
-    p.exDone = true;
-    e.ov = null;
+  if (!p.exDone) {
+    if (coopTaken(e) || (e.dead && !e.paid)) {
+      p.exDone = true;
+      CC.exSkip = true;
+      e.ov = null;
+    } else CC.exPre = { hp: p.hp, focus: p.focus, tool: p.tool, kills: G.kills };
+  } else if (!CC.exSkip && !CC.exRec && CC.exPin && CC.exPre) {
+    // the finish ran this step: what it gave, and the event it sent
+    CC.exRec = true;
+    const a = CC.exPre;
+    CC.fin = {
+      e,
+      pin: CC.exPin,
+      seq: CC.seq,
+      at: CC.now,
+      pre: a,
+      gain: {
+        hp: Math.max(0, p.hp - a.hp),
+        focus: Math.max(0, p.focus - a.focus),
+        tool: Math.max(0, p.tool - a.tool),
+        kills: Math.max(0, G.kills - a.kills),
+      },
+    };
   }
+}
+// Settles the finish recorded in CC.fin from the newest snapshot of its
+// enemy, once that snapshot has had the pin. Pinned by the other player:
+// taken back. Before the host has had the finish, not pinned by this one:
+// taken back; pinned by it: a boss's stands, a regular enemy's waits for its
+// kill. After: a regular enemy still alive refused the exec, so taken back,
+// and a boss's stands. A dead enemy waits for its kill event, which decides
+// by its pid. With no answer in COOP_FIN_WAIT seconds what it gave stays.
+function coopFinCheck() {
+  const f = CC.fin;
+  if (!f) return;
+  if (CC.now - f.at > COOP_FIN_WAIT) {
+    CC.fin = null;
+    return;
+  }
+  const r = f.e.nb[f.e.nb.length - 1];
+  if (!r || r.ack < f.pin || r.dead) return;
+  const boss = f.e.def.boss;
+  if (r.pin && r.pin !== CC.pid) coopTakeBack();
+  else if (r.ack < f.seq) {
+    if (r.pin !== CC.pid) coopTakeBack();
+    else if (boss) CC.fin = null;
+  } else if (boss) CC.fin = null;
+  else coopTakeBack();
+}
+// Takes back what the recorded finish gave: health, focus, the tool charge
+// and the kill, none below what it was before the finish (or below what it
+// is now, if it has fallen since). The enemy's rewards are no longer paid.
+function coopTakeBack() {
+  const f = CC.fin,
+    p = G.player,
+    back = (now, gain, pre) => Math.max(now - gain, Math.min(now, pre));
+  CC.fin = null;
+  p.hp = back(p.hp, f.gain.hp, f.pre.hp);
+  p.focus = back(p.focus, f.gain.focus, f.pre.focus);
+  p.tool = back(p.tool, f.gain.tool, f.pre.tool);
+  G.kills = back(G.kills, f.gain.kills, f.pre.kills);
+  f.e.paid = false;
 }
 // True when the latest snapshot has e pinned by the other player.
 function coopTaken(e) {
@@ -574,10 +655,9 @@ function coopTaken(e) {
 // A hit by this player, handed over by hitEnemy once its multipliers are in:
 // proposed to the host, and shown here at once with what it will most likely
 // do. A boss's state is never guessed, only its health.
-function coopHit(e, dmg, post, o) {
+function coopHit(e, dmg, post, o, mult = 1) {
   if (!e.nb) return false; // not a puppet: single player's hit
   const p = G.player,
-    c = p.cls,
     d = e.def,
     dm = coopR2(dmg),
     po = coopR2(post),
@@ -591,32 +671,7 @@ function coopHit(e, dmg, post, o) {
   CC.pend.push({ seq, e, dmg: dm, post: pe, life: COOP_GUESS });
   // what hitEnemy shows from here on
   e.flash = 1;
-  let dx = e.x - ox,
-    dz = e.z - oz;
-  const dl = Math.hypot(dx, dz) || 1,
-    close = o.src === "melee" || o.src === "blink" || o.src === "exec";
-  dx /= dl;
-  dz /= dl;
-  sparks(
-    e.x - dx * e.r * 0.6,
-    1.0 * e.fig.o.sc + 0.2,
-    e.z - dz * e.r * 0.6,
-    o.dot ? 3 : o.heavy ? 16 : 9,
-    close ? WHITE : c.col,
-    o.heavy ? 8 : 6,
-  );
-  if (o.dot) {
-    // nothing for the player
-  } else if (close) {
-    G.hitstop = Math.max(G.hitstop, o.heavy ? 0.1 : 0.055);
-    G.shake = Math.max(G.shake, o.heavy ? 0.5 : 0.28);
-    p.focus = Math.min(100, p.focus + (o.heavy ? 6 : 4));
-  } else if (o.src !== "reflect") {
-    G.shake = Math.max(G.shake, o.heavy ? 0.3 : 0.12);
-    p.focus = Math.min(100, p.focus + (o.src === "aoe" ? 2 : 3));
-  }
-  if (!o.dot) SFX.hit(o.heavy);
-  if (o.heavy && o.src === "melee") PAD.rumble("heavy");
+  hitShow(e, o, mult);
   // the guess: health and posture for every enemy, and for all but a boss
   // its death, stagger or flinch, held until the host has had the hit
   e.hp -= dm;
@@ -636,20 +691,7 @@ function coopHit(e, dmg, post, o) {
     e.gd = seq;
     return true;
   }
-  if (e.state === "stagger" || e.state === "roar") return true;
-  if (e.posture >= d.posture) {
-    stagger(e);
-    e.ov = { seq, life: COOP_GUESS };
-    return true;
-  }
-  const flinch =
-    !o.dot && (d.poise === 0 || (d.poise === 1 && o.heavy && e.state !== "wind"));
-  if (flinch && e.state !== "act") {
-    e.state = "hit";
-    e.t = 0;
-    e.hitT = 0;
-    e.ov = { seq, life: COOP_GUESS };
-  }
+  if (hitReact(e, o)) e.ov = { seq, life: COOP_GUESS };
   return true;
 }
 // kill() ran here. From a guessed hit the host reaches the same end through

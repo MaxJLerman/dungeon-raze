@@ -2523,7 +2523,6 @@ function hitEnemy(e, dmg, post, o = {}) {
     }
   }
   let mult = 1;
-  const close = o.src === "melee" || o.src === "blink" || o.src === "exec";
   const back = Math.abs(angDiff(e.yaw, Math.atan2(p.x - e.x, p.z - e.z))) > 2.1;
   // An enemy that the boss chamber rule keeps from waking is not caught off
   // guard: without this every hit on it would be an ambush.
@@ -2556,19 +2555,13 @@ function hitEnemy(e, dmg, post, o = {}) {
     p.hp = Math.min(p.maxHp, p.hp + dmg * 0.15);
   }
   // a co-op client proposes its hit to the host and shows its own guess
-  if (NET && NET.onHit(e, dmg * mult, post, o)) return;
+  if (NET && NET.onHit(e, dmg * mult, post, o, mult)) return;
   e.hp -= dmg * mult;
   if (e.def.dummy) e.hp = e.def.hp;
   // a type's least health after a hit, past every multiplier (the crocodile's marks)
   if (bh && bh.hpFloor) e.hp = Math.max(e.hp, bh.hpFloor(e));
   noticeHit(e, post);
-  const ox = o.fx !== undefined ? o.fx : p.x,
-    oz = o.fz !== undefined ? o.fz : p.z;
-  let dx = e.x - ox,
-    dz = e.z - oz;
-  const dl = Math.hypot(dx, dz) || 1;
-  dx /= dl;
-  dz /= dl;
+  const [dx, dz] = hitShow(e, o, mult);
   // o.dot: damage over time (a poison cloud's tick). It deals its damage and
   // posture and can stagger or kill, but gives no knockback, flinch, hitstop,
   // shake, focus or hit sound, like atk.dot in hurtPlayer.
@@ -2577,26 +2570,6 @@ function hitEnemy(e, dmg, post, o = {}) {
     e.kx = dx * k;
     e.kz = dz * k;
   }
-  sparks(
-    e.x - dx * e.r * 0.6,
-    1.0 * e.fig.o.sc + 0.2,
-    e.z - dz * e.r * 0.6,
-    o.dot ? 3 : o.heavy ? 16 : 9,
-    mult > 1 ? AMBER : close ? WHITE : c.col,
-    o.heavy ? 8 : 6,
-  );
-  if (o.dot) {
-    // nothing for the player
-  } else if (close) {
-    G.hitstop = Math.max(G.hitstop, o.heavy ? 0.1 : 0.055);
-    G.shake = Math.max(G.shake, o.heavy ? 0.5 : 0.28);
-    p.focus = Math.min(100, p.focus + (o.heavy ? 6 : 4));
-  } else if (o.src !== "reflect") {
-    G.shake = Math.max(G.shake, o.heavy ? 0.3 : 0.12);
-    p.focus = Math.min(100, p.focus + (o.src === "aoe" ? 2 : 3));
-  }
-  if (!o.dot) SFX.hit(o.heavy);
-  if (o.heavy && o.src === "melee") PAD.rumble("heavy");
   if (e.hp <= 0) {
     kill(e);
     return;
@@ -2626,20 +2599,73 @@ function hitEnemy(e, dmg, post, o = {}) {
     say("The Warden burns hotter", "", 2.5);
     return;
   }
-  if (e.state === "stagger" || e.state === "roar") return;
+  hitReact(e, o);
+}
+// What a hit shows and gives the player as it lands on e: sparks on the side
+// it came from (amber when a multiplier made it a crit), and unless it is
+// damage over time, hit-stop or shake, focus, the hit sound and, for a heavy
+// melee hit, the rumble. Shared by hitEnemy and a co-op client's guess.
+// Returns the unit direction from where it came to e.
+function hitShow(e, o, mult) {
+  const p = G.player,
+    c = p.cls,
+    close = o.src === "melee" || o.src === "blink" || o.src === "exec";
+  const ox = o.fx !== undefined ? o.fx : p.x,
+    oz = o.fz !== undefined ? o.fz : p.z;
+  let dx = e.x - ox,
+    dz = e.z - oz;
+  const dl = Math.hypot(dx, dz) || 1;
+  dx /= dl;
+  dz /= dl;
+  sparks(
+    e.x - dx * e.r * 0.6,
+    1.0 * e.fig.o.sc + 0.2,
+    e.z - dz * e.r * 0.6,
+    o.dot ? 3 : o.heavy ? 16 : 9,
+    mult > 1 ? AMBER : close ? WHITE : c.col,
+    o.heavy ? 8 : 6,
+  );
+  if (o.dot) {
+    // nothing for the player
+  } else if (close) {
+    G.hitstop = Math.max(G.hitstop, o.heavy ? 0.1 : 0.055);
+    G.shake = Math.max(G.shake, o.heavy ? 0.5 : 0.28);
+    p.focus = Math.min(100, p.focus + (o.heavy ? 6 : 4));
+  } else if (o.src !== "reflect") {
+    G.shake = Math.max(G.shake, o.heavy ? 0.3 : 0.12);
+    p.focus = Math.min(100, p.focus + (o.src === "aoe" ? 2 : 3));
+  }
+  if (!o.dot) SFX.hit(o.heavy);
+  if (o.heavy && o.src === "melee") PAD.rumble("heavy");
+  return [dx, dz];
+}
+// True when a hit flinches an enemy of kind def that is in state: never damage
+// over time; poise 0 always; poise 1 only from a heavy hit outside a wind-up.
+// One rule for hitEnemy, a co-op client's guess and the host's favour to the
+// attacker.
+function hitFlinches(def, heavy, dot, state) {
+  return (
+    !dot && (def.poise === 0 || (def.poise === 1 && heavy && state !== "wind"))
+  );
+}
+// What a hit that did not kill does to e's state: nothing in a stagger or a
+// roar; a stagger once its posture is full; else a flinch, unless it is mid
+// swing. True when its state changed. Shared by hitEnemy and a co-op
+// client's guess.
+function hitReact(e, o) {
+  if (e.state === "stagger" || e.state === "roar") return false;
   if (e.posture >= e.def.posture) {
     stagger(e);
-    return;
+    return true;
   }
-  const flinch =
-    !o.dot &&
-    (e.def.poise === 0 || (e.def.poise === 1 && o.heavy && e.state !== "wind"));
-  if (flinch && e.state !== "act") {
+  if (hitFlinches(e.def, o.heavy, o.dot, e.state) && e.state !== "act") {
     e.state = "hit";
     e.t = 0;
     e.hitT = 0;
     e.token = false;
+    return true;
   }
+  return false;
 }
 function hurtPlayer(dmg, e, atk) {
   const p = G.player,

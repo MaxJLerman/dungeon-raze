@@ -267,8 +267,7 @@ const COOP_HOST = COOP_HEADLESS_HERE
             d = e.def;
           // Favour the attacker: the client saw the enemy before this swing
           // and its hit would flinch it, so the flinch stands here too.
-          const flinch =
-            !dot && (d.poise === 0 || (d.poise === 1 && heavy && seenState !== "wind"));
+          const flinch = hitFlinches(d, heavy, dot, seenState);
           if (flinch && seenState !== "act" && e.state === "act" && e.an === seenAn)
             e.state = "chase";
           // a hit from a player it can see turns it on them

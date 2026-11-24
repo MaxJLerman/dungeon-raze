@@ -721,7 +721,8 @@ export default [
       let local = false,
         passed = 0,
         stopped = 0,
-        drop = 0;
+        drop = 0,
+        melee = -1;
       co.go(12, (i) => {
         if (G.projs.some((q) => q.own === "e" && q.src === ps)) local = true;
         // the host's own copy of each shot: it flies on through the proxy
@@ -733,7 +734,11 @@ export default [
             if (h.G.projs.includes(q)) passed++;
             else stopped++;
           }
-        if (p.hp < p.maxHp && !drop) drop = p.maxHp - p.hp;
+        if (p.hp < p.maxHp && !drop) {
+          drop = p.maxHp - p.hp;
+          // what was judged here by the time it hurt (a husk may come later)
+          melee = co.judged().hit - j0.hit;
+        }
         if (drop && passed + stopped > 0) return false;
       });
       co.go(0.5);
@@ -743,12 +748,13 @@ export default [
           hs.type === "spit" &&
           local &&
           Math.abs(drop - DF.EDEF.spit.atks.shot.dmg) < 1e-9 &&
-          co.judged().hit === j0.hit &&
+          melee === 0 &&
           passed >= 1 &&
           stopped === 0 &&
           Math.abs(px.hp - p.hp) <= px.maxHp / 255,
         local,
         drop,
+        melee,
         hostShotsPassedProxy: passed,
         hostShotsStoppedAtProxy: stopped,
         proxyHp: +px.hp.toFixed(1),
@@ -773,13 +779,15 @@ export default [
       // the host staggers it, and this page shows it
       Object.assign(he, { state: "stagger", t: 0, dur: 3.0, posture: he.def.posture, token: false });
       co.go(1, () => (pe.state === "stagger" ? false : undefined));
+      co.near(he, 2);
       const shown = pe.state;
       p.focus = 0;
       const k0 = G.kills;
       let started = false;
       co.go(2.5, (i) => {
         co.face(pe);
-        if (i === 0) DF.taps[DF.BIND.light] = true;
+        // until it starts: a swing or a flinch can eat one press
+        if (!started && i % 10 === 0) DF.taps[DF.BIND.light] = true;
         if (p.state === "execute") started = true;
       });
       DF.DEV.god = false;
@@ -796,63 +804,228 @@ export default [
     },
   },
   {
-    name: "an execution whose pin lost plays out and gives nothing",
+    name: "an execution whose pin lost gives nothing, at 200 and 300 ms",
     eval: () => {
       const { G } = DF,
         co = window.__co;
       G.manual = true;
-      // no loss here: the other player's pin must reach this page in time
-      co.solo({ ping: 200, jit: 10, loss: 0 });
-      // god mode would keep focus and health full
-      DF.DEV.god = false;
-      const p = G.player,
-        he = co.husk(37),
-        pe = co.pup(37);
-      co.near(he, 2);
-      co.go(1, () => co.face(pe));
-      Object.assign(he, { state: "stagger", t: 0, dur: 3.0, posture: he.def.posture, token: false });
-      co.go(1, () => (pe.state === "stagger" ? false : undefined));
-      p.focus = 0;
-      const hp0 = (p.hp = p.maxHp - 30),
-        k0 = G.kills;
-      let started = false,
-        taken = false,
-        skipped = false,
-        ended = false,
-        focus = -1,
-        hp = -1,
-        kills = -1;
-      co.go(1.2, (i) => {
-        co.face(pe);
-        if (i === 0) DF.taps[DF.BIND.light] = true;
-        // the other player's pin reaches the host before this one's
-        if (p.state === "execute" && !started) {
-          started = true;
-          he.pin = 2;
-        }
-        if (DF.net().taken(pe)) {
-          taken = true;
-          if (DF.nearestStaggered() !== pe) skipped = true;
-        }
-        // what it gave, as the execution ends
-        if (started && !ended && p.state !== "execute") {
-          ended = true;
-          focus = p.focus;
-          hp = p.hp;
-          kills = G.kills - k0;
-        }
-      });
+      // The other player's pin reaches the host just before this one's, so
+      // this page learns of it a round trip after its own pin: at 200 ms
+      // about when the finish comes, at 300 ms after it.
+      const one = (ping) => {
+        const r = co.solo({ ping, jit: 10, loss: 2 }),
+          h = r.host,
+          recv = h.recv;
+        // god mode would keep focus and health full
+        DF.DEV.god = false;
+        const p = G.player,
+          he = co.husk(37),
+          pe = co.pup(37);
+        co.near(he, 2);
+        co.go(1, () => co.face(pe));
+        Object.assign(he, { state: "stagger", t: 0, dur: 6, posture: he.def.posture, token: false });
+        co.go(1.5, () => (pe.state === "stagger" ? false : undefined));
+        co.near(he, 2);
+        h.recv = (pid, buf) => {
+          if (pid === 1 && h.wire.type(buf) === 3) {
+            const ev = h.wire.eventDecode(buf);
+            if (ev[0] === "pin" && ev[2] === he.id) he.pin = 2;
+          }
+          return recv(pid, buf);
+        };
+        p.focus = 0;
+        p.tool = 0;
+        const hp0 = (p.hp = p.maxHp - 30),
+          k0 = G.kills;
+        let started = false,
+          taken = false,
+          skipped = false,
+          ended = false,
+          paid = null,
+          most = 0;
+        co.go(2.5, (i) => {
+          co.face(pe);
+          // until it starts: a swing or a flinch can eat one press
+          if (!started && i % 10 === 0) DF.taps[DF.BIND.light] = true;
+          if (p.state === "execute") started = true;
+          // the most focus seen: above 0 when a finish paid before the answer
+          most = Math.max(most, p.focus);
+          if (DF.net().taken(pe)) {
+            taken = true;
+            if (DF.nearestStaggered() !== pe) skipped = true;
+          }
+          if (started && !ended && p.state !== "execute") {
+            ended = true;
+            // what the finish gave, before anything was taken back
+            paid = { focus: p.focus, healed: +(p.hp - hp0).toFixed(1), kills: G.kills - k0, tool: p.tool };
+          }
+        });
+        h.recv = recv;
+        return {
+          ping,
+          started,
+          ended,
+          taken,
+          skipped,
+          paid,
+          most,
+          focus: p.focus,
+          healed: +(p.hp - hp0).toFixed(1),
+          kills: G.kills - k0,
+          tool: p.tool,
+          puppet: pe.state,
+          puppetDead: pe.dead,
+          hostDead: he.dead,
+          hostPin: he.pin,
+        };
+      };
+      const runs = [one(200), one(300)];
       return {
-        pass: started && ended && taken && skipped && focus === 0 && hp === hp0 && kills === 0 && !pe.dead && !he.dead && he.pin === 2,
-        started,
-        ended,
-        taken,
-        skipped,
-        focus,
-        healed: +(hp - hp0).toFixed(1),
-        kills,
-        puppet: pe.state,
-        host: he.state,
+        pass: runs.every(
+          (o) =>
+            o.started && o.ended && o.taken && o.skipped && o.focus === 0 && o.healed === 0 && o.kills === 0 && o.tool === 0 && !o.puppetDead && !o.hostDead && o.hostPin === 2 &&
+            // at 300 ms the answer comes after the finish: it paid, then was taken back
+            (o.ping < 300 || o.most === 18),
+        ),
+        runs,
+      };
+    },
+  },
+  {
+    name: "an execution whose enemy the other player kills first gives nothing",
+    eval: () => {
+      const { G } = DF,
+        co = window.__co;
+      G.manual = true;
+      const one = (ping) => {
+        const r = co.solo({ ping, jit: 10, loss: 2 }),
+          h = r.host,
+          recv = h.recv;
+        DF.DEV.god = false;
+        // a second player on the host, whose hit lands as this page's pin does
+        h.join(2, "fighter");
+        const p = G.player,
+          he = co.husk(37),
+          pe = co.pup(37);
+        co.near(he, 2);
+        co.go(1, () => co.face(pe));
+        Object.assign(he, { state: "stagger", t: 0, dur: 6, posture: he.def.posture, token: false });
+        co.go(1.5, () => (pe.state === "stagger" ? false : undefined));
+        co.near(he, 2);
+        h.recv = (pid, buf) => {
+          const out = recv(pid, buf);
+          if (pid === 1 && h.wire.type(buf) === 3) {
+            const ev = h.wire.eventDecode(buf);
+            if (ev[0] === "pin" && ev[2] === he.id)
+              recv(2, h.wire.eventEncode(["hit", 1, he.id, 500, 0, 0, "melee", null, null, "stagger", he.an]));
+          }
+          return out;
+        };
+        p.focus = 0;
+        p.tool = 0;
+        const hp0 = (p.hp = p.maxHp - 30),
+          k0 = G.kills;
+        let started = false;
+        co.go(2.5, (i) => {
+          co.face(pe);
+          // until it starts: a swing or a flinch can eat one press
+          if (!started && i % 10 === 0) DF.taps[DF.BIND.light] = true;
+          if (p.state === "execute") started = true;
+        });
+        h.recv = recv;
+        return {
+          ping,
+          started,
+          hostDead: he.dead,
+          killedBy: he.kBy,
+          puppetDead: pe.dead,
+          focus: p.focus,
+          healed: +(p.hp - hp0).toFixed(1),
+          kills: G.kills - k0,
+          tool: p.tool,
+        };
+      };
+      const runs = [one(200), one(300)];
+      return {
+        pass: runs.every(
+          (o) => o.started && o.hostDead && o.killedBy === 2 && o.puppetDead && o.focus === 0 && o.healed === 0 && o.kills === 0 && o.tool === 0,
+        ),
+        runs,
+      };
+    },
+  },
+  {
+    name: "a ranged class's shot and a blast each send one event the host accepts",
+    eval: () => {
+      const { G } = DF,
+        co = window.__co;
+      G.manual = true;
+      const cls0 = DF.OPT.cls;
+      const r = co.solo({ ping: 200, jit: 10, loss: 2 }),
+        h = r.host,
+        send = h.send;
+      DF.DEV.god = true;
+      DF.setClass("mage");
+      // a second player on the host, to see what it forwards
+      h.join(2, "fighter");
+      const got = [];
+      h.send = (pid, buf) => {
+        if (pid === 2 && h.wire.type(buf) === 3) {
+          const ev = h.wire.eventDecode(buf);
+          if (ev[0] === "pshot" || ev[0] === "pblast") got.push(ev);
+        }
+        return send(pid, buf);
+      };
+      const p = G.player;
+      p.tool = p.cls.tool.max;
+      let shot = null,
+        blast = null;
+      const n0 = G.projs.length;
+      co.go(0.2, (i) => {
+        if (i === 0) DF.taps[DF.BIND.light] = true;
+        const q = G.projs.slice(n0).find((o) => o.own === "p");
+        if (q) shot = { x: q.x, y: q.y, z: q.z, vx: q.vx, vz: q.vz, c: q.c.slice(0, 3) };
+        return shot ? false : undefined;
+      });
+      co.go(1);
+      const shots = got.filter((ev) => ev[0] === "pshot");
+      co.go(0.2, (i) => {
+        if (i === 0) DF.taps[DF.BIND.tool] = true;
+        if (!blast && G.rings.some((g) => g.kind === "shock" && g.r === 5)) blast = { x: p.x, z: p.z };
+      });
+      co.go(1);
+      const blasts = got.filter((ev) => ev[0] === "pblast");
+      h.send = send;
+      DF.setClass(cls0);
+      DF.DEV.god = false;
+      const s = shots[0],
+        b = blasts[0],
+        near = (a, v, tol) => typeof a === "number" && Math.abs(a - v) <= tol,
+        allNum = (ev) => ev.slice(1).every((v) => typeof v === "number" && Number.isFinite(v));
+      const okShot =
+        !!s &&
+        !!shot &&
+        s.length === 10 &&
+        allNum(s) &&
+        s[1] === 1 &&
+        // the shot was found after it had flown one step
+        near(s[2], shot.x - shot.vx / 60, 0.02) &&
+        near(s[3], shot.y, 0.01) &&
+        near(s[4], shot.z - shot.vz / 60, 0.02) &&
+        near(s[5], shot.vx, 0.01) &&
+        near(s[6], shot.vz, 0.01) &&
+        near(s[7], shot.c[0], 0.001) &&
+        near(s[8], shot.c[1], 0.001) &&
+        near(s[9], shot.c[2], 0.001);
+      const okBlast =
+        !!b && !!blast && b.length === 8 && allNum(b) && b[1] === 1 && near(b[2], blast.x, 0.05) && near(b[3], blast.z, 0.05) && b[4] === 5;
+      return {
+        pass: okShot && okBlast && shots.length >= 1 && blasts.length === 1,
+        shot: s,
+        sent: shot && { x: +shot.x.toFixed(2), y: shot.y, z: +shot.z.toFixed(2) },
+        blast: b,
+        shots: shots.length,
+        blasts: blasts.length,
       };
     },
   },
@@ -954,20 +1127,37 @@ export default [
           p.hp = p.maxHp;
           p.stam = p.maxStam;
         };
+      // every ring the host sends this page, with where its slam was aimed
+      const sent = [],
+        send0 = h.send;
+      h.send = (pid, buf) => {
+        if (pid === 1 && h.wire.type(buf) === 3) {
+          const ev = h.wire.eventDecode(buf);
+          if (ev[0] === "ring") sent.push({ x: ev[1], z: ev[2], t: ev[5], tx: hw.tx, tz: hw.tz });
+        }
+        return send0(pid, buf);
+      };
       co.near(hw, 9);
       co.go(2, keep);
       const awake = hw.aware;
-      // its slam, forced on the host as the host's own test does
+      // its slam, forced on the host as the host's own test does (it may
+      // have slammed by itself already: only a ring drawn from here counts)
+      const old = new Set(G.rings);
       Object.assign(hw, { state: "wind", atk: hw.def.atks.slam, t: 0, hitDone: false });
-      let ring = null,
-        evAt = -1;
+      let ring = null;
       co.go(2.5, () => {
         keep();
-        if (hw.state === "act" && evAt < 0) evAt = h.S.step / 60;
-        const q = G.rings.find((g) => g.kind === "warn" && g.r === hw.def.atks.slam.radius);
+        const q = G.rings.find((g) => !old.has(g) && g.kind === "warn" && g.r === hw.def.atks.slam.radius);
         if (q && !ring) ring = { x: q.x, z: q.z, rt: DF.CC.rt };
       });
-      const ringOk = !!ring && Math.hypot(ring.x - hw.tx, ring.z - hw.tz) < 0.02 && ring.rt >= evAt - 1e-6;
+      h.send = send0;
+      // drawn where the host aimed it, once the drawn time reached its time
+      // (its own slam and the forced one can land on the same spot: the
+      // latest event at or before the drawn time is the one drawn)
+      const from =
+        ring && sent.filter((q) => Math.hypot(q.x - ring.x, q.z - ring.z) < 1e-6 && q.t <= ring.rt + 1e-6).pop();
+      const ringOk =
+        !!from && Math.hypot(ring.x - from.tx, ring.z - from.tz) < 0.02 && ring.rt >= from.t - 1e-6 && ring.rt - from.t < 0.05;
       // a hit on it changes its health here and not its state
       co.near(hw, hw.r + 1.1);
       const net = DF.net(),
@@ -1015,6 +1205,7 @@ export default [
       const res = {
         awake,
         ring,
+        ringEvent: from,
         ringOk,
         seen,
         notGuessed,
