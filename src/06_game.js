@@ -211,6 +211,9 @@ const UNLOCKED = new Set();
 // it. A release build leaves that folder out, so this stays null and every
 // `DEV &&` check is inert.
 let DEV = null;
+// Co-op (06d_coophost.js and the client): null except during a co-op run, so
+// every `NET` check is inert in single player. Its hooks are always all there.
+let NET = null;
 function classOpen(id) {
   return (
     Object.hasOwn(CLASSES, id) &&
@@ -2630,6 +2633,8 @@ function hitEnemy(e, dmg, post, o = {}) {
 function hurtPlayer(dmg, e, atk) {
   const p = G.player,
     c = p.cls;
+  // a co-op host never judges a hit on a player: their own machine does
+  if (p.remote) return "remote";
   if (p.state === "dead" || G.state !== "play" || G.trans) return "none";
   if (p.state === "execute" || p.state === "blink") return "none";
   if (p.iframe > 0) {
@@ -4303,6 +4308,7 @@ function shoot(e, a, dmg, spd) {
     kind: "spit",
     c: e.def.boss ? RED : [1, 0.45, 0.2],
   });
+  if (NET) NET.onShoot(G.projs[G.projs.length - 1]);
 }
 function enemyUpdate(e, dt) {
   const p = G.player,
@@ -5646,8 +5652,10 @@ function update(dt) {
   }
   if (G.grabGrace > 0) G.grabGrace = Math.max(0, G.grabGrace - dt);
   const prev = riftSnap();
-  playerUpdate(dt);
-  for (const e of G.enemies) enemyUpdate(e, dt);
+  // a co-op host has no player of its own, and steps its enemies itself
+  if (!(NET && NET.host)) playerUpdate(dt);
+  if (NET) NET.enemies(dt);
+  else for (const e of G.enemies) enemyUpdate(e, dt);
   if (prev) riftBodies(prev);
   projUpdate(dt);
   bombsUpdate(dt);
