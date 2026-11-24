@@ -2263,6 +2263,8 @@ function ghost(p) {
 }
 function explode(x, z, r, dmg, post, c) {
   post *= G.player.cls.blastPost || 1;
+  // a co-op client shows its blast to the other player
+  if (NET) NET.onBlast(x, z, r, c);
   G.rings.push({ x, z, r, t: 0, dur: 0.4, kind: "shock", c });
   sparks(x, 0.8, z, 30, c, 9, 0.6, 0.15);
   G.shake = Math.max(G.shake, r > 4.5 ? 0.9 : 0.45);
@@ -2848,7 +2850,14 @@ function nearestStaggered() {
   let b = null,
     bd = 3.7;
   for (const e of G.enemies)
-    if (!e.dead && !e.hidden && !e.aloft && e.state === "stagger") {
+    if (
+      !e.dead &&
+      !e.hidden &&
+      !e.aloft &&
+      e.state === "stagger" &&
+      // in co-op, one the other player has begun to execute is theirs
+      !(NET && NET.taken(e))
+    ) {
       const d = Math.hypot(e.x - p.x, e.z - p.z) - e.r;
       if (d < bd) {
         bd = d;
@@ -2938,6 +2947,8 @@ function fire(spec, a, extra) {
     big: !!s.big,
     hitSet: s.pierce ? new Set() : null,
   });
+  // a co-op client shows its shot to the other player
+  if (NET) NET.onPShot(G.projs[G.projs.length - 1]);
 }
 function startMove(id, base, free) {
   const p = G.player,

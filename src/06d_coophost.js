@@ -273,7 +273,17 @@ const COOP_HOST = COOP_HEADLESS_HERE
             e.state = "chase";
           // a hit from a player it can see turns it on them
           if (e.tg !== px.pid && G.world.los(e.x, e.z, px.x, px.z)) e.tg = px.pid;
-          const ph0 = e.phase;
+          const ph0 = e.phase,
+            // an execution that need not kill (the Warden's) comes as a hit:
+            // from the player who pinned it, it recoils as in single player
+            ex = src === "exec" && e.pin === px.pid;
+          if (ex) {
+            e.pin = 0;
+            e.state = "recoil";
+            e.t = 0;
+            e.dur = 1.0;
+            e.posture = 0;
+          }
           as(px, () =>
             hitEnemy(e, dmg, post, {
               src: typeof src === "string" ? src : "",
@@ -284,6 +294,11 @@ const COOP_HOST = COOP_HEADLESS_HERE
               pre: true,
             }),
           );
+          if (ex && !e.dead && e.state !== "roar") {
+            e.state = "recoil";
+            e.t = 0;
+            e.dur = 1.0;
+          }
           if (d.boss && ph0 !== 2 && e.phase === 2) all(["roar", e.id, now()]);
         },
         // as hurtPlayer's parry branch does to the enemy; one staggered or
@@ -330,11 +345,14 @@ const COOP_HOST = COOP_HEADLESS_HERE
         },
       };
       // Applies one event from px. Unknown names (including "spawn", which
-      // only the host sends) are ignored. A numeric seq is acknowledged
-      // whether or not the event was honoured.
+      // only the host sends) are ignored. A seq must be an integer from 1 to
+      // 65535 (a client counts from 1 and never wraps): any other is refused
+      // and not acknowledged. A good seq is acknowledged whether or not the
+      // event was honoured.
       function ask(px, ev) {
         if (!Array.isArray(ev)) return;
         const [name, seq, ...args] = ev;
+        if (!Number.isInteger(seq) || seq < 1 || seq > 65535) return;
         try {
           if (typeof name === "string" && Object.hasOwn(ASK, name)) {
             by = px.pid;
@@ -342,7 +360,7 @@ const COOP_HOST = COOP_HEADLESS_HERE
           }
         } finally {
           by = 0;
-          if (num(seq)) px.ack = Math.max(px.ack, seq);
+          px.ack = Math.max(px.ack, seq);
         }
       }
 
@@ -399,6 +417,7 @@ const COOP_HOST = COOP_HEADLESS_HERE
       };
       const none = () => {};
       const host = {
+        v: COOP_V,
         start,
         join,
         leave,

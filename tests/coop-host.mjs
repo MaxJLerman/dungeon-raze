@@ -132,19 +132,20 @@ check("a hello joins a matching version and refuses another", () => {
     got.get(pid).push(h.wire.eventDecode(buf));
   };
   const hello = (pid, v, cls) => h.recv(pid, h.wire.eventEncode(["hello", 0, v, cls]));
-  hello(1, 1, "fighter");
+  assert.equal(typeof h.v, "number");
+  hello(1, h.v, "fighter");
   assert.ok(h.S.px.has(1), "a matching hello joins");
   assert.equal(h.S.px.get(1).clsId, "fighter");
   assert.equal(got.get(1).length, 1);
   assert.equal(got.get(1)[0][0], "join");
   assert.equal(got.get(1)[0][1].pid, 1);
   // another version: told so, and no proxy
-  hello(2, 2, "mage");
+  hello(2, h.v + 1, "mage");
   assert.ok(!h.S.px.has(2), "a wrong version does not join");
   assert.deepEqual(got.get(2), [["no", "version"]]);
   // a hello from a player already in is ignored
   const px = h.S.px.get(1);
-  hello(1, 1, "mage");
+  hello(1, h.v, "mage");
   assert.equal(h.S.px.get(1), px);
   assert.equal(got.get(1).length, 1);
   // a frame that is not a hello does not join anyone
@@ -207,7 +208,7 @@ check("an away player is not hunted", () => {
 });
 // With every present player dead the host wipes (below), so B stays alive
 // in the boss chamber, where no regular enemy may hunt them.
-check("a dead player is not hunted, and with nobody to hunt the enemy goes home", () => {
+check("a dead player is not hunted: the living one in the boss chamber is the target and is left alone, so the enemy goes home", () => {
   const h = cave(),
     e = husk(h, 37),
     bc = h.G.world.boss;
@@ -227,7 +228,7 @@ check("a dead player is not hunted, and with nobody to hunt the enemy goes home"
   assert.equal(e.aware, true, "the husk did not wake");
   assert.equal(e.tg, 1);
   run(h, 1 / 60, dead);
-  assert.notEqual(e.tg, 1);
+  assert.equal(e.tg, 2);
   const w = dropsHunt(h, e, 1.6, dead);
   assert.equal(w, 0, "a new swing at a dead player");
   assert.equal(e.aware, false, "still hunting: " + e.state);
@@ -1014,5 +1015,87 @@ check("a player's shots and blasts go to the other player only", () => {
   assert.deepEqual(named(a, "pblast"), [["pblast", 2, 1, 2, 3, 0, 0, 0]]);
   run(h, 3 / 60, () => a.at(s.x, s.z));
   assert.equal(a.snap.ack, 2);
+});
+// Task 7: event numbers, and the Warden's execution.
+check("a seq that is not an integer from 1 to 65535 is refused and not acknowledged", () => {
+  const h = cave(),
+    e = husk(h, 37);
+  const a = fakeClient(h, 1, "fighter");
+  const s = h.G.world.spawn,
+    here = () => a.at(s.x, s.z);
+  const send = (seq, ...args) => h.recv(1, h.wire.eventEncode(["hit", seq, e.id, 1, 0, 0, "melee", null, null, "chase", 0, ...args]));
+  send(5);
+  assert.equal(e.hp, 41, "a good seq is applied");
+  run(h, 3 / 60, here);
+  assert.equal(a.snap.ack, 5);
+  for (const seq of [0, -1, 1.5, 65536, 1e9, "6", null, true, NaN]) {
+    const hp = e.hp;
+    assert.doesNotThrow(() => send(seq), String(seq));
+    assert.equal(e.hp, hp, "seq " + String(seq) + " was applied");
+  }
+  // a missing seq too
+  h.recv(1, h.wire.eventEncode(["hit"]));
+  run(h, 3 / 60, here);
+  assert.equal(a.snap.ack, 5, "a bad seq was acknowledged");
+  send(65535);
+  assert.equal(e.hp, 40, "65535 is still a seq");
+  run(h, 3 / 60, here);
+  assert.equal(a.snap.ack, 65535);
+});
+check("a Warden execution is a hit: it survives, the pin clears and it recoils for 1 s", () => {
+  const h = cave(),
+    w = warden(h);
+  const a = fakeClient(h, 1, "fighter"),
+    b = fakeClient(h, 2, "fighter");
+  const q = spot(h, w, 3);
+  const both = () => {
+    a.at(q.x, q.z);
+    b.at(q.x + 0.3, q.z);
+  };
+  run(h, 1, both);
+  assert.equal(w.aware, true, "the Warden did not wake");
+  const exec = (c) => hit(c, w, 120, { src: "exec", flags: 1, seen: "stagger" });
+  // staggered and pinned by 1: an execution from 1
+  a.ev("parry", w.id, w.an, w.def.posture);
+  assert.equal(w.state, "stagger");
+  a.ev("pin", w.id);
+  assert.equal(w.pin, 1);
+  const hp = w.hp;
+  exec(a);
+  assert.equal(w.hp, hp - 120);
+  assert.equal(w.dead, false);
+  assert.equal(w.pin, 0, "the pin is still set");
+  assert.equal(w.state, "recoil");
+  assert.equal(w.dur, 1.0);
+  assert.equal(w.t, 0);
+  assert.equal(w.posture, 0);
+  // a hit marked exec from a player who did not pin it changes no state
+  run(h, 1.2, both);
+  w.state = "chase";
+  w.posture = 0;
+  a.ev("parry", w.id, w.an, w.def.posture);
+  b.ev("pin", w.id);
+  a.ev("pin", w.id);
+  assert.equal(w.pin, 2);
+  exec(a);
+  assert.equal(w.state, "stagger", "the other player's pin was overruled");
+  assert.equal(w.pin, 2);
+  // an execution that takes it under half: it roars, as single player does
+  w.hp = w.def.hp * 0.5 + 60;
+  exec(b);
+  assert.equal(w.phase, 2);
+  assert.equal(w.state, "roar");
+  assert.equal(w.pin, 0);
+  assert.equal(named(a, "roar").length, 1);
+  // one that kills it
+  run(h, 1.5, both);
+  w.state = "chase";
+  w.posture = 0;
+  a.ev("parry", w.id, w.an, w.def.posture);
+  a.ev("pin", w.id);
+  w.hp = 100;
+  exec(a);
+  assert.equal(w.dead, true);
+  assert.deepEqual(named(b, "kill").map((k) => k.slice(0, 3)), [["kill", w.id, 1]]);
 });
 done();

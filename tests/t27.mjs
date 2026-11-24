@@ -3,9 +3,10 @@
 // Run with: node build.mjs && SCRIPT=$PWD/tests/t27.mjs node test.mjs smoke
 // Every step returns an object with a boolean `pass`.
 //
-// Until Task 8 the page sends no state of its own, so a step that needs the
-// host to hunt this player sends one for it each step (co.here), standing in
-// for that half of the client.
+// The puppet steps were written before the page sent its own state, so they
+// also send one each step (co.here); that changes nothing now. The fighting
+// steps run the client alone (co.go): its own state reaches the host
+// through the link.
 export default [
   {
     name: "puppets follow the host",
@@ -445,6 +446,649 @@ export default [
       const again = !!DF.net() && G.enemies.length === 47;
       DF.coopEnd("test");
       return { pass: was && ended && e.aware && again && DF.net() === null, ended, aware: e.aware, again };
+    },
+  },
+  // ---- Task 7: fighting as a client ----
+  {
+    name: "this player's state reaches the host 30 times a second, in any screen",
+    eval: () => {
+      const { G } = DF,
+        co = window.__co;
+      G.manual = true;
+      // helpers the fighting steps share
+      Object.assign(co, {
+        // turns this player and the camera to face e
+        face(e) {
+          const p = G.player,
+            a = Math.atan2(e.x - p.x, e.z - p.z);
+          p.yaw = a;
+          DF.cam.yaw = a;
+        },
+        // a copy of the counts of hits on this player judged here
+        judged: () => ({ ...DF.CC.judged }),
+        // runs the client alone: its own state reaches the host through the link
+        go: (sec, each) => co.r.step(sec, each),
+      });
+      const r = co.solo({ ping: 200, jit: 10, loss: 2 });
+      const h = r.host,
+        L = DF.CC.link,
+        send = L.send,
+        recv = h.recv;
+      let sent = 0,
+        heard = 0;
+      L.send = (buf) => {
+        if (h.wire.type(buf) === 2) sent++;
+        return send(buf);
+      };
+      h.recv = (pid, buf) => {
+        if (pid === 1 && buf && h.wire.type(buf) === 2) heard++;
+        return recv(pid, buf);
+      };
+      const p = G.player,
+        x0 = p.x,
+        z0 = p.z;
+      // walk for half a second, then stand for half a second
+      DF.keys[DF.BIND.fwd] = true;
+      co.go(0.5);
+      DF.keys[DF.BIND.fwd] = false;
+      co.go(0.5);
+      const sent1 = sent,
+        heard1 = heard;
+      const px = h.S.px.get(1),
+        off = Math.hypot(px.x - p.x, px.z - p.z),
+        walked = Math.hypot(p.x - x0, p.z - z0);
+      // paused: the state still goes, on frame time
+      G.state = "pause";
+      sent = 0;
+      for (let i = 0; i < 30; i++) DF.net().frame(1 / 60);
+      const paused = sent;
+      G.state = "play";
+      L.send = send;
+      h.recv = recv;
+      return {
+        pass:
+          walked > 1 &&
+          off < 0.1 &&
+          !px.away &&
+          Math.abs(sent1 - 30) <= 1 &&
+          heard1 >= 25 &&
+          Math.abs(paused - 15) <= 1,
+        walked: +walked.toFixed(2),
+        off: +off.toFixed(3),
+        away: px.away,
+        sentIn1s: sent1,
+        heardIn1s: heard1,
+        sentPausedHalfS: paused,
+      };
+    },
+  },
+  {
+    name: "an enemy's swing is judged here and hurts",
+    eval: () => {
+      const { G } = DF,
+        co = window.__co;
+      G.manual = true;
+      co.solo({ ping: 200, jit: 10, loss: 2 });
+      DF.DEV.god = false;
+      const p = G.player;
+      p.hp = p.maxHp;
+      const he = co.husk(37),
+        j0 = co.judged();
+      co.near(he, 2.5);
+      const n = co.go(10, () => (p.hp < p.maxHp ? false : undefined));
+      const j = co.judged();
+      return {
+        pass: p.hp < p.maxHp && j.hit === j0.hit + 1,
+        after: +(n / 60).toFixed(2),
+        hp: +p.hp.toFixed(1),
+        judged: j,
+        hostAware: he.aware,
+      };
+    },
+  },
+  {
+    name: "holding guard blocks it",
+    eval: () => {
+      const { G } = DF,
+        co = window.__co;
+      G.manual = true;
+      co.solo({ ping: 200, jit: 10, loss: 2 });
+      DF.DEV.god = false;
+      const p = G.player;
+      p.hp = p.maxHp;
+      const he = co.husk(37),
+        pe = co.pup(37);
+      co.near(he, 2.2);
+      co.go(0.6, () => co.face(pe));
+      const j0 = co.judged();
+      DF.keys[DF.BIND.guard] = true;
+      const n = co.go(10, () => {
+        co.face(pe);
+        p.stam = p.maxStam;
+        return co.judged().block > j0.block ? false : undefined;
+      });
+      DF.keys[DF.BIND.guard] = false;
+      const j = co.judged();
+      return {
+        pass: j.block > j0.block && j.hit === j0.hit,
+        after: +(n / 60).toFixed(2),
+        judged: j,
+        hp: +p.hp.toFixed(1),
+      };
+    },
+  },
+  {
+    name: "a late guard parries and the host's enemy is thrown back",
+    eval: () => {
+      const { G } = DF,
+        co = window.__co;
+      G.manual = true;
+      co.solo({ ping: 200, jit: 10, loss: 2 });
+      DF.DEV.god = false;
+      const p = G.player;
+      p.hp = p.maxHp;
+      const he = co.husk(37),
+        pe = co.pup(37);
+      co.near(he, 2.2);
+      co.go(1, () => co.face(pe));
+      const j0 = co.judged();
+      const n = co.go(14, () => {
+        co.face(pe);
+        p.hp = p.maxHp;
+        p.stam = p.maxStam;
+        // the guard goes up just before the swing lands, as a player's would
+        const late = pe.state === "wind" && pe.atk && pe.t > pe.atk.wind - 0.12;
+        DF.keys[DF.BIND.guard] = late || pe.state === "act";
+        return co.judged().parry > j0.parry ? false : undefined;
+      });
+      DF.keys[DF.BIND.guard] = false;
+      const local = pe.state;
+      let seen = "",
+        at = -1;
+      co.go(0.4, (i) => {
+        if (!seen && (he.state === "recoil" || he.state === "stagger")) {
+          seen = he.state;
+          at = i;
+        }
+      });
+      return {
+        pass: co.judged().parry > j0.parry && (local === "recoil" || local === "stagger") && !!seen,
+        after: +(n / 60).toFixed(2),
+        local,
+        host: seen,
+        hostAfter: +(at / 60).toFixed(3),
+      };
+    },
+  },
+  {
+    name: "this player's hits reach the host and kill there",
+    eval: () => {
+      const { G } = DF,
+        co = window.__co;
+      G.manual = true;
+      co.solo({ ping: 200, jit: 10, loss: 2 });
+      DF.DEV.god = true;
+      const p = G.player,
+        he = co.husk(37),
+        pe = co.pup(37),
+        hp0 = he.hp,
+        k0 = G.kills;
+      co.near(he, 1.6);
+      let first = -1;
+      const n = co.go(25, (i) => {
+        co.face(pe);
+        if (i % 30 === 0) DF.taps[DF.BIND.light] = true;
+        if (first < 0 && he.hp < hp0) first = i;
+        // keep within reach of where it is drawn
+        DF.keys[DF.BIND.fwd] = !pe.dead && Math.hypot(pe.x - p.x, pe.z - p.z) > 2.2;
+        return he.dead && pe.dead ? false : undefined;
+      });
+      DF.keys[DF.BIND.fwd] = false;
+      co.go(1);
+      DF.DEV.god = false;
+      return {
+        pass: he.dead && pe.dead && G.kills - k0 === 1 && first > 0 && DF.CC.pend.length === 0 && he.kBy === 1,
+        after: +(n / 60).toFixed(2),
+        firstHostDropStep: first,
+        kills: G.kills - k0,
+        pending: DF.CC.pend.length,
+        killedBy: he.kBy,
+      };
+    },
+  },
+  {
+    name: "the hit shows before the host answers",
+    eval: () => {
+      const { G } = DF,
+        co = window.__co;
+      G.manual = true;
+      co.solo({ ping: 200, jit: 10, loss: 2 });
+      DF.DEV.god = true;
+      const net = DF.net(),
+        orig = net.onHit,
+        he = co.husk(37),
+        pe = co.pup(37);
+      co.near(he, 1.6);
+      co.go(1, () => co.face(pe));
+      let seen = null,
+        after = null;
+      net.onHit = (e, dmg, post, o) => {
+        const hp = e.hp,
+          host = co.hostE(e).hp,
+          res = orig(e, dmg, post, o);
+        if (!seen && e === pe)
+          seen = { res, flash: e.flash, hp, hpAfter: e.hp, dmg, host, hostAfter: co.hostE(e).hp, pending: DF.CC.pend.length };
+        return res;
+      };
+      co.go(3, (i) => {
+        co.face(pe);
+        if (i % 30 === 0 && !seen) DF.taps[DF.BIND.light] = true;
+        // the step after: the drawn puppet still shows it, the host has not had it
+        if (seen && !after) after = { hp: pe.hp, host: he.hp, flash: pe.flash };
+        if (after) return false;
+      });
+      net.onHit = orig;
+      DF.DEV.god = false;
+      const ok =
+        !!seen &&
+        seen.res === true &&
+        seen.flash === 1 &&
+        Math.abs(seen.hp - seen.hpAfter - Math.round(seen.dmg * 100) / 100) < 1e-9 &&
+        seen.hostAfter === seen.host &&
+        seen.pending >= 1 &&
+        !!after &&
+        after.hp < seen.hp &&
+        after.host === seen.host;
+      return { pass: ok, seen, after };
+    },
+  },
+  {
+    name: "a spit is flown and judged here",
+    eval: () => {
+      const { G } = DF,
+        co = window.__co;
+      G.manual = true;
+      const r = co.solo({ ping: 200, jit: 10, loss: 2 });
+      DF.DEV.god = false;
+      const p = G.player,
+        h = r.host,
+        hs = h.S.byId.get(2),
+        ps = co.pup(2);
+      p.hp = p.maxHp;
+      co.near(hs, 8);
+      const j0 = co.judged(),
+        near = new Map();
+      let local = false,
+        passed = 0,
+        stopped = 0,
+        drop = 0;
+      co.go(12, (i) => {
+        if (G.projs.some((q) => q.own === "e" && q.src === ps)) local = true;
+        // the host's own copy of each shot: it flies on through the proxy
+        const px = h.S.px.get(1);
+        for (const q of h.G.projs)
+          if (q.own === "e" && !near.has(q) && Math.hypot(q.x - px.x, q.z - px.z) < 0.8) near.set(q, i);
+        for (const [q, at] of near)
+          if (i === at + 2) {
+            if (h.G.projs.includes(q)) passed++;
+            else stopped++;
+          }
+        if (p.hp < p.maxHp && !drop) drop = p.maxHp - p.hp;
+        if (drop && passed + stopped > 0) return false;
+      });
+      co.go(0.5);
+      const px = h.S.px.get(1);
+      return {
+        pass:
+          hs.type === "spit" &&
+          local &&
+          Math.abs(drop - DF.EDEF.spit.atks.shot.dmg) < 1e-9 &&
+          co.judged().hit === j0.hit &&
+          passed >= 1 &&
+          stopped === 0 &&
+          Math.abs(px.hp - p.hp) <= px.maxHp / 255,
+        local,
+        drop,
+        hostShotsPassedProxy: passed,
+        hostShotsStoppedAtProxy: stopped,
+        proxyHp: +px.hp.toFixed(1),
+        hp: +p.hp.toFixed(1),
+      };
+    },
+  },
+  {
+    name: "an execution kills on the host and pays the executor",
+    eval: () => {
+      const { G } = DF,
+        co = window.__co;
+      G.manual = true;
+      co.solo({ ping: 200, jit: 10, loss: 2 });
+      // god mode would keep focus full; the husk stands alone and is staggered
+      DF.DEV.god = false;
+      const p = G.player,
+        he = co.husk(37),
+        pe = co.pup(37);
+      co.near(he, 2);
+      co.go(1, () => co.face(pe));
+      // the host staggers it, and this page shows it
+      Object.assign(he, { state: "stagger", t: 0, dur: 3.0, posture: he.def.posture, token: false });
+      co.go(1, () => (pe.state === "stagger" ? false : undefined));
+      const shown = pe.state;
+      p.focus = 0;
+      const k0 = G.kills;
+      let started = false;
+      co.go(2.5, (i) => {
+        co.face(pe);
+        if (i === 0) DF.taps[DF.BIND.light] = true;
+        if (p.state === "execute") started = true;
+      });
+      DF.DEV.god = false;
+      return {
+        // the execution's 12 and the kill's 6, as single player gives
+        pass: shown === "stagger" && started && he.dead && pe.dead && he.kBy === 1 && p.focus === 12 + 6 && G.kills - k0 === 1,
+        shown,
+        started,
+        hostDead: he.dead,
+        killedBy: he.kBy,
+        focus: p.focus,
+        kills: G.kills - k0,
+      };
+    },
+  },
+  {
+    name: "an execution whose pin lost plays out and gives nothing",
+    eval: () => {
+      const { G } = DF,
+        co = window.__co;
+      G.manual = true;
+      // no loss here: the other player's pin must reach this page in time
+      co.solo({ ping: 200, jit: 10, loss: 0 });
+      // god mode would keep focus and health full
+      DF.DEV.god = false;
+      const p = G.player,
+        he = co.husk(37),
+        pe = co.pup(37);
+      co.near(he, 2);
+      co.go(1, () => co.face(pe));
+      Object.assign(he, { state: "stagger", t: 0, dur: 3.0, posture: he.def.posture, token: false });
+      co.go(1, () => (pe.state === "stagger" ? false : undefined));
+      p.focus = 0;
+      const hp0 = (p.hp = p.maxHp - 30),
+        k0 = G.kills;
+      let started = false,
+        taken = false,
+        skipped = false,
+        ended = false,
+        focus = -1,
+        hp = -1,
+        kills = -1;
+      co.go(1.2, (i) => {
+        co.face(pe);
+        if (i === 0) DF.taps[DF.BIND.light] = true;
+        // the other player's pin reaches the host before this one's
+        if (p.state === "execute" && !started) {
+          started = true;
+          he.pin = 2;
+        }
+        if (DF.net().taken(pe)) {
+          taken = true;
+          if (DF.nearestStaggered() !== pe) skipped = true;
+        }
+        // what it gave, as the execution ends
+        if (started && !ended && p.state !== "execute") {
+          ended = true;
+          focus = p.focus;
+          hp = p.hp;
+          kills = G.kills - k0;
+        }
+      });
+      return {
+        pass: started && ended && taken && skipped && focus === 0 && hp === hp0 && kills === 0 && !pe.dead && !he.dead && he.pin === 2,
+        started,
+        ended,
+        taken,
+        skipped,
+        focus,
+        healed: +(hp - hp0).toFixed(1),
+        kills,
+        puppet: pe.state,
+        host: he.state,
+      };
+    },
+  },
+  {
+    name: "a guessed death the host refuses comes back, and pays once",
+    eval: () => {
+      const { G } = DF,
+        co = window.__co;
+      G.manual = true;
+      co.solo({ ping: 200, jit: 10, loss: 2 });
+      DF.DEV.god = true;
+      const p = G.player,
+        he = co.husk(37),
+        pe = co.pup(37),
+        net = DF.net(),
+        orig = net.onHit;
+      co.near(he, 1.6);
+      co.go(1, () => co.face(pe));
+      // low on health, and shown so here
+      he.hp = 4;
+      co.go(0.6, () => co.face(pe));
+      const shownHp = pe.hp,
+        k0 = G.kills;
+      // a hit here takes the guess to 0; the host heals it before the hit arrives
+      let died = false;
+      net.onHit = (e, ...a) => {
+        const res = orig(e, ...a);
+        if (e === pe) {
+          died = pe.dead;
+          he.hp = 40;
+          net.onHit = orig;
+        }
+        return res;
+      };
+      let back = -1;
+      co.go(3, (i) => {
+        co.face(pe);
+        if (i % 30 === 0 && net.onHit !== orig) DF.taps[DF.BIND.light] = true;
+        if (died && back < 0 && !pe.dead) back = i;
+      });
+      net.onHit = orig;
+      const revived = {
+        dead: pe.dead,
+        state: pe.state,
+        inList: G.enemies.includes(pe),
+        byId: DF.CC.byId.get(37) === pe,
+        hp: +pe.hp.toFixed(2),
+        host: +he.hp.toFixed(2),
+        kills: G.kills - k0,
+      };
+      // killed for real later: no second reward
+      he.hp = 4;
+      co.go(0.6, () => co.face(pe));
+      co.go(3, (i) => {
+        co.face(pe);
+        if (i % 30 === 0) DF.taps[DF.BIND.light] = true;
+        return he.dead && pe.dead ? false : undefined;
+      });
+      co.go(1);
+      DF.DEV.god = false;
+      return {
+        pass:
+          Math.abs(shownHp - 4) < 0.2 &&
+          died &&
+          back > 0 &&
+          !revived.dead &&
+          revived.state !== "dead" &&
+          revived.inList &&
+          revived.byId &&
+          Math.abs(revived.hp - revived.host) < 0.2 &&
+          revived.kills === 1 &&
+          he.dead &&
+          pe.dead &&
+          G.kills - k0 === 1 &&
+          DF.CC.pend.length === 0,
+        shownHp: +shownHp.toFixed(2),
+        died,
+        backAfter: +(back / 60).toFixed(2),
+        revived,
+        finallyDead: [he.dead, pe.dead],
+        kills: G.kills - k0,
+      };
+    },
+  },
+  {
+    name: "the Warden: its slam's ring is drawn, a hit on it is not guessed, and its death opens the gate and clears E",
+    eval: () => {
+      const { G } = DF,
+        co = window.__co;
+      G.manual = true;
+      DF.resetCleared();
+      const r = co.solo({ ping: 200, jit: 10, loss: 2, save: true });
+      DF.DEV.god = false;
+      const p = G.player,
+        h = r.host,
+        hw = [...h.S.byId.values()].find((e) => e.def.boss),
+        pw = co.pup(hw.id),
+        keep = () => {
+          p.hp = p.maxHp;
+          p.stam = p.maxStam;
+        };
+      co.near(hw, 9);
+      co.go(2, keep);
+      const awake = hw.aware;
+      // its slam, forced on the host as the host's own test does
+      Object.assign(hw, { state: "wind", atk: hw.def.atks.slam, t: 0, hitDone: false });
+      let ring = null,
+        evAt = -1;
+      co.go(2.5, () => {
+        keep();
+        if (hw.state === "act" && evAt < 0) evAt = h.S.step / 60;
+        const q = G.rings.find((g) => g.kind === "warn" && g.r === hw.def.atks.slam.radius);
+        if (q && !ring) ring = { x: q.x, z: q.z, rt: DF.CC.rt };
+      });
+      const ringOk = !!ring && Math.hypot(ring.x - hw.tx, ring.z - hw.tz) < 0.02 && ring.rt >= evAt - 1e-6;
+      // a hit on it changes its health here and not its state
+      co.near(hw, hw.r + 1.1);
+      const net = DF.net(),
+        orig = net.onHit;
+      let seen = null;
+      net.onHit = (e, dmg, post, o) => {
+        const st = e.state,
+          t = e.t,
+          hp = e.hp,
+          res = orig(e, dmg, post, o);
+        if (e === pw && !seen) seen = { res, before: st, after: e.state, t0: t, t1: e.t, ov: !!e.ov, drop: +(hp - e.hp).toFixed(2), dmg: +dmg.toFixed(2) };
+        return res;
+      };
+      co.go(6, (i) => {
+        keep();
+        co.face(pw);
+        if (Math.hypot(pw.x - p.x, pw.z - p.z) > hw.r + 1.6) co.near(hw, hw.r + 1.1);
+        if (i % 30 === 0) DF.taps[DF.BIND.light] = true;
+        return seen ? false : undefined;
+      });
+      net.onHit = orig;
+      const notGuessed = !!seen && seen.res === true && seen.before === seen.after && seen.t0 === seen.t1 && !seen.ov && Math.abs(seen.drop - seen.dmg) < 0.01;
+      // its second phase: the roar's ring is drawn here
+      hw.hp = hw.def.hp * 0.5 + 2;
+      let roar = false;
+      co.go(6, (i) => {
+        keep();
+        co.face(pw);
+        if (Math.hypot(pw.x - p.x, pw.z - p.z) > hw.r + 1.6) co.near(hw, hw.r + 1.1);
+        if (i % 30 === 0) DF.taps[DF.BIND.light] = true;
+        if (G.rings.some((g) => g.kind === "shock" && g.r === 9)) roar = true;
+        return roar ? false : undefined;
+      });
+      // its death
+      hw.hp = 1;
+      co.go(0.5, keep);
+      co.go(8, (i) => {
+        keep();
+        co.face(pw);
+        if (!pw.dead && Math.hypot(pw.x - p.x, pw.z - p.z) > hw.r + 1.6) co.near(hw, hw.r + 1.1);
+        if (i % 30 === 0) DF.taps[DF.BIND.light] = true;
+        return G.bossDead ? false : undefined;
+      });
+      co.go(0.5, keep);
+      const res = {
+        awake,
+        ring,
+        ringOk,
+        seen,
+        notGuessed,
+        roar,
+        hostDead: hw.dead,
+        killedBy: hw.kBy,
+        puppetDead: pw.dead,
+        bossDead: G.bossDead,
+        gate: !!G.gate,
+        cleared: DF.gradeCleared("E"),
+      };
+      // the save as it was
+      DF.resetCleared();
+      return {
+        pass:
+          awake && ringOk && notGuessed && roar && res.hostDead && res.killedBy === 1 && res.puppetDead && res.bossDead && res.gate && res.cleared === true && DF.gradeCleared("E") === false,
+        ...res,
+      };
+    },
+  },
+  {
+    name: "a shot, ring, roar or kill that is malformed or names an unknown enemy is ignored",
+    eval: () => {
+      const { G } = DF,
+        co = window.__co;
+      G.manual = true;
+      const r = co.solo({ ping: 50 });
+      // this player is never heard, so nothing on the host hunts them and
+      // any shot, ring or kill here came from the events below
+      DF.net().live = false;
+      co.go(0.5);
+      const h = r.host,
+        send = (ev) => h.send(1, h.wire.eventEncode(ev)),
+        alive = G.enemies.filter((e) => !e.dead).length,
+        k0 = G.kills,
+        ringsOf = () => G.rings.filter((g) => g.kind === "warn" || (g.kind === "shock" && g.r === 9)).length;
+      const bad = [
+        ["shot"],
+        ["shot", 2],
+        ["shot", 9999, 1, 1.25, 1, 1, 1, 13, 0.1],
+        ["shot", 2, "a", 1.25, 1, 1, 1, 13, 0.1],
+        ["shot", 2, 1, 1.25, 1, null, 1, 13, 0.1],
+        ["shot", "2", 1, 1.25, 1, 1, 1, 13, 0.1],
+        ["shot", 2, 1, 1.25, 1, 1, 1, 13],
+        ["ring"],
+        ["ring", 1, 2],
+        ["ring", "x", 1, 5, 0.6, 0.1],
+        ["ring", 1, 1, 5, {}, 0.1],
+        ["roar"],
+        ["roar", 9999, 0.1],
+        ["roar", 46, "t"],
+        ["roar", null, 0.1],
+        ["kill"],
+        ["kill", 9999, 1, 0.1],
+        ["kill", 37, "x", 0.1],
+        ["kill", "37", 1, 0.1],
+        ["kill", 37, 1],
+        ["kill", 37, 1, null],
+      ];
+      for (const ev of bad) send(ev);
+      let threw = null;
+      try {
+        co.go(1);
+      } catch (e) {
+        threw = String(e);
+      }
+      const shots = G.projs.filter((q) => q.own === "e").length;
+      return {
+        pass: !threw && shots === 0 && ringsOf() === 0 && G.enemies.filter((e) => !e.dead).length === alive && G.kills === k0 && !!DF.net(),
+        threw,
+        shots,
+        rings: ringsOf(),
+        alive: [alive, G.enemies.filter((e) => !e.dead).length],
+      };
     },
   },
   {
