@@ -1098,4 +1098,173 @@ check("a Warden execution is a hit: it survives, the pin clears and it recoils f
   assert.equal(w.dead, true);
   assert.deepEqual(named(b, "kill").map((k) => k.slice(0, 3)), [["kill", w.id, 1]]);
 });
+// ---- the Worker driver, with a stand-in for the Worker's global ----
+// sc.advance(sec) moves the clock on and fires the interval once, as a
+// Worker whose timer stalled for that long would.
+function scope() {
+  const sc = { posted: [], timers: [], now: 0, socks: [] };
+  sc.postMessage = (m) => sc.posted.push(m);
+  sc.setInterval = (fn) => sc.timers.push(fn);
+  sc.clearInterval = (id) => (sc.timers[id - 1] = null);
+  sc.performance = { now: () => sc.now };
+  sc.WebSocket = function (url) {
+    const so = {
+      url, readyState: 0, bufferedAmount: 0, sent: [], closed: null,
+      send(b) { so.sent.push(new Uint8Array(b)); },
+      close(code) { so.readyState = 3; so.closed = code; },
+      open() { so.readyState = 1; so.onopen(); },
+      hear(bytes) { so.onmessage({ data: Uint8Array.from(bytes).buffer }); },
+    };
+    sc.socks.push(so);
+    return so;
+  };
+  sc.advance = (sec) => {
+    sc.now += sec * 1000;
+    for (const f of sc.timers) if (f) f();
+  };
+  sc.msg = (data) => sc.onmessage({ data });
+  sc.live = () => sc.timers.some(Boolean);
+  return sc;
+}
+// a Worker host on cave 99 with the page joined (pid 1)
+function workerHost() {
+  const h = loadHost(),
+    sc = scope();
+  h.worker(sc);
+  sc.msg({ start: { seed: 99, grade: "E", relay: "ws://relay.test/", code: "ABCDEF" } });
+  sc.msg(h.wire.eventEncode(["hello", 0, h.v, "fighter"]));
+  return { h, sc, so: sc.socks[0] };
+}
+const evs = (h, list) =>
+  list.filter((b) => b instanceof ArrayBuffer && h.wire.type(b) === 3).map((b) => h.wire.eventDecode(b));
+const snaps = (h, list) => list.filter((b) => b instanceof ArrayBuffer && h.wire.type(b) === 1).length;
+
+check("the Worker driver starts the run, opens the room as its host and joins the page", () => {
+  const { h, sc, so } = workerHost();
+  assert.equal(h.G.enemies.length, 47);
+  assert.equal(h.G.seed, 99);
+  assert.equal(sc.socks.length, 1);
+  assert.equal(so.url, "ws://relay.test/room/ABCDEF");
+  assert.equal(so.binaryType, "arraybuffer");
+  const j = evs(h, sc.posted).find((e) => e[0] === "join");
+  assert.ok(j, "the page's join was posted to it");
+  assert.equal(j[1].pid, 1);
+  assert.ok(sc.live(), "a timer runs");
+  so.open();
+  assert.deepEqual(sc.posted.filter((m) => !(m instanceof ArrayBuffer)), [{ relay: "open" }]);
+  // a second start is ignored
+  sc.msg({ start: { seed: 5, grade: "E", relay: "ws://relay.test", code: "ZZZZZZ" } });
+  assert.equal(h.G.seed, 99);
+  assert.equal(sc.socks.length, 1);
+});
+
+check("the Worker hands the host at most 0.25 s a call, so a stall drops time", () => {
+  const { h, sc } = workerHost();
+  sc.advance(1 / 60);
+  const s0 = h.S.step,
+    n0 = sc.posted.length;
+  sc.advance(5);
+  const steps = h.S.step - s0;
+  assert.ok(steps >= 14 && steps <= 15, "steps after a 5 s stall: " + steps);
+  assert.ok(snaps(h, sc.posted.slice(n0)) <= 5, "snapshots in one call");
+  // and in real time it keeps pace
+  const s1 = h.S.step;
+  for (let i = 0; i < 60; i++) sc.advance(1 / 60);
+  assert.ok(Math.abs(h.S.step - s1 - 60) <= 1, "steps in a second: " + (h.S.step - s1));
+});
+
+check("the friend's frames come and go through the relay with its pid byte; notices never reach the host", () => {
+  const { h, sc, so } = workerHost();
+  so.open();
+  // a friend frame before the relay says it is in is dropped
+  so.hear([2, ...new Uint8Array(h.wire.eventEncode(["hello", 0, h.v, "tanker"]))]);
+  assert.equal(h.S.px.has(2), false);
+  so.hear([0, 1, 2]);
+  so.hear([0, 9, 9]);
+  so.hear([2]);
+  assert.equal(h.S.px.size, 1, "a notice joined nobody");
+  so.hear([2, ...new Uint8Array(h.wire.eventEncode(["hello", 0, h.v, "tanker"]))]);
+  assert.equal(h.S.px.get(2).clsId, "tanker");
+  const toFriend = so.sent.map((b) => b.slice(1).buffer);
+  assert.ok(so.sent.every((b) => b[0] === 2), "every frame to the relay is addressed to pid 2");
+  assert.equal(evs(h, toFriend)[0][0], "join");
+  // the page hears of the friend, with no address byte
+  assert.deepEqual(evs(h, sc.posted).at(-1), ["peer", 2, "tanker"]);
+  // the friend's state moves its proxy
+  so.hear([2, ...new Uint8Array(h.wire.stateEncode({ x: 3, z: 4, yaw: 0, vx: 0, vz: 0, state: "free", t: 0, move: null, hp: 1, maxHp: 1, speed: 0, guardT: 0, sprint: false }))]);
+  assert.equal(h.S.px.get(2).x, 3);
+  // snapshots go to both
+  const p0 = sc.posted.length,
+    f0 = so.sent.length;
+  for (let i = 0; i < 6; i++) sc.advance(1 / 60);
+  assert.equal(snaps(h, sc.posted.slice(p0)), 2);
+  assert.equal(snaps(h, so.sent.slice(f0).map((b) => b.slice(1).buffer)), 2);
+  // a backed-up socket gets events but no snapshots
+  so.bufferedAmount = 1e6;
+  const f1 = so.sent.length;
+  for (let i = 0; i < 6; i++) sc.advance(1 / 60);
+  h.leave(1);
+  const late = so.sent.slice(f1).map((b) => b.slice(1).buffer);
+  assert.equal(snaps(h, late), 0, "no snapshot was queued");
+  assert.deepEqual(evs(h, late), [["peer", 1, null]]);
+  so.bufferedAmount = 0;
+  // the relay says the friend left
+  sc.msg(h.wire.eventEncode(["hello", 0, h.v, "fighter"]));
+  so.hear([0, 2, 2]);
+  assert.equal(h.S.px.has(2), false);
+  assert.deepEqual(evs(h, sc.posted).at(-1), ["peer", 2, null]);
+  const f2 = so.sent.length;
+  for (let i = 0; i < 6; i++) sc.advance(1 / 60);
+  assert.equal(so.sent.length, f2, "nothing for a friend who is not there");
+});
+
+check("a relay socket that closes leaves the run going for the page", () => {
+  const { h, sc, so } = workerHost();
+  so.open();
+  so.hear([0, 1, 2]);
+  so.hear([2, ...new Uint8Array(h.wire.eventEncode(["hello", 0, h.v, "tanker"]))]);
+  so.readyState = 3;
+  so.onerror();
+  so.onclose({ code: 1006 });
+  const notes = sc.posted.filter((m) => !(m instanceof ArrayBuffer));
+  assert.deepEqual(notes, [{ relay: "open" }, { relay: "error" }, { relay: "closed" }]);
+  assert.equal(h.S.px.has(2), false, "the friend left with the socket");
+  const s0 = h.S.step,
+    p0 = sc.posted.length;
+  for (let i = 0; i < 30; i++) sc.advance(1 / 60);
+  assert.ok(h.S.step - s0 >= 29, "the host steps on");
+  assert.ok(snaps(h, sc.posted.slice(p0)) >= 9, "the page still gets snapshots");
+  // a relay that cannot be reached at all
+  const h2 = loadHost(),
+    sc2 = scope();
+  sc2.WebSocket = function () {
+    throw new SyntaxError("bad url");
+  };
+  h2.worker(sc2);
+  sc2.msg({ start: { seed: 99, grade: "E", relay: "nonsense", code: "ABCDEF" } });
+  assert.deepEqual(sc2.posted, [{ relay: "error" }, { relay: "closed" }]);
+  assert.ok(sc2.live());
+});
+
+check("stop closes the socket, stops the timer and hears nothing more; so does the end of the run", () => {
+  const { h, sc, so } = workerHost();
+  so.open();
+  sc.msg({ stop: true });
+  assert.equal(so.closed, 1000);
+  assert.equal(sc.live(), false);
+  assert.deepEqual(sc.posted.at(-1), { stopped: true });
+  assert.equal(h.S.px.size, 0, "the page left");
+  const n = sc.posted.length;
+  sc.msg(h.wire.eventEncode(["hello", 0, h.v, "fighter"]));
+  assert.equal(sc.posted.length, n);
+  // the end of the run: the gate once the boss is dead
+  const b = workerHost();
+  b.so.open();
+  b.h.G.bossDead = true;
+  b.sc.msg(b.h.wire.eventEncode(["gate", 1]));
+  assert.deepEqual(evs(b.h, b.sc.posted).at(-1)[0], "end");
+  b.sc.advance(1 / 60);
+  assert.equal(b.so.closed, 1000, "the socket closed");
+  assert.equal(b.sc.live(), false, "the timer stopped");
+});
 done();

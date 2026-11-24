@@ -414,7 +414,124 @@ const COOP_HOST = COOP_HEADLESS_HERE
           if (S.step % COOP.SNAP_EVERY === 0) for (const px of S.px.values()) snap(px);
         }
       };
-      const none = () => {};
+      // The Worker driver: the host as it runs in a Worker in the host's page.
+      // scope is the Worker's global (or a stand-in in a test); only this
+      // reads WebSocket, setInterval and performance, from scope or else the
+      // global. The page posts { start: { seed, grade, relay, code } } once,
+      // then this player's frames as ArrayBuffers (pid 1), and { stop: true }
+      // when co-op ends there. Frames for pid 1 go back by postMessage; pid
+      // 2 is the friend, through the relay socket opened as the room's host:
+      // its frames arrive with its pid byte in front and go out with it. The
+      // relay's own frames (first byte 0) are read here and never reach recv.
+      // The page is told { relay: "open" | "error" | "closed" } as the socket
+      // changes; when it closes the run goes on for the page alone. Once the
+      // run has ended the socket is closed and the timer stopped.
+      function worker(scope) {
+        const glob = typeof globalThis !== "undefined" ? globalThis : {},
+          WS = scope.WebSocket || glob.WebSocket,
+          every = scope.setInterval ? scope.setInterval.bind(scope) : glob.setInterval,
+          stopEvery = scope.clearInterval ? scope.clearInterval.bind(scope) : glob.clearInterval,
+          perf = scope.performance || glob.performance;
+        let ws = null,
+          timer = null,
+          last = 0,
+          friend = false, // the relay has said pid 2 is in the room
+          done = false;
+        const post = (m, tr) => {
+          try {
+            scope.postMessage(m, tr);
+          } catch (e) {
+            /* the page is gone */
+          }
+        };
+        host.send = (pid, buf) => {
+          if (done) return;
+          if (pid === 1) return post(buf, [buf]);
+          if (pid !== 2 || !friend || !ws || ws.readyState !== 1) return;
+          // after a stall the socket's queue is not added to, but for events
+          if (ws.bufferedAmount > COOP.SOCK_FULL && coopType(buf) !== COOP.EVENT) return;
+          const out = new Uint8Array(buf.byteLength + 1);
+          out[0] = 2;
+          out.set(new Uint8Array(buf), 1);
+          try {
+            ws.send(out.buffer);
+          } catch (e) {
+            /* closing */
+          }
+        };
+        const shut = () => {
+          if (ws) {
+            const w = ws;
+            ws = null;
+            w.onclose = w.onmessage = w.onerror = null;
+            try {
+              w.close(1000);
+            } catch (e) {
+              /* already closed */
+            }
+          }
+          if (timer !== null) stopEvery(timer);
+          timer = null;
+        };
+        // A relay frame: a notice, or the friend's frame behind its pid byte.
+        const fromRelay = (data) => {
+          if (!(data instanceof ArrayBuffer) || data.byteLength < 1) return;
+          const b = new Uint8Array(data);
+          if (b[0] === 0) {
+            if (b[1] === 1 && b[2] === 2) friend = true;
+            else if (b[1] === 2 && b[2] === 2) {
+              friend = false;
+              leave(2);
+            }
+          } else if (b[0] === 2 && b.length > 1 && friend) recv(2, data.slice(1));
+        };
+        const open = (url) => {
+          try {
+            ws = new WS(url);
+          } catch (e) {
+            ws = null;
+            post({ relay: "error" });
+            post({ relay: "closed" });
+            return;
+          }
+          ws.binaryType = "arraybuffer";
+          ws.onopen = () => post({ relay: "open" });
+          ws.onmessage = (ev) => fromRelay(ev.data);
+          ws.onerror = () => post({ relay: "error" });
+          ws.onclose = () => {
+            ws = null;
+            if (friend) leave(2);
+            friend = false;
+            post({ relay: "closed" });
+          };
+        };
+        // Real elapsed time, never more than COOP.TICK_MAX a call: a Worker
+        // that stalls loses the time rather than sending a backlog.
+        const step = () => {
+          const t = perf.now(),
+            dt = (t - last) / 1000;
+          last = t;
+          if (dt > 0) tick(Math.min(dt, COOP.TICK_MAX));
+          if (S.ended) shut();
+        };
+        scope.onmessage = (ev) => {
+          const d = ev.data;
+          if (done) return;
+          if (d instanceof ArrayBuffer) recv(1, d);
+          else if (d && d.start && timer === null && !S.ended) {
+            const o = d.start;
+            start({ seed: o.seed, grade: o.grade || "E" });
+            last = perf.now();
+            timer = every(step, 1000 / 60);
+            if (o.relay && o.code) open(String(o.relay).replace(/\/+$/, "") + "/room/" + o.code);
+          } else if (d && d.stop) {
+            leave(1);
+            shut();
+            done = true;
+            post({ stopped: true });
+          }
+        };
+      }
       const host = {
         v: COOP_V,
         start,
@@ -425,7 +542,7 @@ const COOP_HOST = COOP_HEADLESS_HERE
         send: null,
         G,
         S,
-        worker: none,
+        worker,
         sum: coopWorldSum,
         wire: {
           type: coopType,

@@ -11,9 +11,10 @@ const SCREENS = [
   "class",
   "controls",
   "howto",
+  "coop",
 ];
 // screens opened on top of the title or pause screen, which Back returns to
-const MENUS = ["class", "controls", "howto"];
+const MENUS = ["class", "controls", "howto", "coop"];
 let menuBack = "title",
   rebind = null,
   swallowClick = false;
@@ -97,6 +98,7 @@ function openMenu(which) {
   if (which === "controls") renderControls();
   else if (which === "class") renderPicker();
   show(which);
+  if (which === "coop") coopRoomOpen();
 }
 
 // ---- class picker ----
@@ -391,6 +393,7 @@ function boot() {
   HUD.init();
   TOUCH.init();
   PAD.init();
+  coopUiInit();
   enterHub();
   renderPicker();
   renderControls();
@@ -465,7 +468,11 @@ function boot() {
         play();
       } else if (G.state === "pause" || G.state === "title") play();
     }
-    if (e.code === "Escape" && MENUS.includes(G.state)) show(menuBack);
+    if (e.code === "Escape" && MENUS.includes(G.state)) {
+      // leaving the room screen ends a room not yet entered, as its Back does
+      if (G.state === "coop") coopLeaveRoom();
+      show(menuBack);
+    }
   });
   addEventListener("keyup", (e) => {
     keys[e.code] = false;
@@ -771,6 +778,12 @@ window.DF = {
   coopEnd,
   coopMakeHost,
   coopSay,
+  coopWorldSum,
+  coopButton,
+  // tests: the relay's address, a stand-in for location, the next hosted seed
+  coopRelay: (url) => (COOP_RELAY = url || ""),
+  coopLoc: (loc) => (CR.loc = loc || null),
+  coopSeed: (seed) => (CR.seed = seed === null || seed === undefined ? null : seed),
   sim(sec, each) {
     const n = Math.round(sec * 60);
     for (let i = 0; i < n; i++) {

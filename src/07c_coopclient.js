@@ -93,12 +93,153 @@ const COOP_GLIDE = 1.4,
 function coopMakeHost() {
   return new Function("localStorage", "document", "window", "navigator", COOP_HOST_SRC)();
 }
+// The class co-op plays for a class id: itself when it is a base class, else
+// the first base class. The host maps a hello's class the same way.
+function coopBaseCls(id) {
+  return Object.hasOwn(CLASSES, id) && !CLASSES[id].hidden
+    ? id
+    : CLASS_IDS.find((k) => !CLASSES[k].hidden);
+}
+
+// The host in a Worker on this page, from the same source, with its link.
+// The link's send transfers the buffer. close() asks the Worker to stop
+// (it closes its relay socket) and terminates it once it says it has, or
+// after half a second. link.onrelay(state) hears the Worker's relay socket
+// change ("open", "error", "closed"). A Worker that fails to start closes
+// the link with "worker". Throws when no Worker can be made.
+function coopWorkerLink() {
+  const url = URL.createObjectURL(
+    new Blob(
+      ["(function(localStorage,document,window,navigator){" + COOP_HOST_SRC + "})().worker(self);"],
+      { type: "text/javascript" },
+    ),
+  );
+  let worker;
+  try {
+    worker = new Worker(url);
+  } catch (e) {
+    URL.revokeObjectURL(url);
+    throw e;
+  }
+  let done = false,
+    heard = false,
+    gone = null;
+  const end = () => {
+    clearTimeout(gone);
+    worker.terminate();
+    URL.revokeObjectURL(url);
+  };
+  const link = {
+    onmessage: null,
+    onclose: null,
+    onrelay: null,
+    send(buf) {
+      if (done) return;
+      try {
+        worker.postMessage(buf, [buf]);
+      } catch (e) {
+        /* terminated */
+      }
+    },
+    close() {
+      if (done) return;
+      done = true;
+      try {
+        worker.postMessage({ stop: true });
+      } catch (e) {
+        /* terminated */
+      }
+      gone = setTimeout(end, 500);
+    },
+  };
+  worker.onmessage = (ev) => {
+    const d = ev.data;
+    heard = true;
+    if (d instanceof ArrayBuffer) {
+      if (!done && link.onmessage) link.onmessage(d);
+    } else if (d && d.stopped) {
+      if (done) end();
+    } else if (d && typeof d.relay === "string" && !done && link.onrelay) link.onrelay(d.relay);
+  };
+  // only a Worker that never started is fatal; a later error is its own
+  worker.onerror = () => {
+    if (heard || done) return;
+    done = true;
+    end();
+    if (link.onclose) link.onclose("worker");
+  };
+  return { link, worker };
+}
+
+// The friend's link to the host through the relay at url (…/room/CODE). Game
+// frames pass through both ways; the relay's own frames do not: [0, 2], the
+// host leaving, closes the link (and this socket), and [0, 1] is ignored.
+// Events sent before the socket opens wait for it; once open, a state frame
+// is dropped rather than queued while the socket is backed up. onclose(why)
+// says why it closed: "noroom" (4004), "full" (4001) or "relay" (anything
+// else, a failed socket included).
+function coopSocketLink(url) {
+  const ws = new WebSocket(url);
+  ws.binaryType = "arraybuffer";
+  let done = false;
+  const early = [];
+  const link = {
+    onmessage: null,
+    onclose: null,
+    send(buf) {
+      if (done) return;
+      const ev = coopType(buf) === COOP.EVENT;
+      if (ws.readyState === 0) {
+        if (ev) early.push(buf);
+      } else if (ws.readyState === 1 && (ev || ws.bufferedAmount <= COOP.SOCK_FULL)) {
+        try {
+          ws.send(buf);
+        } catch (e) {
+          /* closing */
+        }
+      }
+    },
+    close() {
+      if (done) return;
+      done = true;
+      ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
+      try {
+        ws.close(1000);
+      } catch (e) {
+        /* already closed */
+      }
+    },
+  };
+  const fin = (why) => {
+    if (done) return;
+    const f = link.onclose;
+    link.close();
+    if (f) f(why);
+  };
+  ws.onopen = () => {
+    for (const b of early.splice(0)) link.send(b);
+  };
+  ws.onmessage = (ev) => {
+    const d = ev.data;
+    if (done || !(d instanceof ArrayBuffer) || d.byteLength < 1) return;
+    if (new Uint8Array(d)[0] === 0) {
+      if (new Uint8Array(d)[1] === 2) fin("relay");
+      return;
+    }
+    if (link.onmessage) link.onmessage(d);
+  };
+  ws.onerror = () => {};
+  ws.onclose = (ev) => fin(ev.code === 4004 ? "noroom" : ev.code === 4001 ? "full" : "relay");
+  return link;
+}
 
 // Joins the host at the other end of link as class cls. On the join event
 // the cave is built and the puppets made, and NET is set with live false;
 // coopEnter() then lets this player into it. drive(dt), if given, is called
 // every frame to pump a hand-stepped host and link. onRefuse(why) is called
-// with "version" or "cave" when the run cannot go ahead here.
+// with the reason when the run cannot go ahead here: "version" or "cave"
+// from the host or the join, or the reason a link gives for closing before
+// the join was applied. Once it has been, a closed link is the host leaving.
 function coopBegin(link, { cls, drive = null, onRefuse = null } = {}) {
   if (NET || CC.link) coopEnd("restart");
   coopClear();
@@ -110,8 +251,10 @@ function coopBegin(link, { cls, drive = null, onRefuse = null } = {}) {
   link.onmessage = (buf) => {
     if (CC.link === link) coopRecv(buf);
   };
-  link.onclose = () => {
-    if (CC.link === link) coopEnd("host");
+  link.onclose = (why) => {
+    if (CC.link !== link) return;
+    if (NET) coopEnd("host");
+    else coopRefuse(typeof why === "string" ? why : "relay");
   };
   link.send(coopEventEncode(["hello", 0, COOP_V, cls]));
 }
@@ -219,6 +362,13 @@ function coopJoin(j) {
   enterCave(j.grade, j.seed);
   CC.world = G.world;
   if (coopWorldSum(G.world) !== j.sum) return coopRefuse("cave");
+  // a hidden class plays as the first base class, as on the host; the save
+  // keeps it
+  const cls = coopBaseCls(CC.cls);
+  if (cls && G.player.clsId !== cls) {
+    G.player = makePlayer(cls);
+    snapCam();
+  }
   CC.pid = j.pid;
   CC.heard = CC.now;
   coopPuppets(j);
@@ -854,11 +1004,7 @@ function coopPeer(pid, cls) {
     i = ms.findIndex((m) => m.pid === pid);
   if (i >= 0) ms.splice(i, 1);
   if (cls === null || pid === CC.pid) return;
-  const id =
-    Object.hasOwn(CLASSES, cls) && !CLASSES[cls].hidden
-      ? cls
-      : Object.keys(CLASSES).find((k) => !CLASSES[k].hidden);
-  const m = makePlayer(id);
+  const m = makePlayer(coopBaseCls(cls));
   // away until a snapshot says otherwise: the host has not heard it yet
   Object.assign(m, { remote: true, pid, nb: [], away: true, ddur: m.cls.dodge.dur, swing: null });
   ms.push(m);

@@ -583,6 +583,93 @@
         color: var(--ember);
         font-size: 18px;
         margin: 0;
+        max-width: 60ch;
+      }
+      /* the room screen */
+      #btnCoop[hidden],
+      #coopPick[hidden],
+      #coopRoom[hidden],
+      #coopEnter[hidden] {
+        display: none;
+      }
+      #coopPick {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: stretch;
+        gap: 14px 28px;
+      }
+      .coopjoin {
+        display: flex;
+        gap: 10px;
+      }
+      #coopCode {
+        width: 7.5em;
+        box-sizing: border-box;
+        font-family: var(--display);
+        font-size: 22px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--bone);
+        background: rgba(5, 7, 12, 0.6);
+        border: 1px solid var(--dim);
+        padding: 10px 12px;
+      }
+      #coopCode:focus-visible {
+        outline: 2px solid var(--vein);
+        outline-offset: 2px;
+      }
+      #coopRoom {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px 18px;
+      }
+      #coopRoom .lbl {
+        flex-basis: 100%;
+        color: var(--dim);
+        font-size: 16px;
+        letter-spacing: 0.06em;
+      }
+      #coopShow {
+        font-family: var(--display);
+        font-size: clamp(40px, 7vw, 72px);
+        line-height: 1;
+        letter-spacing: 0.18em;
+        color: var(--bone);
+        user-select: all;
+        -webkit-user-select: all;
+        cursor: text;
+      }
+      #coopSlots {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      #coopSlots .slot {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 170px;
+        padding: 8px 14px;
+        border: 1px solid rgba(232, 226, 212, 0.25);
+        background: rgba(5, 7, 12, 0.5);
+      }
+      #coopSlots .slot span {
+        color: var(--dim);
+        font-size: 14px;
+      }
+      #coopSlots .slot b {
+        font-family: var(--display);
+        font-weight: 400;
+        font-size: 22px;
+        letter-spacing: 0.06em;
+        color: var(--bone);
+      }
+      #coopSlots .slot:not([data-cls]) b {
+        color: var(--dim);
+      }
+      body.touch #coopCode {
+        min-height: 44px;
       }
       /* the Flask and Tool buttons show these counts; only the readout stays,
          on one line, so it cannot wrap out of the vitals box */
@@ -1231,6 +1318,23 @@
         .opts {
           gap: 12px;
         }
+        #coopShow {
+          font-size: 40px;
+        }
+        #coopCode {
+          font-size: 18px;
+          padding: 6px 10px;
+        }
+        #coopPick {
+          gap: 8px 20px;
+        }
+        #coopSlots .slot {
+          min-width: 140px;
+          padding: 4px 10px;
+        }
+        #coopSlots .slot b {
+          font-size: 18px;
+        }
       }
     </style>
   </head>
@@ -1299,7 +1403,8 @@
       <div class="row">
         <button id="btnPlay" type="button" data-padfirst>Enter the hall</button
         ><button type="button" data-open="howto">How to play</button
-        ><button type="button" data-open="controls">Controls</button>
+        ><button type="button" data-open="controls">Controls</button
+        ><button id="btnCoop" type="button" hidden>Play with a friend</button>
       </div>
     </div>
     <div id="scr-pause" class="scr">
@@ -1461,6 +1566,38 @@
         </li>
       </ul>
       <div class="row"><button type="button" data-back="1">Back</button></div>
+    </div>
+    <div id="scr-coop" class="scr wide">
+      <h1 class="sm">Play with a friend</h1>
+      <p class="sub">
+        One of you hosts a room and sends the other its code. You play the
+        class chosen on the title screen.
+      </p>
+      <div id="coopPick">
+        <button id="coopHost" type="button" data-padfirst>Host a room</button>
+        <div class="coopjoin">
+          <input
+            id="coopCode"
+            type="text"
+            maxlength="12"
+            autocomplete="off"
+            autocapitalize="characters"
+            spellcheck="false"
+            placeholder="CODE"
+            aria-label="Room code"
+          /><button id="coopJoin" type="button">Join with a code</button>
+        </div>
+      </div>
+      <div id="coopRoom" hidden>
+        <span class="lbl">Room code</span>
+        <output id="coopShow" aria-label="Room code"></output>
+        <button id="coopCopy" type="button">Copy</button>
+      </div>
+      <div id="coopSlots"></div>
+      <div class="row">
+        <button id="coopEnter" type="button" hidden disabled>Start</button
+        ><button type="button" data-back="1">Back</button>
+      </div>
     </div>
     <div id="scr-dead" class="scr">
       <h1 class="red">You fell</h1>

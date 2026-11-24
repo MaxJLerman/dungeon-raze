@@ -17,6 +17,11 @@ const COOP = {
   GONE: 10, // seconds of silence before a player leaves
   STICK: 3, // target hysteresis, metres
   MAX_DMG: 500,
+  // A relay socket with more than this many bytes still queued drops snapshot
+  // and state frames rather than queue them (events still go): a backlog sent
+  // in one burst after a stall would pass the relay's 120 frames a second.
+  SOCK_FULL: 8192,
+  TICK_MAX: 0.25, // the most elapsed time the Worker hands the host in one call
 };
 // True only in the host copy, whose build declares COOP_HEADLESS first.
 const COOP_HEADLESS_HERE = typeof COOP_HEADLESS !== "undefined";
