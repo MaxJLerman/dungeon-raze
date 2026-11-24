@@ -20,3 +20,16 @@ const COOP = {
 };
 // True only in the host copy, whose build declares COOP_HEADLESS first.
 const COOP_HEADLESS_HERE = typeof COOP_HEADLESS !== "undefined";
+
+// FNV-1a, 32 bits, over the bytes of the world's vertex positions. Two browsers
+// that build the same cave from a seed must get the same string.
+function coopWorldSum(world) {
+  const pos = world.pos;
+  const b = new Uint8Array(pos.buffer, pos.byteOffset, pos.byteLength);
+  let h = 0x811c9dc5;
+  for (let i = 0; i < b.length; i++) {
+    h ^= b[i];
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0");
+}

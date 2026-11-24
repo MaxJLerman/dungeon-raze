@@ -16,4 +16,16 @@ check("two host copies do not share state", () => {
   b.start({ seed: 7, grade: "E" });
   assert.notEqual(a.G.world, b.G.world);
 });
+check("coopWorldSum of cave 99 is the same on two fresh host copies", () => {
+  const a = loadHost(),
+    b = loadHost();
+  a.start({ seed: 99, grade: "E" });
+  b.start({ seed: 99, grade: "E" });
+  const sa = a.sum(a.G.world),
+    sb = b.sum(b.G.world);
+  assert.match(sa, /^[0-9a-f]{8}$/);
+  assert.equal(sa, sb);
+  b.start({ seed: 7, grade: "E" });
+  assert.notEqual(b.sum(b.G.world), sa);
+});
 done();

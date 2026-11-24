@@ -17,6 +17,7 @@ const COOP_HOST = COOP_HEADLESS_HERE
         G,
         S,
         worker: none,
+        sum: coopWorldSum,
       };
     })()
   : null;
