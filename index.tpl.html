@@ -577,8 +577,16 @@
       #coopWait[hidden],
       #pauseCoop[hidden],
       #pauseCode[hidden],
+      #pauseInvite[hidden],
       #coopMsg[hidden] {
         display: none;
+      }
+      /* the host's copy buttons: laid out as a .row, but not one, so the
+         pause screen's .row is still its menu */
+      #pauseInvite {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
       }
       #pauseCodeV {
         font-family: var(--display);
@@ -597,6 +605,8 @@
       /* the room screen */
       #coopPick[hidden],
       #coopRoom[hidden],
+      #coopCls[hidden],
+      #coopClsLbl[hidden],
       #coopEnter[hidden] {
         display: none;
       }
@@ -1280,7 +1290,8 @@
           font-size: 18px;
           padding: 6px 20px;
         }
-        .row {
+        .row,
+        #pauseInvite {
           gap: 8px;
         }
         .picker {
@@ -1415,8 +1426,12 @@
       <h1>Paused</h1>
       <p class="sub" id="pauseCoop" hidden>The dungeon does not pause in co-op.</p>
       <p class="sub" id="pauseCode" hidden>Room code <span id="pauseCodeV"></span></p>
+      <div id="pauseInvite" hidden>
+        <button id="pauseCopy" type="button">Copy code</button
+        ><button id="pauseCopyLink" type="button">Copy invite link</button>
+      </div>
       <div class="row">
-        <button id="btnResume" type="button">Resume</button
+        <button id="btnResume" type="button" data-padfirst>Resume</button
         ><button type="button" data-open="class">Change class</button
         ><button type="button" data-open="howto">How to play</button
         ><button type="button" data-open="controls">Controls</button
@@ -1579,8 +1594,8 @@
     <div id="scr-coop" class="scr wide">
       <h1 class="sm">Play online</h1>
       <p class="sub" id="coopSub">
-        One of you hosts a room and sends the other its code. You play the
-        class you just chose.
+        One of you hosts a room and sends the other its code or invite link.
+        You each choose a class in the room.
       </p>
       <div id="coopPick">
         <button id="coopHost" type="button" data-padfirst>Host a room</button>
@@ -1600,13 +1615,18 @@
       <div id="coopRoom" hidden>
         <span class="lbl">Room code</span>
         <output id="coopShow" aria-label="Room code"></output>
-        <button id="coopCopy" type="button">Copy</button>
+        <button id="coopCopy" type="button">Copy code</button>
+        <button id="coopCopyLink" type="button">Copy invite link</button>
       </div>
       <div id="coopSlots"></div>
       <div class="row">
         <button id="coopEnter" type="button" hidden disabled>Start</button
         ><button type="button" data-back="1">Back</button>
       </div>
+      <p class="sub" id="coopClsLbl" hidden>
+        Choose your class. You can change it later from the pause screen.
+      </p>
+      <div id="coopCls" class="picker" hidden></div>
     </div>
     <div id="scr-dead" class="scr">
       <h1 class="red">You fell</h1>

@@ -3,10 +3,11 @@
 // as a thin bar under this player's vitals (#mateBar), "Waiting for the host"
 // over the game while snapshots have stopped (#coopWait), the pause screen's
 // note that the dungeon runs on (#pauseCoop) and, for the host, its room code
-// (#pauseCode), the room screen (#scr-coop)
-// and its line of news (#coopMsg). All but the last two are hidden whenever
-// NET is null. The room screen is reached from the main menu's Play online
-// button, by way of the class screen (09_main.js).
+// (#pauseCode) with its copy buttons (#pauseInvite), the room screen
+// (#scr-coop) and its line of news (#coopMsg). All but the last two are
+// hidden whenever NET is null. The room screen is reached from the main
+// menu's Play online button (09_main.js), or at once from an invite link
+// (?room=CODE), and holds the class cards once a room is up.
 
 // The deployed relay's wss:// address, set when the owner deploys it
 // (relay/README.md). Empty, co-op says it cannot reach the relay. POST /new
@@ -81,18 +82,72 @@ function coopRoomLive() {
 function coopRoomClear() {
   Object.assign(CR, { role: null, link: null, code: "", busy: false, relay: false });
 }
-// The room screen has just opened: its line of news starts empty, and its
-// first line names the class this page plays, which is not the one chosen
-// when that one is hidden.
+// The room screen has just opened: its line of news starts empty, and
+// Host a room is where a pad starts (an invite moves that to Join).
 function coopRoomOpen() {
   coopSay("");
-  const mine = coopMyCls();
-  $("coopSub").textContent =
-    "One of you hosts a room and sends the other its code. " +
-    (mine === OPT.cls
-      ? "You play the class you just chose."
-      : "The " + CLASSES[OPT.cls].name + " cannot play online yet, so you play the " + CLASSES[mine].name + ".");
+  coopPadFirst(false);
   coopRoomRender();
+}
+// The room screen's first line: how a room is shared and where the class is
+// chosen, naming the class this page plays when the saved one is hidden.
+function coopSubText() {
+  const mine = coopMyCls();
+  return (
+    "One of you hosts a room and sends the other its code or invite link. " +
+    (mine === OPT.cls
+      ? "You each choose a class in the room."
+      : "The " + CLASSES[OPT.cls].name + " cannot play online yet, so you play the " + CLASSES[mine].name +
+        " unless you choose another in the room.")
+  );
+}
+// Where a pad's focus starts on the room screen: Join for an invite, else
+// Host a room.
+function coopPadFirst(join) {
+  $("coopHost").toggleAttribute("data-padfirst", !join);
+  $("coopJoin").toggleAttribute("data-padfirst", join);
+}
+// The address a friend opens to land on the room screen with the code
+// filled in: this page's own, with ?room=CODE.
+const coopInviteUrl = (code) => location.href.split(/[?#]/)[0] + "?room=" + code;
+// The code an address's query carries (?room=CODE), tidied, or "" when it
+// has none or it is not a code.
+function coopInviteCode(search) {
+  const m = /[?&]room=([^&#]*)/i.exec(String(search || ""));
+  let code = "";
+  try {
+    code = m ? coopTidy(decodeURIComponent(m[1])) : "";
+  } catch (e) {
+    code = "";
+  }
+  return COOP_CODE_RE.test(code) ? code : "";
+}
+// An invite link was opened (boot passes location.search): the room screen,
+// as Play online opens it, with the code filled in and Join the control in
+// hand. Nothing is sent until Join is pressed. A page that cannot play
+// co-op says so on the main menu instead. True when the screen opened.
+function coopInvite(search) {
+  const code = coopInviteCode(search);
+  if (!code) return false;
+  playOnline();
+  if (G.state !== "coop") return false;
+  $("coopCode").value = code;
+  coopPadFirst(true);
+  try {
+    $("coopJoin").focus();
+  } catch (e) {
+    /* nothing to focus */
+  }
+  return true;
+}
+// A class card was picked in a co-op run, on the room screen or on the
+// class screen from the pause menu (setClass has run, so the save and this
+// page's player are that class): the host is asked to make this player's
+// proxy the same, and tells the other player.
+function coopClsPicked() {
+  if (!NET || !NET.client) return;
+  CC.cls = G.player.clsId;
+  coopAsk("cls", CC.cls);
 }
 // Ends a room that was not entered (Back on the room screen) and drops
 // anything still on its way. A cave built by the join goes with it, and so
@@ -180,25 +235,54 @@ function coopEnterRoom() {
   coopEnter();
   play();
 }
-function coopCopy() {
-  const code = CR.code,
-    b = $("coopCopy");
-  if (!code) return;
-  const done = () => {
-    b.textContent = "Copied";
-    setTimeout(() => (b.textContent = "Copy"), 1500);
+// A copy button's click: text goes to the clipboard and the button says so
+// for a moment. Where the browser refuses the clipboard the older copy
+// command is tried, and where that fails too the button says so and the
+// code shown beside it (shown) is selected, for a copy by hand.
+function coopCopy(b, text, shown) {
+  if (!text) return;
+  const label = b.dataset.label || (b.dataset.label = b.textContent);
+  const say = (t) => {
+    b.textContent = t;
+    clearTimeout(b.copyT);
+    b.copyT = setTimeout(() => (b.textContent = label), 1500);
+  };
+  const miss = () => {
+    if (coopCopyOld(text)) return say("Copied");
+    say("Could not copy");
+    coopSelect(shown);
   };
   try {
-    navigator.clipboard.writeText(code).then(done, () => coopSelectCode());
+    navigator.clipboard.writeText(text).then(() => say("Copied"), miss);
   } catch (e) {
-    coopSelectCode();
+    miss();
   }
 }
-// selects the code on screen, for a copy by hand
-function coopSelectCode() {
+// The copy command of browsers that refuse navigator.clipboard (a page not
+// in focus, an older browser). True when it says it copied.
+function coopCopyOld(text) {
+  const t = document.createElement("textarea"),
+    was = document.activeElement;
+  let ok = false;
+  try {
+    t.value = text;
+    t.setAttribute("readonly", "");
+    t.style.cssText = "position:fixed;left:0;top:0;opacity:0";
+    document.body.appendChild(t);
+    t.select();
+    ok = document.execCommand("copy");
+  } catch (e) {
+    ok = false;
+  }
+  t.remove();
+  if (was && was.focus) was.focus();
+  return ok;
+}
+// selects a code on screen, for a copy by hand
+function coopSelect(el) {
   try {
     const r = document.createRange();
-    r.selectNodeContents($("coopShow"));
+    r.selectNodeContents(el);
     const s = getSelection();
     s.removeAllRanges();
     s.addRange(r);
@@ -216,8 +300,13 @@ function coopRoomRender() {
     mate = joined && NET.mates.length ? NET.mates[0] : null,
     ready = joined && (host || CC.started),
     enter = $("coopEnter");
+  const sub = coopSubText();
+  if ($("coopSub").textContent !== sub) $("coopSub").textContent = sub;
   $("coopPick").hidden = live;
   $("coopRoom").hidden = !live || !CR.code || !host;
+  // the class cards: once in the room (below Start and Back, so those
+  // stay in reach on a short screen)
+  $("coopCls").hidden = $("coopClsLbl").hidden = !joined;
   if ($("coopShow").textContent !== CR.code) $("coopShow").textContent = CR.code;
   enter.hidden = !live;
   enter.disabled = !ready;
@@ -245,7 +334,14 @@ function coopUiInit() {
     }
   });
   $("coopEnter").addEventListener("click", coopEnterRoom);
-  $("coopCopy").addEventListener("click", coopCopy);
+  // the room's code and its invite link, on the room screen and, for a
+  // host in the run, on the pause screen
+  for (const [id, shown] of [["coop", "coopShow"], ["pause", "pauseCodeV"]]) {
+    $(id + "Copy").addEventListener("click", (e) => coopCopy(e.currentTarget, CR.code, $(shown)));
+    $(id + "CopyLink").addEventListener("click", (e) =>
+      coopCopy(e.currentTarget, CR.code && coopInviteUrl(CR.code), $(shown)),
+    );
+  }
 }
 
 // Called from HUD.update every frame. The wait is measured in real time
@@ -267,6 +363,7 @@ function coopHud() {
   // the host's room code on the pause screen, while its relay socket is up
   const code = run && CR.role === "host" && CR.relay && coopRoomLive() && CC.link === CR.link ? CR.code : "";
   $("pauseCode").hidden = !code;
+  $("pauseInvite").hidden = !code;
   if ($("pauseCodeV").textContent !== code) $("pauseCodeV").textContent = code;
   if (G.state === "coop") coopRoomRender();
 }

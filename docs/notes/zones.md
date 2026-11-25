@@ -68,24 +68,29 @@
   `SCREENS`.
 - **The main menu** is the `title` state (`#scr-title`): `#btnSolo` "Play
   solo", `#btnCoop` "Play online", How to play and Controls, and no class
-  picker. Both Play buttons open the class screen with
-  `openMenu("class", why)`, `why` being `"solo"` or `"online"`; the pause
-  screen's Change class calls `openMenu("class")` with none. `classFor`
-  holds it (`null` from pause) and `classRender()` sets the screen from it:
-  from a Play button the forward button `#btnPlay` shows ("Enter the hall"
-  or "Continue", with `data-padfirst`) and the mid-run line `#classSub` is
-  hidden; from pause it is the other way round. `classGo()` is the button's
-  click: `play()` for solo (after clearing a co-op line left on the main
-  menu), `openMenu("coop")` for online. Back from the class screen goes to
-  where it was opened from: the main menu when a Play button opened it, the
-  pause screen otherwise. Back from the room screen goes to the main menu,
-  not the class screen, because `menuBack` keeps one level. With nothing
-  focused, Enter or Space on the main menu does what Play solo does, and on
-  the class screen a Play button opened it does what the forward button
-  does. `#btnCoop`'s click is `playOnline()`: a page `coopCheck()` refuses
-  (a file, another site's copy, no relay) is told why on the main menu and
-  goes no further. Open the class screen through `openMenu`, never
-  `show("class")`, or `classFor` is stale.
+  picker. Play solo opens the class screen with `openMenu("class",
+  "solo")`; the pause screen's Change class calls `openMenu("class")` with
+  no reason. `classFor` holds it (`"solo"`, or `null` from pause) and
+  `classRender()` sets the screen from it: from Play solo the forward
+  button `#btnPlay` shows ("Enter the hall", with `data-padfirst`) and the
+  mid-run line `#classSub` is hidden; from pause it is the other way
+  round. `classGo()` is the button's click: `play()`, after clearing a
+  co-op line left on the main menu. Back from the class screen goes to
+  where it was opened from: the main menu when Play solo opened it, the
+  pause screen otherwise. With nothing focused, Enter or Space on the main
+  menu does what Play solo does, and on the class screen Play solo opened
+  it does what the forward button does. `#btnCoop`'s click is
+  `playOnline()`: a page `coopCheck()` refuses (a file, another site's
+  copy, no relay) is told why on the main menu and goes no further;
+  otherwise it opens the room screen directly, `openMenu("coop")`. **An
+  online start has no class screen:** the class is chosen on the room
+  screen once a room is up (`coop.md`), and `openMenu("coop")` calls
+  `renderPicker()` for the cards there. `renderPicker` fills every
+  `.picker`; the room screen's (`#coopCls`), and every one during a co-op
+  run, gets the base classes only. An
+  address with `?room=CODE` opens the room screen at boot
+  (`coopInvite`, `coop.md`). Open the class screen through `openMenu`,
+  never `show("class")`, or `classFor` is stale.
 - **Exit to main menu.** `toTitle()` is `enterHub()` then `show("title")`:
   a fresh hall behind the menu. `#btnExit` (pause), `#btnDeadExit` (death)
   and `#btnWinExit` (win) call it. `enterHub` ends a co-op run for this
@@ -131,8 +136,9 @@
   smallest phone:
   `SCRIPT=$PWD/tests/t30.mjs node test.mjs title` and
   `DEVICE=iphone-se SCRIPT=$PWD/tests/t30.mjs node test.mjs title`. It
-  checks the four buttons and the missing picker, the solo and online
-  paths, the class screen from pause (no forward button), Back, Esc and
+  checks the four buttons and the missing picker, the solo path through
+  the class screen and the online path straight to the room screen, the
+  class screen from pause (no forward button), Back, Esc and
   the touch Back gesture (a real one included), Enter on the menu, where the co-op line sits,
   that everything fits, the exits from the hall, a cave, the death and win
   screens, that a class picked after an exit is the one played, and an
@@ -152,5 +158,3 @@
   because nothing is lost yet. Both will need a confirmation once runs carry
   rewards. In co-op both leave the room, and a host's exit ends it for the
   friend, also without asking.
-- Back on the room screen goes to the main menu, not to the class screen it
-  was reached from: menus keep one level of where they came from.

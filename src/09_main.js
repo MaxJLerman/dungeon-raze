@@ -18,8 +18,9 @@ const MENUS = ["class", "controls", "howto", "coop"];
 let menuBack = "title",
   rebind = null,
   swallowClick = false;
-// What the class screen was opened for: "solo" or "online" from the main
-// menu's Play buttons, null from the pause screen (a change mid-run).
+// What the class screen was opened for: "solo" from the main menu's Play
+// solo, null from the pause screen (a change mid-run). An online start has
+// no class screen: its classes are chosen on the room screen.
 let classFor = null;
 function show(state) {
   // a plaque closes at once when play stops
@@ -111,18 +112,18 @@ function menuGoBack() {
   if (G.state === "coop") coopLeaveRoom();
   show(menuBack);
 }
-// why is read for the class screen only: "solo" or "online" when a Play
-// button on the main menu opens it, nothing when the pause screen does.
+// why is read for the class screen only: "solo" when Play solo on the main
+// menu opens it, nothing when the pause screen does.
 function openMenu(which, why) {
   if (!MENUS.includes(G.state)) menuBack = G.state;
   // under touch, Back from a menu over the main menu must have an entry to use
   if (menuBack === "title") TOUCH.menuOpen();
   if (which === "controls") renderControls();
   else if (which === "class") {
-    classFor = why === "solo" || why === "online" ? why : null;
+    classFor = why === "solo" ? why : null;
     renderPicker();
     classRender();
-  }
+  } else if (which === "coop") renderPicker();
   show(which);
   if (which === "coop") coopRoomOpen();
 }
@@ -130,28 +131,26 @@ function openMenu(which, why) {
 // from the pause screen there is no way forward, only Back.
 function classRender() {
   const b = $("btnPlay");
-  b.textContent = classFor === "online" ? "Continue" : "Enter the hall";
   b.hidden = !classFor;
   b.toggleAttribute("data-padfirst", !!classFor);
   $("classSub").hidden = !!classFor;
 }
-// The forward button: into the hall, or on to the room screen. A solo
-// start clears a line a co-op run left on the main menu ("The host has
-// left."), which would otherwise still be there after this run.
+// The forward button: into the hall. A solo start clears a line a co-op
+// run left on the main menu ("The host has left."), which would otherwise
+// still be there after this run.
 function classGo() {
-  if (classFor === "online") openMenu("coop");
-  else if (classFor === "solo") {
-    coopSay("");
-    play();
-  }
+  if (classFor !== "solo") return;
+  coopSay("");
+  play();
 }
-// Play online on the main menu. A page that cannot play co-op at all (a
-// file, another site's copy, no relay) is told so here, on the main menu,
-// and goes no further.
+// Play online on the main menu: straight to the room screen, where the
+// class is chosen once a room is up. A page that cannot play co-op at all
+// (a file, another site's copy, no relay) is told so here, on the main
+// menu, and goes no further.
 function playOnline() {
   const bad = coopCheck();
   if (bad) coopSay(COOP_SAY[bad]);
-  else openMenu("class", "online");
+  else openMenu("coop");
 }
 
 // ---- class picker ----
@@ -179,18 +178,24 @@ function renderPicker() {
       return h && f.dataset.cls ? [hosts.indexOf(h), f.dataset.cls] : null;
     });
   for (const host of hosts) {
-    const cur = CLASSES[OPT.cls];
+    // the room screen's picker, and every picker during a co-op run,
+    // offers the classes co-op plays and marks the one this page plays
+    const run = !!(NET && NET.client),
+      room = run || host.id === "coopCls",
+      on = run ? G.player.clsId : room ? coopMyCls() : OPT.cls,
+      ids = room ? pickable().filter((id) => !CLASSES[id].hidden) : pickable(),
+      cur = CLASSES[on];
     host.innerHTML =
       '<div class="cards">' +
-      pickable().map((id) => {
+      ids.map((id) => {
         const c = CLASSES[id];
         return (
           '<button type="button" class="card' +
-          (id === OPT.cls ? " on" : "") +
+          (id === on ? " on" : "") +
           '" data-cls="' +
           id +
           '" aria-pressed="' +
-          (id === OPT.cls) +
+          (id === on) +
           '"><b>' +
           c.name +
           "</b><span>" +
@@ -521,8 +526,8 @@ function boot() {
         respawn();
         play();
       } else if (G.state === "pause") play();
-      // on the main menu, what Play solo does; on the class screen a Play
-      // button opened, the way forward
+      // on the main menu, what Play solo does; on the class screen Play
+      // solo opened, the way forward
       else if (G.state === "title") openMenu("class", "solo");
       else if (G.state === "class" && classFor) classGo();
     }
@@ -604,6 +609,8 @@ function boot() {
     const card = e.target.closest && e.target.closest(".card");
     if (card) {
       setClass(card.dataset.cls);
+      // in a co-op run, in the room or from the pause menu, the host is told
+      coopClsPicked();
       renderPicker();
       HUD.hint();
       const again = document.querySelector(".scr.show .card.on");
@@ -680,6 +687,8 @@ function boot() {
     renderPicker();
   });
   show("title");
+  // an invite link opens the room screen with its code filled in
+  coopInvite(location.search);
   requestAnimationFrame((t) => {
     last = t;
     frame(t);
@@ -843,6 +852,8 @@ window.DF = {
   coopRelay: (url) => (COOP_RELAY = url || ""),
   coopLoc: (loc) => (CR.loc = loc || null),
   coopSeed: (seed) => (CR.seed = seed === null || seed === undefined ? null : seed),
+  coopInvite,
+  coopInviteUrl,
   sim(sec, each) {
     const n = Math.round(sec * 60);
     for (let i = 0; i < n; i++) {

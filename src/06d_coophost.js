@@ -209,7 +209,7 @@ const COOP_HOST = COOP_HEADLESS_HERE
         Object.assign(px, {
           remote: true,
           pid,
-          heard: -Infinity,
+          heard: -Infinity, // until its first state: the player has not entered
           away: true,
           inBoss: false,
           ack: 0,
@@ -345,6 +345,27 @@ const COOP_HOST = COOP_HEADLESS_HERE
         pblast(px, a) {
           if (a.length < 6 || !a.slice(0, 6).every(num)) return;
           others(px.pid, ["pblast", px.pid, ...a.slice(0, 6)]);
+        },
+        // A class picked on the room screen, or changed in the pause menu
+        // mid-run: the proxy becomes that class where it stands, with the
+        // same share of health, and the other player is told.
+        cls(px, [id]) {
+          if (typeof id !== "string") return;
+          const n = makePlayer(baseCls(id));
+          if (n.clsId === px.clsId) return;
+          const fr = px.maxHp > 0 ? px.hp / px.maxHp : 1;
+          Object.assign(px, {
+            cls: n.cls,
+            clsId: n.clsId,
+            maxHp: n.maxHp,
+            hp: n.maxHp * fr,
+            maxStam: n.maxStam,
+            stam: n.stam,
+            tool: n.tool,
+            parryWin: n.parryWin,
+            fig: n.fig,
+          });
+          others(px.pid, ["cls", px.pid, px.clsId]);
         },
       };
       // Applies one event from px. Unknown names (including "spawn", which

@@ -348,15 +348,24 @@ export default [
     DF.show(scr); tick(1);
     c[scr] = !!DF.PAD.focus && DF.PAD.focus.id === want && DF.PAD.focus.classList.contains("padfocus");
   }
-  // the class screen from pause opens on its first card; opened by a Play
-  // button it opens on the way forward, since the cards come first
+  // the class screen from pause opens on its first card; opened by Play
+  // solo it opens on the way forward, since the cards come first
   DF.show("pause"); DF.openMenu("class"); tick(1);
   const first = document.querySelector("#scr-class .card");
   c.class = DF.PAD.focus === first && !!first;
   DF.show("title"); tick(1); DF.openMenu("class", "solo"); tick(1);
   c.classSolo = !!DF.PAD.focus && DF.PAD.focus.id === "btnPlay";
-  DF.show("title"); tick(1); DF.openMenu("class", "online"); tick(1);
-  c.classOnline = !!DF.PAD.focus && DF.PAD.focus.id === "btnPlay" && DF.PAD.focus.textContent === "Continue";
+  // the room screen opens on Host a room, and an invite link's on Join
+  const loc = { protocol: "http:", hostname: "localhost" };
+  DF.coopLoc(loc); DF.coopRelay("ws://localhost:1");
+  DF.show("title"); tick(1); DF.openMenu("coop"); tick(1);
+  c.room = !!DF.PAD.focus && DF.PAD.focus.id === "coopHost";
+  document.querySelector("#scr-coop [data-back]").click(); tick(1);
+  DF.coopInvite("?room=ABCDEF"); tick(1);
+  c.roomInvite = DF.G.state === "coop" && !!DF.PAD.focus && DF.PAD.focus.id === "coopJoin";
+  document.querySelector("#scr-coop [data-back]").click(); tick(1);
+  document.getElementById("coopCode").value = "";
+  DF.coopLoc(null); DF.coopRelay("");
   // only one control carries the mark, and play clears it
   c.one = document.querySelectorAll(".padfocus").length === 1;
   DF.show("play"); tick(1);

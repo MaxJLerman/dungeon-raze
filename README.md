@@ -25,7 +25,7 @@ The page opens on the main menu:
 | Button      | What it does                                                         |
 | ----------- | -------------------------------------------------------------------- |
 | Play solo   | Choose a class, then Enter the hall                                  |
-| Play online | Choose a class, then host or join a room with a friend (see Co-op)   |
+| Play online | Host or join a room with a friend, then choose a class (see Co-op)   |
 | How to play | The rules of a fight                                                 |
 | Controls    | Keys, controller buttons and touch settings, all of which can be changed |
 
@@ -113,16 +113,20 @@ Both players open https://maxjlerman.github.io/dungeon-raze/ and press
 **Play online** on the main menu. (A link that still ends with `?coop=1`, as
 the button once needed, works the same.)
 
-- **Host:** press Play online, choose a class, press Continue, then Host a
-  room. Send your friend the six-character code shown (Copy puts it on the
-  clipboard). Press Start when you like; you can start alone and be joined
-  later. While the room is open its code is also on your pause screen.
-- **Join:** press Play online, choose a class, press Continue, type the code
-  and press Join with a code. Press Enter the cave once the host has pressed
-  Start.
+- **Host:** press Play online, then Host a room. Send your friend the
+  six-character code shown, or an invite link: Copy code and Copy invite
+  link put one or the other on the clipboard. Press Start when you like;
+  you can start alone and be joined later. While the room is open its code
+  and both copy buttons are also on your pause screen.
+- **Join:** open the invite link, which brings up the room screen with the
+  code filled in, or press Play online and type the code. Then press Join
+  with a code. Press Enter the cave once the host has pressed Start.
 
-A hidden class plays as the Assassin in co-op, and the room screen says so;
-the saved choice is not changed. The dungeon does not pause in co-op. When either player steps into the
+Each player chooses a class in the room, on the screen that shows both
+players, and can change it again mid-run from the pause screen's Change
+class; the other player sees the change. A hidden class plays
+as the Assassin in co-op unless another is chosen there, and the room screen
+says so. The dungeon does not pause in co-op. When either player steps into the
 exit gate the run ends for both, and the room closes. For another run, both
 press Exit to main menu and the host makes a new room; no reload is needed.
 Exit to main menu and Return to base both leave the room. When the friend
@@ -437,8 +441,8 @@ Screenshots go to `shots/`.
 | `tests/t26-build.mjs` | The dev menu is in a local build and not in a `--release` one, the co-op build stamp, and the co-op host copy names nothing from a later file but a short list of names that never run there. Run on its own: `node tests/t26-build.mjs` |
 | `tests/t27.mjs` | Co-op client against a hand-stepped host over a fake link: puppets, hits, parries, executions, the cave checksum. Run in `smoke` mode |
 | `tests/t28.mjs` | Co-op: the other player on screen and the party rules. Run in `smoke` mode |
-| `tests/t29.mjs` | Co-op room screen up to the network: the button, codes, messages, the class fallback, a Worker host, the friend waiting for Start, a lost connection, the pause screen's code, Back by touch, Exit to main menu from a hosted run. Run in `title` mode, also with `DEVICE=oneplus-13` |
-| `tests/t30.mjs` | The main menu: its four buttons and no class picker, the solo and online paths through the class screen, Back, exits to the main menu from the hall, a cave, death and the win screen. Run in `title` mode, also with `DEVICE=iphone-se`. `node tests/t30-nogl.mjs` checks the menu in a browser with no WebGL 2 |
+| `tests/t29.mjs` | Co-op room screen up to the network: the button, codes, messages, the class fallback, a Worker host, the class cards in the room, the copy buttons, an invite link, the friend waiting for Start, a lost connection, the pause screen's code, Back by touch, Exit to main menu from a hosted run. Run in `title` mode, also with `DEVICE=oneplus-13` |
+| `tests/t30.mjs` | The main menu: its four buttons and no class picker, the solo path through the class screen and the online path straight to the room screen, Back, exits to the main menu from the hall, a cave, death and the win screen. Run in `title` mode, also with `DEVICE=iphone-se`. `node tests/t30-nogl.mjs` checks the menu in a browser with no WebGL 2 |
 | `tests/codes-print.mjs` | Not a test: writes every plaque code in `tests/codes.local.json` in all four notations to `tests/codes.local.md`, which git ignores and which must never be committed. Run in `title` mode |
 
 The co-op Node tests run without a page: `node tests/coop-host.mjs`,

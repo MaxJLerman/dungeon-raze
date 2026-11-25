@@ -60,8 +60,10 @@
   clicks that screen's `[data-back]` button. `focusables` skips the keyboard
   binding column (`#binds button[data-act]`), which the rebind flow covers.
   A screen opens on its first control, or the one with `data-padfirst`
-  (`#btnSolo` on the main menu; `#btnPlay` on the class screen when a Play
-  button opened it, because class cards come first). The focus is drawn by
+  (`#btnSolo` on the main menu; `#btnPlay` on the class screen when Play
+  solo opened it, because class cards come first; `#btnResume` on the
+  pause screen, because a co-op host's copy buttons come first; on the
+  room screen `#coopHost`, or `#coopJoin` when an invite link opened it). The focus is drawn by
   `.padfocus`, styled under `body.pad`. A range takes left and right.
   `PAD.menu` does not run while `PAD.rebind` is set.
 - Rebinding. `PAD.startRebind(a)` waits for a pad button, which the Controls
