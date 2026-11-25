@@ -70,7 +70,10 @@ const tpl = fs.readFileSync(
   "utf8",
 );
 fs.mkdirSync(new URL(".", out), { recursive: true });
-fs.writeFileSync(out, tpl.replace("/*__JS__*/", () => js));
+fs.writeFileSync(
+  out,
+  tpl.replace("/*__JS__*/", () => js),
+);
 console.log(
   "built",
   files.length,
