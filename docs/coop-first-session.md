@@ -67,8 +67,14 @@ To stop the server, press Ctrl+C in the terminal.
 
 ## 3. Put the relay on the internet
 
-The relay is a small program on Cloudflare's servers. You do this once. The
-details and the reasoning are in `relay/README.md`.
+The relay is a small program on Cloudflare's servers. Cloudflare calls a
+program like this a "Worker" (it has nothing to do with the Worker the game
+runs in your browser). You do this once. The details and the reasoning are in
+`relay/README.md`.
+
+The Cloudflare dashboard is the website where you manage your account:
+https://dash.cloudflare.com. Once the relay is deployed it is listed there
+under **Workers & Pages**, named `dungeon-raze-relay`.
 
 You need a free Cloudflare account (https://dash.cloudflare.com/sign-up). Do
 not add a payment card. Stay on the free plan.
@@ -93,9 +99,21 @@ not add a payment card. Stay on the free plan.
    npx wrangler deploy
    ```
 
+   On a new account it may first ask you to choose a name for your
+   `workers.dev` subdomain (this was not checked, because nobody had deployed
+   it when this was written). If it asks, pick any name you like: it becomes
+   part of the relay's address.
+
 4. When it finishes it prints the relay's address, like
    `https://dungeon-raze-relay.<your-name>.workers.dev`. Copy it. If you lose
-   it, the Cloudflare dashboard also lists the Worker, named `dungeon-raze-relay`.
+   it, open the Cloudflare dashboard, then **Workers & Pages**, then
+   `dungeon-raze-relay`: the address is shown there.
+5. Go back to the project folder, because everything in section 4 runs from
+   there:
+
+   ```
+   cd ..
+   ```
 
 `relay/wrangler.toml` already says that the Pages site
 (`https://maxjlerman.github.io`) may use it, so there is nothing to set. If
@@ -121,6 +139,14 @@ What it costs:
 To take the relay down later: `npx wrangler delete` in the `relay` folder.
 
 ## 4. Tell the game where the relay is, and publish
+
+Everything here runs in the project folder (the one with `build.mjs` in it),
+not in `relay`. If you are still in `relay`, run `cd ..` first.
+
+The simplest way through this section is to ask Claude Code, in this project,
+to do it: "set COOP_RELAY to wss://dungeon-raze-relay.<your-name>.workers.dev,
+commit it and get the branch onto main". Then do step 2 below to check it. If
+you would rather do it by hand, follow all three steps.
 
 1. Open `src/08e_coopui.js`. Near the top is this line:
 
@@ -149,11 +175,40 @@ To take the relay down later: `npx wrangler delete` in the `relay` folder.
    six-character code appears. If instead you read "Cannot reach the co-op
    relay.", the address is wrong or the relay is not deployed.
 3. Publish. The co-op work is on the branch `feat/coop-cave`, and the site is
-   published from `main`. Merge the branch into `main` on GitHub the way you
-   do any other, with the line from step 1 in it, and push. A push to `main`
-   builds the page and publishes it to GitHub Pages
+   published from `main`. The line from step 1 is only on your computer until
+   it is committed and pushed, and a merge on GitHub takes the branch as
+   GitHub has it, so commit and push it first. In the project folder:
+
+   ```
+   git add src/08e_coopui.js
+   git commit -m "feat: point co-op at the deployed relay"
+   git push
+   ```
+
+   Then get the branch onto `main`, one of two ways:
+
+   - On GitHub: open
+     https://github.com/MaxJLerman/dungeon-raze/compare/main...feat/coop-cave,
+     press **Create pull request**, then **Merge pull request**. (The `gh`
+     command on this computer cannot open pull requests, so use the page.)
+   - Or on your computer:
+
+     ```
+     git switch main
+     git pull
+     git merge feat/coop-cave
+     git push
+     ```
+
+   A push to `main` builds the page and publishes it to GitHub Pages
    (`.github/workflows/pages.yml`). Give it a couple of minutes. Check the
    Actions tab on GitHub to see it finish.
+
+   Afterwards, https://maxjlerman.github.io/dungeon-raze/?coop=1 shows **Play
+   with a friend** on the title screen, and **Host a room** there shows a
+   six-character code after a moment. If it says "Cannot reach the co-op
+   relay." instead, the published page does not have the line from step 1:
+   check that the commit reached `main`.
 
 Two things to know:
 
@@ -162,10 +217,12 @@ Two things to know:
   bar) cannot play co-op. It says "Co-op does not run from a file. Run npm run
   dev and open http://localhost:8000/?coop=1". The single-file hosted copy of
   the game cannot either. It says to play on the Pages site.
-- You and your friend must both be on the same version of the game. If you
-  are not, the friend sees "You and the host are on different versions of the
-  game. Both reload the page." Both of you play on the Pages site and both
-  reload before starting, and this does not come up.
+- You and your friend must both be on the same version of the game. Every
+  build of the game carries a stamp made from its code, and the host's page
+  refuses a friend whose page has a different stamp (an old copy a browser
+  kept, say). The friend then sees "You and the host are on different versions
+  of the game. Both reload the page." Both of you play on the Pages site and
+  both reload before starting, and this does not come up.
 
 ## 5. The link, and who clicks what
 
@@ -183,9 +240,12 @@ You (the host):
 1. Open the link. Pick your class on the title screen.
 2. Press **Play with a friend**, then **Host a room**.
 3. Read out or send the six-character code. **Copy** puts it on your
-   clipboard. The code works for the first connection for 10 minutes.
+   clipboard. A code nobody has used expires after 10 minutes. Once you are
+   in, it stays good while you are there.
 4. When your friend's class shows in the second slot (it reads "Not here yet"
-   until they join), press **Start**. You can press Start before they arrive and be joined later.
+   until they join), press **Start**. You can press Start before they arrive
+   and be joined later. Once you have started, the code is also on your pause
+   screen ("Room code" and the code), so you can read it out again.
 
 Your friend:
 
@@ -193,7 +253,8 @@ Your friend:
 2. Press **Play with a friend**. Type the code into the box (capitals or
    small, spaces and dashes are ignored) and press **Join with a code**.
 3. The button at the bottom reads "Waiting for the host to start" and is
-   greyed out. When it reads **Enter the cave**, press it.
+   greyed out until the host presses Start. When it reads **Enter the cave**,
+   press it. If the host has already started, it reads that at once.
 
 Once in: you start together at the cave's start. Pause does not stop the
 dungeon in co-op, and the pause screen says so. Each of you has your own
@@ -201,7 +262,20 @@ health, flasks and rest points. Dying sends you back to your own last lit
 rest point and brings no enemies back, unless you are both dead at once, in
 which case they all come back. When either of you steps into the exit gate
 after the boss, the run ends for both and the room closes. For another run,
-host a new room.
+both of you reload the page, and the host makes a new room. If the run ends
+while the friend is still on the room screen, the friend reads "That run has
+ended. Ask the host for a new room."
+
+If the friend's own connection drops, or the friend hears nothing from the
+host for 10 seconds, the friend goes back to the title screen with "The
+connection to the room was lost. You can join again with the same code." The
+room is still there while the host is: the friend joins again with the same
+code. "The host has left." means the host's page closed or lost its own
+connection, and the room is gone.
+
+If the host's page ever sends something the friend's page cannot read, the
+friend sees "The host sent something this page could not read. Both reload
+the page."
 
 ## 6. The five questions
 
@@ -215,9 +289,11 @@ What to do:
 
 - Play together for at least ten minutes in the cave: fight a pack each, fight
   one pack together, and try to parry and dodge enemy attacks.
-- Measure the lag. Each of you, with the game page open at the Pages address,
-  press F12 (on Safari, first turn on the web developer features in Settings,
-  Advanced, then press Option+Command+C), open the Console, and paste the line below. It asks
+- Measure the lag, in Chrome or Safari (Firefox refuses a pasted line until
+  you type `allow pasting` into its console, so leave it out). Each of you,
+  with the game page open at the Pages address, press F12 (on Safari, first
+  tick "Show features for web developers" in Settings, Advanced, then press
+  Option+Command+C), open the Console, and paste the line below. It asks
   the relay for a room code three times and prints how long each took, in
   milliseconds. The first is slow because it opens the connection. Read the
   second and third. Replace the address with the relay's `https://` address.
@@ -280,6 +356,13 @@ What to write down, for each host browser: did the enemies keep moving (yes,
 no, partly), did "Waiting for the host" appear and when, did the host show as
 away, and what happened when the host came back.
 
+Two more things to note while trying other browsers, because only Chrome was
+tested: whether a Safari or Firefox host can make a room at all (if the
+friend cannot join a Safari or Firefox host's room, the relay may be refusing
+that browser's host connection, which was not tested), and, if the friend's
+connection drops hard (Wi-Fi off), whether joining again at once says "That
+room is full." for a while before it works.
+
 ### Question 3. Does the connection stall show as hitching?
 
 The game talks to the relay over a WebSocket, which waits for lost data to be
@@ -293,7 +376,9 @@ and your friend freeze, and then everything catches up in a rush. Also "Waiting
 for the host" flashing up briefly.
 
 What to write down: how often it happened, how long each was, and what the
-connections were (home Wi-Fi, hotspot, wired).
+connections were (home Wi-Fi, hotspot, wired). If it does show, a direct
+connection between the two browsers (which skips the relay's way of resending
+lost data) moves up the list of next projects.
 
 ### Question 4. Does a phone work as the friend's device?
 
@@ -344,13 +429,17 @@ worse than described.
 - **Parried shots.** When you reflect an enemy's shot, your friend does not see
   the reflected shot.
 - **The other player's shots** appear slightly before their body does.
-- **A host who leaves** ends the room for the friend. A friend who leaves does
-  not stop the host, and someone else can take the seat with the same code
-  while the host is there.
+- **A host who leaves** ends the room for the friend. So does a drop of the
+  host's own connection, even a short one: the relay closes the room the
+  moment the host's connection goes, and the host's page does not reconnect.
+  A friend who leaves does not stop the host, and someone else can take the
+  seat with the same code while the host is there.
+- **Cheating** is not guarded against: anyone with the code could, with a
+  little scripting, kill everything or end the run once the boss is dead.
 - If the relay closes during a game, the host plays on alone and a line says no
   friend can join.
-- The relay is set up so a stray flood of requests costs nothing, but stops
-  co-op for the rest of the day (section 3).
+- The relay is set up so that, on the free plan, a stray flood of requests
+  costs nothing, but stops co-op for the rest of the day (section 3).
 
 ## 8. What to send back afterwards
 
@@ -367,8 +456,9 @@ Send me, in whatever form is quickest (a message, a note, voice dictation):
    grade D, or a server that runs the dungeon so the host's tab stops mattering.
 
 If the relay stops working part way through and everything says "Cannot reach
-the co-op relay.", look at the Cloudflare dashboard for the Worker. If it is
-the free plan's daily limit, co-op returns at 00:00 UTC.
+the co-op relay.", look at the Cloudflare dashboard (https://dash.cloudflare.com,
+then **Workers & Pages**, then `dungeon-raze-relay`). If it is the free plan's
+daily limit, co-op returns at 00:00 UTC.
 
 ## For the record: the page's size
 
@@ -378,8 +468,8 @@ and after the co-op work. Before is `main` where the branch left it
 
 | | Before | After | Change |
 |---|---|---|---|
-| Raw | 649,034 bytes | 1,261,833 bytes | +612,799 (+94%) |
-| Gzipped (`gzip -9`) | 190,142 bytes | 370,307 bytes | +180,165 (+95%) |
+| Raw | 649,034 bytes | 1,268,909 bytes | +619,875 (+96%) |
+| Gzipped (`gzip -9`) | 190,142 bytes | 372,741 bytes | +182,599 (+96%) |
 
 The page roughly doubled. The reason is that the co-op host's code is carried
 inside the page as text, so that the host's Worker can be made from it without

@@ -93,7 +93,15 @@ is what you need to change the code without breaking it.
   matching `^0[1-6]` as the string `COOP_HOST_SRC` (see Co-op). Those files
   must load in Node and in a Worker: no DOM, no `window`, nothing at top
   level that touches the screen. Co-op is core, not dev: only the lag dial
-  is in `src/dev/`.
+  is in `src/dev/`. A name from a file of `07` on that the host copy holds
+  must never run there; `tests/t26-build.mjs` fails on any such name not on
+  its `HOST_MAY_NAME` list, which says why each one cannot run.
+- Every build also stamps `COOP_BUILD`, 8 hex characters of a hash of the
+  core sources (`src/*.js` in order, not `src/dev/`), declared before the
+  sources in the page and in the host copy. A dev and a release build of the
+  same sources carry the same stamp, and any change to a core source changes
+  it, so nobody has to remember to bump anything: a co-op host refuses a
+  page of another build. `COOP_V` is only the wire's own version.
 - All `src/*.js` files are concatenated into one function scope. There are no
   imports or exports. Declare a name once across the whole of `src/`.
 - No dependencies, no network requests at run time except Google Fonts and
@@ -1421,14 +1429,21 @@ Two players through grade E's cave over the internet. The design is
     `NET.enemies(dt)` replaces the enemy loop (the host steps its enemies
     with the swap below, the client moves its puppets). A death under the
     pause screen or a menu shows the dead screen while `NET.live`.
+  - `projUpdate` passes over a shot with `own === "m"` (the other player's,
+    drawn only).
   - `hitEnemy`: `o.pre` marks a client's proposal applied on the host, its
     multipliers already in the damage; `NET.onHit(...)` true means the
     client has proposed the hit and shown it, and the rest is skipped.
   - `hurtPlayer` returns `"remote"` for a remote player (a proxy or a mate)
     and changes nothing, and judges hits off the play screen while
     `NET.live` (the dungeon does not pause).
-  - `kill` calls `NET.onKill(e)`, and does not record a cleared grade on the
-    host (`NET.host`). `respawn` calls `NET.onRespawn()` in place of
+  - `kill` calls `NET.onKill(e)`. `bossFell` records no cleared grade on
+    the host (`NET.host`), and on a client (`NET.client`) records it under
+    `G.player.clsId`, the class that played, in place of `OPT.cls`.
+    `kill(e, quiet)` and `bossFell(e, quiet)` take a second argument only
+    the client passes: the same state with no sound, sparks, slow motion or
+    message. `openGate()` (the gate over the boss's chamber) is shared by
+    `bossFell` and a join after the boss's death. `respawn` calls `NET.onRespawn()` in place of
     `spawnEnemies` (one death rebuilds no enemies). `explode` calls
     `NET.onBlast`, the player's `fire` `NET.onPShot`, an enemy's `shoot`
     `NET.onShoot`, and `playerUpdate` at the exit gate `NET.onGate()`.
@@ -1437,9 +1452,14 @@ Two players through grade E's cave over the internet. The design is
     (`coopEnd("left")`).
   - `09_main.js`: `frame` calls `NET.frame(dt)` every frame in real time
     and runs the simulation under every screen while `NET.live`
-    (`coopStill` keeps a paused player still). `07_render.js` draws
-    `NET.mates`; `08e_coopui.js` draws the HUD's mate bar and "Waiting for
-    the host".
+    (`coopStill` keeps a paused player still, and the title's own clock
+    does not also advance then). `menuGoBack()` is the one way back from a
+    menu (its Back button, Esc, the pad's back button, which clicks the
+    button, and the touch Back gesture in `08c_touch.js`); on the room
+    screen it calls `coopLeaveRoom()` first. `openMenu("coop")` calls
+    `coopRoomOpen()`. `07_render.js` draws `NET.mates`; `08_hud.js` calls
+    `coopHud()`, which draws the HUD's mate bar, "Waiting for the host" and
+    the pause screen's co-op lines.
 - **The host's placeholder and the target swap.** The host has no player
   of its own. Each joined player is a proxy (`makePlayer`, flagged `remote`,
   never stepped, moved to where its machine last said it was). `G.player`
@@ -1459,14 +1479,21 @@ Two players through grade E's cave over the internet. The design is
   qualifying; `COOP.STATE` (2), client to host, 30 a second: its player;
   `COOP.EVENT` (3): a JSON array, name first. A client's events are
   numbered (`[name, seq, ...]`, from 1, never wrapping) and are requests:
-  `hello`, `hit`, `parry`, `pin`, `exec`, `gate`, `pshot`, `pblast`. The
-  host's events: `join` (seed, grade, the cave's checksum, the enemy list,
-  dead ids, the boss's death, the peers), `no` (`["no", "version"]` for a
-  hello whose version is not `COOP_V`), `shot`, `ring`, `roar`, `kill`
-  (with whose event caused it), `reset`, `peer`, `end`, `pshot`, `pblast`.
-  A client builds the cave from the seed and refuses the run if
-  `coopWorldSum` (FNV-1a over the mesh positions) differs; it never reads
-  its own spawn list, only the host's. All numbers are in `COOP`.
+  `hello` (`["hello", 0, COOP_V, cls, COOP_BUILD]`), `hit`, `parry`, `pin`,
+  `exec`, `gate`, `pshot`, `pblast`. The host's events: `join` (seed,
+  grade, the cave's checksum, `started`, the enemy list, dead ids, the
+  boss's death, the peers), `no` (`["no", "version"]` for a hello whose
+  version is not `COOP_V` or whose build is not the host's `COOP_BUILD`, a
+  hello with no build included), `started` (the host's page has sent its
+  first state, so its player has pressed Start; sent once to a friend
+  already in), `shot`, `ring`, `roar`, `kill` (with whose event caused it),
+  `reset`, `peer`, `end`, `pshot`, `pblast`. A client checks the join's
+  shape before building anything (grade `"E"`, a finite seed, a string sum,
+  pid 1 or 2, enemy and dead lists of the right shape with known types) and
+  refuses one it cannot read as `"bad"`; it then builds the cave from the
+  seed and refuses the run if `coopWorldSum` (FNV-1a over the mesh
+  positions) differs; it never reads its own spawn list, only the host's.
+  All numbers are in `COOP`.
 - **The clock.** The client draws the host's world `COOP.DELAY` (100 ms)
   behind its estimate of the host's time, `CC.est`: its own real-time clock
   plus the largest offset (host time less arrival time) of any snapshot that
@@ -1476,7 +1503,11 @@ Two players through grade E's cave over the internet. The design is
   connection slows, and the puppets would have nothing to draw. The drawn
   time (`CC.rt`) moves on with simulation time, faster or slower to catch
   the estimate, and jumps when more than 0.6 s off. Events that carry a
-  time wait in `CC.evq` until the drawn time reaches it.
+  time wait in `CC.evq` until the drawn time reaches it. One applied while
+  the run is not live (queued before this player entered) or more than
+  `COOP_LATE` (1 s) after its time changes state silently: no sound, big
+  message or shake. A kill's sound and sparks play only within `COOP_HEAR`
+  (30 m), as the puppets' other sounds do.
 - **The client** (`07c`). Puppets are moved from the two snapshots round
   the drawn time; their swings are judged here on this player as the host's
   `enemyUpdate` would, so a guard or parry is decided by what this player
@@ -1488,15 +1519,27 @@ Two players through grade E's cave over the internet. The design is
   `coopBegin(link, { cls, drive, onRefuse })` sends the hello; `coopEnter()`
   makes the run live; `coopEnd(why)` leaves co-op from anything (`"host"`
   goes to the title and says "The host has left.", `"stopped"` does the
-  same with "The host's game stopped. The room is closed.", `"end"` keeps
-  the win screen, any other reason leaves the screen as it is). A link is `{
-  send(buf), onmessage, onclose(why), close() }`; a close before the join is
-  applied goes to `onRefuse` with the link's reason, after it is the host
-  leaving. A hidden class plays as the first base class (`coopBaseCls`), on
-  both sides, and the save is not changed.
+  same with "The host's game stopped. The room is closed.", `"lost"` with
+  "The connection to the room was lost. You can join again with the same
+  code.", `"end"` keeps the win screen, any other reason leaves the screen
+  as it is). A link is `{ send(buf), onmessage, onclose(why), close() }`; a
+  close before the join is applied goes to `onRefuse` with the link's reason
+  (`"hostleft"` reads as `"relay"` there). After it: `"worker"` is
+  `"stopped"`; on the friend's link (`link.viaRelay`) only `"hostleft"` is
+  `"host"`, and every other close, the friend's own drop included, is
+  `"lost"`; on any other link it is `"host"`. An `end` that reaches a
+  client not yet live (a friend still on the room screen) is refused as
+  `"ended"`, "That run has ended. Ask the host for a new room.", and the
+  room screen comes back ready. A join after the boss's death opens the
+  gate (`openGate`). `coopPeer` takes pids 1 and 2 only, never its own. A
+  hidden class plays as the first base class (`coopBaseCls`), on both
+  sides, and the save is not changed.
 - **The party rules.** Both arrive at the cave's start; the host starts when
   it likes, the friend may join before or during the run and rejoining is
-  joining. A death is the usual screen and respawn at that player's own
+  joining. The friend cannot enter before the host has pressed Start (the
+  join's `started`, or the `started` event; it stays set, so a friend who
+  joins mid-run enters at once, and an away or paused host still counts).
+  A death is the usual screen and respawn at that player's own
   rest point, and resets no enemies; while one is dead the enemies hunt the
   other. Both dead at once (away players not counted) is a wipe: the host
   makes the enemies again as a respawn does, once per wipe. Rest points are
@@ -1506,8 +1549,8 @@ Two players through grade E's cave over the internet. The design is
   Pause stops nothing. A player the host has not heard for `COOP.AWAY` (2 s)
   is away: not hunted, not counted for a wipe, drawn faded. A client that
   has had no snapshot for `COOP.WAIT` (1 s) shows "Waiting for the host",
-  and after `COOP.GONE` (10 s) ends co-op as the host leaving. The friend
-  leaving lets the host play on.
+  and after `COOP.GONE` (10 s) ends co-op: `"lost"` on the friend's link,
+  `"host"` on any other. The friend leaving lets the host play on.
 - **The Worker driver** (`COOP_HOST.worker(scope)`). It reads `WebSocket`,
   `setInterval` and `performance` from `scope` or the global, inside that
   function only. The page posts `{ start: { seed, grade, relay, code } }`,
@@ -1526,16 +1569,17 @@ Two players through grade E's cave over the internet. The design is
   any time closes the link with `"worker"`, which before the join is the
   refusal "This browser cannot host a room." and after it ends the run
   with `coopEnd("stopped")`.
-- **The friend's link** (`coopSocketLink(url)`) hides the relay's framing:
-  game frames pass through; `[0, 2]` (the host left) closes the link and the
-  socket; `[0, 1]` is ignored; events sent before the socket opens wait for
+- **The friend's link** (`coopSocketLink(url)`, with `viaRelay` set) hides
+  the relay's framing: game frames pass through; `[0, 2]` (the host left)
+  closes the link and the socket with `"hostleft"`; `[0, 1]` is ignored; events sent before the socket opens wait for
   it; once open, a state frame is dropped rather than queued while
   `bufferedAmount` is over `COOP.SOCK_FULL`. A socket that opens and has
   no join within `COOP.GONE` (10 s of real time; `coopJoin` sets
   `link.joined`) is closed: a silent host, or a host whose own socket never
   arrived so the friend took seat 1. A close says `"noroom"` (4004),
   `"full"` (4001) or `"relay"` (anything else, that timeout included), and
-  the room screen is left ready to try again.
+  the room screen is left ready to try again. A close after the join is
+  `"lost"` (see the client), but for `"hostleft"`.
 - **The relay's framing** (`relay/README.md` is the contract). `POST /new`
   gives `{ code }`, six characters without O, 0, 1, I or L. `GET
   /room/CODE` upgrades; the first socket in is the host. Friend to host the
@@ -1543,8 +1587,9 @@ Two players through grade E's cave over the internet. The design is
   is the addressee and is stripped. Its own frames start with 0: the host
   hears `[0, 1, 2]` (joined) and `[0, 2, 2]` (left), the friend `[0, 2]`
   (the host left; the friend must then close its socket). Closes: 4004 no
-  such room, 4001 full, 4009 a frame over 16,384 bytes, 4008 more than 120
-  frames in a second, 1003 a text frame. HTTP 403 for a request whose `Origin`
+  such room, 4001 full, 4009 a frame over 16,384 bytes, 4008 a frame
+  that finds the socket's token bucket empty (600 frames, refilled at 120 a
+  second, two numbers in the room's memory), 1003 a text frame. HTTP 403 for a request whose `Origin`
   is not in the relay's `ALLOWED_ORIGINS` (the Pages site, as deployed) and
   not `http://localhost` or `http://127.0.0.1` on any port; a request with no
   `Origin` header is let through. 429 past the per-address limit. Game frames never start with 0.
@@ -1557,19 +1602,26 @@ Two players through grade E's cave over the internet. The design is
   player) and `#coopEnter` ("Start", which enters at once, alone if need
   be). `#coopJoin` tidies `#coopCode` (upper case, no spaces or dashes) and
   opens the socket; `#coopEnter` reads "Waiting for the host to start",
-  disabled, until the join arrives, then "Enter the cave". Entering is
+  disabled, until the join has arrived and the host has started, then
+  "Enter the cave". Entering is
   `coopEnter()` then `play()`, from the click. A second click while one is
   under way does nothing. `play()` refuses on an upright touch device; the
   run is live all the same, and a later click (once the device is turned)
-  calls `play()` again. Back, Esc or the pad's back button on this screen
-  ends a room not yet in play (`coopLeaveRoom`), its Worker and the cave the
-  join built, live or not. Before any network use, in order (`coopCheck`): the page must
+  calls `play()` again. Back, Esc, the pad's back button or the touch Back
+  gesture on this screen (all through `menuGoBack`) ends a room not yet in
+  play (`coopLeaveRoom`), its Worker and the cave the join built, live or
+  not. While a hosted room is open and the relay link is up, the pause
+  screen shows "Room code" and the code (`#pauseCode`, `#pauseCodeV`,
+  selectable); a friend's pause screen shows no code. Before any network use, in order (`coopCheck`): the page must
   be the Pages site, `localhost`, `127.0.0.1` or a `file:`; `COOP_RELAY`
   must be set; a `file:` page is told to run `npm run dev`; a code must be
   six characters of the alphabet. `#coopMsg` is one element, written only by
   `coopSay`, which moves it onto the screen it is written on (the room
   screen while it is up, else the title); opening the room screen clears
-  it. The messages are in `COOP_SAY`. `COOP_RELAY` is the deployed relay's
+  it. The messages are in `COOP_SAY`, among them `lost` ("The connection
+  to the room was lost. You can join again with the same code."), `ended`
+  ("That run has ended. Ask the host for a new room.") and `bad` ("The host
+  sent something this page could not read. Both reload the page."). `COOP_RELAY` is the deployed relay's
   `wss://` address, empty until the owner deploys it; `POST /new` goes to
   the same address with `http` for `ws`. `DF.coopRelay`, `DF.coopLoc` (a
   stand-in for `location`) and `DF.coopSeed` are for tests.
@@ -2059,11 +2111,27 @@ The class picker and HUD read `CLASSES` and need no changes.
   and the host's player is marked away after 2 s (the end-to-end test
   imitates this by stopping animation frames). Whether every browser keeps a
   Worker's timers running in a background tab is unverified.
-- The relay closes a socket that sends more than 120 frames in a second.
-  The Worker and the friend's link drop snapshots and states while the
-  browser's socket queue is backed up and never hand the host more than
-  0.25 s at once, but frames already handed to the operating system before
-  a long network stall can still arrive at the relay together.
+- The relay closes a socket whose token bucket runs dry: a burst of 600
+  frames passes, then 120 a second. The Worker and the friend's link drop
+  snapshots and states while the browser's socket queue is backed up and
+  never hand the host more than 0.25 s at once, so only frames already
+  handed to the operating system before a stall of more than about 10 s
+  could still arrive together past the burst.
+- Dead enemies stay in every snapshot for the rest of the run (the spec
+  said "dying"), about 1 kB a snapshot late in a run. Changing it touches
+  how a guessed death is confirmed.
+- The relay ends a room the moment the host's socket closes (the spec said
+  a room is dropped ten minutes after its last socket closes), and the
+  host's Worker does not reconnect, so any drop of the host's connection
+  ends co-op for that run.
+- Cheating is not guarded against (a non-goal): a client with the code can
+  kill every enemy or end the run once the boss is dead.
+- Only Chromium has hosted a room. Whether Safari and Firefox send the
+  page's origin from a Blob-URL Worker's WebSocket is unverified; if they
+  send `null`, the relay refuses that host.
+- Whether a friend's hard network drop (Wi-Fi off) leaves seat 2 taken, so
+  a rejoin says "That room is full." until Cloudflare notices the dead
+  socket, is unverified without a deploy.
 - When the relay closes under a host who is playing, the run goes on alone
   and a line says no friend can join; a friend already in is told the host
   has left.

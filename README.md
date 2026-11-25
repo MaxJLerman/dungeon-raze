@@ -101,13 +101,15 @@ with `?coop=1`, as in https://maxjlerman.github.io/dungeon-raze/?coop=1.
 - **Host:** choose a class on the title screen, press Play with a friend, then
   Host a room. Send your friend the six-character code shown (Copy puts it on
   the clipboard). Press Start when you like; you can start alone and be joined
-  later.
+  later. While the room is open its code is also on your pause screen.
 - **Join:** choose a class, press Play with a friend, type the code and press
-  Join with a code. Press Enter the cave once the host's room has answered.
+  Join with a code. Press Enter the cave once the host has pressed Start.
 
 A hidden class plays as the Assassin in co-op; the saved choice is not
 changed. The dungeon does not pause in co-op. When either player steps into the
-exit gate the run ends for both, and the room closes.
+exit gate the run ends for both, and the room closes. For another run, both
+reload the page and the host makes a new room. Both pages must be the same
+build of the game: the host refuses a page whose build differs, and says so.
 
 The host's dungeon runs in a Web Worker in the host's page, and the friend
 reaches it through a small relay, so co-op needs that relay deployed first: see
@@ -309,7 +311,7 @@ Screenshots go to `shots/`.
 | `tests/t25.mjs` | Old Sluicejaw, the D boss: its body, place, modes, death roll, health marks, a whole D run from the hall, the tunnel phase and its plates, the falling ceiling, the bloaters down the falls and its shadow, with screenshots. Run in `smoke` mode |
 | `tests/t27.mjs` | Co-op client against a hand-stepped host over a fake link: puppets, hits, parries, executions, the cave checksum. Run in `smoke` mode |
 | `tests/t28.mjs` | Co-op: the other player on screen and the party rules. Run in `smoke` mode |
-| `tests/t29.mjs` | Co-op room screen up to the network: the button, codes, messages, the class fallback, a Worker host. Run in `title` mode, also with `DEVICE=oneplus-13` |
+| `tests/t29.mjs` | Co-op room screen up to the network: the button, codes, messages, the class fallback, a Worker host, the friend waiting for Start, a lost connection, the pause screen's code, Back by touch. Run in `title` mode, also with `DEVICE=oneplus-13` |
 
 The co-op Node tests run without a page: `node tests/coop-host.mjs`,
 `node tests/coop-wire.mjs`, `node tests/coop-caves.mjs` (caves compared across
