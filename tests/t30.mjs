@@ -33,7 +33,16 @@ export default [
   c.online = !!id("btnCoop") && id("btnCoop").hidden === false && location.search === "";
   c.noGate = typeof DF.coopButton === "undefined";
   c.padFirst = !!id("btnSolo") && id("btnSolo").hasAttribute("data-padfirst");
-  c.blurb = !/Pick a class/.test($("#scr-title .sub").textContent);
+  c.noBlurb = !shown($("#scr-title .sub"));
+  // centred, two buttons to a row, and the dev build's fifth alone beneath
+  const box = (el) => el.getBoundingClientRect(), mid = (el) => (box(el).left + box(el).right) / 2, near = (a, b) => Math.abs(a - b) <= 1;
+  const [solo, online, howto, controls] = row.map(box), dev = id("btnDev");
+  c.title = near(mid($("#scr-title h1")), innerWidth / 2);
+  c.grid = near(solo.top, online.top) && near(howto.top, controls.top) && howto.top >= solo.bottom
+    && near(solo.left, howto.left) && near(online.left, controls.left) && online.left >= solo.right
+    && near(solo.width, online.width) && near(solo.width, howto.width) && near(solo.width, controls.width);
+  c.gridMid = near((solo.left + online.right) / 2, innerWidth / 2);
+  c.dev = !dev || (box(dev).top >= howto.bottom && near(mid(dev), innerWidth / 2) && near(box(dev).width, solo.width));
   return all(c);`),
 
   step("play solo", `
