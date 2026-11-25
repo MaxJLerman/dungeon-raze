@@ -340,7 +340,10 @@ export default [
   const d = at(0), h = at(0.5), c = at(1); w.waterAt = () => 0; for (const e of G.enemies) { w.waterAt = () => 1; DF.poseEnemy(e); }
   const en = G.enemies.find((e) => !e.def.dummy); w.waterAt = () => 1; DF.poseEnemy(en); const ey = en.fig.root.p[1] - en.y;
   return { pass: Math.abs(d) < 1e-9 && Math.abs(h + DF.WATER.sink / 2) < 1e-9 && Math.abs(c + DF.WATER.sink) < 1e-9 && Math.abs(ey + DF.WATER.sink) < 1e-9, d, h, c, ey };`),
-  sewer("drips fall in the sewer and not in the cave", `DF.sim(3); const n = G.drips.length; DF.newRun(99); DF.sim(3);
+  // The most in the air at once over ten seconds, not the count at one
+  // moment: drips are drawn from Math.random and about two fall a second,
+  // so at any one moment there may be none (about one moment in five).
+  sewer("drips fall in the sewer and not in the cave", `let n = 0; DF.sim(10, () => { n = Math.max(n, G.drips.length); }); DF.newRun(99); DF.sim(3);
   return { pass: n > 0 && n <= 40 && G.drips.length === 0, n };`),
   sewer("a drip lands as a ripple, is gone, and a new run starts with none", `DF.sim(4); let ok = true, rip = 0, peak = 0;
   for (let i = 0; i < 240; i++) { DF.sim(1 / 30); peak = Math.max(peak, G.drips.length); if (G.rings.some((r) => r.kind === "ripple")) rip++; }
