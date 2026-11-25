@@ -68,14 +68,20 @@ is what you need to change the code without breaking it.
 - Branch `feat/coop-cave` added two-player co-op through grade E's cave, the
   first slice of co-op: the host's dungeon runs in a Web Worker in the
   host's page, the friend joins through a small relay (`relay/`) with a
-  six-character code, and each page owns its own player. The **Play with a
-  friend** button shows only when the address has `?coop=1`. The owner
+  six-character code, and each page owns its own player. **Play online** on
+  the main menu leads to it, for every visitor. The owner
   deployed the relay on 2026-11-25 and `COOP_RELAY` holds its address. It
   has been checked by tests (Node, the page, and two Chromium pages through
   a local relay) and once by two headless Chromium pages on one machine
   through the deployed relay, never by hand or between two machines. More players, the
   hall as a lobby, D, the hidden classes and party rules beyond the minimum
   are later projects (see the spec's Non-goals).
+- Branch `feat/main-menu` made the first page a main menu: Play solo, Play
+  online, How to play and Controls, with no class picker on it. The class
+  is chosen after a Play button, and the pause, death and win screens can
+  exit to the main menu. `?coop=1` is no longer read. The design is
+  `docs/superpowers/specs/2026-11-25-main-menu-design.md`. Checked by tests
+  and screenshots only.
 
 ## Rules of the build
 
@@ -412,7 +418,7 @@ is what you need to change the code without breaking it.
   only as `DEV && ...`, so a release build behaves as if it were never there.
 - The dev file runs after `boot()`, so it builds `#scr-dev` in JS (the
   template carries nothing), binds its own clicks, and pushes `"dev"` onto
-  `SCREENS` and `MENUS`. `#btnDev` sits on the title screen and
+  `SCREENS` and `MENUS`. `#btnDev` sits on the main menu and
   `#btnDevPause` on the pause screen; Back, Esc and the pad's back button
   return as from any menu. The backquote key runs `devToggle()`: from play
   it pauses and opens the menu over pause, on the menu it goes back, and on
@@ -466,6 +472,26 @@ is what you need to change the code without breaking it.
   switches screens. `MENUS` in `09_main.js` lists the screens that open on top
   of the title or pause screen and return to it; add a new one there and to
   `SCREENS`.
+- **The main menu** is the `title` state (`#scr-title`): `#btnSolo` "Play
+  solo", `#btnCoop` "Play online", How to play and Controls, and no class
+  picker. Both Play buttons open the class screen with
+  `openMenu("class", why)`, `why` being `"solo"` or `"online"`; the pause
+  screen's Change class calls `openMenu("class")` with none. `classFor`
+  holds it (`null` from pause) and `classRender()` sets the screen from it:
+  from a Play button the forward button `#btnPlay` shows ("Enter the hall"
+  or "Continue", with `data-padfirst`) and the mid-run line `#classSub` is
+  hidden; from pause it is the other way round. `classGo()` is the button's
+  click: `play()` for solo, `openMenu("coop")` for online. Back from the
+  class or room screen goes to the main menu, because `menuBack` keeps one
+  level. With nothing focused, Enter or Space on the main menu does what
+  Play solo does. Open the class screen through `openMenu`, never
+  `show("class")`, or `classFor` is stale.
+- **Exit to main menu.** `toTitle()` is `enterHub()` then `show("title")`:
+  a fresh hall behind the menu. `#btnExit` (pause), `#btnDeadExit` (death)
+  and `#btnWinExit` (win) call it. `enterHub` ends a co-op run for this
+  page first, so a friend's exit leaves the host playing and a host's exit
+  closes the room, and `resetRun` clears a portal fade in progress. It
+  asks nothing and leaves fullscreen as it is.
 - `update(dt)` advances the simulation. The frame loop scales `dt` for
   slow motion (`G.slowT`) and skips it for hit-stop (`G.hitstop`).
 - Timings in the data tables are in seconds, so the game is frame-rate
@@ -644,7 +670,8 @@ is what you need to change the code without breaking it.
   clicks that screen's `[data-back]` button. `focusables` skips the keyboard
   binding column (`#binds button[data-act]`), which the rebind flow covers.
   A screen opens on its first control, or the one with `data-padfirst`
-  (`#btnPlay`, because class cards come first). The focus is drawn by
+  (`#btnSolo` on the main menu; `#btnPlay` on the class screen when a Play
+  button opened it, because class cards come first). The focus is drawn by
   `.padfocus`, styled under `body.pad`. A range takes left and right.
   `PAD.menu` does not run while `PAD.rebind` is set.
 - Rebinding. `PAD.startRebind(a)` waits for a pad button, which the Controls
@@ -1546,6 +1573,8 @@ Two players through grade E's cave over the internet. The design is
   each player's own. Kill rewards go to the player whose event killed. The
   boss's death clears E for each in their own save. Either player in the
   gate ends the run for both (`end`, the win screen), and the room closes.
+  For another run both exit to the main menu and the host makes a new room;
+  no reload is needed (the end-to-end test does it).
   Pause stops nothing. A player the host has not heard for `COOP.AWAY` (2 s)
   is away: not hunted, not counted for a wipe, drawn faded. A client that
   has had no snapshot for `COOP.WAIT` (1 s) shows "Waiting for the host",
@@ -1594,8 +1623,10 @@ Two players through grade E's cave over the internet. The design is
   not `http://localhost` or `http://127.0.0.1` on any port; a request with no
   `Origin` header is let through. 429 past the per-address limit. Game frames never start with 0.
 - **The room screen** (`08e`, screen `coop` in `SCREENS` and `MENUS`).
-  `#btnCoop` ("Play with a friend") on the title shows only when the
-  address has `?coop=1` (`coopButton`). `#coopHost` posts to `/new`,
+  `#btnCoop` ("Play online") on the main menu is always shown, and reaches
+  this screen by way of the class screen's Continue; nothing reads
+  `?coop=1` any more, and an address that carries it works the same. The
+  screen's heading is "Play online". `#coopHost` posts to `/new`,
   starts the Worker with a random seed and joins it; it shows the code
   (`#coopShow`, large and selectable, `#coopCopy`), the two slots
   (`#coopSlots`, each `.slot` with `data-cls` once known, `.me` for this
@@ -1617,8 +1648,8 @@ Two players through grade E's cave over the internet. The design is
   must be set; a `file:` page is told to run `npm run dev`; a code must be
   six characters of the alphabet. `#coopMsg` is one element, written only by
   `coopSay`, which moves it onto the screen it is written on (the room
-  screen while it is up, else the title); opening the room screen clears
-  it. The messages are in `COOP_SAY`, among them `lost` ("The connection
+  screen while it is up, else the main menu, above its row of buttons);
+  opening the room screen clears it. The messages are in `COOP_SAY`, among them `lost` ("The connection
   to the room was lost. You can join again with the same code."), `ended`
   ("That run has ended. Ask the host for a new room.") and `bad` ("The host
   sent something this page could not read. Both reload the page."). `COOP_RELAY` is the deployed relay's
@@ -1900,7 +1931,21 @@ The class picker and HUD read `CLASSES` and need no changes.
 - Run `tests/t8.mjs` after any change to zones, portals, the hall or the
   dummy, and `tests/t9.mjs` to look at the hall. Both use the `hub` mode:
   `SCRIPT=$PWD/tests/t8.mjs node test.mjs hub`. The cave scripts use `smoke`,
-  which enters a cave after clicking play.
+  which enters a cave after playing solo. Both modes press Play solo on the
+  main menu and then Enter the hall on the class screen; `title` stays on
+  the main menu.
+- Run `tests/t30.mjs` after any change to the main menu, the class screen's
+  forward button or Exit to main menu, on the desktop page and on the
+  smallest phone:
+  `SCRIPT=$PWD/tests/t30.mjs node test.mjs title` and
+  `DEVICE=iphone-se SCRIPT=$PWD/tests/t30.mjs node test.mjs title`. It
+  checks the four buttons and the missing picker, the solo and online
+  paths, the class screen from pause (no forward button), Back, Esc and
+  the touch Back gesture, Enter on the menu, where the co-op line sits,
+  that everything fits, the exits from the hall, a cave, the death and win
+  screens, that a class picked after an exit is the one played, and an
+  exit in the middle of a portal fade. Look at `shots/t30-menu.png`,
+  `shots/t30-class.png` and the two `shots/iphone-se-t30-*.png`.
 - Co-op has its own tests. Run the Node ones after any change to `06c`,
   `06d` or anything the host copy runs; each prints `ok` or `FAIL` lines and
   ends `all passed`:
@@ -1921,7 +1966,8 @@ The class picker and HUD read `CLASSES` and need no changes.
     `tests/t28.mjs` (the other player and the party rules), both with
     `smoke`; `tests/t29.mjs` (the room screen up to the network: the button,
     the code's tidying and refusal, every message, the order of the checks,
-    the class fallback, a Worker host on the page, Back, a room that never
+    the class fallback, a Worker host on the page, Back, Exit to main menu
+    from a hosted run and a second room after it, a room that never
     answers, a Start that `play()` refuses, a Worker that fails) with
     `title`, on
     the desktop page and on a phone:
@@ -1932,7 +1978,10 @@ The class picker and HUD read `CLASSES` and need no changes.
     code, both enter, the friend sees the host move, an old version
     refused, the friend reloads and rejoins, a host page that stops drawing
     (marked away after 2 s while the dungeon runs on), a full room, the host
-    leaving, and the gate ending the run and the room. Every HTTP request but
+    leaving, the gate ending the run and the room, and then on two fresh
+    pages the friend exiting to the main menu (the host plays on), the host
+    exiting (the friend is told) and a second room with no reload. The host
+    page's address has no `?coop=1` and the friend's has it. Every HTTP request but
     to localhost is aborted (Playwright's routing does not see WebSockets;
     the only socket address the test gives the pages is the local relay). Afterwards `lsof -i :8787` and `lsof -i :8123` must
     show nothing.
@@ -2059,8 +2108,12 @@ The class picker and HUD read `CLASSES` and need no changes.
   not be the enemy the player meant.
 - In the controls menu, Escape cannot be bound, and the pause key in the
   no-pointer-lock fallback is fixed to P.
-- "Return to base" abandons the cave without asking, because nothing is lost
-  yet. It will need a confirmation once runs carry rewards.
+- "Return to base" and "Exit to main menu" abandon the cave without asking,
+  because nothing is lost yet. Both will need a confirmation once runs carry
+  rewards. In co-op both leave the room, and a host's exit ends it for the
+  friend, also without asking.
+- Back on the room screen goes to the main menu, not to the class screen it
+  was reached from: menus keep one level of where they came from.
 - Co-op is grade E, two players and the five base classes, and assumes
   desktop Chrome or Safari. It has not been played by hand or between two
   machines. The relay is deployed on the owner's Cloudflare account, free

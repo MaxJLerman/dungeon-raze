@@ -20,6 +20,20 @@ desktop it needs a keyboard and a mouse, or a controller. The keys are listed
 under Controls in the game and can be rebound there. Dodge is Space and Interact
 is G.
 
+The page opens on the main menu:
+
+| Button      | What it does                                                         |
+| ----------- | -------------------------------------------------------------------- |
+| Play solo   | Choose a class, then Enter the hall                                  |
+| Play online | Choose a class, then host or join a room with a friend (see Co-op)   |
+| How to play | The rules of a fight                                                 |
+| Controls    | Keys, controller buttons and touch settings, all of which can be changed |
+
+The class chosen last time is already selected. It can be changed later from
+the pause screen. The pause, death and win screens each have **Exit to main
+menu**, and in a dungeon also **Return to base**, which goes back to the hall.
+Neither asks first, because nothing is lost yet.
+
 Phones and tablets play in landscape by touch. The file runs on Android and on
 desktop. iPhones cannot open it from disk, so they play at
 https://maxjlerman.github.io/dungeon-raze/. Adding `?touch=1` to the address forces the touch
@@ -95,28 +109,34 @@ Two players can go through the E cave together over the internet. It is a
 first slice: grade E only, two players, the five base classes, and it has not
 yet been played by hand.
 
-For now the **Play with a friend** button shows only when the address ends
-with `?coop=1`, as in https://maxjlerman.github.io/dungeon-raze/?coop=1.
+Both players open https://maxjlerman.github.io/dungeon-raze/ and press
+**Play online** on the main menu. (A link that still ends with `?coop=1`, as
+the button once needed, works the same.)
 
-- **Host:** choose a class on the title screen, press Play with a friend, then
-  Host a room. Send your friend the six-character code shown (Copy puts it on
-  the clipboard). Press Start when you like; you can start alone and be joined
+- **Host:** press Play online, choose a class, press Continue, then Host a
+  room. Send your friend the six-character code shown (Copy puts it on the
+  clipboard). Press Start when you like; you can start alone and be joined
   later. While the room is open its code is also on your pause screen.
-- **Join:** choose a class, press Play with a friend, type the code and press
-  Join with a code. Press Enter the cave once the host has pressed Start.
+- **Join:** press Play online, choose a class, press Continue, type the code
+  and press Join with a code. Press Enter the cave once the host has pressed
+  Start.
 
 A hidden class plays as the Assassin in co-op; the saved choice is not
 changed. The dungeon does not pause in co-op. When either player steps into the
 exit gate the run ends for both, and the room closes. For another run, both
-reload the page and the host makes a new room. Both pages must be the same
-build of the game: the host refuses a page whose build differs, and says so.
+press Exit to main menu and the host makes a new room; no reload is needed.
+Exit to main menu and Return to base both leave the room. When the friend
+leaves, the host plays on and the friend can join again with the same code.
+When the host leaves, the room closes and the friend reads "The host has
+left." Both pages must be the same build of the game: the host refuses a page
+whose build differs, and says so.
 
 The host's dungeon runs in a Web Worker in the host's page, and the friend
 reaches it through a small relay on Cloudflare. Its `wss://` address is
 `COOP_RELAY` in `src/08e_coopui.js`, and [Deploy](#deploy) below says how
 both the page and the relay are put on the internet. Co-op runs from the
 GitHub Pages site and from
-`localhost` (`npm run dev`, then http://localhost:8000/?coop=1), not from the
+`localhost` (`npm run dev`, then http://localhost:8000), not from the
 file on disk, and the hosted single page cannot play co-op.
 
 ## Technology
@@ -246,7 +266,7 @@ The first time:
 
        let COOP_RELAY = "wss://dungeon-raze-relay.dungeon-raze.workers.dev";
 
-   Then `node build.mjs`, try it at http://localhost:8000/?coop=1 with
+   Then `node build.mjs`, try it at http://localhost:8000 with
    `npm run dev`, and merge the change to `main` so that the published page
    has it.
 
@@ -276,7 +296,7 @@ with what to check in a first session with a friend.
 
 | File                 | What it holds                                                                               |
 | -------------------- | ------------------------------------------------------------------------------------------- |
-| `index.tpl.html`     | Page shell: CSS, HUD elements, and the title, pause, class, controls, how to play, co-op room, death and win screens |
+| `index.tpl.html`     | Page shell: CSS, HUD elements, and the main menu, pause, class, controls, how to play, co-op room, death and win screens |
 | `src/01_math.js`     | Math helpers, seeded random numbers, value noise, 4x4 matrices                              |
 | `src/02_gl.js`       | Renderer `R`: lit pass, additive effects pass, scene nodes `Nd`, primitive meshes           |
 | `src/03_world.js`    | `genWorld(seed)`: cave graph, walkable field, collision, water layer, world mesh, lights, spawns; the room graph and wall builders it shares with the sewer |
@@ -380,8 +400,8 @@ The runner needs Playwright and a Chromium build:
 
 `test.mjs` opens the built page, reports any console or page errors, and runs
 the steps exported by the script named in `SCRIPT`. The mode decides where the
-steps start: `smoke` clicks play and enters a cave, `hub` clicks play and stays
-in the hall, and `title` stays on the title screen. A step that returns an
+steps start: `smoke` plays solo and enters a cave, `hub` plays solo and stays
+in the hall, and `title` stays on the main menu. A step that returns an
 object with a `pass` value other than `true` fails the run, and the process
 exits with code 1.
 Screenshots go to `shots/`.
@@ -414,7 +434,8 @@ Screenshots go to `shots/`.
 | `tests/t25.mjs` | Old Sluicejaw, the D boss: its body, place, modes, death roll, health marks, a whole D run from the hall, the tunnel phase and its plates, the falling ceiling, the bloaters down the falls and its shadow, with screenshots. Run in `smoke` mode |
 | `tests/t27.mjs` | Co-op client against a hand-stepped host over a fake link: puppets, hits, parries, executions, the cave checksum. Run in `smoke` mode |
 | `tests/t28.mjs` | Co-op: the other player on screen and the party rules. Run in `smoke` mode |
-| `tests/t29.mjs` | Co-op room screen up to the network: the button, codes, messages, the class fallback, a Worker host, the friend waiting for Start, a lost connection, the pause screen's code, Back by touch. Run in `title` mode, also with `DEVICE=oneplus-13` |
+| `tests/t29.mjs` | Co-op room screen up to the network: the button, codes, messages, the class fallback, a Worker host, the friend waiting for Start, a lost connection, the pause screen's code, Back by touch, Exit to main menu from a hosted run. Run in `title` mode, also with `DEVICE=oneplus-13` |
+| `tests/t30.mjs` | The main menu: its four buttons and no class picker, the solo and online paths through the class screen, Back, exits to the main menu from the hall, a cave, death and the win screen. Run in `title` mode, also with `DEVICE=iphone-se` |
 
 The co-op Node tests run without a page: `node tests/coop-host.mjs`,
 `node tests/coop-wire.mjs`, `node tests/coop-caves.mjs` (caves compared across

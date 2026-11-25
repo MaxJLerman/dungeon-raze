@@ -9,7 +9,7 @@ const MSG = {
   code: "That code is not valid.",
   relay: "Cannot reach the co-op relay.",
   copy: "This copy of the game cannot play co-op. Play at https://maxjlerman.github.io/dungeon-raze/",
-  file: "Co-op does not run from a file. Run npm run dev and open http://localhost:8000/?coop=1",
+  file: "Co-op does not run from a file. Run npm run dev and open http://localhost:8000",
   noroom: "No room has that code.",
   full: "That room is full.",
   version: "You and the host are on different versions of the game. Both reload the page.",
