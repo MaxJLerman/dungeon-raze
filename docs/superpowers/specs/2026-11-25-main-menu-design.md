@@ -149,3 +149,20 @@ clicks what) are brought up to date in the same change.
 Names of helpers, how the class screen remembers what it was opened for,
 and the exact wording of the main menu's blurb now that it no longer says
 "Pick a class".
+
+## Changes after the review, 2026-11-25
+
+Made at the owner's request once the branch had been reviewed:
+
+- Under touch, opening a menu over the main menu arms the Back catcher, so
+  a real Back on the class or room screen returns to the main menu before
+  the first play too.
+- Play online on a page that cannot play co-op at all (a file, another
+  site's copy, no relay address) says why on the main menu and does not
+  open the class screen.
+- With nothing focused, Enter or Space on the class screen opened by a Play
+  button does what its forward button does.
+- A solo start clears a co-op line left on the main menu.
+- The room screen's line names the class that will play when the chosen
+  one is hidden: "The Enforcer cannot play online yet, so you play the
+  Assassin."

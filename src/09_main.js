@@ -135,10 +135,23 @@ function classRender() {
   b.toggleAttribute("data-padfirst", !!classFor);
   $("classSub").hidden = !!classFor;
 }
-// The forward button: into the hall, or on to the room screen.
+// The forward button: into the hall, or on to the room screen. A solo
+// start clears a line a co-op run left on the main menu ("The host has
+// left."), which would otherwise still be there after this run.
 function classGo() {
   if (classFor === "online") openMenu("coop");
-  else if (classFor === "solo") play();
+  else if (classFor === "solo") {
+    coopSay("");
+    play();
+  }
+}
+// Play online on the main menu. A page that cannot play co-op at all (a
+// file, another site's copy, no relay) is told so here, on the main menu,
+// and goes no further.
+function playOnline() {
+  const bad = coopCheck();
+  if (bad) coopSay(COOP_SAY[bad]);
+  else openMenu("class", "online");
 }
 
 // ---- class picker ----
@@ -508,8 +521,10 @@ function boot() {
         respawn();
         play();
       } else if (G.state === "pause") play();
-      // on the main menu, what Play solo does
+      // on the main menu, what Play solo does; on the class screen a Play
+      // button opened, the way forward
       else if (G.state === "title") openMenu("class", "solo");
+      else if (G.state === "class" && classFor) classGo();
     }
     if (e.code === "Escape" && MENUS.includes(G.state)) menuGoBack();
   });
@@ -571,7 +586,7 @@ function boot() {
   });
   // menus
   $("btnSolo").addEventListener("click", () => openMenu("class", "solo"));
-  $("btnCoop").addEventListener("click", () => openMenu("class", "online"));
+  $("btnCoop").addEventListener("click", playOnline);
   $("btnPlay").addEventListener("click", classGo);
   $("btnResume").addEventListener("click", play);
   $("btnRise").addEventListener("click", () => {

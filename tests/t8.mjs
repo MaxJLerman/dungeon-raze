@@ -132,7 +132,7 @@ export default [
   return { pass: G.player.clsId === "mage" && Math.hypot(G.player.x - x, G.player.z - z) < 0.5 && G.enemies.length === 1 && !d.dead && G.zone === "hub" };`),
   step("hall screens", `${shown}
   const txt = (id) => document.getElementById(id).textContent.trim(), click = (id) => document.getElementById(id).click();
-  const c = { play: txt("btnPlay") === "Enter the hall" };
+  const c = { play: txt("btnSolo") === "Play solo" };
   // the round trips above cleared E; with nothing cleared D's label reads Sealed in the next step
   DF.resetCleared(); DF.enterHub(); DF.show("pause"); c.hubPause = !shown("btnBase");
   DF.enterCave("E", 99); DF.show("pause"); c.cavePause = shown("btnBase") && txt("btnBase") === "Return to base";

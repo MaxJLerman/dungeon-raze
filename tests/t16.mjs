@@ -432,6 +432,10 @@ export default [
   c.back2 = G.state === "title";
   // B does nothing on the title screen
   tap(1); c.title = G.state === "title";
+  // B on the class screen a Play button opened goes back to the main menu
+  DF.openMenu("class", "solo"); tick(2);
+  c.classOpen = G.state === "class" && DF.PAD.focus && DF.PAD.focus.id === "btnPlay";
+  tap(1); c.classBack = G.state === "title";
   // from pause, B resumes (Task 3) and Back returns to pause
   DF.show("pause"); tick(2);
   DF.PAD.setFocus(document.querySelector('#scr-pause [data-open="howto"]'));

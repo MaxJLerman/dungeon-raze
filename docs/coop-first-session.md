@@ -224,7 +224,8 @@ Two things to know:
   `127.0.0.1`). A page opened straight from a file (`file:` in the address
   bar) cannot play co-op. It says "Co-op does not run from a file. Run npm run
   dev and open http://localhost:8000". The single-file hosted copy of
-  the game cannot either. It says to play on the Pages site.
+  the game cannot either. It says to play on the Pages site. Both say it on
+  the main menu, the moment **Play online** is pressed.
 - You and your friend must both be on the same version of the game. Every
   build of the game carries a stamp made from its code, and the host's page
   refuses a friend whose page has a different stamp (an old copy a browser

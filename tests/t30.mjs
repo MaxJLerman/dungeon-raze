@@ -15,6 +15,8 @@ const HELP = `
   // back to the main menu whatever the last step left
   const home = () => { if (G.state === "coop") $("#scr-coop [data-back]").click(); DF.show("title"); };
   const all = (c) => ({ pass: Object.values(c).every((v) => v === true), c });
+  // the test page is a file:, which cannot play co-op: stand in for localhost
+  DF.coopLoc({ protocol: "http:", hostname: "localhost" });
 `;
 const step = (name, body) => ({
   name,
@@ -92,14 +94,75 @@ export default [
   c.esc = G.state === "title";
   return all(c);`),
 
-  step("enter on the main menu", `
+  step("enter and space, from the main menu to the hall", `
   const c = {};
-  home();
-  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  const idle = () => { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); };
+  home(); idle();
   key("Enter");
   c.opens = G.state === "class" && DF.classFor() === "solo";
+  // and again on the class screen: the way forward
+  idle();
+  key("Enter");
+  await frames();
+  c.plays = G.state === "play" && G.zone === "hub";
+  home(); idle();
+  key("Space");
+  c.space = G.state === "class" && DF.classFor() === "solo";
+  idle();
+  key("Space");
+  await frames();
+  c.spacePlays = G.state === "play";
+  // for an online start it is Continue
+  home(); idle();
+  DF.openMenu("class", "online");
+  key("Enter");
+  c.online = G.state === "coop";
+  home();
+  // opened from pause there is no way forward, and Enter does nothing
+  DF.show("pause"); DF.openMenu("class"); idle();
+  key("Enter");
+  c.fromPause = G.state === "class";
   home();
   return all(c);`),
+
+  step("a co-op line does not outlive a solo start", `
+  const c = {};
+  home();
+  DF.coopSay("The host has left.");
+  c.said = shown(id("coopMsg"));
+  // other menus leave it be
+  $('#scr-title [data-open="howto"]').click();
+  $("#scr-howto [data-back]").click();
+  c.kept = shown(id("coopMsg")) && G.state === "title";
+  id("btnSolo").click();
+  id("btnPlay").click();
+  await frames();
+  DF.show("pause");
+  id("btnExit") && id("btnExit").click();
+  await frames();
+  c.menu = G.state === "title";
+  c.gone = !shown(id("coopMsg")) && id("coopMsg").textContent === "";
+  return all(c);`),
+
+  step("Play online says at once when this page cannot play co-op", `
+  const c = {}, d = {};
+  const says = (loc) => { home(); DF.coopSay(""); DF.coopLoc(loc); id("btnCoop").click(); const el = id("coopMsg"); return { state: G.state, msg: shown(el) ? el.textContent : "" }; };
+  try {
+    d.file = says(null);
+    c.file = d.file.state === "title" && /^Co-op does not run from a file\\./.test(d.file.msg);
+    d.copy = says({ protocol: "https:", hostname: "example.com" });
+    c.copy = d.copy.state === "title" && /^This copy of the game cannot play co-op\\./.test(d.copy.msg);
+    c.above = id("coopMsg").nextElementSibling === $("#scr-title .row");
+    // Play solo is not held back, and a page that may play goes on
+    id("btnSolo").click();
+    c.solo = G.state === "class";
+    d.ok = says({ protocol: "https:", hostname: "maxjlerman.github.io" });
+    c.ok = d.ok.state === "class" && d.ok.msg === "" && DF.classFor() === "online";
+  } finally {
+    DF.coopLoc({ protocol: "http:", hostname: "localhost" });
+    home(); DF.coopSay("");
+  }
+  return { ...all(c), d };`),
 
   step("the co-op line sits above the buttons", `
   const c = {};
@@ -272,5 +335,5 @@ export default [
   // shots to look at: shots/[device-]t30-menu.png and t30-class.png
   { name: "shot: the main menu", eval: `DF.show("title")`, wait: 400, shot: "t30-menu" },
   { name: "shot: the class screen for a solo start", eval: `document.getElementById("btnSolo").click()`, wait: 400, shot: "t30-class" },
-  { name: "back to the main menu", eval: `DF.show("title")` },
+  { name: "back to the main menu", eval: `DF.show("title"); DF.coopLoc(null)` },
 ];

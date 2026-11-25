@@ -144,6 +144,8 @@ export default [
   DF.coopSay("The host has left.");
   c.msgOnTitle = c9.msg() === "The host has left." && document.getElementById("coopMsg").closest(".scr").id === "scr-title";
   // Play online, the class screen, then Continue
+  DF.coopLoc({ protocol: "http:", hostname: "localhost" });
+  DF.coopRelay("ws://localhost:1");
   document.getElementById("btnCoop").click();
   c.viaClass = DF.G.state === "class" && document.getElementById("btnPlay").textContent === "Continue";
   document.getElementById("btnPlay").click();
@@ -302,6 +304,14 @@ export default [
   await c9.frames();
   const me = document.querySelector("#coopSlots .slot.me");
   c.slot = !!me && me.dataset.cls === base && me.textContent.includes(DF.CLASSES[base].name);
+  // the screen's line says which class plays, and does not claim the chosen one does
+  const line = () => document.querySelector("#scr-coop .sub").textContent.replace(/\\s+/g, " ").trim();
+  c.line = line() === "One of you hosts a room and sends the other its code. The " + DF.CLASSES.enforcer.name + " cannot play online yet, so you play the " + DF.CLASSES[base].name + ".";
+  c9.back();
+  DF.setClass(base);
+  c9.open();
+  c.lineBase = line() === "One of you hosts a room and sends the other its code. You play the class you just chose.";
+  DF.setClass("enforcer");
   c.two = document.querySelectorAll("#coopSlots .slot").length === 2;
   c.saveKept = DF.OPT.cls === "enforcer" && (JSON.parse(localStorage.getItem("dungeon-raze.v2") || "{}").o || {}).cls === "enforcer";
   c.base = base;

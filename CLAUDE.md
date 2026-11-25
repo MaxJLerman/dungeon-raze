@@ -481,10 +481,16 @@ is what you need to change the code without breaking it.
   from a Play button the forward button `#btnPlay` shows ("Enter the hall"
   or "Continue", with `data-padfirst`) and the mid-run line `#classSub` is
   hidden; from pause it is the other way round. `classGo()` is the button's
-  click: `play()` for solo, `openMenu("coop")` for online. Back from the
-  class or room screen goes to the main menu, because `menuBack` keeps one
-  level. With nothing focused, Enter or Space on the main menu does what
-  Play solo does. Open the class screen through `openMenu`, never
+  click: `play()` for solo (after clearing a co-op line left on the main
+  menu), `openMenu("coop")` for online. Back from the class screen goes to
+  where it was opened from: the main menu when a Play button opened it, the
+  pause screen otherwise. Back from the room screen goes to the main menu,
+  not the class screen, because `menuBack` keeps one level. With nothing
+  focused, Enter or Space on the main menu does what Play solo does, and on
+  the class screen a Play button opened it does what the forward button
+  does. `#btnCoop`'s click is `playOnline()`: a page `coopCheck()` refuses
+  (a file, another site's copy, no relay) is told why on the main menu and
+  goes no further. Open the class screen through `openMenu`, never
   `show("class")`, or `classFor` is stale.
 - **Exit to main menu.** `toTitle()` is `enterHub()` then `show("title")`:
   a fresh hall behind the menu. `#btnExit` (pause), `#btnDeadExit` (death)
@@ -1632,7 +1638,10 @@ Two players through grade E's cave over the internet. The design is
   `#btnCoop` ("Play online") on the main menu is always shown, and reaches
   this screen by way of the class screen's Continue; nothing reads
   `?coop=1` any more, and an address that carries it works the same. The
-  screen's heading is "Play online". `#coopHost` posts to `/new`,
+  screen's heading is "Play online", and `coopRoomOpen` writes its first
+  line (`#coopSub`): "You play the class you just chose.", or, for a hidden
+  class, "The Enforcer cannot play online yet, so you play the Assassin."
+  with the two names. `#coopHost` posts to `/new`,
   starts the Worker with a random seed and joins it; it shows the code
   (`#coopShow`, large and selectable, `#coopCopy`), the two slots
   (`#coopSlots`, each `.slot` with `data-cls` once known, `.me` for this
@@ -1950,8 +1959,13 @@ The class picker and HUD read `CLASSES` and need no changes.
   the touch Back gesture (a real one included), Enter on the menu, where the co-op line sits,
   that everything fits, the exits from the hall, a cave, the death and win
   screens, that a class picked after an exit is the one played, and an
-  exit in the middle of a portal fade. Look at `shots/t30-menu.png`,
+  exit in the middle of a portal fade, that a co-op line does not outlive a
+  solo start, and that Play online on a page that cannot play co-op says so
+  on the main menu (the test page is a `file:`, so every step stands in
+  `localhost` through `DF.coopLoc`). Look at `shots/t30-menu.png`,
   `shots/t30-class.png` and the two `shots/iphone-se-t30-*.png`.
+  `node tests/t30-nogl.mjs` opens the page in a browser with no WebGL 2 and
+  checks the message and that both Play buttons are disabled.
 - Co-op has its own tests. Run the Node ones after any change to `06c`,
   `06d` or anything the host copy runs; each prints `ok` or `FAIL` lines and
   ends `all passed`:

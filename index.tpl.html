@@ -595,7 +595,6 @@
         max-width: 60ch;
       }
       /* the room screen */
-      #btnCoop[hidden],
       #coopPick[hidden],
       #coopRoom[hidden],
       #coopEnter[hidden] {
@@ -1296,10 +1295,6 @@
         .scr button.card b {
           font-size: 17px;
         }
-        /* the title keeps its buttons in view; the class screen has the kit */
-        #scr-title .kit {
-          display: none;
-        }
         .kit {
           font-size: 14px;
           padding: 8px 10px;
@@ -1581,7 +1576,7 @@
     </div>
     <div id="scr-coop" class="scr wide">
       <h1 class="sm">Play online</h1>
-      <p class="sub">
+      <p class="sub" id="coopSub">
         One of you hosts a room and sends the other its code. You play the
         class you just chose.
       </p>

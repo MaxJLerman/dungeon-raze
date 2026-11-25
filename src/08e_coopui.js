@@ -81,9 +81,17 @@ function coopRoomLive() {
 function coopRoomClear() {
   Object.assign(CR, { role: null, link: null, code: "", busy: false, relay: false });
 }
-// The room screen has just opened: its line starts empty.
+// The room screen has just opened: its line of news starts empty, and its
+// first line names the class this page plays, which is not the one chosen
+// when that one is hidden.
 function coopRoomOpen() {
   coopSay("");
+  const mine = coopMyCls();
+  $("coopSub").textContent =
+    "One of you hosts a room and sends the other its code. " +
+    (mine === OPT.cls
+      ? "You play the class you just chose."
+      : "The " + CLASSES[OPT.cls].name + " cannot play online yet, so you play the " + CLASSES[mine].name + ".");
   coopRoomRender();
 }
 // Ends a room that was not entered (Back on the room screen) and drops

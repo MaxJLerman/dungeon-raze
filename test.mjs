@@ -6,7 +6,7 @@ const { chromium } = await import(
 );
 const ROOT = fileURLToPath(new URL(".", import.meta.url));
 // modes: "title" stays on the main menu, "hub" plays solo and stays in the
-// hall, "smoke" clicks play and then enters a cave.
+// hall, "smoke" plays solo and then enters a cave.
 const mode = process.argv[2] || "smoke";
 fs.mkdirSync(ROOT + "shots", { recursive: true });
 const b = await chromium.launch({

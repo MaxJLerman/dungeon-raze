@@ -121,8 +121,8 @@ the button once needed, works the same.)
   and press Join with a code. Press Enter the cave once the host has pressed
   Start.
 
-A hidden class plays as the Assassin in co-op; the saved choice is not
-changed. The dungeon does not pause in co-op. When either player steps into the
+A hidden class plays as the Assassin in co-op, and the room screen says so;
+the saved choice is not changed. The dungeon does not pause in co-op. When either player steps into the
 exit gate the run ends for both, and the room closes. For another run, both
 press Exit to main menu and the host makes a new room; no reload is needed.
 Exit to main menu and Return to base both leave the room. When the friend
@@ -137,7 +137,8 @@ reaches it through a small relay on Cloudflare. Its `wss://` address is
 both the page and the relay are put on the internet. Co-op runs from the
 GitHub Pages site and from
 `localhost` (`npm run dev`, then http://localhost:8000), not from the
-file on disk, and the hosted single page cannot play co-op.
+file on disk, and the hosted single page cannot play co-op. On those two,
+Play online says so on the main menu and goes no further.
 
 ## Technology
 
@@ -435,7 +436,7 @@ Screenshots go to `shots/`.
 | `tests/t27.mjs` | Co-op client against a hand-stepped host over a fake link: puppets, hits, parries, executions, the cave checksum. Run in `smoke` mode |
 | `tests/t28.mjs` | Co-op: the other player on screen and the party rules. Run in `smoke` mode |
 | `tests/t29.mjs` | Co-op room screen up to the network: the button, codes, messages, the class fallback, a Worker host, the friend waiting for Start, a lost connection, the pause screen's code, Back by touch, Exit to main menu from a hosted run. Run in `title` mode, also with `DEVICE=oneplus-13` |
-| `tests/t30.mjs` | The main menu: its four buttons and no class picker, the solo and online paths through the class screen, Back, exits to the main menu from the hall, a cave, death and the win screen. Run in `title` mode, also with `DEVICE=iphone-se` |
+| `tests/t30.mjs` | The main menu: its four buttons and no class picker, the solo and online paths through the class screen, Back, exits to the main menu from the hall, a cave, death and the win screen. Run in `title` mode, also with `DEVICE=iphone-se`. `node tests/t30-nogl.mjs` checks the menu in a browser with no WebGL 2 |
 
 The co-op Node tests run without a page: `node tests/coop-host.mjs`,
 `node tests/coop-wire.mjs`, `node tests/coop-caves.mjs` (caves compared across
