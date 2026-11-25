@@ -42,7 +42,10 @@ if (process.env.DEVICE) {
   await p.addInitScript((ins) => {
     window.__fakeInsets = ins;
   }, dev.ins);
-} else p = await b.newPage({ viewport: { width: 1280, height: 720 } });
+} else {
+  p = await b.newPage({ viewport: { width: 1280, height: 720 } });
+  await p.exposeFunction("__mouse", (x, y) => p.mouse.move(x, y));
+}
 const errs = [];
 p.on("console", (m) => {
   if (m.type() === "error" && !/ERR_|Failed to load resource/.test(m.text()))
