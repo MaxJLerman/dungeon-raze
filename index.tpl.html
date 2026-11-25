@@ -1399,21 +1399,19 @@
     <div id="scr-title" class="scr wide">
       <h1>DungeonRaze</h1>
       <p class="sub">
-        Six gates stand in the hall, graded E to S. Pick a class, step
-        through the first, and come back alive. Killing its boss opens the
-        second.
+        Six gates stand in the hall, graded E to S. Step through the first
+        and come back alive. Killing its boss opens the second.
       </p>
       <p class="touch-note">
         On a phone or tablet, turn it sideways. The controls appear when you
         start.
       </p>
       <p id="coopMsg" role="status" hidden></p>
-      <div class="picker"></div>
       <div class="row">
-        <button id="btnPlay" type="button" data-padfirst>Enter the hall</button
+        <button id="btnSolo" type="button" data-padfirst>Play solo</button
+        ><button id="btnCoop" type="button">Play online</button
         ><button type="button" data-open="howto">How to play</button
-        ><button type="button" data-open="controls">Controls</button
-        ><button id="btnCoop" type="button" hidden>Play with a friend</button>
+        ><button type="button" data-open="controls">Controls</button>
       </div>
     </div>
     <div id="scr-pause" class="scr">
@@ -1430,11 +1428,14 @@
     </div>
     <div id="scr-class" class="scr wide">
       <h1 class="sm">Choose a class</h1>
-      <p class="sub">
+      <p class="sub" id="classSub">
         Switching mid-run keeps your place in the cave and your share of health.
       </p>
       <div class="picker"></div>
-      <div class="row"><button type="button" data-back="1">Back</button></div>
+      <div class="row">
+        <button id="btnPlay" type="button" hidden>Enter the hall</button
+        ><button type="button" data-back="1">Back</button>
+      </div>
     </div>
     <div id="scr-controls" class="scr wide">
       <h1 class="sm">Controls</h1>
@@ -1578,10 +1579,10 @@
       <div class="row"><button type="button" data-back="1">Back</button></div>
     </div>
     <div id="scr-coop" class="scr wide">
-      <h1 class="sm">Play with a friend</h1>
+      <h1 class="sm">Play online</h1>
       <p class="sub">
         One of you hosts a room and sends the other its code. You play the
-        class chosen on the title screen.
+        class you just chose.
       </p>
       <div id="coopPick">
         <button id="coopHost" type="button" data-padfirst>Host a room</button>

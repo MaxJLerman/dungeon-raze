@@ -18,6 +18,9 @@ const MENUS = ["class", "controls", "howto", "coop"];
 let menuBack = "title",
   rebind = null,
   swallowClick = false;
+// What the class screen was opened for: "solo" or "online" from the main
+// menu's Play buttons, null from the pause screen (a change mid-run).
+let classFor = null;
 function show(state) {
   // a plaque closes at once when play stops
   if (state !== "play") closePlaque(true);
@@ -100,12 +103,32 @@ function menuGoBack() {
   if (G.state === "coop") coopLeaveRoom();
   show(menuBack);
 }
-function openMenu(which) {
+// why is read for the class screen only: "solo" or "online" when a Play
+// button on the main menu opens it, nothing when the pause screen does.
+function openMenu(which, why) {
   if (!MENUS.includes(G.state)) menuBack = G.state;
   if (which === "controls") renderControls();
-  else if (which === "class") renderPicker();
+  else if (which === "class") {
+    classFor = why === "solo" || why === "online" ? why : null;
+    renderPicker();
+    classRender();
+  }
   show(which);
   if (which === "coop") coopRoomOpen();
+}
+// The class screen's forward button and its line, from classFor. Opened
+// from the pause screen there is no way forward, only Back.
+function classRender() {
+  const b = $("btnPlay");
+  b.textContent = classFor === "online" ? "Continue" : "Enter the hall";
+  b.hidden = !classFor;
+  b.toggleAttribute("data-padfirst", !!classFor);
+  $("classSub").hidden = !!classFor;
+}
+// The forward button: into the hall, or on to the room screen.
+function classGo() {
+  if (classFor === "online") openMenu("coop");
+  else if (classFor === "solo") play();
 }
 
 // ---- class picker ----
@@ -393,7 +416,8 @@ function boot() {
   if (!R.init(canvas)) {
     $("scr-title").querySelector(".sub").textContent =
       "This browser cannot start WebGL 2, so the game cannot draw. Try a recent Chrome, Edge, Firefox or Safari.";
-    $("btnPlay").disabled = true;
+    $("btnSolo").disabled = true;
+    $("btnCoop").disabled = true;
     return;
   }
   loadOpt();
@@ -473,7 +497,9 @@ function boot() {
       if (G.state === "dead") {
         respawn();
         play();
-      } else if (G.state === "pause" || G.state === "title") play();
+      } else if (G.state === "pause") play();
+      // on the main menu, what Play solo does
+      else if (G.state === "title") openMenu("class", "solo");
     }
     if (e.code === "Escape" && MENUS.includes(G.state)) menuGoBack();
   });
@@ -534,7 +560,9 @@ function boot() {
     G.noLock = true;
   });
   // menus
-  $("btnPlay").addEventListener("click", play);
+  $("btnSolo").addEventListener("click", () => openMenu("class", "solo"));
+  $("btnCoop").addEventListener("click", () => openMenu("class", "online"));
+  $("btnPlay").addEventListener("click", classGo);
   $("btnResume").addEventListener("click", play);
   $("btnRise").addEventListener("click", () => {
     respawn();
@@ -771,6 +799,7 @@ window.DF = {
   inputMode,
   resetPlaqueCodes,
   openMenu,
+  classFor: () => classFor,
   loadOpt,
   saveOpt,
   net: () => NET,
@@ -781,7 +810,6 @@ window.DF = {
   coopMakeHost,
   coopSay,
   coopWorldSum,
-  coopButton,
   coopBuild: COOP_BUILD,
   // tests: the relay's address, a stand-in for location, the next hosted seed
   coopRelay: (url) => (COOP_RELAY = url || ""),

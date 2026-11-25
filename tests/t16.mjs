@@ -344,13 +344,19 @@ export default [
   return { pass: !!first && !changed && !!after && after !== first, hadFirst: !!first, changed, flicked: after !== first };`),
   step("a screen opens with its first control focused", `
   const c = {};
-  for (const [scr, want] of [["pause", "btnResume"], ["dead", "btnRise"], ["title", "btnPlay"]]) {
+  for (const [scr, want] of [["pause", "btnResume"], ["dead", "btnRise"], ["title", "btnSolo"]]) {
     DF.show(scr); tick(1);
     c[scr] = !!DF.PAD.focus && DF.PAD.focus.id === want && DF.PAD.focus.classList.contains("padfocus");
   }
-  DF.show("class"); tick(1);
+  // the class screen from pause opens on its first card; opened by a Play
+  // button it opens on the way forward, since the cards come first
+  DF.show("pause"); DF.openMenu("class"); tick(1);
   const first = document.querySelector("#scr-class .card");
   c.class = DF.PAD.focus === first && !!first;
+  DF.show("title"); tick(1); DF.openMenu("class", "solo"); tick(1);
+  c.classSolo = !!DF.PAD.focus && DF.PAD.focus.id === "btnPlay";
+  DF.show("title"); tick(1); DF.openMenu("class", "online"); tick(1);
+  c.classOnline = !!DF.PAD.focus && DF.PAD.focus.id === "btnPlay" && DF.PAD.focus.textContent === "Continue";
   // only one control carries the mark, and play clears it
   c.one = document.querySelectorAll(".padfocus").length === 1;
   DF.show("play"); tick(1);
@@ -365,7 +371,8 @@ export default [
   step("focus moves by direction", `
   const tap = (b) => { pads(mk({ b: { [b]: 1 } })); tick(1); pads(mk()); tick(2); };
   const ctr = (e) => { const r = e.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; };
-  DF.show("class"); DF.PAD.setActive(true); pads(mk()); tick(2);
+  // the class screen as the pause screen opens it: the cards come first
+  DF.show("pause"); DF.openMenu("class"); DF.PAD.setActive(true); pads(mk()); tick(2);
   const c = {};
   const a = DF.PAD.focus, [ax, ay] = ctr(a);
   tap(15);
@@ -393,6 +400,22 @@ export default [
   DF.PAD.step = o;
   DF.show("title");
   return { pass: r.a === 1 && r.b === 2 && r.c === 5, r };`),
+  step("one press of A on Play solo opens the class screen and goes no further", `
+  const c = {};
+  DF.show("title"); pads(mk()); tick(2);
+  c.first = !!DF.PAD.focus && DF.PAD.focus.id === "btnSolo";
+  // held through the screen change: it must not also press Enter the hall
+  pads(mk({ b: { 0: 1 } })); tick(1);
+  c.opened = G.state === "class" && DF.classFor() === "solo";
+  tick(3);
+  c.held = G.state === "class";
+  pads(mk()); tick(2);
+  c.released = G.state === "class" && !!DF.PAD.focus && DF.PAD.focus.id === "btnPlay";
+  // a second press goes on into the hall
+  pads(mk({ b: { 0: 1 } })); tick(1); pads(mk()); tick(2);
+  c.second = G.state === "play";
+  DF.show("title");
+  return { pass: Object.values(c).every(Boolean), c };`),
   step("A presses and B goes back", `
   const tap = (b) => { pads(mk({ b: { [b]: 1 } })); tick(1); pads(mk()); tick(2); };
   const c = {};
@@ -415,7 +438,7 @@ export default [
   tap(0); c.fromPause = G.state === "howto";
   tap(1); c.backPause = G.state === "pause";
   // the class screen: A on a card chooses it
-  DF.show("class"); tick(2);
+  DF.openMenu("class"); tick(2);
   const was = DF.OPT.cls;
   const card = [...document.querySelectorAll("#scr-class .card")].find((e) => e.dataset.cls !== was);
   DF.PAD.setFocus(card);

@@ -5,7 +5,7 @@ const { chromium } = await import(
   process.env.PLAYWRIGHT_MODULE || "playwright"
 );
 const ROOT = fileURLToPath(new URL(".", import.meta.url));
-// modes: "title" stays on the title screen, "hub" clicks play and stays in the
+// modes: "title" stays on the main menu, "hub" plays solo and stays in the
 // hall, "smoke" clicks play and then enters a cave.
 const mode = process.argv[2] || "smoke";
 fs.mkdirSync(ROOT + "shots", { recursive: true });
@@ -66,9 +66,13 @@ const shot = (n) =>
 await shot("title");
 if (mode !== "title") {
   // a phone taps; a mouse click would count as a mouse and turn touch mode off
-  if (dev) await p.tap("#btnPlay");
-  else await p.click("#btnPlay");
-  await p.waitForTimeout(600);
+  // Play solo on the main menu, then Enter the hall on the class screen
+  for (const b of ["#btnSolo", "#btnPlay"]) {
+    if (dev) await p.tap(b);
+    else await p.click(b);
+    await p.waitForTimeout(300);
+  }
+  await p.waitForTimeout(300);
   if (mode === "smoke")
     await p.evaluate(() => {
       if (DF.enterCave) DF.enterCave("E");

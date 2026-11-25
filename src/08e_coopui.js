@@ -5,7 +5,8 @@
 // note that the dungeon runs on (#pauseCoop) and, for the host, its room code
 // (#pauseCode), the room screen (#scr-coop)
 // and its line of news (#coopMsg). All but the last two are hidden whenever
-// NET is null.
+// NET is null. The room screen is reached from the main menu's Play online
+// button, by way of the class screen (09_main.js).
 
 // The deployed relay's wss:// address, set when the owner deploys it
 // (relay/README.md). Empty, co-op says it cannot reach the relay. POST /new
@@ -48,22 +49,11 @@ const CR = { role: null, link: null, code: "", busy: false, try: 0, loc: null, s
 function coopSay(text) {
   const el = $("coopMsg"),
     room = G.state === "coop",
-    at = room ? $("coopSlots") : $("scr-title").querySelector(".picker");
+    at = room ? $("coopSlots") : $("scr-title").querySelector(".row");
   if (at && el.nextElementSibling !== at) at.before(el);
   el.textContent = text || "";
   el.hidden = !text;
 }
-// Shows #btnCoop when the address asks for co-op (?coop=1).
-function coopButton(search = location.search) {
-  let on = false;
-  try {
-    on = new URLSearchParams(search).get("coop") === "1";
-  } catch (e) {
-    on = false;
-  }
-  $("btnCoop").hidden = !on;
-}
-
 // What stops co-op before any network use, in order, as a key of
 // COOP_SAY, or "" when nothing does. code is the tidied code for a join.
 function coopCheck(code) {
@@ -238,8 +228,6 @@ function coopRoomRender() {
   }
 }
 function coopUiInit() {
-  coopButton();
-  $("btnCoop").addEventListener("click", () => openMenu("coop"));
   $("coopHost").addEventListener("click", coopHostRoom);
   $("coopJoin").addEventListener("click", coopJoinRoom);
   $("coopCode").addEventListener("keydown", (e) => {

@@ -15,7 +15,7 @@ const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || "playwright")
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DIST = path.join(ROOT, "dist");
 const PORT = 8123;
-const PAGE = "http://localhost:" + PORT + "/?coop=1";
+const PAGE = "http://localhost:" + PORT + "/";
 const RELAY = "ws://localhost:8787";
 const CODE_RE = /^[A-HJKMNP-Z2-9]{6}$/;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -138,7 +138,9 @@ async function openPage(name, { v0 = false } = {}) {
     if (m.type() === "error" && !/ERR_|Failed to load resource/.test(m.text())) errs.push(name + ": " + m.text());
   });
   p.on("pageerror", (e) => errs.push(name + ": PAGEERROR " + e.message));
-  await p.goto(PAGE);
+  // Play online needs nothing in the address. A friend's page keeps the
+  // old ?coop=1, which links already sent still carry and which does nothing.
+  await p.goto(PAGE + (/friend/i.test(name) ? "?coop=1" : ""));
   await prep(p);
   pages.push(p);
   p.__name = name;
@@ -159,8 +161,13 @@ const msg = (p) =>
     return el && !el.hidden && el.getClientRects().length ? el.textContent : "";
   });
 const state = (p) => p.evaluate(() => DF.G.state);
-async function hostRoom(p) {
+// Play online on the main menu, then Continue on the class screen
+async function toRoom(p) {
   await p.click("#btnCoop");
+  await p.click("#btnPlay");
+}
+async function hostRoom(p) {
+  await toRoom(p);
   // two clicks before the first has answered
   await p.evaluate(() => {
     const b = document.getElementById("coopHost");
@@ -177,7 +184,7 @@ async function hostRoom(p) {
   return code;
 }
 async function joinRoom(p, code) {
-  await p.click("#btnCoop");
+  await toRoom(p);
   await p.fill("#coopCode", code.toLowerCase().slice(0, 3) + "-" + code.toLowerCase().slice(3));
   await p.click("#coopJoin");
 }
