@@ -576,8 +576,17 @@
       #mateBar[hidden],
       #coopWait[hidden],
       #pauseCoop[hidden],
+      #pauseCode[hidden],
       #coopMsg[hidden] {
         display: none;
+      }
+      #pauseCodeV {
+        font-family: var(--display);
+        letter-spacing: 0.18em;
+        color: var(--bone);
+        user-select: all;
+        -webkit-user-select: all;
+        cursor: text;
       }
       #coopMsg {
         color: var(--ember);
@@ -1410,6 +1419,7 @@
     <div id="scr-pause" class="scr">
       <h1>Paused</h1>
       <p class="sub" id="pauseCoop" hidden>The dungeon does not pause in co-op.</p>
+      <p class="sub" id="pauseCode" hidden>Room code <span id="pauseCodeV"></span></p>
       <div class="row">
         <button id="btnResume" type="button">Resume</button
         ><button type="button" data-open="class">Change class</button

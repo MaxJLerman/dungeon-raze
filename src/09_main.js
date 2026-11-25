@@ -93,6 +93,13 @@ function toBase() {
   enterHub(G.grade);
   play();
 }
+// Back from a menu, by its Back button, Esc, a pad's back button (which
+// clicks the button) or the Back gesture: the screen it was opened over.
+// Leaving the room screen first ends a room not yet entered.
+function menuGoBack() {
+  if (G.state === "coop") coopLeaveRoom();
+  show(menuBack);
+}
 function openMenu(which) {
   if (!MENUS.includes(G.state)) menuBack = G.state;
   if (which === "controls") renderControls();
@@ -372,7 +379,7 @@ function frame(now) {
     for (const k in taps) taps[k] = false;
   }
   // nothing is simulated on the title, but its backdrop should still move
-  if (G.state === "title") G.t += dt;
+  if (G.state === "title" && !(NET && NET.live)) G.t += dt;
   camUpdate(dt);
   render();
   HUD.update(dt);
@@ -468,11 +475,7 @@ function boot() {
         play();
       } else if (G.state === "pause" || G.state === "title") play();
     }
-    if (e.code === "Escape" && MENUS.includes(G.state)) {
-      // leaving the room screen ends a room not yet entered, as its Back does
-      if (G.state === "coop") coopLeaveRoom();
-      show(menuBack);
-    }
+    if (e.code === "Escape" && MENUS.includes(G.state)) menuGoBack();
   });
   addEventListener("keyup", (e) => {
     keys[e.code] = false;
@@ -541,8 +544,7 @@ function boot() {
     $(id).addEventListener("click", toBase);
   for (const b of document.querySelectorAll("[data-open]"))
     b.addEventListener("click", () => openMenu(b.dataset.open));
-  for (const b of document.querySelectorAll("[data-back]"))
-    b.addEventListener("click", () => show(menuBack));
+  for (const b of document.querySelectorAll("[data-back]")) b.addEventListener("click", menuGoBack);
   document.addEventListener("click", (e) => {
     const card = e.target.closest && e.target.closest(".card");
     if (card) {
@@ -780,6 +782,7 @@ window.DF = {
   coopSay,
   coopWorldSum,
   coopButton,
+  coopBuild: COOP_BUILD,
   // tests: the relay's address, a stand-in for location, the next hosted seed
   coopRelay: (url) => (COOP_RELAY = url || ""),
   coopLoc: (loc) => (CR.loc = loc || null),

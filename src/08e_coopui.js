@@ -2,7 +2,8 @@
 // What a co-op run adds to the HUD and the menus: the other player's health
 // as a thin bar under this player's vitals (#mateBar), "Waiting for the host"
 // over the game while snapshots have stopped (#coopWait), the pause screen's
-// note that the dungeon runs on (#pauseCoop), the room screen (#scr-coop)
+// note that the dungeon runs on (#pauseCoop) and, for the host, its room code
+// (#pauseCode), the room screen (#scr-coop)
 // and its line of news (#coopMsg). All but the last two are hidden whenever
 // NET is null.
 
@@ -23,6 +24,9 @@ const COOP_SAY = {
   version: "You and the host are on different versions of the game. Both reload the page.",
   worker: "This browser cannot host a room.",
   host: "The host has left.",
+  lost: "The connection to the room was lost. You can join again with the same code.",
+  ended: "That run has ended. Ask the host for a new room.",
+  bad: "The host sent something this page could not read. Both reload the page.",
   stopped: "The host's game stopped. The room is closed.",
   code: "That code is not valid.",
 };
@@ -36,7 +40,8 @@ const COOP_SAY = {
 //   loc    a stand-in for location, for tests (DF.coopLoc)
 //   seed   the seed the next hosted run uses, for tests; null is random
 //   html   what #coopSlots last showed
-const CR = { role: null, link: null, code: "", busy: false, try: 0, loc: null, seed: null, html: "" };
+//   relay  the hosted room's relay socket is open, as its Worker last said
+const CR = { role: null, link: null, code: "", busy: false, try: 0, loc: null, seed: null, html: "", relay: false };
 
 // Writes the co-op line on the screen it is written on: the room screen
 // while it is up, else the title screen. An empty text clears and hides it.
@@ -84,7 +89,7 @@ function coopRoomLive() {
   return !!CR.role;
 }
 function coopRoomClear() {
-  Object.assign(CR, { role: null, link: null, code: "", busy: false });
+  Object.assign(CR, { role: null, link: null, code: "", busy: false, relay: false });
 }
 // The room screen has just opened: its line starts empty.
 function coopRoomOpen() {
@@ -141,8 +146,9 @@ async function coopHostRoom() {
   coopRoomRender();
 }
 // The host's relay socket, as its Worker reports it. Gone, the run goes on
-// for this page alone.
+// for this page alone. While it is open the pause screen shows the code.
 function coopRelayNews(s) {
+  CR.relay = s === "open";
   if (s !== "error" && s !== "closed") return;
   if (G.state === "coop") coopSay(COOP_SAY.relay);
   else if (NET && NET.live) say("The co-op relay has closed. No friend can join now.", "", 4);
@@ -171,6 +177,8 @@ function coopJoinRoom() {
 // click tries play() again.
 function coopEnterRoom() {
   if (!coopRoomLive() || !NET || !NET.client || CC.link !== CR.link || G.state === "play") return;
+  // the friend waits for the host's Start
+  if (CR.role !== "host" && !CC.started) return;
   coopEnter();
   play();
 }
@@ -208,13 +216,14 @@ function coopRoomRender() {
     host = CR.role === "host",
     joined = !!(NET && NET.client && CR.link && CC.link === CR.link),
     mate = joined && NET.mates.length ? NET.mates[0] : null,
+    ready = joined && (host || CC.started),
     enter = $("coopEnter");
   $("coopPick").hidden = live;
   $("coopRoom").hidden = !live || !CR.code || !host;
   if ($("coopShow").textContent !== CR.code) $("coopShow").textContent = CR.code;
   enter.hidden = !live;
-  enter.disabled = !joined;
-  const label = host ? "Start" : joined ? "Enter the cave" : "Waiting for the host to start";
+  enter.disabled = !ready;
+  const label = host ? "Start" : ready ? "Enter the cave" : "Waiting for the host to start";
   if (enter.textContent !== label) enter.textContent = label;
   const me = coopMyCls(),
     slot = (cls, who, mine) =>
@@ -241,7 +250,6 @@ function coopUiInit() {
   });
   $("coopEnter").addEventListener("click", coopEnterRoom);
   $("coopCopy").addEventListener("click", coopCopy);
-  $("scr-coop").querySelector("[data-back]").addEventListener("click", coopLeaveRoom);
 }
 
 // Called from HUD.update every frame. The wait is measured in real time
@@ -260,5 +268,9 @@ function coopHud() {
   }
   $("coopWait").hidden = !(run && CC.heard >= 0 && CC.now - CC.heard > COOP.WAIT);
   $("pauseCoop").hidden = !run;
+  // the host's room code on the pause screen, while its relay socket is up
+  const code = run && CR.role === "host" && CR.relay && coopRoomLive() && CC.link === CR.link ? CR.code : "";
+  $("pauseCode").hidden = !code;
+  if ($("pauseCodeV").textContent !== code) $("pauseCodeV").textContent = code;
   if (G.state === "coop") coopRoomRender();
 }

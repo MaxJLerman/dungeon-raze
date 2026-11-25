@@ -39,6 +39,8 @@
 //   judged   how the swings judged here on this player came out, by
 //            hurtPlayer's result
 //   gate     this player has asked the host to end the run at the gate
+//   started  the host's player has pressed Start (from the join, or the
+//            started event); until then a friend cannot enter
 //
 // The other player is in NET.mates: a player from makePlayer, flagged remote,
 // never stepped by playerUpdate, moved from its snapshot records (nb) as the
@@ -74,6 +76,7 @@ function coopClear() {
     fin: null,
     judged: { hit: 0, block: 0, parry: 0, none: 0 },
     gate: false,
+    started: false,
   });
 }
 coopClear();
@@ -86,7 +89,8 @@ const COOP_GLIDE = 1.4,
   COOP_GUESS = 2, // seconds a guess stands without the host's answer
   COOP_FIN_WAIT = 5, // seconds an execution's rewards wait for the host's answer
   COOP_AWAY = [0.42, 0.42, 0.42], // the other player's marker while it is away
-  COOP_MATE_HIT = 0.4; // how loud a hit of the other player's sounds here
+  COOP_MATE_HIT = 0.4, // how loud a hit of the other player's sounds here
+  COOP_LATE = 1; // seconds late past which a host event is applied silently
 
 // A fresh host copy of the simulation, from the source every build embeds,
 // with the page's storage and screen out of its reach.
@@ -174,9 +178,10 @@ function coopWorkerLink() {
 // host leaving, closes the link (and this socket), and [0, 1] is ignored.
 // Events sent before the socket opens wait for it; once open, a state frame
 // is dropped rather than queued while the socket is backed up. onclose(why)
-// says why it closed: "noroom" (4004), "full" (4001) or "relay" (anything
-// else, a failed socket included, and a socket that opened but had no join
-// within COOP.GONE: link.joined is set by the join).
+// says why it closed: "hostleft" ([0, 2]), "noroom" (4004), "full" (4001)
+// or "relay" (anything else, a failed or dropped socket included, and a
+// socket that opened but had no join within COOP.GONE: link.joined is set by
+// the join). link.viaRelay marks it as the friend's link.
 function coopSocketLink(url) {
   const ws = new WebSocket(url);
   ws.binaryType = "arraybuffer";
@@ -200,6 +205,7 @@ function coopSocketLink(url) {
       }
     },
     joined: false,
+    viaRelay: true,
     close() {
       if (done) return;
       done = true;
@@ -229,7 +235,7 @@ function coopSocketLink(url) {
     const d = ev.data;
     if (done || !(d instanceof ArrayBuffer) || d.byteLength < 1) return;
     if (new Uint8Array(d)[0] === 0) {
-      if (new Uint8Array(d)[1] === 2) fin("relay");
+      if (new Uint8Array(d)[1] === 2) fin("hostleft");
       return;
     }
     if (link.onmessage) link.onmessage(d);
@@ -244,9 +250,13 @@ function coopSocketLink(url) {
 // coopEnter() then lets this player into it. A Worker host that fails after
 // the join ends the run with "stopped". drive(dt), if given, is called
 // every frame to pump a hand-stepped host and link. onRefuse(why) is called
-// with the reason when the run cannot go ahead here: "version" or "cave"
-// from the host or the join, or the reason a link gives for closing before
-// the join was applied. Once it has been, a closed link is the host leaving.
+// with the reason when the run cannot go ahead here: "version", "bad" or
+// "cave" from the host or the join, "ended" for a run that ended before this
+// player entered, or the reason a link gives for closing before the join was
+// applied (the host leaving then reads as the relay). Once it has been, a
+// closed link is the host leaving, except on the friend's link through the
+// relay, where only the relay's notice is: any other close there, the
+// friend's own connection dropping included, is "lost".
 function coopBegin(link, { cls, drive = null, onRefuse = null } = {}) {
   if (NET || CC.link) coopEnd("restart");
   coopClear();
@@ -260,10 +270,10 @@ function coopBegin(link, { cls, drive = null, onRefuse = null } = {}) {
   };
   link.onclose = (why) => {
     if (CC.link !== link) return;
-    if (NET) coopEnd(why === "worker" ? "stopped" : "host");
-    else coopRefuse(typeof why === "string" ? why : "relay");
+    if (NET) coopEnd(why === "worker" ? "stopped" : link.viaRelay && why !== "hostleft" ? "lost" : "host");
+    else coopRefuse(typeof why === "string" && why !== "hostleft" ? why : "relay");
   };
-  link.send(coopEventEncode(["hello", 0, COOP_V, cls]));
+  link.send(coopEventEncode(["hello", 0, COOP_V, cls, COOP_BUILD]));
 }
 // Lets this player into the run the join built.
 function coopEnter() {
@@ -272,10 +282,10 @@ function coopEnter() {
 // Leaves co-op, whatever state it was in, and leaves single player working:
 // the link is closed and NET (with its mates) and CC are cleared. The run's
 // enemies, if it was in one, are plain enemies from here. why "host" (the
-// host has gone quiet or closed the link) and "stopped" (the host's Worker
-// failed) go back to the base and the title screen and say so; "end" (the
-// run is over) leaves the win screen up; any other reason leaves the screen
-// as it is.
+// host has gone quiet or closed the link), "stopped" (the host's Worker
+// failed) and "lost" (the friend's connection to the room went) go back to
+// the base and the title screen and say so; "end" (the run is over) leaves
+// the win screen up; any other reason leaves the screen as it is.
 function coopEnd(why) {
   const L = CC.link,
     inRun = !!CC.world && G.world === CC.world;
@@ -294,7 +304,7 @@ function coopEnd(why) {
       /* already closed */
     }
   }
-  if (why === "host" || why === "stopped") {
+  if (why === "host" || why === "stopped" || why === "lost") {
     if (inRun) enterHub();
     show("title");
     coopSay(COOP_SAY[why]);
@@ -327,7 +337,7 @@ function coopRecv(buf) {
   }
   if (!Array.isArray(m)) return;
   if (m[0] === "join") {
-    if (!NET && m[1] && typeof m[1] === "object") coopJoin(m[1]);
+    if (!NET) coopJoin(m[1]);
   } else if (m[0] === "no") coopRefuse(typeof m[1] === "string" ? m[1] : "no");
   else if (NET && Object.hasOwn(COOP_TAKE, m[0]) && COOP_TAKE[m[0]](m)) CC.evq.push(m);
   else if (NET && Object.hasOwn(COOP_NOW, m[0]) && COOP_NOW[m[0]](m)) coopNow(m);
@@ -356,17 +366,42 @@ const COOP_NOW = {
   reset: (m) => !!m[1] && typeof m[1] === "object" && Array.isArray(m[1].enemies),
   // ["end", run time]: a player took the gate
   end: (m) => coopNums(m, 2),
+  // ["started"]: the host's player has pressed Start
+  started: () => true,
   // ["pshot", pid, x, y, z, vx, vz, r, g, b]: the other player's shot
   pshot: (m) => coopNums(m, 10),
   // ["pblast", pid, x, z, radius, r, g, b]: the other player's blast
   pblast: (m) => coopNums(m, 8) && m[4] > 0,
 };
 
+// A join this page can build from: every field the host sends, of its
+// shape. Checked before anything is built, so a bad one leaves nothing
+// half made.
+function coopJoinOk(j) {
+  const id = (v) => Number.isInteger(v) && v >= 0,
+    enemy = (q) =>
+      Array.isArray(q) && q.length >= 5 && id(q[0]) && typeof q[1] === "string" && Object.hasOwn(EDEF, q[1]) &&
+      coopNum(q[2]) && coopNum(q[3]) && coopNum(q[4]);
+  return (
+    j.grade === "E" &&
+    coopNum(j.seed) &&
+    typeof j.sum === "string" &&
+    (j.pid === 1 || j.pid === 2) &&
+    Array.isArray(j.enemies) &&
+    j.enemies.every(enemy) &&
+    Array.isArray(j.dead) &&
+    j.dead.every(id) &&
+    (j.peers === undefined || Array.isArray(j.peers))
+  );
+}
 // The join: the same cave from the seed, checked against the host's sum,
 // and the host's enemies as puppets. Nothing here reads the cave's own
-// spawn list.
+// spawn list. Another wire version is "version"; anything else this page
+// cannot read is "bad".
 function coopJoin(j) {
-  if (j.v !== COOP_V) return coopRefuse("version");
+  if (!j || typeof j !== "object" || Array.isArray(j)) return coopRefuse("bad");
+  if (typeof j.v === "number" && j.v !== COOP_V) return coopRefuse("version");
+  if (j.v !== COOP_V || !coopJoinOk(j)) return coopRefuse("bad");
   enterCave(j.grade, j.seed);
   CC.world = G.world;
   if (coopWorldSum(G.world) !== j.sum) return coopRefuse("cave");
@@ -378,10 +413,13 @@ function coopJoin(j) {
     snapCam();
   }
   CC.pid = j.pid;
+  CC.started = !!j.started;
   CC.heard = CC.now;
   CC.link.joined = true;
   coopPuppets(j);
   G.bossDead = !!j.bossDead;
+  // joined after the boss died: its gate is open, as bossFell leaves it
+  if (G.bossDead) openGate();
   NET = {
     client: true,
     live: false,
@@ -488,8 +526,9 @@ function coopFrame(dt) {
   }
   if (CC.drive) CC.drive(dt);
   if (!NET) return;
-  // a host not heard from for COOP.GONE seconds of real time has gone
-  if (CC.now - CC.heard > COOP.GONE) return coopEnd("host");
+  // a host not heard from for COOP.GONE seconds of real time has gone; on
+  // the friend's link the room may still be there, so it says so
+  if (CC.now - CC.heard > COOP.GONE) return coopEnd(CC.link && CC.link.viaRelay ? "lost" : "host");
   const o = CC.offs;
   while (o.length > 1 && o[0].at < CC.now - COOP.CLOCK_WIN) o.shift();
   if (o.length) {
@@ -610,7 +649,7 @@ function coopPuppet(e, dt, rt, drt) {
   if (A.aware && !e.aware && near) SFX.alert();
   e.aware = A.aware;
   e.phase = A.phase;
-  if (A.dead) return coopDie(e);
+  if (A.dead) return coopDie(e, NET.live);
   // a guess stands until the host has had the event it came from, or 2 s
   if (e.ov && (A.ack >= e.ov.seq || (e.ov.life -= dt) <= 0)) e.ov = null;
   if (e.ov) {
@@ -692,8 +731,9 @@ function coopPuppet(e, dt, rt, drt) {
   }
 }
 // A death the host decided: the look and sound of kill(), none of its
-// rewards. The body then falls through enemyUpdate's dead case.
-function coopDie(e) {
+// rewards, and those only when loud and within COOP_HEAR of this player.
+// The body then falls through enemyUpdate's dead case.
+function coopDie(e, loud = true) {
   const p = G.player;
   e.dead = true;
   e.state = "dead";
@@ -701,8 +741,10 @@ function coopDie(e) {
   e.y = 0;
   e.ov = null;
   e.gd = 0;
-  SFX.kill();
-  sparks(e.x, e.def.top * 0.5, e.z, 26, e.fig.eye, 7, 0.7, 0.14);
+  if (loud && Math.hypot(e.x - p.x, e.z - p.z) < COOP_HEAR) {
+    SFX.kill();
+    sparks(e.x, e.def.top * 0.5, e.z, 26, e.fig.eye, 7, 0.7, 0.14);
+  }
   if (p.lock === e) p.lock = null;
 }
 
@@ -717,6 +759,9 @@ const coopCol = (c) =>
   (Array.isArray(c) ? c : WHITE).slice(0, 3).map((v) => Math.round(v * 1000) / 1000);
 
 // Host events, once the drawn time has reached the moment they happened.
+// One applied while the run is not live (queued before this player
+// entered) or more than COOP_LATE seconds after its time (a stall, a hidden
+// tab) changes state silently: no sound, no big message, no shake.
 function coopEvents(rt) {
   if (rt < 0) return;
   const later = [];
@@ -729,7 +774,8 @@ function coopEvents(rt) {
 function coopApply(ev, rt) {
   const p = G.player,
     t = ev[COOP_EV_T[ev[0]]],
-    adv = Math.max(0, rt - t);
+    adv = Math.max(0, rt - t),
+    quiet = !NET.live || rt - t > COOP_LATE;
   if (ev[0] === "shot") {
     // an enemy's shot, flown here from where it is by now
     const [, eid, x, y, z, vx, vz, dmg] = ev,
@@ -748,7 +794,7 @@ function coopApply(ev, rt) {
       kind: "spit",
       c: src.def.boss ? RED : [1, 0.45, 0.2],
     });
-    if (Math.hypot(x - p.x, z - p.z) < COOP_HEAR) SFX.shot();
+    if (!quiet && Math.hypot(x - p.x, z - p.z) < COOP_HEAR) SFX.shot();
   } else if (ev[0] === "ring") {
     // a slam's warning ring
     const [, x, z, r, dur] = ev;
@@ -756,7 +802,7 @@ function coopApply(ev, rt) {
   } else if (ev[0] === "roar") {
     // a boss's second phase, as hitEnemy shows it
     const e = CC.byId.get(ev[1]);
-    if (!e || e.dead) return;
+    if (!e || e.dead || quiet) return;
     SFX.roar();
     G.shake = 1;
     G.rings.push({ x: e.x, z: e.z, r: 9, t: 0, dur: 0.6, kind: "shock", c: RED });
@@ -782,12 +828,12 @@ function coopApply(ev, rt) {
     else if (pid === CC.pid && !e.paid) {
       CC.quiet = true;
       try {
-        kill(e);
+        kill(e, quiet);
       } finally {
         CC.quiet = false;
       }
-    } else coopDie(e);
-    if (e.def.boss && !G.bossDead) bossFell(e);
+    } else coopDie(e, !quiet);
+    if (e.def.boss && !G.bossDead) bossFell(e, quiet);
   }
 }
 
@@ -983,7 +1029,10 @@ function coopNow(m) {
   const k = m[0];
   if (k === "peer") coopPeer(m[1], m[2]);
   else if (k === "reset") coopReset(m[1]);
+  else if (k === "started") CC.started = true;
   else if (k === "end") {
+    // a friend who has not entered gets the room screen back
+    if (!NET.live) return coopRefuse("ended");
     // a player took the gate: the run is over for both, and so is the room
     G.runT = m[1];
     G.state = "win";
@@ -1000,19 +1049,21 @@ function coopNow(m) {
       c = [cr, cg, cb];
     G.rings.push({ x, z, r, t: 0, dur: 0.4, kind: "shock", c });
     sparks(x, 0.8, z, 30, c, 9, 0.6, 0.15);
-    if (Math.hypot(x - p.x, z - p.z) < COOP_HEAR) {
+    if (NET.live && Math.hypot(x - p.x, z - p.z) < COOP_HEAR) {
       G.shake = Math.max(G.shake, 0.3);
       SFX.slam();
     }
   }
 }
 // The other player joining (cls a class id) or leaving (cls null). A class
-// co-op does not offer plays as the first base class, as on the host.
+// co-op does not offer plays as the first base class, as on the host. Only
+// pids 1 and 2 exist, and this page's own is never a mate.
 function coopPeer(pid, cls) {
+  if ((pid !== 1 && pid !== 2) || pid === CC.pid) return;
   const ms = NET.mates,
     i = ms.findIndex((m) => m.pid === pid);
   if (i >= 0) ms.splice(i, 1);
-  if (cls === null || pid === CC.pid) return;
+  if (cls === null) return;
   const m = makePlayer(coopBaseCls(cls));
   // away until a snapshot says otherwise: the host has not heard it yet
   Object.assign(m, { remote: true, pid, nb: [], away: true, ddur: m.cls.dodge.dur, swing: null });

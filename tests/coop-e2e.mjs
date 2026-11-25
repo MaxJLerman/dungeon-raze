@@ -228,12 +228,19 @@ async function main() {
     const a = await slots(host),
       b = await slots(friend);
     assert.deepEqual([...a].sort(), [...b].sort());
-    assert.equal(await friend.evaluate(() => document.getElementById("coopEnter").textContent.trim()), "Enter the cave");
     assert.equal(await msg(friend), "");
+    // the host has not pressed Start: the friend waits, and still does a moment later
+    await sleep(1000);
+    const btn = () => friend.evaluate(() => { const b = document.getElementById("coopEnter"); return { text: b.textContent.trim(), off: b.disabled }; });
+    assert.deepEqual(await btn(), { text: "Waiting for the host to start", off: true });
   });
 
   await check("both enter: in play, 47 enemies each and the same cave", async () => {
     await enter(host);
+    // the host's Start lets the friend in
+    await until("the friend's button to read Enter the cave", () =>
+      friend.evaluate(() => { const b = document.getElementById("coopEnter"); return !b.disabled && b.textContent.trim() === "Enter the cave"; }),
+    );
     await enter(friend);
     const a = await info(host),
       b = await info(friend);
@@ -244,6 +251,20 @@ async function main() {
     assert.equal(b.enemies, 47);
     assert.equal(a.seed, 99);
     assert.equal(a.sum, b.sum);
+  });
+
+  await check("the host's pause screen shows the room code while the relay is up; the friend's does not", async () => {
+    const shownCode = (p) =>
+      p.evaluate(async () => {
+        DF.show("pause");
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        const el = document.getElementById("pauseCode"),
+          t = el && !el.hidden && el.getClientRects().length ? el.textContent.replace(/\s+/g, " ").trim() : "";
+        DF.show("play");
+        return t;
+      });
+    assert.equal(await until("the host's code on its pause screen", async () => (await shownCode(host)) || ""), "Room code " + code);
+    assert.equal(await shownCode(friend), "");
   });
 
   await check("the host walks and the friend sees them move more than 2 m", async () => {

@@ -123,7 +123,7 @@ check("joining sends the cave and every enemy", () => {
   const c = fakeClient(h, 3, "fighter");
   assert.deepEqual(c.join.dead, [5]);
 });
-check("a hello joins a matching version and refuses another", () => {
+check("a hello joins a matching version and build, and refuses another or none", () => {
   const h = cave(),
     got = new Map();
   h.send = (pid, buf) => {
@@ -131,21 +131,34 @@ check("a hello joins a matching version and refuses another", () => {
     if (!got.has(pid)) got.set(pid, []);
     got.get(pid).push(h.wire.eventDecode(buf));
   };
-  const hello = (pid, v, cls) => h.recv(pid, h.wire.eventEncode(["hello", 0, v, cls]));
+  // ["hello", seq, v, cls, build]; rest is what follows the class
+  const hello = (pid, v, cls, ...rest) => h.recv(pid, h.wire.eventEncode(["hello", 0, v, cls, ...rest]));
   assert.equal(typeof h.v, "number");
-  hello(1, h.v, "fighter");
+  assert.match(String(h.build), /^[0-9a-f]{8}$/, "the host carries the build stamp");
+  hello(1, h.v, "fighter", h.build);
   assert.ok(h.S.px.has(1), "a matching hello joins");
   assert.equal(h.S.px.get(1).clsId, "fighter");
   assert.equal(got.get(1).length, 1);
   assert.equal(got.get(1)[0][0], "join");
   assert.equal(got.get(1)[0][1].pid, 1);
   // another version: told so, and no proxy
-  hello(2, h.v + 1, "mage");
+  hello(2, h.v + 1, "mage", h.build);
   assert.ok(!h.S.px.has(2), "a wrong version does not join");
   assert.deepEqual(got.get(2), [["no", "version"]]);
+  // the same version from another build, or with no stamp: told so too
+  const other = (parseInt(h.build, 16) ^ 1).toString(16).padStart(8, "0");
+  hello(4, h.v, "mage", other);
+  assert.ok(!h.S.px.has(4), "another build does not join");
+  assert.deepEqual(got.get(4), [["no", "version"]]);
+  hello(5, h.v, "mage");
+  assert.ok(!h.S.px.has(5), "a hello with no stamp does not join");
+  assert.deepEqual(got.get(5), [["no", "version"]]);
+  hello(6, h.v, "mage", null);
+  hello(7, h.v, "mage", 12345678);
+  assert.ok(!h.S.px.has(6) && !h.S.px.has(7), "a stamp that is not this build's string does not join");
   // a hello from a player already in is ignored
   const px = h.S.px.get(1);
-  hello(1, h.v, "mage");
+  hello(1, h.v, "mage", h.build);
   assert.equal(h.S.px.get(1), px);
   assert.equal(got.get(1).length, 1);
   // a frame that is not a hello does not join anyone
@@ -154,6 +167,34 @@ check("a hello joins a matching version and refuses another", () => {
   h.recv(3, new ArrayBuffer(0));
   assert.ok(!h.S.px.has(3));
   assert.equal(got.has(3), false);
+});
+check("the join says whether the host has started, and a friend already in is told once when it does", () => {
+  const h = cave();
+  const b = fakeClient(h, 2, "mage");
+  assert.equal(b.join.started, false, "no state from pid 1 yet");
+  const a = fakeClient(h, 1, "fighter");
+  assert.equal(a.join.started, false);
+  // the friend's states start nothing
+  b.at(h.G.world.spawn.x, h.G.world.spawn.z);
+  assert.equal(named(b, "started").length, 0);
+  // the host's page sends its first state: it has started
+  a.at(h.G.world.spawn.x, h.G.world.spawn.z);
+  assert.deepEqual(named(b, "started"), [["started"]], "the friend is told");
+  assert.equal(named(a, "started").length, 0, "the host's page is not");
+  a.at(h.G.world.spawn.x, h.G.world.spawn.z);
+  run(h, 3);
+  assert.equal(named(b, "started").length, 1, "told once");
+  // sticky: a friend who joins later, with the host away or dead, enters at once
+  h.leave(2);
+  a.at(h.G.world.spawn.x, h.G.world.spawn.z, { state: "dead", hp: 0 });
+  run(h, 3);
+  assert.equal(h.S.px.get(1).away, true);
+  const c = fakeClient(h, 2, "tanker");
+  assert.equal(c.join.started, true);
+  // a fresh run has not started
+  h.start({ seed: 99, grade: "E" });
+  const d = fakeClient(h, 2, "mage");
+  assert.equal(d.join.started, false);
 });
 check("an enemy hunts the nearer player and keeps it within 3 m", () => {
   const h = cave(),
@@ -1132,7 +1173,7 @@ function workerHost() {
     sc = scope();
   h.worker(sc);
   sc.msg({ start: { seed: 99, grade: "E", relay: "ws://relay.test/", code: "ABCDEF" } });
-  sc.msg(h.wire.eventEncode(["hello", 0, h.v, "fighter"]));
+  sc.msg(h.wire.eventEncode(["hello", 0, h.v, "fighter", h.build]));
   return { h, sc, so: sc.socks[0] };
 }
 const evs = (h, list) =>
@@ -1177,13 +1218,13 @@ check("the friend's frames come and go through the relay with its pid byte; noti
   const { h, sc, so } = workerHost();
   so.open();
   // a friend frame before the relay says it is in is dropped
-  so.hear([2, ...new Uint8Array(h.wire.eventEncode(["hello", 0, h.v, "tanker"]))]);
+  so.hear([2, ...new Uint8Array(h.wire.eventEncode(["hello", 0, h.v, "tanker", h.build]))]);
   assert.equal(h.S.px.has(2), false);
   so.hear([0, 1, 2]);
   so.hear([0, 9, 9]);
   so.hear([2]);
   assert.equal(h.S.px.size, 1, "a notice joined nobody");
-  so.hear([2, ...new Uint8Array(h.wire.eventEncode(["hello", 0, h.v, "tanker"]))]);
+  so.hear([2, ...new Uint8Array(h.wire.eventEncode(["hello", 0, h.v, "tanker", h.build]))]);
   assert.equal(h.S.px.get(2).clsId, "tanker");
   const toFriend = so.sent.map((b) => b.slice(1).buffer);
   assert.ok(so.sent.every((b) => b[0] === 2), "every frame to the relay is addressed to pid 2");
@@ -1209,7 +1250,7 @@ check("the friend's frames come and go through the relay with its pid byte; noti
   assert.deepEqual(evs(h, late), [["peer", 1, null]]);
   so.bufferedAmount = 0;
   // the relay says the friend left
-  sc.msg(h.wire.eventEncode(["hello", 0, h.v, "fighter"]));
+  sc.msg(h.wire.eventEncode(["hello", 0, h.v, "fighter", h.build]));
   so.hear([0, 2, 2]);
   assert.equal(h.S.px.has(2), false);
   assert.deepEqual(evs(h, sc.posted).at(-1), ["peer", 2, null]);
@@ -1222,7 +1263,7 @@ check("a relay socket that closes leaves the run going for the page", () => {
   const { h, sc, so } = workerHost();
   so.open();
   so.hear([0, 1, 2]);
-  so.hear([2, ...new Uint8Array(h.wire.eventEncode(["hello", 0, h.v, "tanker"]))]);
+  so.hear([2, ...new Uint8Array(h.wire.eventEncode(["hello", 0, h.v, "tanker", h.build]))]);
   so.readyState = 3;
   so.onerror();
   so.onclose({ code: 1006 });
@@ -1255,7 +1296,7 @@ check("stop closes the socket, stops the timer and hears nothing more; so does t
   assert.deepEqual(sc.posted.at(-1), { stopped: true });
   assert.equal(h.S.px.size, 0, "the page left");
   const n = sc.posted.length;
-  sc.msg(h.wire.eventEncode(["hello", 0, h.v, "fighter"]));
+  sc.msg(h.wire.eventEncode(["hello", 0, h.v, "fighter", h.build]));
   assert.equal(sc.posted.length, n);
   // the end of the run: the gate once the boss is dead
   const b = workerHost();

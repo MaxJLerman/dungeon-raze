@@ -646,7 +646,7 @@ export default [
           // a player 9 joins first, kills two husks, staggers one and leaves
           before: (h) => {
             const ask = (ev) => h.recv(9, h.wire.eventEncode([ev[0], ++c8.seq, ...ev.slice(1)]));
-            h.recv(9, h.wire.eventEncode(["hello", 0, h.v, "fighter"]));
+            h.recv(9, h.wire.eventEncode(["hello", 0, h.v, "fighter", h.build]));
             const husks = [...h.S.byId.values()].filter((e) => e.type === "husk" && e.id !== 37);
             const [a, b] = husks,
               s = h.S.byId.get(37);
@@ -670,6 +670,63 @@ export default [
         kills: G.kills,
         staggered: pe.state,
         enemies: G.enemies.length,
+      };
+    },
+  },
+  {
+    name: "a kill sounds only near this player, and not when it was applied before entering or late",
+    eval: () => {
+      const { G } = DF,
+        c8 = window.__c8;
+      G.manual = true;
+      const k0 = DF.SFX.kill;
+      let sounds = 0;
+      DF.SFX.kill = () => {
+        sounds++;
+        return k0();
+      };
+      const out = {};
+      try {
+        const r = c8.solo({ ping: 50, mate: "idle" });
+        DF.devGod(true);
+        // beside the pack of four round husk 18
+        c8.near(c8.husk(18), 6);
+        c8.step(0.5);
+        const p = G.player,
+          h = r.host,
+          d = (e) => Math.hypot(e.x - p.x, e.z - p.z),
+          list = [...h.S.byId.values()].filter((e) => !e.dead && !e.def.boss).sort((a, b) => d(a) - d(b)),
+          near = list.slice(0, 3),
+          far = list.find((e) => d(e) > 40 && !near.includes(e));
+        out.dists = [...near.map(d), d(far)].map((v) => +v.toFixed(1));
+        const one = (e, sec = 0.6) => {
+          const s0 = sounds;
+          c8.hostKill(2, e);
+          c8.step(sec);
+          return { sounds: sounds - s0, dead: !!c8.pup(e.id) && c8.pup(e.id).dead };
+        };
+        out.near = one(near[0]);
+        out.far = one(far);
+        // applied while the run is not live
+        DF.net().live = false;
+        out.notLive = one(near[1]);
+        DF.net().live = true;
+        // applied late: the link holds everything for 2 s
+        r.cfg.hold = true;
+        const s0 = sounds;
+        c8.hostKill(2, near[2]);
+        c8.step(2);
+        r.cfg.hold = false;
+        c8.step(0.6);
+        out.late = { sounds: sounds - s0, dead: c8.pup(near[2].id).dead };
+      } finally {
+        DF.SFX.kill = k0;
+        DF.devGod(false);
+      }
+      const ok = (o, n) => o.dead && o.sounds === n;
+      return {
+        pass: out.dists.slice(0, 3).every((v) => v < 25) && out.dists[3] > 40 && ok(out.near, 1) && ok(out.far, 0) && ok(out.notLive, 0) && ok(out.late, 0),
+        ...out,
       };
     },
   },
@@ -713,6 +770,57 @@ export default [
         runT: [G.runT, end && end[1]],
         why: DF.CC.why,
         mateEnded: r.mate.ended,
+      };
+    },
+  },
+  {
+    name: "joining with the Warden dead: the gate is there, and stepping into it asks the host to end the run",
+    eval: () => {
+      const { G } = DF,
+        c8 = window.__c8;
+      G.manual = true;
+      let killed = null;
+      const r = c8.solo({
+        ping: 100,
+        // a player 9 kills the Warden and leaves before this page joins
+        before: (h) => {
+          const ask = (ev) => h.recv(9, h.wire.eventEncode([ev[0], ++c8.seq, ...ev.slice(1)]));
+          h.recv(9, h.wire.eventEncode(["hello", 0, h.v, "fighter", h.build]));
+          const wd = [...h.S.byId.values()].find((e) => e.def.boss);
+          for (let i = 0; i < 20 && !wd.dead; i++) ask(["hit", wd.id, 500, 0, 1, "melee", wd.x, wd.z, wd.state, wd.an]);
+          killed = wd.dead && h.G.bossDead;
+          h.leave(9);
+        },
+      });
+      DF.devGod(true);
+      const h = r.host,
+        recv = h.recv;
+      let gates = 0;
+      h.recv = (pid, buf) => {
+        if (pid === 1 && h.wire.type(buf) === 3 && h.wire.eventDecode(buf)[0] === "gate") gates++;
+        return recv(pid, buf);
+      };
+      const w = G.world,
+        bossDead = G.bossDead,
+        gate = G.gate ? { x: G.gate.x, z: G.gate.z } : null,
+        atBoss = !!gate && Math.hypot(gate.x - w.boss.x, gate.z - w.boss.z) < 1e-9;
+      const p = G.player;
+      if (gate) {
+        p.x = gate.x;
+        p.z = gate.z;
+      }
+      c8.step(2.5, () => (G.state === "win" ? false : undefined));
+      h.recv = recv;
+      DF.devGod(false);
+      return {
+        pass: killed && bossDead && !!gate && atBoss && gates === 1 && G.state === "win" && DF.net() === null && DF.CC.why === "end",
+        killed,
+        bossDead,
+        gate,
+        atBoss,
+        gates,
+        state: G.state,
+        why: DF.CC.why,
       };
     },
   },
@@ -841,6 +949,43 @@ export default [
         aware: e.aware,
         moved: +Math.hypot(e.x - x0, e.z - z0).toFixed(2),
       };
+    },
+  },
+  {
+    name: "after a run that ended and after a refusal, a solo cave works as before",
+    eval: () => {
+      const { G } = DF,
+        c8 = window.__c8;
+      G.manual = true;
+      const solo = () => {
+        DF.enterCave("E", 99);
+        DF.show("play");
+        const p = G.player,
+          e = G.enemies[37],
+          q = c8.spot(e.x, e.z, e.yaw, 6);
+        p.x = q.x;
+        p.z = q.z;
+        const x0 = e.x,
+          z0 = e.z;
+        DF.sim(5);
+        return DF.net() === null && DF.CC.link === null && e.type === "husk" && e.aware && Math.hypot(e.x - x0, e.z - z0) > 1 && !e.nb;
+      };
+      const out = {};
+      // ended
+      c8.solo({ ping: 0 });
+      c8.step(0.3);
+      DF.coopEnd("end");
+      out.ended = DF.CC.why === "end" && solo();
+      // refused: another cave, and a join it cannot read
+      const refused = (f) => {
+        const r = c8.solo({ ping: 0, tamper: (ev) => (ev[0] === "join" && f(ev[1]), ev) });
+        return r.refused;
+      };
+      out.caveWhy = refused((j) => (j.sum = "0"));
+      out.cave = out.caveWhy === "cave" && solo();
+      out.badWhy = refused((j) => (j.grade = "D"));
+      out.bad = out.badWhy === "bad" && solo();
+      return { pass: out.ended && out.cave && out.bad, ...out };
     },
   },
   {

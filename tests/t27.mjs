@@ -443,6 +443,44 @@ export default [
     },
   },
   {
+    name: "a join this page cannot read is refused before anything is built",
+    eval: () => {
+      const { G } = DF,
+        co = window.__co;
+      G.manual = true;
+      const bad = {
+        grade: (j) => (j.grade = "D"),
+        seedString: (j) => (j.seed = "99"),
+        seedNull: (j) => (j.seed = null),
+        sum: (j) => (j.sum = 123),
+        pid: (j) => (j.pid = 3),
+        enemies: (j) => (j.enemies = "all"),
+        shortEnemy: (j) => j.enemies[0].pop(),
+        unknownType: (j) => (j.enemies[3][1] = "dragon"),
+        enemyId: (j) => (j.enemies[2][0] = "2"),
+        enemyPos: (j) => (j.enemies[4][2] = null),
+        dead: (j) => (j.dead = 5),
+        deadId: (j) => (j.dead = ["a"]),
+        peers: (j) => (j.peers = "x"),
+        notObject: (j) => Object.keys(j).forEach((k) => delete j[k]),
+      };
+      const out = {};
+      for (const [k, f] of Object.entries(bad)) {
+        const w0 = G.world,
+          n0 = G.enemies.length,
+          r = co.solo({
+            tamper: (ev) => {
+              if (ev[0] === "join") f(ev[1]);
+              return ev;
+            },
+          });
+        out[k] = r.refused === "bad" && DF.net() === null && DF.CC.link === null && G.world === w0 && G.enemies.length === n0 && DF.CC.world === null;
+        if (!out[k]) out[k] = { refused: r.refused, net: !!DF.net(), world: G.world === w0 };
+      }
+      return { pass: Object.values(out).every((v) => v === true), out };
+    },
+  },
+  {
     name: "an event with an unknown name is ignored",
     eval: () => {
       const { G } = DF,
@@ -669,6 +707,78 @@ export default [
     },
   },
   {
+    name: "the Warden's charge and slam are judged here: each hurts, and a dodge avoids each",
+    eval: () => {
+      const { G } = DF,
+        co = window.__co;
+      G.manual = true;
+      const r = co.solo({ ping: 100, jit: 5, loss: 0 });
+      DF.DEV.god = false;
+      const p = G.player,
+        hw = [...r.host.S.byId.values()].find((e) => e.def.boss),
+        pw = co.pup(hw.id);
+      // Forces one swing of kind k on the host's Warden with a new number, as
+      // its own step would number it, and runs until this page has judged
+      // that swing (its hitAn is the new number) or 4 s. dodge(pw) says when
+      // to tap dodge. Returns the judged result, the health lost in the step
+      // it was judged in, and whether the swing was judged at all.
+      const swing = (k, dodge) => {
+        co.near(hw, 8);
+        co.go(0.6, () => {
+          p.hp = p.maxHp;
+          p.stam = p.maxStam;
+          co.face(pw);
+        });
+        p.hp = p.maxHp;
+        const an = (hw.an + 1) & 255;
+        Object.assign(hw, { state: "wind", atk: hw.def.atks[k], t: 0, hitDone: false, an });
+        let prevHp = p.hp,
+          prevJ = co.judged(),
+          res = null,
+          tapped = false,
+          drew = false;
+        co.go(4, () => {
+          if (pw.an === an && (pw.state === "wind" || pw.state === "act")) drew = true;
+          if (pw.hitAn === an && !res) {
+            const j = co.judged();
+            res = { judged: Object.keys(j).find((q) => j[q] > prevJ[q]) || "?", lost: +(prevHp - p.hp).toFixed(2) };
+            return false;
+          }
+          if (dodge && !tapped && pw.an === an && dodge(pw)) {
+            DF.taps[DF.BIND.dodge] = true;
+            tapped = true;
+          }
+          prevHp = p.hp;
+          prevJ = co.judged();
+        });
+        return { ...(res || { judged: null }), drew, tapped };
+      };
+      const reach = () => hw.r + p.r + 0.9;
+      const charge = swing("charge"),
+        chargeDodged = swing("charge", (e) => e.state === "act" && Math.hypot(e.x - p.x, e.z - p.z) < reach() + 1.5),
+        slam = swing("slam"),
+        slamDodged = swing("slam", (e) => e.state === "act" && e.t >= e.atk.act - 0.1);
+      const dmg = (k) => hw.def.atks[k].dmg;
+      return {
+        pass:
+          charge.judged === "hit" &&
+          Math.abs(charge.lost - dmg("charge")) < 0.01 &&
+          chargeDodged.tapped &&
+          chargeDodged.judged === "none" &&
+          chargeDodged.lost === 0 &&
+          slam.judged === "hit" &&
+          Math.abs(slam.lost - dmg("slam")) < 0.01 &&
+          slamDodged.tapped &&
+          slamDodged.judged === "none" &&
+          slamDodged.lost === 0,
+        charge,
+        chargeDodged,
+        slam,
+        slamDodged,
+      };
+    },
+  },
+  {
     name: "this player's hits reach the host and kill there",
     eval: () => {
       const { G } = DF,
@@ -748,6 +858,66 @@ export default [
         after.hp < seen.hp &&
         after.host === seen.host;
       return { pass: ok, seen, after };
+    },
+  },
+  {
+    name: "a guess the host never answers is dropped after 2 s, and the puppet shows the host's health again",
+    eval: () => {
+      const { G } = DF,
+        co = window.__co;
+      G.manual = true;
+      co.solo({ ping: 100, jit: 5, loss: 0 });
+      DF.DEV.god = true;
+      const he = co.husk(37),
+        pe = co.pup(37),
+        L = DF.CC.link,
+        send = L.send;
+      he.hp = he.def.hp;
+      co.near(he, 1.6);
+      co.go(1, () => co.face(pe));
+      const hp0 = he.hp;
+      // this player's hits never reach the host
+      let dropped = 0;
+      L.send = (buf) => {
+        const w = co.r.host.wire;
+        if (w.type(buf) === 3 && w.eventDecode(buf)[0] === "hit") return void dropped++;
+        return send(buf);
+      };
+      let at = -1,
+        gone = -1,
+        shown = null,
+        tapped = false;
+      co.go(6, (i) => {
+        co.face(pe);
+        // one press: one swing, one hit
+        if (!tapped) {
+          DF.taps[DF.BIND.light] = true;
+          tapped = true;
+        }
+        if (at < 0 && DF.CC.pend.length) {
+          at = i;
+          shown = { pup: pe.hp, host: he.hp };
+        }
+        if (at >= 0 && gone < 0 && !DF.CC.pend.length) gone = i;
+        if (gone >= 0 && i > gone + 2) return false;
+      });
+      L.send = send;
+      DF.DEV.god = false;
+      const held = (gone - at) / 60;
+      return {
+        pass:
+          dropped === 1 &&
+          !!shown &&
+          shown.pup < shown.host - 0.5 &&
+          Math.abs(held - 2) <= 2 / 60 &&
+          he.hp === hp0 &&
+          Math.abs(pe.hp - he.hp) < 0.2 &&
+          !pe.dead,
+        dropped,
+        shown,
+        heldFor: +held.toFixed(3),
+        after: { pup: pe.hp, host: he.hp },
+      };
     },
   },
   {
@@ -1211,15 +1381,24 @@ export default [
       co.near(hw, 9);
       co.go(2, keep);
       const awake = hw.aware;
-      // its slam, forced on the host as the host's own test does (it may
-      // have slammed by itself already: only a ring drawn from here counts)
-      const old = new Set(G.rings);
-      Object.assign(hw, { state: "wind", atk: hw.def.atks.slam, t: 0, hitDone: false });
-      let ring = null;
+      // its slam, forced on the host with a new number, as its own step would
+      // number it. The ring followed is the first the host sends after the
+      // force: the Warden is in this slam's wind-up until then, so no other
+      // slam can send one first, and it is sent one wind-up after the force.
+      // Of the rings drawn, the one drawn from that event is told apart by
+      // its place and its age, which only that event's time explains.
+      const force = h.S.step / 60,
+        n0 = sent.length,
+        old = new Set(G.rings),
+        drawn = [];
+      Object.assign(hw, { state: "wind", atk: hw.def.atks.slam, t: 0, hitDone: false, an: (hw.an + 1) & 255 });
       co.go(2.5, () => {
         keep();
-        const q = G.rings.find((g) => !old.has(g) && g.kind === "warn" && g.r === hw.def.atks.slam.radius);
-        if (q && !ring) ring = { x: q.x, z: q.z, rt: DF.CC.rt, age: q.t };
+        for (const g of G.rings)
+          if (!old.has(g) && g.kind === "warn" && g.r === hw.def.atks.slam.radius) {
+            old.add(g);
+            drawn.push({ x: g.x, z: g.z, rt: DF.CC.rt, age: g.t });
+          }
       });
       h.send = send0;
       link.onmessage = recv0;
@@ -1227,14 +1406,16 @@ export default [
       // 0.05 s of when it could first be drawn: its time, or its arrival
       // when the link brought it later than that. A late one is drawn as
       // far through as it is late, so it lands when the host's does.
-      // (Its own slam and the forced one can land on the same spot: the
-      // latest event at or before the drawn time is the one drawn.)
-      const from =
-        ring && sent.filter((q) => Math.hypot(q.x - ring.x, q.z - ring.z) < 1e-6 && q.t <= ring.rt + 1e-6).pop();
+      const from = sent[n0],
+        forced = !!from && Math.abs(from.t - force - hw.def.atks.slam.wind) < 2 / 60,
+        ring =
+          from &&
+          drawn.find((q) => Math.hypot(q.x - from.x, q.z - from.z) < 1e-6 && Math.abs(q.age - (q.rt - from.t) - 1 / 60) < 1e-6);
       const got = from && arrived.find((q) => q.x === from.x && q.z === from.z && q.t === from.t);
       if (got) from.arrRt = got.rt;
       const ringOk =
-        !!from &&
+        forced &&
+        !!ring &&
         !!got &&
         Math.hypot(ring.x - from.tx, ring.z - from.tz) < 0.02 &&
         ring.rt >= from.t - 1e-6 &&
@@ -1305,6 +1486,50 @@ export default [
       return {
         pass:
           awake && ringOk && notGuessed && roar && res.hostDead && res.killedBy === 1 && res.puppetDead && res.bossDead && res.gate && res.cleared === true && DF.gradeCleared("E") === false,
+        ...res,
+      };
+    },
+  },
+  {
+    name: "a co-op boss kill is saved under the class that played, not a hidden class",
+    eval: () => {
+      const { G } = DF,
+        co = window.__co;
+      G.manual = true;
+      const base = Object.keys(DF.CLASSES).find((k) => !DF.CLASSES[k].hidden),
+        cls0 = DF.OPT.cls;
+      DF.resetCleared();
+      DF.unlockClass("enforcer");
+      DF.setClass("enforcer");
+      let res;
+      try {
+        const r = co.solo({ ping: 50, mate: "idle", save: true }),
+          h = r.host,
+          hw = [...h.S.byId.values()].find((e) => e.def.boss);
+        const played = G.player.clsId;
+        co.go(0.5);
+        // the other player kills it
+        let seq = 60000;
+        for (let i = 0; i < 20 && !hw.dead; i++)
+          h.recv(2, h.wire.eventEncode(["hit", ++seq, hw.id, 500, 0, 1, "melee", hw.x, hw.z, hw.state, hw.an]));
+        co.go(1);
+        res = {
+          played,
+          bossDead: G.bossDead,
+          cleared: Object.fromEntries(Object.entries(DF.CLEARED).map(([k, v]) => [k, [...v]])),
+          saved: (JSON.parse(localStorage.getItem("dungeon-raze.v2") || "{}").c || {}),
+        };
+      } finally {
+        DF.coopEnd("test");
+        DF.resetCleared();
+        DF.setClass(cls0 && DF.CLASSES[cls0] && !DF.CLASSES[cls0].hidden ? cls0 : base);
+      }
+      return {
+        pass:
+          res.played === base &&
+          res.bossDead &&
+          JSON.stringify(res.cleared) === JSON.stringify({ [base]: ["E"] }) &&
+          JSON.stringify(res.saved) === JSON.stringify({ [base]: ["E"] }),
         ...res,
       };
     },

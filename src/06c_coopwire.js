@@ -1,6 +1,10 @@
 // Co-op: the numbers both ends share. This file and 06d are part of the host
 // copy of the simulation, which runs in a Worker or in Node, so nothing here
 // touches the screen.
+// COOP_V is the wire's own version: change it when a message's layout
+// changes. Pages on different builds are told apart by COOP_BUILD, which
+// build.mjs declares before the sources (a hash of them), so neither needs
+// remembering when MOVES or EDEF are tuned.
 const COOP_V = 1;
 const COOP = {
   SNAP: 1, // message kinds
@@ -18,8 +22,9 @@ const COOP = {
   STICK: 3, // target hysteresis, metres
   MAX_DMG: 500,
   // A relay socket with more than this many bytes still queued drops snapshot
-  // and state frames rather than queue them (events still go): a backlog sent
-  // in one burst after a stall would pass the relay's 120 frames a second.
+  // and state frames rather than queue them (events still go), so a backlog
+  // sent in one burst after a stall stays small; the relay lets a burst of
+  // 600 frames through and holds a socket to 120 a second after that.
   SOCK_FULL: 8192,
   TICK_MAX: 0.25, // the most elapsed time the Worker hands the host in one call
 };

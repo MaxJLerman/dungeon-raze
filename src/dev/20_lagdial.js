@@ -277,7 +277,7 @@ function coopMateBot(host, mode) {
       }
     },
   };
-  host.recv(2, wire.eventEncode(["hello", 0, host.v, cls]));
+  host.recv(2, wire.eventEncode(["hello", 0, host.v, cls, host.build]));
   return bot;
 }
 DF.coopSolo = coopSolo;

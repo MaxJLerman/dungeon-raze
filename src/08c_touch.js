@@ -501,7 +501,7 @@ const TOUCH = {
         arm();
       } else if (MENUS.includes(G.state)) {
         const to = menuBack;
-        show(to);
+        menuGoBack();
         if (to !== "title") arm();
       } else if (G.state === "pause" || G.state === "dead" || G.state === "win") arm();
     });

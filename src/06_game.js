@@ -2422,7 +2422,10 @@ function stagger(e, k = 1) {
   SFX.stagger();
   sparks(e.x, e.def.top * 0.6, e.z, 14, AMBER, 5);
 }
-function kill(e) {
+// quiet (a co-op client applying a death long after it happened) changes
+// the same state with no sound, sparks or message; single player never
+// passes it.
+function kill(e, quiet = false) {
   if (e.def.dummy) return;
   e.dead = true;
   e.state = "dead";
@@ -2434,8 +2437,10 @@ function kill(e) {
   p.focus = Math.min(100, p.focus + (e.born ? BROOD.focus : 6));
   // the roll is taken for every enemy, so E's draws are as they were
   if (Math.random() < 0.4 && !e.born) p.tool = Math.min(p.cls.tool.max, p.tool + 1);
-  SFX.kill();
-  sparks(e.x, e.def.top * 0.5, e.z, 26, e.fig.eye, 7, 0.7, 0.14);
+  if (!quiet) {
+    SFX.kill();
+    sparks(e.x, e.def.top * 0.5, e.z, 26, e.fig.eye, 7, 0.7, 0.14);
+  }
   if (p.lock === e) {
     p.lock = null;
     let b = null,
@@ -2450,27 +2455,36 @@ function kill(e) {
       }
     p.lock = b;
   }
-  if (e.def.boss) bossFell(e);
+  if (e.def.boss) bossFell(e, quiet);
   const b = EBEH[e.type];
   if (b && b.death) b.death(e);
   if (NET) NET.onKill(e);
 }
-// A boss has died: the grade is cleared and the gate out opens.
-function bossFell(e) {
+// A boss has died: the grade is cleared and the gate out opens. quiet as
+// for kill.
+function bossFell(e, quiet = false) {
   const grade = G.grade || "E";
   const next = GRADE_IDS[GRADE_IDS.indexOf(grade) + 1];
   const before = next ? portalOpen(next) : true;
   // a kill in a run the dev menu started, or under its god mode, is not
-  // saved; nor on a co-op host, which has no save and no player of its own
-  if (!(DEV && DEV.noSave()) && !(NET && NET.host)) clearGrade(grade, OPT.cls);
+  // saved; nor on a co-op host, which has no save and no player of its own.
+  // A co-op client saves it under the class that played (a hidden class
+  // plays as a base class there).
+  if (!(DEV && DEV.noSave()) && !(NET && NET.host))
+    clearGrade(grade, NET && NET.client ? G.player.clsId : OPT.cls);
   G.bossDead = true;
-  G.gate = { x: G.world.boss.x, z: G.world.boss.z, t: 0 };
+  openGate();
+  if (quiet) return;
   G.slowT = 1.2;
   say(e.def.fell, "big", 4);
   say("A gate opens. Step through to leave.", "", 6);
   if (next && !before && portalOpen(next))
     say("A new gate has opened in the base.", "good", 6);
   SFX.win();
+}
+// The gate out of a run, over the boss's chamber, once its boss is dead.
+function openGate() {
+  G.gate = { x: G.world.boss.x, z: G.world.boss.z, t: 0 };
 }
 // What any hit does to the one it lands on, before damage and knock: it
 // flashes, hunts (past the leash), learns where the player is and fills

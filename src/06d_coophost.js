@@ -12,7 +12,9 @@ const COOP_HOST = COOP_HEADLESS_HERE
       // px: proxies by pid. byId: enemies by id (the index in world.spawns).
       // step: host steps since start; host time is step * COOP.STEP.
       // ended: the run is over (a player took the gate); nothing more happens.
-      const S = { px: new Map(), byId: new Map(), step: 0, ended: false };
+      // started: the host's own page (pid 1) has sent a state in this run,
+      // so its player has pressed Start; it stays set.
+      const S = { px: new Map(), byId: new Map(), step: 0, ended: false, started: false };
       let acc = 0,
         ph = null, // the placeholder
         armed = true, // a wipe may fire; cleared by one, set again by a living player
@@ -171,6 +173,7 @@ const COOP_HOST = COOP_HEADLESS_HERE
         S.px.clear();
         S.step = 0;
         S.ended = false;
+        S.started = false;
         acc = 0;
         armed = true;
         by = 0;
@@ -223,6 +226,7 @@ const COOP_HOST = COOP_HEADLESS_HERE
             seed: G.seed,
             grade: G.grade,
             sum: coopWorldSum(G.world),
+            started: S.started,
             ...roster(),
             peers,
             t: now(),
@@ -364,11 +368,13 @@ const COOP_HOST = COOP_HEADLESS_HERE
       }
 
       // From a pid that has not joined only a hello is heard: ["hello", seq,
-      // v, cls] joins it when v is this build's COOP_V, and otherwise it is
-      // told ["no", "version"] and stays out.
+      // v, cls, build] joins it when v is COOP_V and build is this page's
+      // COOP_BUILD (the stamp build.mjs puts on the core sources), and
+      // otherwise (a hello with no stamp included) it is told ["no",
+      // "version"] and stays out.
       function hello(pid, ev) {
         if (!Array.isArray(ev) || ev[0] !== "hello") return;
-        if (ev[2] === COOP_V) join(pid, ev[3]);
+        if (ev[2] === COOP_V && ev[4] === COOP_BUILD) join(pid, ev[3]);
         else tell(pid, ["no", "version"]);
       }
       // A STATE frame moves its proxy; an EVENT is a request. Anything that
@@ -395,6 +401,11 @@ const COOP_HOST = COOP_HEADLESS_HERE
             px.guardT = s.guardT;
             px.sprint = s.sprint;
             px.heard = now();
+            // the host's page has started: a friend waiting to enter is told
+            if (pid === 1 && !S.started) {
+              S.started = true;
+              others(1, ["started"]);
+            }
           } else if (k === COOP.EVENT) ask(px, coopEventDecode(buf));
         } catch (e) {
           /* a malformed frame is ignored */
@@ -534,6 +545,7 @@ const COOP_HOST = COOP_HEADLESS_HERE
       }
       const host = {
         v: COOP_V,
+        build: COOP_BUILD,
         start,
         join,
         leave,
