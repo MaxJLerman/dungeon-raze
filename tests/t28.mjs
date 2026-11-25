@@ -843,7 +843,8 @@ export default [
       await c8.frames();
       const barGone = !c8.shown("mateBar");
       // malformed peer events change nothing; a good one adds the mate
-      for (const ev of [["peer"], ["peer", "x", "mage"], ["peer", 2, 7], ["reset", 5, 0], ["end", "soon"], ["pshot", 2, "a"], ["pblast", 2, 1, 1, -1, 1, 1, 1]])
+      // only pids 1 and 2 exist, and this page's own is never a mate
+      for (const ev of [["peer"], ["peer", "x", "mage"], ["peer", 2, 7], ["peer", 3, "mage"], ["peer", 0, "mage"], ["peer", DF.CC.pid, "mage"], ["reset", 5, 0], ["end", "soon"], ["pshot", 2, "a"], ["pblast", 2, 1, 1, -1, 1, 1, 1]])
         c8.tell(ev);
       c8.step(0.3);
       const still = !!DF.net() && DF.net().mates.length === 0 && G.enemies.length === 47 && G.state === "play";
