@@ -67,6 +67,11 @@ To stop the server, press Ctrl+C in the terminal.
 
 ## 3. Put the relay on the internet
 
+**Done on 2026-11-25.** The relay is at
+`https://dungeon-raze-relay.dungeon-raze.workers.dev` and `COOP_RELAY` in
+`src/08e_coopui.js` holds it, so sections 3 and 4 are kept only for doing it
+again (after a change to `relay/`, steps 2 to 5 here are all it takes).
+
 The relay is a small program on Cloudflare's servers. Cloudflare calls a
 program like this a "Worker" (it has nothing to do with the Worker the game
 runs in your browser). You do this once. The details and the reasoning are in

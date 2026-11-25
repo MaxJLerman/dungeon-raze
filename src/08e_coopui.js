@@ -10,7 +10,7 @@
 // The deployed relay's wss:// address, set when the owner deploys it
 // (relay/README.md). Empty, co-op says it cannot reach the relay. POST /new
 // goes to the same address over https:// (http:// for a ws:// one).
-let COOP_RELAY = "";
+let COOP_RELAY = "wss://dungeon-raze-relay.dungeon-raze.workers.dev";
 const COOP_PAGES = "https://maxjlerman.github.io/dungeon-raze/";
 // The relay's alphabet: no O, 0, 1, I or L.
 const COOP_CODE_RE = /^[A-HJKMNP-Z2-9]{6}$/;

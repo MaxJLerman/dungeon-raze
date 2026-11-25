@@ -69,11 +69,11 @@ is what you need to change the code without breaking it.
   first slice of co-op: the host's dungeon runs in a Web Worker in the
   host's page, the friend joins through a small relay (`relay/`) with a
   six-character code, and each page owns its own player. The **Play with a
-  friend** button shows only when the address has `?coop=1`. The relay is
-  not deployed yet, so `COOP_RELAY` is empty and co-op says it cannot reach
-  the relay until the owner deploys it and sets that constant. It has been
-  checked by tests (Node, the page, and two Chromium pages through a local
-  relay) only, never over a real network or by hand. More players, the
+  friend** button shows only when the address has `?coop=1`. The owner
+  deployed the relay on 2026-11-25 and `COOP_RELAY` holds its address. It
+  has been checked by tests (Node, the page, and two Chromium pages through
+  a local relay) and once by two headless Chromium pages on one machine
+  through the deployed relay, never by hand or between two machines. More players, the
   hall as a lobby, D, the hidden classes and party rules beyond the minimum
   are later projects (see the spec's Non-goals).
 
@@ -1622,7 +1622,7 @@ Two players through grade E's cave over the internet. The design is
   to the room was lost. You can join again with the same code."), `ended`
   ("That run has ended. Ask the host for a new room.") and `bad` ("The host
   sent something this page could not read. Both reload the page."). `COOP_RELAY` is the deployed relay's
-  `wss://` address, empty until the owner deploys it; `POST /new` goes to
+  `wss://` address (empty, co-op says it cannot reach the relay); `POST /new` goes to
   the same address with `http` for `ws`. `DF.coopRelay`, `DF.coopLoc` (a
   stand-in for `location`) and `DF.coopSeed` are for tests.
 - **Privacy.** Only game frames cross the link. No name, no chat, no
@@ -2062,9 +2062,10 @@ The class picker and HUD read `CLASSES` and need no changes.
 - "Return to base" abandons the cave without asking, because nothing is lost
   yet. It will need a confirmation once runs carry rewards.
 - Co-op is grade E, two players and the five base classes, and assumes
-  desktop Chrome or Safari. It has not been played by hand or over a real
-  network. The relay is not deployed until the owner does it, and
-  `COOP_RELAY` is empty until then, so co-op says it cannot reach the relay.
+  desktop Chrome or Safari. It has not been played by hand or between two
+  machines. The relay is deployed on the owner's Cloudflare account, free
+  plan; a change to `relay/` reaches players only when the owner runs
+  `npx wrangler deploy` again.
 - The co-op host never simulates a player, so on the host nothing pushes an
   enemy off a player (each client keeps itself out of the puppets it
   draws). An enemy's last-seen memory can leak between the two players:
