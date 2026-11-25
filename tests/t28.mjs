@@ -530,12 +530,27 @@ export default [
       };
       const lit = await look();
       r.mate.away(true);
-      const d0 = Math.hypot(he.x - G.player.x, he.z - G.player.z);
-      c8.step(4);
+      // The husk turns to me only once the mate has been away COOP.AWAY (2 s),
+      // then finishes what it was doing and crosses to me. How long that
+      // takes, and where it stood when the mate went, are not seeded, so the
+      // step waits for it to arrive (0.4 to 3.5 s after it turns, measured)
+      // and does not compare two distances a fixed time apart.
+      const dist = () => Math.hypot(he.x - G.player.x, he.z - G.player.z);
+      const d0 = dist(),
+        // within reach of me, and well nearer than it was
+        want = Math.min(3, d0 - 1.5);
+      let d1 = Infinity;
+      const watch = () => {
+        if (he.tg === 1) d1 = Math.min(d1, dist());
+      };
+      c8.step(4, watch);
       const away = m.away,
-        tg1 = he.tg,
-        d1 = Math.hypot(he.x - G.player.x, he.z - G.player.z),
-        faded = await look();
+        tg1 = he.tg;
+      c8.step(8, () => {
+        watch();
+        if (d1 < want) return false;
+      });
+      const faded = await look();
       r.mate.away(false);
       c8.step(1);
       const back = !m.away;
@@ -547,7 +562,7 @@ export default [
           tg0 === 2 &&
           away &&
           tg1 === 1 &&
-          d1 < d0 - 1 &&
+          d1 < want &&
           back &&
           same(lit.mark, col) &&
           lit.rim.some((v) => v > 0) &&
