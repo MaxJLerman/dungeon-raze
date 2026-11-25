@@ -466,7 +466,7 @@ async function main() {
     console.log("     told after " + ((Date.now() - t0) / 1000).toFixed(1) + " s");
   });
 
-  await check("after the gate: the win screen on both, the Worker gone, the room closed", async () => {
+  await check("after the gate: both in the hall, the room still open, and the friend still sees the host", async () => {
     const host2 = await openPage("host2");
     const code2 = await hostRoom(host2);
     assert.notEqual(code2, code);
@@ -490,16 +490,57 @@ async function main() {
       300,
     );
     await host2.evaluate(() => DF.net().onGate());
-    await until("both on the win screen", async () => (await state(host2)) === "win" && (await state(friend)) === "win", 10000);
-    assert.equal(await host2.evaluate(() => DF.net()), null);
-    assert.equal(await friend.evaluate(() => DF.net()), null);
-    await until("the host's Worker terminated", () => host2.evaluate(() => window.__workers.length === 1 && window.__workers[0].__dead === true), 5000);
-    await until("the friend's socket closed", () => friend.evaluate(() => window.__socks.every((s) => s.readyState === 3)), 5000);
-    // the Worker closed the host's socket, so the relay has ended the room
-    await friend.evaluate(() => DF.show("title"));
-    await joinRoom(friend, code2);
-    await until("the friend's answer", async () => (await msg(friend)) !== "", 10000);
-    assert.equal(await msg(friend), "No room has that code.");
+    const said = {};
+    const hall = (p) =>
+      p.evaluate(() => {
+        const { G } = DF;
+        return {
+          in: G.zone === "hub" && !G.trans && G.state === "play" && !!DF.net() && DF.net().live,
+          out: G.msgs.some((m) => m.text === "OUT ALIVE"),
+        };
+      });
+    await until(
+      "both in the hall",
+      async () => {
+        const a = await hall(host2),
+          b = await hall(friend);
+        said.host = said.host || a.out;
+        said.friend = said.friend || b.out;
+        return a.in && b.in;
+      },
+      10000,
+    );
+    assert.equal(said.host && said.friend, true, "OUT ALIVE on both");
+    assert.equal(await host2.evaluate(() => window.__workers.length === 1 && !window.__workers[0].__dead), true, "the Worker ended");
+    const a = await info(host2),
+      b = await info(friend);
+    assert.equal(a.sum, b.sum);
+    // the friend still sees the host, who walks into the hall
+    await until("the friend hears the host in the hall", () => friend.evaluate(() => DF.net().mates.length === 1 && !DF.net().mates[0].away), 10000);
+    const m0 = await friend.evaluate(() => ({ x: DF.net().mates[0].x, z: DF.net().mates[0].z }));
+    await host2.evaluate(() => {
+      DF.cam.yaw = DF.G.player.yaw;
+      DF.keys[DF.BIND.fwd] = true;
+    });
+    const moved = await until(
+      "the friend to see the host 1.5 m away",
+      () =>
+        friend.evaluate((m0) => {
+          const m = DF.net().mates[0];
+          const d = Math.hypot(m.x - m0.x, m.z - m0.z);
+          return d > 1.5 ? d : 0;
+        }, m0),
+      15000,
+    );
+    await host2.evaluate(() => (DF.keys[DF.BIND.fwd] = false));
+    assert.ok(moved > 1.5, "moved " + moved);
+    // both leave: the friend first, then the host, whose exit closes the room
+    for (const p of [friend, host2])
+      await p.evaluate(() => {
+        DF.show("pause");
+        document.getElementById("btnExit").click();
+      });
+    await until("the host's Worker terminated", () => host2.evaluate(() => window.__workers.every((w) => w.__dead === true)), 5000);
   });
 
   // Exit to main menu, on two fresh pages that are never reloaded

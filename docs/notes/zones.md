@@ -28,9 +28,15 @@
   the hall. The frame, its collision block, floor ring, glow, light, label and
   return point are all built from the entry. Its opening sits `PORTAL_IN`
   behind the position, and stepping within `PORTAL_R` of the opening of an
-  open one calls `startTrans`, which fades out, swaps the world at full black and fades
+  open one calls `startTrans` (in a co-op run `NET.onPortal`, `coop.md`), which fades out, swaps the world at full black and fades
   in. The transition is advanced by `update`, which does nothing else while
-  `G.trans` is set, so `DF.sim` drives it in tests.
+  `G.trans` is set, so `DF.sim` drives it in tests. `G.trans` is `{ t,
+  swapped, grade }`, or `{ t, swapped, swap }` for a transition that makes
+  its own world (a co-op world swap, `coopTravel`): at full black
+  `transUpdate` calls `swap()` in place of `enterCave(grade)`, and a `swap`
+  that returns false has left the world for good (co-op ended), so the fade
+  stops there with `G.trans` null and `G.fade` 0. `RM` (reduced motion) is
+  a `let`; `DF.setRM(on)` sets it for a test.
 - `resetRun()` clears everything that must not cross a world swap. Add new
   per-run state there. It clears `G.inBoss`, the flag for the player being
   inside the boss chamber, and `G.chunks`, the crocodile's falling ceiling
@@ -55,7 +61,8 @@
   one (true when new), `gradeCleared(grade)` is true if any class cleared it,
   and `resetCleared()` empties it. A saved `c` that is not an object loads as
   nothing cleared. `kill` records the grade when a boss dies, and says "A new
-  gate has opened in the base." when that opens the next portal.
+  gate has opened in the base." when that opens the next portal (not in a
+  co-op run, whose hall keeps D sealed).
 - **Which gates are open.** `LIVE_GRADES` (in `03b_hub.js`) is the set of
   grades whose content is finished. `portalOpen(grade)`: E is always open;
   a higher grade is open when it is in `LIVE_GRADES` and the grade below is
@@ -101,6 +108,11 @@
   address with `?room=CODE` opens the room screen at boot
   (`coopInvite`, `coop.md`). Open the class screen through `openMenu`,
   never `show("class")`, or `classFor` is stale.
+- **Return to base.** `toBase()` is `enterHub(G.grade)` then `play()`, from
+  `#btnBase` (pause, hidden in the hall), `#btnDeadBase` (death) and
+  `#btnAgain` (win). In a co-op run it asks the host to take the party to
+  the hall (`coopBase()`) and then `play()`; a friend's page hides both
+  buttons (`show`, `coopLeads()`, `coop.md`).
 - **Exit to main menu.** `toTitle()` is `enterHub()` then `show("title")`:
   a fresh hall behind the menu. `#btnExit` (pause), `#btnDeadExit` (death)
   and `#btnWinExit` (win) call it. `enterHub` ends a co-op run for this
@@ -167,5 +179,6 @@
 
 - "Return to base" and "Exit to main menu" abandon the cave without asking,
   because nothing is lost yet. Both will need a confirmation once runs carry
-  rewards. In co-op both leave the room, and a host's exit ends it for the
-  friend, also without asking.
+  rewards. In co-op the host's Return to base takes both players to the
+  hall, and Exit leaves the room (a host's exit ends it for the friend),
+  also without asking.

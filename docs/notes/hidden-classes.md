@@ -11,7 +11,11 @@
   push. The last symbols, joined by spaces, are hashed with `codeHash`
   (cyrb53, hex) and compared with `PLAQUE_CODES`, which `SHIPPED_CODES`
   fills with `{ hash, len }`. A sealed plaque, a held key and an already
-  unlocked class take nothing.
+  unlocked class take nothing, and nor does any plaque during a co-op run
+  (`NET` set): Inspect opens it and shows its card as in the solo hall, and
+  closes it the same way, but no symbol is taken, so nothing unlocks
+  (hidden classes cannot play online, and an unlock would change the class
+  mid-run). The other player sees the reader in the `inspect` state.
 - Notation. `inputMode()` is `kb`, `touch`, `xbox` or `ps`, for the input in
   use. `codeText(syms, mode)` writes symbols in that input's notation: the
   bound keys on a keyboard, arrows and the touch button names by touch, arrows

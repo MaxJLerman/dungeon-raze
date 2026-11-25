@@ -2,22 +2,30 @@
 // A co-op run alone: a host copy stepped by hand on this page, joined over
 // the fake link, whose ping, jitter and loss can be changed while it runs.
 //
-// coopSolo({ seed, ping, jit, loss, rnd, mate, before, tamper, save }) returns
-// { host, cfg, step(sec, each), mate, refused, halt } once the join has been
-// applied or refused. before(host) runs before anyone joins. tamper(ev), if
-// given, sees every event the host sends this page and returns the event to
-// send, a list of them, or null for none. With save false (the default) the
-// run is the dev run, so nothing it does is saved. step(sec, each) is DF.sim
-// with the link and host pumped before each step. mate "idle", "follow" or
-// "fight" adds a scripted second player once this page is in (see
-// coopMateBot). While halt is true the host is not stepped and the link
-// carries nothing, as if the host had gone quiet. link is this page's end of
-// the fake link, and bytes counts what has gone down (host to this page) and
-// up over it, for the lag dial's readout. rnd draws the link's jitter and
-// loss; without one a generator from LAG_SEED is made for each run, so every
-// test run sees the same jitter and loss. The lag dial passes Math.random.
+// coopSolo({ hub, pid, seed, ping, jit, loss, rnd, mate, before, tamper, save })
+// returns { host, cfg, step(sec, each), mate, mateAsk, refused, halt } once
+// the join has been applied or refused. hub true starts the host in the hall,
+// where seed is the first trip's (as coopBegin's seed); otherwise it starts in
+// cave seed. pid 2 puts this page in as the friend and the scripted player in
+// as the host's page (pid 1), joined first and idle unless mate says
+// otherwise; mateAsk(name, ...args) has it ask the host anything, a travel
+// included. before(host) runs before anyone joins. tamper(ev), if given, sees
+// every event the host sends this page and returns the event to send, a list
+// of them, or null for none. With save false (the default) the run is the
+// dev run, whatever world it is in, so nothing it does is saved. step(sec,
+// each) is DF.sim with the link and host pumped before each step. mate
+// "idle", "follow" or "fight" adds a scripted second player once this page is
+// in (see coopMateBot). While halt is true the host is not stepped and the
+// link carries nothing, as if the host had gone quiet. link is this page's
+// end of the fake link, and bytes counts what has gone down (host to this
+// page) and up over it, for the lag dial's readout. rnd draws the link's
+// jitter and loss; without one a generator from LAG_SEED is made for each
+// run, so every test run sees the same jitter and loss. The lag dial passes
+// Math.random.
 const LAG_SEED = 20261124;
 function coopSolo({
+  hub = false,
+  pid = 1,
   seed = 99,
   ping = 0,
   jit = 0,
@@ -29,7 +37,8 @@ function coopSolo({
   save = false,
 } = {}) {
   if (NET || CC.link) coopEnd("restart");
-  const host = coopMakeHost(),
+  const me = pid === 2 ? 2 : 1,
+    host = coopMakeHost(),
     cfg = { ping, jit, loss, hold: false, rnd: rnd || rng(LAG_SEED) },
     pair = coopFakePair(cfg),
     bytes = { down: 0, up: 0 };
@@ -40,7 +49,7 @@ function coopSolo({
       return send(buf);
     };
   }
-  host.start({ seed, grade: "E" });
+  host.start(hub ? { hub: true } : { seed, grade: "E" });
   if (before) before(host);
   const out = {
     host,
@@ -48,6 +57,7 @@ function coopSolo({
     link: pair.client,
     bytes,
     mate: null,
+    mateAsk: (name, ...args) => (out.mate ? out.mate.ask(name, ...args) : 0),
     refused: null,
     halt: false,
     step: (sec, each) =>
@@ -56,17 +66,19 @@ function coopSolo({
         return each ? each(i) : undefined;
       }),
   };
-  host.send = (pid, buf) => {
-    if (pid === 2 && out.mate) return out.mate.recv(buf);
-    if (pid !== 1) return;
+  host.send = (to, buf) => {
+    if (to !== me && out.mate && to === out.mate.pid) return out.mate.recv(buf);
+    if (to !== me) return;
     if (!tamper || coopType(buf) !== COOP.EVENT) return pair.host.send(buf);
     const res = tamper(coopEventDecode(buf));
     if (res === null || res === undefined) return;
     const list = Array.isArray(res) && Array.isArray(res[0]) ? res : [res];
     for (const ev of list) pair.host.send(coopEventEncode(ev));
   };
-  pair.host.onmessage = (buf) => host.recv(1, buf);
-  pair.host.onclose = () => host.leave(1);
+  pair.host.onmessage = (buf) => host.recv(me, buf);
+  pair.host.onclose = () => host.leave(me);
+  // the friend's page: the host's own page is in first
+  if (me === 2) out.mate = coopMateBot(host, mate || "idle", 1);
   // the host and the link on one clock
   let now = 0;
   const drive = (dt) => {
@@ -75,9 +87,12 @@ function coopSolo({
     host.tick(dt);
     now += dt;
     pair.step(now);
+    // the dev run follows the run from world to world
+    if (!save && DEV && NET && CC.world) DEV.run = CC.world;
   };
   coopBegin(pair.client, {
     cls: OPT.cls,
+    seed: hub ? seed : null,
     drive,
     onRefuse: (why) => (out.refused = why),
   });
@@ -86,7 +101,7 @@ function coopSolo({
   if (NET) {
     if (!save && DEV) DEV.run = G.world;
     coopEnter();
-    if (mate) {
+    if (mate && me === 1) {
       out.mate = coopMateBot(host, mate);
       // until this page has heard of it
       for (let i = 0; i < 600 && NET && !NET.mates.length; i++) drive(1 / 60);
@@ -105,19 +120,23 @@ function coopSetMate(out, mode) {
   return out.mate;
 }
 
-// The scripted second player, pid 2: a fake client on the host's end, with
-// no screen, that talks to the host as a page would (a state 30 times a
-// second, numbered events). It plays a melee base class other than this
-// page's. mode "idle" stands at the start; "follow" keeps within 3.5 m of
-// player 1, by a route when it cannot see them; "fight" also walks to the
-// nearest aware enemy within 10 m and swings at it, proposing a 14-damage
-// light hit every 0.5 to 0.9 s from within 2.2 m. The returned bot has
-// kill() (it reports itself dead), revive(), away(on) (it stops sending, as a
-// hidden page does), leave(), p (its player state) and cls; ended is set by
-// the host's end event and resets counts its reset events.
-function coopMateBot(host, mode) {
-  const w = host.G.world,
-    wire = host.wire,
+// The scripted second player, pid 2 (or pid 1, the host's page, when the
+// page is the friend): a fake client on the host's end, with no screen, that
+// talks to the host as a page would (a state 30 times a second, numbered
+// events). It plays a melee base class other than this page's. mode "idle"
+// stands at the start; "follow" keeps within 3.5 m of the other player, by a
+// route when it cannot see them; "fight" also walks to the nearest aware
+// enemy within 10 m and swings at it, proposing a 14-damage light hit every
+// 0.5 to 0.9 s from within 2.2 m. The returned bot has kill() (it reports
+// itself dead), revive(), away(on) (it stops sending, as a hidden page does),
+// leave(), ask(name, ...args) (a numbered event to the host; returns its
+// seq), p (its player state) and cls; resets counts its reset events, and
+// snap is the last snapshot it was sent. A world takes it along: it stands
+// where the host put it, alive, and answers with its at.
+function coopMateBot(host, mode, pid = 2) {
+  let w = host.G.world;
+  const wire = host.wire,
+    other = pid === 1 ? 2 : 1,
     cls = ["fighter", "assassin", "tanker"].find((k) => k !== OPT.cls),
     c = CLASSES[cls],
     mv = MOVES[c.chain],
@@ -146,7 +165,11 @@ function coopMateBot(host, mode) {
     hitDue = false,
     way = null,
     wayT = 0;
-  const ask = (name, ...args) => host.recv(2, wire.eventEncode([name, ++seq, ...args]));
+  const ask = (name, ...args) => {
+    const n = ++seq;
+    host.recv(pid, wire.eventEncode([name, n, ...args]));
+    return n;
+  };
   const r2 = (v) => Math.round(v * 100) / 100;
   // walks toward (x, z) at speed sp; resolve keeps it out of the rock
   const walk = (x, z, sp, dt) => {
@@ -179,7 +202,7 @@ function coopMateBot(host, mode) {
     return best;
   };
   const follow = (dt) => {
-    const q = host.S.px.get(1);
+    const q = host.S.px.get(other);
     if (!q || q.away || q.state === "dead") return stand();
     const d = Math.hypot(q.x - p.x, q.z - p.z);
     if (d < 3.5) return stand();
@@ -201,14 +224,15 @@ function coopMateBot(host, mode) {
     walk(gx, gz, p.sprint ? c.run : c.walk, dt);
   };
   const bot = {
-    pid: 2,
+    pid,
     cls,
     mode,
     p,
     silent: false,
     left: false,
-    ended: false,
     resets: 0,
+    snap: null,
+    ask,
     kill() {
       Object.assign(p, { state: "dead", t: 0, hp: 0, move: null });
       stand();
@@ -222,15 +246,28 @@ function coopMateBot(host, mode) {
     leave() {
       if (bot.left) return;
       bot.left = true;
-      host.leave(2);
+      host.leave(pid);
     },
     // what the host sends it: a wipe brings it back at the start, as a page
-    // respawns at its first shrine; the end stops it; a world it answers
-    // with its at at once, counting its events from 1 again
+    // respawns at its first shrine; a world takes it where the host put it,
+    // alive, and it answers with its at at once, counting its events from 1
+    // again
     recv(buf) {
-      if (bot.left || wire.type(buf) !== COOP.EVENT) return;
+      if (bot.left) return;
+      if (wire.type(buf) === COOP.SNAP) {
+        bot.snap = wire.snapDecode(buf);
+        return;
+      }
+      if (wire.type(buf) !== COOP.EVENT) return;
       const ev = wire.eventDecode(buf);
       if (ev[0] === "world") {
+        w = host.G.world;
+        const q = host.S.px.get(pid);
+        if (q) Object.assign(p, { x: q.x, z: q.z, yaw: q.yaw });
+        bot.revive();
+        stand();
+        way = null;
+        tg = null;
         seq = 0;
         ask("at", ev[1].e);
       } else if (ev[0] === "reset") {
@@ -241,11 +278,11 @@ function coopMateBot(host, mode) {
           p.z = w.spawn.z;
           w.resolve(p, p.r);
         }
-      } else if (ev[0] === "end") bot.ended = true;
+      }
     },
     step(dt) {
       // a hidden page neither moves nor sends
-      if (bot.left || bot.silent || bot.ended) return;
+      if (bot.left || bot.silent) return;
       p.t += dt;
       cd -= dt;
       if (p.state === "attack") {
@@ -277,14 +314,14 @@ function coopMateBot(host, mode) {
       sendAcc += dt;
       if (sendAcc >= per - 1e-6) {
         sendAcc = Math.max(0, sendAcc - per) % per;
-        host.recv(2, wire.stateEncode(p));
+        host.recv(pid, wire.stateEncode(p));
       }
     },
   };
-  host.recv(2, wire.eventEncode(["hello", 0, host.v, cls, host.build]));
+  host.recv(pid, wire.eventEncode(["hello", 0, host.v, cls, host.build]));
   // its join went out before the caller kept the bot, so recv never saw
   // it: it answers the join's world here
-  if (host.S.px.has(2)) ask("at", host.S.epoch);
+  if (host.S.px.has(pid)) ask("at", host.S.epoch);
   return bot;
 }
 DF.coopSolo = coopSolo;

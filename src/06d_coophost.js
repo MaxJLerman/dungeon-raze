@@ -11,7 +11,6 @@ const COOP_HOST = COOP_HEADLESS_HERE
   ? (() => {
       // px: proxies by pid. byId: enemies by id (the index in world.spawns).
       // step: host steps since start; host time is step * COOP.STEP.
-      // ended: the run is over (a player took the gate); nothing more happens.
       // started: the host's own page (pid 1) has sent a state in this run,
       // so its player has pressed Start; it stays set.
       // epoch: raised by one with each world the host builds, from 1. kind:
@@ -20,7 +19,6 @@ const COOP_HOST = COOP_HEADLESS_HERE
         px: new Map(),
         byId: new Map(),
         step: 0,
-        ended: false,
         started: false,
         epoch: 0,
         kind: "cave",
@@ -270,7 +268,6 @@ const COOP_HOST = COOP_HEADLESS_HERE
       const start = ({ hub = false, seed, grade = "E" } = {}) => {
         S.px.clear();
         S.step = 0;
-        S.ended = false;
         S.started = false;
         S.epoch = 0;
         acc = 0;
@@ -285,6 +282,8 @@ const COOP_HOST = COOP_HEADLESS_HERE
           onKill,
           onRespawn() {},
           onGate() {},
+          // the host has no player to step into a gate
+          onPortal() {},
           onPShot() {},
           onBlast() {},
           taken: () => false,
@@ -418,10 +417,11 @@ const COOP_HOST = COOP_HEADLESS_HERE
           e.hp = 0;
           as(px, () => kill(e));
         },
+        // the exit gate, once the boss is dead: both players back to the
+        // hall, in front of this grade's gate, with the run's time
         gate() {
-          if (!G.bossDead) return;
-          all(["end", G.runT]);
-          S.ended = true;
+          if (!G.bossDead || S.kind !== "cave") return;
+          build("hub", null, 0, G.grade, G.runT);
         },
         // ["travel", seq, to, seed]: the host's own player (pid 1) takes the
         // party from the hall to a grade's cave from seed, or from a cave
@@ -478,7 +478,8 @@ const COOP_HOST = COOP_HEADLESS_HERE
       // event was honoured, unless it swapped the world: the new world's
       // numbers start again from 0. From a player not there (no at for this
       // epoch yet) only an at is heard; anything else is dropped and not
-      // acknowledged, so nothing meant for the old world lands in the new.
+      // acknowledged, so nothing meant for the old world lands in the new. An
+      // at for another epoch is not acknowledged either.
       function ask(px, ev) {
         if (!Array.isArray(ev)) return;
         const [name, seq, ...args] = ev;
@@ -493,7 +494,7 @@ const COOP_HOST = COOP_HEADLESS_HERE
           }
         } finally {
           by = b0;
-          if (S.epoch === e0) px.ack = Math.max(px.ack, seq);
+          if (S.epoch === e0 && (name !== "at" || args[0] === S.epoch)) px.ack = Math.max(px.ack, seq);
         }
       }
 
@@ -508,11 +509,9 @@ const COOP_HOST = COOP_HEADLESS_HERE
         else tell(pid, ["no", "version"]);
       }
       // A STATE frame moves its proxy (not one that is not there); an EVENT
-      // is a request. Anything that does not decode is dropped. After the
-      // run has ended nothing is heard.
+      // is a request. Anything that does not decode is dropped.
       const recv = (pid, buf) => {
         const px = S.px.get(pid);
-        if (S.ended) return;
         try {
           const k = coopType(buf);
           if (!px) {
@@ -544,7 +543,7 @@ const COOP_HOST = COOP_HEADLESS_HERE
         }
       };
       const tick = (dt) => {
-        if (!S.px.size || S.ended) return;
+        if (!S.px.size) return;
         acc = Math.min(acc + dt, 0.25);
         while (acc >= COOP.STEP) {
           acc -= COOP.STEP;
@@ -567,8 +566,8 @@ const COOP_HOST = COOP_HEADLESS_HERE
       // its frames arrive with its pid byte in front and go out with it. The
       // relay's own frames (first byte 0) are read here and never reach recv.
       // The page is told { relay: "open" | "error" | "closed" } as the socket
-      // changes; when it closes the run goes on for the page alone. Once the
-      // run has ended the socket is closed and the timer stopped.
+      // changes; when it closes the run goes on for the page alone. Only stop
+      // closes the socket and stops the timer: the room outlives a run.
       function worker(scope) {
         const glob = typeof globalThis !== "undefined" ? globalThis : {},
           WS = scope.WebSocket || glob.WebSocket,
@@ -655,13 +654,12 @@ const COOP_HOST = COOP_HEADLESS_HERE
             dt = (t - last) / 1000;
           last = t;
           if (dt > 0) tick(Math.min(dt, COOP.TICK_MAX));
-          if (S.ended) shut();
         };
         scope.onmessage = (ev) => {
           const d = ev.data;
           if (done) return;
           if (d instanceof ArrayBuffer) recv(1, d);
-          else if (d && d.start && timer === null && !S.ended) {
+          else if (d && d.start && timer === null) {
             const o = d.start;
             start({ seed: o.seed, grade: o.grade || "E" });
             last = perf.now();

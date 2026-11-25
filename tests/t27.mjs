@@ -443,6 +443,47 @@ export default [
     },
   },
   {
+    name: "a cave that differs ends co-op",
+    eval: async () => {
+      const { G } = DF,
+        co = window.__co;
+      G.manual = true;
+      co.solo({
+        hub: true,
+        seed: 99,
+        tamper: (ev) => {
+          if (ev[0] === "world") ev[1].sum = "0";
+          return ev;
+        },
+      });
+      DF.show("play");
+      const joined = !!DF.net() && G.zone === "hub";
+      // the host's page steps into E's gate
+      const q = G.world.portals.find((o) => o.grade === "E"),
+        o = DF.portalFront(q, -0.75),
+        p = G.player;
+      p.x = o.x;
+      p.z = o.z;
+      co.run(3, () => (DF.net() ? undefined : false), false);
+      await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+      const msg = document.getElementById("coopMsg"),
+        out = {
+          pass: joined && G.state === "title" && DF.net() === null && DF.CC.link === null && DF.CC.why === "cave" &&
+            !msg.hidden && msg.textContent === "This browser built a different cave from the host's. Co-op cannot run here." &&
+            G.zone === "hub" && G.trans === null && G.fade === 0,
+          joined,
+          state: G.state,
+          why: DF.CC.why,
+          msg: msg.textContent,
+          zone: G.zone,
+        };
+      // the later steps play
+      DF.coopSay("");
+      DF.show("play");
+      return out;
+    },
+  },
+  {
     name: "a join this page cannot read is refused before anything is built",
     eval: () => {
       const { G } = DF,

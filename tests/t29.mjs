@@ -18,7 +18,6 @@ const MSG = {
   stopped: "The host's game stopped. The room is closed.",
   host: "The host has left.",
   lost: "The connection to the room was lost. You can join again with the same code.",
-  ended: "That run has ended. Ask the host for a new room.",
 };
 // The helpers every step shares, made once, on window.__c9.
 const HELP = `
@@ -444,7 +443,7 @@ export default [
   const t0 = DF.CC.est;
   for (let i = 0; i < 60 && DF.CC.est < t0 + 0.5; i++) await new Promise((r) => setTimeout(r, 50));
   c.runs = DF.CC.est > t0 + 0.4;
-  DF.toBase();
+  DF.toTitle();
   for (let i = 0; i < 40 && !(w && w.dead); i++) await new Promise((r) => setTimeout(r, 50));
   c.ended = DF.net() === null && DF.CC.link === null && DF.G.zone === "hub" && !!w && w.dead === true;
   // Back from a hosted room that was not entered ends it, its Worker and the cave
@@ -561,7 +560,7 @@ export default [
     enter.click();
     c.plays = DF.G.state === "play" && !!DF.net() && DF.net().live;
     const w = c9.workers[0];
-    DF.toBase();
+    DF.toTitle();
     for (let i = 0; i < 40 && !(w && w.dead); i++) await c9.wait(50);
     c.ended = DF.net() === null && !!w && w.dead === true;
     // refused, then Back: the run, its cave and its Worker end
@@ -785,18 +784,22 @@ export default [
   c.r = Object.fromEntries(Object.entries(r).map(([k, o]) => [k, [o.state, o.why, o.msg]]));
   return { pass: Object.values(c).every((v) => v === true || typeof v === "object"), c };`),
 
-  step("a run that ends before the friend enters gives the room screen back", `
-  const c = {}, enter = document.getElementById("coopEnter");
-  const { s } = await c9.friendIn();
+  step("a world that comes before the friend enters is built at once, and the room screen stays", `
+  const c = {};
+  const { s, h } = await c9.friendIn();
   c.joined = !!DF.net() && DF.G.zone === "cave";
-  s.hear(c9.ev(["end", 12.5]));
+  c9.hostStarts(h);
+  const n0 = s.sent.length;
+  // the host's page returns to base: the friend is sent the hall
+  h.recv(1, h.wire.eventEncode(["travel", 2, "hub", 0]));
   await c9.frames();
+  const evs = s.sent.slice(n0).map((b) => b.slice().buffer).filter((b) => h.wire.type(b) === 3).map((b) => h.wire.eventDecode(b));
+  c.hall = !!DF.net() && DF.net().live === false && DF.G.zone === "hub" && DF.CC.kind === "hub" && DF.CC.epoch === h.S.epoch && DF.G.trans === null;
+  c.at = evs.some((e) => e[0] === "at" && e[1] === 1 && e[2] === h.S.epoch);
   c.screen = DF.G.state === "coop" && document.getElementById("scr-coop").classList.contains("show");
-  c.msg = c9.msg() === MSG.ended;
-  c.ready = c9.shown(document.getElementById("coopPick")) && !c9.shown(enter);
-  c.out = DF.net() === null && DF.CC.link === null && DF.G.zone === "hub" && s.readyState === 3;
-  c.noWin = DF.G.state !== "win";
+  c.noMsg = c9.msg() === "";
   c9.back();
+  c.out = DF.net() === null && DF.CC.link === null;
   return { pass: Object.values(c).every(Boolean), c };`),
 
   step("the pause screen shows the host its room code while the relay is up, and the friend nothing", `
@@ -836,7 +839,7 @@ export default [
   c.closedHidden = txt() === "" && !c9.shown(copy) && !c9.shown(link);
   DF.CC.link.onrelay("open");
   const w = c9.workers[0];
-  DF.toBase();
+  DF.toTitle();
   for (let i = 0; i < 40 && !(w && w.dead); i++) await c9.wait(50);
   DF.show("pause");
   await c9.frames();

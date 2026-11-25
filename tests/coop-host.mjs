@@ -18,6 +18,8 @@ function hall() {
 }
 const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 const named = (c, name) => c.events.filter((ev) => ev[0] === name);
+const front = (q, d) => ({ x: q.x + Math.sin(q.yaw) * d, z: q.z + Math.cos(q.yaw) * d });
+const worlds = (c) => named(c, "world").map((ev) => ev[1]);
 // A walkable point d metres from enemy e, in its line of sight, searching
 // round from angle a0.
 function spot(h, e, d, a0 = 0) {
@@ -1073,7 +1075,7 @@ check("an away player does not hold up the wipe", () => {
   run(h2, 1);
   assert.equal(named(c, "reset").length, 1, "a wipe with nobody present");
 });
-check("the gate ends the run only once the boss is dead", () => {
+check("the gate takes both back to the hall, only once the boss is dead, and the room stays open", () => {
   const h = cave(),
     s = h.G.world.spawn;
   const a = fakeClient(h, 1, "fighter"),
@@ -1083,30 +1085,45 @@ check("the gate ends the run only once the boss is dead", () => {
     b.at(s.x + 1, s.z);
   };
   run(h, 1, both);
+  const e0 = h.S.epoch;
   b.ev("gate");
-  assert.equal(named(a, "end").length, 0);
+  assert.equal(h.S.epoch, e0, "a gate with the boss alive swapped the world");
+  assert.equal(worlds(a).length, 0);
   run(h, 0.5, both);
   assert.equal(h.S.step, 90);
   killWarden(a, warden(h));
   run(h, 0.5, both);
-  const seq = b.ev("gate");
-  for (const c of [a, b]) {
-    const e = named(c, "end");
-    assert.equal(e.length, 1);
-    assert.deepEqual(e[0], ["end", h.G.runT]);
-  }
-  assert.ok(Math.abs(h.G.runT - 2) < 0.05, "runT " + h.G.runT);
-  const step = h.S.step,
-    na = a.nsnap,
-    ne = a.events.length;
-  run(h, 1, both);
+  const runT = h.G.runT;
+  assert.ok(Math.abs(runT - 2) < 0.05, "runT " + runT);
   b.ev("gate");
-  hit(a, husk(h, 37), 10);
-  assert.equal(h.S.step, step);
-  assert.equal(a.nsnap, na);
-  assert.equal(a.events.length, ne);
-  assert.equal(husk(h, 37).hp, 42);
-  assert.ok(seq > 0);
+  assert.equal(h.S.kind, "hub");
+  assert.equal(h.S.epoch, e0 + 1);
+  const f = front(h.G.world.portals.find((q) => q.grade === "E"), 3.5);
+  for (const c of [a, b]) {
+    const d = worlds(c).at(-1);
+    assert.equal(worlds(c).length, 1);
+    assert.equal(d.kind, "hub");
+    assert.equal(d.e, e0 + 1);
+    assert.equal(d.from, "E");
+    assert.equal(d.won, runT);
+    assert.equal(named(c, "end").length, 0);
+  }
+  for (const px of h.S.px.values()) assert.ok(dist(px, f) < 0.01, "pid " + px.pid + " is not in front of E's gate");
+  // the room stays open: the host steps and snapshots on, and the party can
+  // set out again
+  const step = h.S.step,
+    na = a.nsnap;
+  run(h, 1, () => {
+    a.at(f.x, f.z);
+    b.at(f.x + 1, f.z);
+  });
+  assert.equal(h.S.step, step + 60);
+  assert.ok(a.nsnap > na);
+  b.ev("gate");
+  assert.equal(h.S.epoch, e0 + 1, "a gate in the hall swapped the world");
+  a.ev("travel", "E", 7);
+  assert.equal(h.S.kind, "cave");
+  assert.equal(h.G.seed, 7);
 });
 check("a player's shots and blasts go to the other player only", () => {
   const h = cave(),
@@ -1207,9 +1224,6 @@ check("a Warden execution is a hit: it survives, the pin clears and it recoils f
 });
 // The lobby: a room that starts in the hall and travels between worlds.
 // The point d metres in front of a portal (portalFront).
-const front = (q, d) => ({ x: q.x + Math.sin(q.yaw) * d, z: q.z + Math.cos(q.yaw) * d });
-const worlds = (c) => named(c, "world").map((ev) => ev[1]);
-
 check("a room starts in the hall", () => {
   const h = hall();
   assert.equal(h.S.kind, "hub");
@@ -1361,13 +1375,16 @@ check("a wrong epoch is not an arrival", () => {
     b = fakeClient(h, 2, "fighter", { at: false });
   b.arrive();
   a.ev("travel", "E", 99);
-  const px = h.S.px.get(2);
+  const px = h.S.px.get(2),
+    ack = px.ack;
   for (const e of [h.S.epoch - 1, h.S.epoch + 1, String(h.S.epoch), null]) {
     b.ev("at", e);
     assert.equal(px.here, false, "at " + String(e));
+    assert.equal(px.ack, ack, "an at for another epoch was acknowledged: " + String(e));
   }
-  b.ev("at", h.S.epoch);
+  const seq = b.ev("at", h.S.epoch);
   assert.equal(px.here, true);
+  assert.equal(px.ack, seq);
 });
 check("event numbers start again at every swap", () => {
   const h = hall();
@@ -1492,9 +1509,22 @@ check("crossing requests swap once", () => {
   b.ev("gate");
   assert.equal(h.S.epoch, e0 + 1);
   assert.equal(h.S.kind, "hub");
-  assert.equal(named(a, "end").length + named(b, "end").length, 0);
   run(h, 1 / 60);
   assert.equal(h.S.epoch, e0 + 1);
+  // the other order: the friend's step into the gate, then Return to base
+  b.arrive();
+  a.ev("travel", "E", 7);
+  b.arrive();
+  assert.equal(h.S.px.get(2).here, true);
+  run(h, 0.2, () => a.at(h.G.world.spawn.x, h.G.world.spawn.z));
+  killWarden(a, warden(h));
+  const e1 = h.S.epoch;
+  b.ev("gate");
+  a.ev("travel", "hub");
+  assert.equal(h.S.epoch, e1 + 1);
+  assert.equal(h.S.kind, "hub");
+  run(h, 1 / 60);
+  assert.equal(h.S.epoch, e1 + 1);
 });
 check("a join mid-swap", () => {
   const h = hall();
@@ -1681,7 +1711,7 @@ check("a relay socket that closes leaves the run going for the page", () => {
   assert.ok(sc2.live());
 });
 
-check("stop closes the socket, stops the timer and hears nothing more; so does the end of the run", () => {
+check("stop closes the socket, stops the timer and hears nothing more; the gate does not", () => {
   const { h, sc, so } = workerHost();
   so.open();
   sc.msg({ stop: true });
@@ -1692,14 +1722,20 @@ check("stop closes the socket, stops the timer and hears nothing more; so does t
   const n = sc.posted.length;
   sc.msg(h.wire.eventEncode(["hello", 0, h.v, "fighter", h.build]));
   assert.equal(sc.posted.length, n);
-  // the end of the run: the gate once the boss is dead
+  // the gate once the boss is dead takes the party to the hall, and the
+  // Worker runs on
   const b = workerHost();
   b.so.open();
   b.h.G.bossDead = true;
   b.sc.msg(b.h.wire.eventEncode(["gate", 2]));
-  assert.deepEqual(evs(b.h, b.sc.posted).at(-1)[0], "end");
+  const last = evs(b.h, b.sc.posted).at(-1);
+  assert.equal(last[0], "world");
+  assert.equal(last[1].kind, "hub");
+  assert.equal(b.h.S.kind, "hub");
+  const s0 = b.h.S.step;
   b.sc.advance(1 / 60);
-  assert.equal(b.so.closed, 1000, "the socket closed");
-  assert.equal(b.sc.live(), false, "the timer stopped");
+  assert.equal(b.so.closed, null, "the socket closed");
+  assert.equal(b.sc.live(), true, "the timer stopped");
+  assert.equal(b.h.S.step, s0 + 1);
 });
 done();

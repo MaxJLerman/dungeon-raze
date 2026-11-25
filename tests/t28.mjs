@@ -21,6 +21,46 @@ export default [
           return c8.r;
         },
         step: (sec, each) => c8.r.step(sec, each),
+        // a gate in the hall
+        portal: (grade = "E") => G.world.portals.find((q) => q.grade === grade),
+        // walks this player into grade's gate in the hall from 2.5 m in
+        // front of it, letting go once in its opening, and steps until
+        // until() (by default: in the cave, the fade over) or sec runs out
+        walkIn(grade = "E", sec = 4, until = () => G.zone === "cave" && !G.trans) {
+          const q = c8.portal(grade),
+            p = G.player,
+            f = DF.portalFront(q, 2.5),
+            o = DF.portalFront(q, -0.75),
+            fwd = DF.BIND.fwd;
+          p.x = f.x;
+          p.z = f.z;
+          p.state = "free";
+          p.yaw = DF.cam.yaw = q.yaw + Math.PI;
+          DF.cam.px = f.x;
+          DF.cam.pz = f.z;
+          DF.keys[fwd] = true;
+          c8.step(sec, () => {
+            if (G.trans || G.zone !== "hub" || Math.hypot(G.player.x - o.x, G.player.z - o.z) < 0.8) DF.keys[fwd] = false;
+            if (until()) return false;
+          });
+          DF.keys[fwd] = false;
+          return until();
+        },
+        // steps until the world is kind and its fade is over
+        arrive: (kind, sec = 3) => c8.step(sec, () => (G.zone === kind && !G.trans ? false : undefined)),
+        // every message said from now, read each time it is called
+        msgLog() {
+          const seen = new Set(),
+            texts = [];
+          return () => {
+            for (const m of G.msgs)
+              if (!seen.has(m)) {
+                seen.add(m);
+                texts.push(m.text);
+              }
+            return texts;
+          };
+        },
         husk: (i) => c8.r.host.S.byId.get(i),
         pup: (id) => DF.CC.byId.get(id),
         px: (pid) => c8.r.host.S.px.get(pid),
@@ -748,17 +788,17 @@ export default [
     },
   },
   {
-    name: "the gate ends the run for both, sent once",
+    name: "the gate takes both back to the hall, sent once, with no win screen",
     eval: () => {
       const { G } = DF,
         c8 = window.__c8;
       G.manual = true;
-      let end = null;
+      let world = null;
       const r = c8.solo({
         ping: 200,
         mate: "idle",
         tamper: (ev) => {
-          if (ev[0] === "end") end = ev;
+          if (ev[0] === "world") world = ev[1];
           return ev;
         },
       });
@@ -777,21 +817,24 @@ export default [
         p = G.player;
       p.x = G.gate.x;
       p.z = G.gate.z;
-      c8.step(1.5, () => (G.state === "win" ? false : undefined));
+      c8.arrive("hub");
       h.recv = recv;
-      return {
-        pass: open && gates === 1 && G.state === "win" && !!end && G.runT === end[1] && DF.net() === null && DF.CC.why === "end" && r.mate.ended === true,
+      const t = world ? Math.floor(world.won) : -1,
+        time = "Time " + Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0");
+      const c = {
         open,
-        gates,
-        state: G.state,
-        runT: [G.runT, end && end[1]],
-        why: DF.CC.why,
-        mateEnded: r.mate.ended,
+        gates: gates === 1,
+        hall: G.zone === "hub" && h.S.kind === "hub" && !!DF.net() && DF.net().live === true,
+        noWin: G.state === "play",
+        world: !!world && world.kind === "hub" && world.from === "E" && typeof world.won === "number" && world.won > 2,
+        said: G.msgs.some((m) => m.text === "OUT ALIVE") && G.msgs.some((m) => m.text === time),
+        mateIn: c8.px(2).here === true && DF.net().mates.length === 1,
       };
+      return { pass: Object.values(c).every(Boolean), c, msgs: G.msgs.map((m) => m.text), time };
     },
   },
   {
-    name: "joining with the Warden dead: the gate is there, and stepping into it asks the host to end the run",
+    name: "joining with the Warden dead: the gate is there, and stepping into it takes both to the hall",
     eval: () => {
       const { G } = DF,
         c8 = window.__c8;
@@ -827,18 +870,312 @@ export default [
         p.x = gate.x;
         p.z = gate.z;
       }
-      c8.step(2.5, () => (G.state === "win" ? false : undefined));
+      c8.arrive("hub", 3.5);
       h.recv = recv;
       DF.devGod(false);
+      const hall = G.zone === "hub" && G.state === "play" && !!DF.net() && h.S.kind === "hub";
       return {
-        pass: killed && bossDead && !!gate && atBoss && gates === 1 && G.state === "win" && DF.net() === null && DF.CC.why === "end",
+        pass: killed && bossDead && !!gate && atBoss && gates === 1 && hall,
         killed,
         bossDead,
         gate,
         atBoss,
         gates,
+        hall,
         state: G.state,
-        why: DF.CC.why,
+      };
+    },
+  },
+  {
+    name: "from the hall to the cave and back",
+    eval: async () => {
+      const { G } = DF,
+        c8 = window.__c8;
+      G.manual = true;
+      const r = c8.solo({ hub: true, seed: 99, ping: 50, mate: "idle" });
+      DF.devGod(true);
+      const h = r.host,
+        c = {};
+      c.hall = G.zone === "hub" && G.enemies.length === 1 && G.enemies[0].def.dummy === true && !!DF.net() && DF.net().live === true;
+      c.went = c8.walkIn("E");
+      const w = G.world,
+        p = G.player;
+      c.cave = G.zone === "cave" && G.seed === 99 && G.enemies.length === 47 && G.enemies.every((e) => !!e.nb);
+      c.atStart = Math.hypot(p.x - w.spawn.x, p.z - w.spawn.z) < 1e-6;
+      c.hostCave = h.S.kind === "cave" && h.G.seed === 99 && c8.px(1).here === true && c8.px(2).here === true;
+      // the Warden dies on the host; this page steps into its gate
+      const wd = [...h.S.byId.values()].find((e) => e.def.boss);
+      c8.hostKill(2, wd);
+      c8.step(2);
+      c.gate = G.bossDead && !!G.gate;
+      if (G.gate) {
+        p.x = G.gate.x;
+        p.z = G.gate.z;
+      }
+      c8.arrive("hub");
+      const P = G.player,
+        f = DF.portalFront(c8.portal("E"), 3.5);
+      c.back = G.zone === "hub" && !!DF.net() && DF.net().live === true && h.S.kind === "hub";
+      c.inFront = Math.hypot(P.x - f.x, P.z - f.z) < 0.05;
+      c.out = G.msgs.some((m) => m.text === "OUT ALIVE") && G.msgs.some((m) => /^Time \d+:\d\d$/.test(m.text));
+      await c8.frames();
+      c.noWin = G.state === "play" && !document.getElementById("scr-win").classList.contains("show");
+      DF.devGod(false);
+      return { pass: Object.values(c).every((v) => v === true), c, msgs: G.msgs.map((m) => m.text) };
+    },
+  },
+  {
+    name: "a second trip is a new cave",
+    eval: () => {
+      const { G } = DF,
+        c8 = window.__c8;
+      G.manual = true;
+      const went = c8.walkIn("E"),
+        h = c8.r.host;
+      return {
+        pass: went && G.zone === "cave" && G.seed !== 99 && h.G.seed === G.seed && G.enemies.length > 0 && G.enemies.every((e) => !!e.nb),
+        seed: G.seed,
+        hostSeed: h.G.seed,
+      };
+    },
+  },
+  {
+    name: "the friend is taken along, and cannot open a gate",
+    eval: () => {
+      const { G } = DF,
+        c8 = window.__c8;
+      G.manual = true;
+      const r = c8.solo({ hub: true, pid: 2, ping: 50 }),
+        h = r.host,
+        c = {};
+      c.joined = G.zone === "hub" && DF.CC.pid === 2 && DF.net().mates.length === 1 && DF.net().mates[0].pid === 1;
+      r.mateAsk("travel", "E", 99);
+      c8.arrive("cave");
+      c.taken = G.zone === "cave" && G.seed === 99 && G.enemies.length === 47 && c8.px(2).here === true;
+      r.mateAsk("travel", "hub");
+      c8.arrive("hub");
+      c.back = G.zone === "hub" && c8.px(2).here === true;
+      const e0 = h.S.epoch,
+        log = c8.msgLog();
+      c8.walkIn("E", 2, () => {
+        log();
+        return false;
+      });
+      const line = "Only the host can open a gate.",
+        o = DF.portalFront(c8.portal("E"), -0.75);
+      c.inGate = Math.hypot(G.player.x - o.x, G.player.z - o.z) < 1;
+      c.line = log().filter((t) => t === line).length === 1;
+      c.stays = G.zone === "hub" && h.S.epoch === e0 && !G.trans && DF.CC.seq === 1;
+      return { pass: Object.values(c).every((v) => v === true), c, msgs: log() };
+    },
+  },
+  {
+    name: "Return to base: the host's takes both to the hall; the friend has none; a dead friend arrives alive",
+    eval: async () => {
+      const { G } = DF,
+        c8 = window.__c8;
+      G.manual = true;
+      const c = {};
+      // the host's page, dead in the cave
+      let r = c8.solo({ hub: true, seed: 99, ping: 50, mate: "idle" });
+      c.inCave = c8.walkIn("E");
+      c8.die();
+      c8.step(2.5, () => (G.state === "dead" ? false : undefined));
+      await c8.frames();
+      c.deadScreen = G.state === "dead" && c8.shown("btnDeadBase");
+      document.getElementById("btnDeadBase").click();
+      c8.arrive("hub");
+      const P = G.player;
+      c.base = G.zone === "hub" && P.state !== "dead" && P.hp === P.maxHp && G.state === "play" && !!DF.net() && r.host.S.kind === "hub";
+      await c8.frames();
+      c.playScreen = !document.getElementById("scr-dead").classList.contains("show");
+      // the friend's pause and death screens have no Return to base
+      r = c8.solo({ hub: true, pid: 2, ping: 50 });
+      r.mateAsk("travel", "E", 99);
+      c8.arrive("cave");
+      DF.show("pause");
+      await c8.frames();
+      c.friendPause = !c8.shown("btnBase") && c8.shown("btnResume") && c8.shown("btnExit");
+      DF.show("dead");
+      await c8.frames();
+      c.friendDead = !c8.shown("btnDeadBase") && c8.shown("btnRise") && c8.shown("btnDeadExit");
+      DF.coopEnd("left");
+      DF.show("pause");
+      await c8.frames();
+      c.soloPause = c8.shown("btnBase");
+      DF.show("dead");
+      await c8.frames();
+      c.soloDead = c8.shown("btnDeadBase");
+      // a dead friend when the host travels
+      r = c8.solo({ hub: true, pid: 2, ping: 50 });
+      c8.die();
+      c8.step(2.5, () => (G.state === "dead" ? false : undefined));
+      c.friendDied = G.state === "dead" && G.player.state === "dead";
+      r.mateAsk("travel", "E", 99);
+      c8.arrive("cave");
+      const F = G.player;
+      c.alive = G.zone === "cave" && F.state !== "dead" && F.hp === F.maxHp && G.state === "play";
+      await c8.frames();
+      c.friendPlay = !document.getElementById("scr-dead").classList.contains("show");
+      return { pass: Object.values(c).every((v) => v === true), c };
+    },
+  },
+  {
+    name: "exit in the middle of a co-op fade",
+    eval: () => {
+      const { G } = DF,
+        c8 = window.__c8;
+      G.manual = true;
+      c8.solo({ hub: true, seed: 99, ping: 50 });
+      c8.walkIn("E", 3, () => !!G.trans);
+      const fading = !!G.trans && G.zone === "hub";
+      DF.show("pause");
+      document.getElementById("btnExit").click();
+      DF.sim(2);
+      return {
+        pass: fading && G.state === "title" && DF.net() === null && G.zone === "hub" && G.trans === null,
+        fading,
+        state: G.state,
+        zone: G.zone,
+        trans: !!G.trans,
+      };
+    },
+  },
+  {
+    name: "the player's own hall comes back",
+    eval: () => {
+      const { G } = DF,
+        c8 = window.__c8;
+      G.manual = true;
+      DF.resetCleared();
+      DF.clearGrade("E", DF.OPT.cls);
+      c8.solo({ hub: true });
+      const coop = c8.portal("E").open === true && c8.portal("D").open === false;
+      DF.show("pause");
+      document.getElementById("btnExit").click();
+      document.getElementById("btnSolo").click();
+      document.getElementById("btnPlay").click();
+      const solo = G.state === "play" && DF.net() === null && G.zone === "hub" && c8.portal("D").open === true;
+      DF.resetCleared();
+      return { pass: coop && solo, coop, solo };
+    },
+  },
+  {
+    name: "a plaque reads but takes no code in a co-op hall",
+    eval: async () => {
+      const { G } = DF,
+        c8 = window.__c8;
+      G.manual = true;
+      const r = c8.solo({ hub: true, ping: 50, mate: "idle" }),
+        c = {},
+        q = G.world.plaques.find((o) => o.cls),
+        cls = q.cls,
+        tap = (a) => (DF.taps[DF.BIND[a]] = true);
+      DF.UNLOCKED.delete(cls);
+      DF.saveOpt();
+      DF.setPlaqueCode(cls, "fwd back left right");
+      const stand = () => {
+        const p = G.player,
+          f = DF.plaqueFront(q, 1.6);
+        p.x = f.x;
+        p.z = f.z;
+        p.yaw = DF.cam.yaw = q.yaw + Math.PI;
+        p.state = "free";
+      };
+      stand();
+      c8.step(0.05);
+      tap("interact");
+      c8.step(0.6);
+      c.open = !!G.insp && G.player.state === "inspect";
+      await c8.frames();
+      c.card = c8.shown("plaque");
+      for (const a of ["fwd", "back", "left", "right"]) {
+        tap(a);
+        c8.step(0.05);
+      }
+      c.noCode = DF.classOpen(cls) === false && !!G.insp && G.insp.syms.length === 0;
+      c8.step(0.5);
+      const me = r.mate.snap && r.mate.snap.players.find((o) => o.pid === 1);
+      c.seen = !!me && me.state === "inspect";
+      tap("interact");
+      c8.step(0.6);
+      c.closed = !G.insp && G.player.state === "free";
+      // out of co-op, in a fresh hall, the same code unlocks it
+      DF.coopEnd("left");
+      DF.enterHub();
+      DF.show("play");
+      stand();
+      DF.sim(0.05);
+      tap("interact");
+      DF.sim(0.6);
+      for (const a of ["fwd", "back", "left", "right"]) {
+        tap(a);
+        DF.sim(0.05);
+      }
+      c.solo = DF.classOpen(cls) === true;
+      DF.closePlaque(true);
+      DF.UNLOCKED.delete(cls);
+      DF.saveOpt();
+      DF.resetPlaqueCodes();
+      return { pass: Object.values(c).every((v) => v === true), c };
+    },
+  },
+  {
+    name: "no new gate line in co-op",
+    eval: () => {
+      const { G } = DF,
+        c8 = window.__c8;
+      G.manual = true;
+      DF.resetCleared();
+      // saved, so the kill clears E and would open D in a solo hall
+      const r = c8.solo({ hub: true, seed: 99, ping: 50, mate: "idle", save: true }),
+        h = r.host;
+      DF.devGod(true);
+      const went = c8.walkIn("E");
+      DF.devGod(false);
+      const log = c8.msgLog(),
+        wd = [...h.S.byId.values()].find((e) => e.def.boss);
+      c8.hostKill(2, wd);
+      c8.step(2, () => void log());
+      const texts = log(),
+        c = {
+          went,
+          dead: G.bossDead === true,
+          said: texts.includes("A gate opens. Step through to leave."),
+          cleared: DF.gradeCleared("E") === true,
+          noLine: !texts.some((t) => t.includes("A new gate has opened")),
+        };
+      DF.coopEnd("left");
+      DF.resetCleared();
+      return { pass: Object.values(c).every((v) => v === true), c, texts };
+    },
+  },
+  {
+    name: "reduced motion cuts: the swap is on the step the world arrives",
+    eval: () => {
+      const { G } = DF,
+        c8 = window.__c8;
+      G.manual = true;
+      const r = c8.solo({ hub: true, seed: 99, ping: 50 }),
+        h = r.host;
+      DF.setRM(true);
+      let at = null,
+        trans = false;
+      const om = r.link.onmessage;
+      r.link.onmessage = (buf) => {
+        om(buf);
+        if (!at && h.wire.type(buf) === 3 && h.wire.eventDecode(buf)[0] === "world")
+          at = { zone: G.zone, seed: G.seed, trans: !!G.trans };
+      };
+      c8.walkIn("E", 3, () => {
+        trans = trans || !!G.trans;
+        return G.zone === "cave";
+      });
+      DF.setRM(false);
+      return {
+        pass: !!at && at.zone === "cave" && at.seed === 99 && !at.trans && !trans && G.trans === null,
+        at,
+        trans,
       };
     },
   },

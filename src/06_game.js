@@ -2095,7 +2095,11 @@ function enterCave(gradeId, seed = (Math.random() * 1e9) | 0 || 7) {
   newRun(seed, gradeId);
   say(GRADES[gradeId].name.toUpperCase(), "big", 3);
 }
-// Begins the fade into a cave. A cut swaps at once, for reduced motion.
+// Begins the fade into a cave. A cut swaps at once, for reduced motion. A
+// transition is { t, swapped, grade } or, for one that makes its own world
+// (a co-op swap), { t, swapped, swap }: at full black swap() runs in place
+// of enterCave, and returning false says it left the world for good (the
+// fade then stops there).
 function startTrans(gradeId, cut = RM) {
   SFX.blink();
   if (cut) enterCave(gradeId);
@@ -2107,8 +2111,13 @@ function transUpdate(dt) {
   tr.t += dt;
   if (!tr.swapped && tr.t >= TRANS_HALF) {
     tr.swapped = true;
-    enterCave(tr.grade);
-    // entering the cave reset the transition; put it back to fade in
+    const went = tr.swap ? tr.swap() : enterCave(tr.grade);
+    if (went === false) {
+      G.trans = null;
+      G.fade = 0;
+      return;
+    }
+    // entering the world reset the transition; put it back to fade in
     G.trans = tr;
   }
   G.fade =
@@ -2480,7 +2489,8 @@ function bossFell(e, quiet = false) {
   G.slowT = 1.2;
   say(e.def.fell, "big", 4);
   say("A gate opens. Step through to leave.", "", 6);
-  if (next && !before && portalOpen(next))
+  // in co-op the hall keeps D sealed, so the line would not be true there
+  if (!NET && next && !before && portalOpen(next))
     say("A new gate has opened in the base.", "good", 6);
   SFX.win();
 }
@@ -3268,9 +3278,10 @@ function inspectUpdate(dt) {
     if (i.k <= 0) closePlaque(true);
     return;
   }
-  // a live plaque whose class is still locked takes its code
+  // a live plaque whose class is still locked takes its code, but not during
+  // a co-op run, where it can only be read
   const id = i.q.cls,
-    code = id && !classOpen(id) && PLAQUE_CODES[id];
+    code = !NET && id && !classOpen(id) && PLAQUE_CODES[id];
   for (const sy of readSyms()) {
     if (!code) continue;
     i.syms.push(sy);
@@ -5811,14 +5822,16 @@ function update(dt) {
     G.state = "dead";
   // a local build's test switches top the player up (null in a release build)
   if (DEV) DEV.tick();
-  // open portals in the hall: stepping into the arch starts the trip. This
-  // must stay the last thing update does, because a cut swaps the world here.
+  // open portals in the hall: stepping into the arch starts the trip, or in
+  // a co-op run asks for it (NET.onPortal). This must stay the last thing
+  // update does, because a cut swaps the world here.
   if (G.zone === "hub" && p.state !== "dead")
     for (const q of w.portals) {
       if (!q.open) continue;
       const c = portalFront(q, -PORTAL_IN);
       if (Math.hypot(c.x - p.x, c.z - p.z) < PORTAL_R) {
-        startTrans(q.grade);
+        if (NET) NET.onPortal(q.grade);
+        else startTrans(q.grade);
         break;
       }
     }

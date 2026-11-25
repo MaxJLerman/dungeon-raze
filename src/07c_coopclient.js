@@ -1,12 +1,15 @@
-// Co-op: the client. The page joins a host over a link, builds the same cave
-// from its seed and draws the host's enemies as puppets, COOP.DELAY behind
-// its estimate of the host's clock. While in a run it steps no enemy AI.
+// Co-op: the client. The page joins a host over a link, builds the same world
+// (the co-op hall, or a cave from its seed) and draws the host's enemies as
+// puppets, COOP.DELAY behind its estimate of the host's clock. A world event
+// takes it to the host's next world. While in a run it steps no enemy AI.
 // This file is not part of the host copy (it sorts after 06).
 //
 // CC is the client's state:
 //   link     the link to the host; null outside co-op
 //   pid      this player's id on the host, from the join event
 //   world    the run's world: any other world in G.world ends co-op
+//   epoch    the host's number for that world, kind its kind ("hub" or
+//            "cave")
 //   now      the local clock, real seconds, moved on by NET.frame
 //   est      the host's time now as far as this page can tell; -1 before
 //            the first snapshot
@@ -21,7 +24,7 @@
 //   onRefuse called with the reason when the host or the cave refuses
 //   why      why the last co-op run ended (kept by coopClear)
 //   seq      the number of this page's last event; they count from 1, one
-//            counter per run, and never wrap
+//            counter per world, and never wrap
 //   pend     this player's hits the host has not yet had, each
 //            { seq, e, dmg, post, life }: the puppet's health and posture
 //            are the host's less these
@@ -38,7 +41,12 @@
 //            the host has not yet answered (see coopFinCheck)
 //   judged   how the swings judged here on this player came out, by
 //            hurtPlayer's result
-//   gate     this player has asked the host to end the run at the gate
+//   gate     this player has asked the host to take the party out at the gate
+//   trip     this player has asked the host to travel through a hall gate,
+//            once per world
+//   seed     the seed the first trip asks for (coopBegin's seed), null once
+//            used or for a random one
+//   portT    G.t when a gate this player may not open last turned it away
 //   started  the host's player has pressed Start (from the join, or the
 //            started event); until then a friend cannot enter
 //
@@ -51,6 +59,8 @@ function coopClear() {
     link: null,
     pid: 0,
     world: null,
+    epoch: 0,
+    kind: null,
     now: 0,
     est: -1,
     rt: -1,
@@ -76,6 +86,9 @@ function coopClear() {
     fin: null,
     judged: { hit: 0, block: 0, parry: 0, none: 0 },
     gate: false,
+    trip: false,
+    seed: null,
+    portT: -Infinity,
     started: false,
   });
 }
@@ -246,23 +259,25 @@ function coopSocketLink(url) {
 }
 
 // Joins the host at the other end of link as class cls. On the join event
-// the cave is built and the puppets made, and NET is set with live false;
+// the world is built and the puppets made, and NET is set with live false;
 // coopEnter() then lets this player into it. A Worker host that fails after
 // the join ends the run with "stopped". drive(dt), if given, is called
-// every frame to pump a hand-stepped host and link. onRefuse(why) is called
-// with the reason when the run cannot go ahead here: "version", "bad" or
-// "cave" from the host or the join, "ended" for a run that ended before this
-// player entered, or the reason a link gives for closing before the join was
-// applied (the host leaving then reads as the relay). Once it has been, a
-// closed link is the host leaving, except on the friend's link through the
-// relay, where only the relay's notice is: any other close there, the
-// friend's own connection dropping included, is "lost".
-function coopBegin(link, { cls, drive = null, onRefuse = null } = {}) {
+// every frame to pump a hand-stepped host and link. seed is what this page's
+// first trip through a hall gate asks for (null: a random one). onRefuse(why)
+// is called with the reason when the run cannot go ahead here: "version",
+// "bad" or "cave" from the host or the join, or the reason a link gives for
+// closing before the join was applied (the host leaving then reads as the
+// relay). Once it has been, a closed link is the host leaving, except on the
+// friend's link through the relay, where only the relay's notice is: any
+// other close there, the friend's own connection dropping included, is
+// "lost".
+function coopBegin(link, { cls, seed = null, drive = null, onRefuse = null } = {}) {
   if (NET || CC.link) coopEnd("restart");
   coopClear();
   coopSay("");
   CC.link = link;
   CC.cls = cls;
+  CC.seed = coopNum(seed) ? seed : null;
   CC.drive = drive;
   CC.onRefuse = onRefuse;
   link.onmessage = (buf) => {
@@ -283,9 +298,10 @@ function coopEnter() {
 // the link is closed and NET (with its mates) and CC are cleared. The run's
 // enemies, if it was in one, are plain enemies from here. why "host" (the
 // host has gone quiet or closed the link), "stopped" (the host's Worker
-// failed) and "lost" (the friend's connection to the room went) go back to
-// the base and the title screen and say so; "end" (the run is over) leaves
-// the win screen up; any other reason leaves the screen as it is.
+// failed), "lost" (the friend's connection to the room went), "cave" (a world
+// built here differs from the host's) and "bad" (the host sent a world this
+// page cannot read) go back to the base and the title screen and say so; any
+// other reason leaves the screen as it is.
 function coopEnd(why) {
   const L = CC.link,
     inRun = !!CC.world && G.world === CC.world;
@@ -304,16 +320,19 @@ function coopEnd(why) {
       /* already closed */
     }
   }
-  if (why === "host" || why === "stopped" || why === "lost") {
+  if (why === "host" || why === "stopped" || why === "lost" || why === "cave" || why === "bad") {
     if (inRun) enterHub();
     show("title");
     coopSay(COOP_SAY[why]);
   }
 }
+// The run cannot go ahead here (before the join was applied, or the join
+// itself): co-op ends with the screen left as it is, and onRefuse says why.
 function coopRefuse(why) {
   const f = CC.onRefuse,
     inRun = !!CC.world;
-  coopEnd(why);
+  coopEnd("refused");
+  CC.why = why;
   // the cave was built only for the run: back to the base
   if (inRun) enterHub();
   if (f) f(why);
@@ -366,8 +385,9 @@ const COOP_NOW = {
   cls: (m) => coopNum(m[1]) && typeof m[2] === "string",
   // ["reset", { enemies, dead, bossDead }, t]: after a wipe
   reset: (m) => !!m[1] && typeof m[1] === "object" && Array.isArray(m[1].enemies),
-  // ["end", run time]: a player took the gate
-  end: (m) => coopNums(m, 2),
+  // ["world", { ...description, from, won }]: the host has built another
+  // world (coopTravel checks the rest)
+  world: (m) => !!m[1] && typeof m[1] === "object" && !Array.isArray(m[1]),
   // ["started"]: the host's player has pressed Start
   started: () => true,
   // ["pshot", pid, x, y, z, vx, vz, r, g, b]: the other player's shot
@@ -376,52 +396,37 @@ const COOP_NOW = {
   pblast: (m) => coopNums(m, 8) && m[4] > 0,
 };
 
-// A join this page can build from: every field the host sends, of its
-// shape. Checked before anything is built, so a bad one leaves nothing
-// half made.
-function coopJoinOk(j) {
+// A world this page can build, as join and world describe it: the hall, or
+// a cave of a grade co-op plays from a finite seed, and every list of its
+// shape. Checked before anything is built, so a bad one leaves nothing half
+// made.
+function coopWorldOk(d) {
   const id = (v) => Number.isInteger(v) && v >= 0,
     enemy = (q) =>
       Array.isArray(q) && q.length >= 5 && id(q[0]) && typeof q[1] === "string" && Object.hasOwn(EDEF, q[1]) &&
       coopNum(q[2]) && coopNum(q[3]) && coopNum(q[4]);
   return (
-    j.grade === "E" &&
-    coopNum(j.seed) &&
-    typeof j.sum === "string" &&
-    (j.pid === 1 || j.pid === 2) &&
-    Array.isArray(j.enemies) &&
-    j.enemies.every(enemy) &&
-    Array.isArray(j.dead) &&
-    j.dead.every(id) &&
-    (j.peers === undefined || Array.isArray(j.peers))
+    (d.kind === "hub" || (d.kind === "cave" && COOP.GRADES.includes(d.grade) && coopNum(d.seed))) &&
+    typeof d.sum === "string" &&
+    Array.isArray(d.enemies) &&
+    d.enemies.every(enemy) &&
+    Array.isArray(d.dead) &&
+    d.dead.every(id) &&
+    (d.peers === undefined || Array.isArray(d.peers))
   );
 }
-// The join: the same cave from the seed, checked against the host's sum,
-// and the host's enemies as puppets. Nothing here reads the cave's own
-// spawn list. Another wire version is "version"; anything else this page
-// cannot read is "bad".
+// The join: the host's world built here (coopBuild), and NET set. Nothing
+// here reads the world's own spawn list. Another wire version is "version";
+// anything else this page cannot read is "bad"; a world that differs from
+// the host's is "cave".
 function coopJoin(j) {
   if (!j || typeof j !== "object" || Array.isArray(j)) return coopRefuse("bad");
   if (typeof j.v === "number" && j.v !== COOP_V) return coopRefuse("version");
-  if (j.v !== COOP_V || !coopJoinOk(j)) return coopRefuse("bad");
-  enterCave(j.grade, j.seed);
-  CC.world = G.world;
-  if (coopWorldSum(G.world) !== j.sum) return coopRefuse("cave");
-  // a hidden class plays as the first base class, as on the host; the save
-  // keeps it
-  const cls = coopBaseCls(CC.cls);
-  if (cls && G.player.clsId !== cls) {
-    G.player = makePlayer(cls);
-    snapCam();
-  }
+  if (j.v !== COOP_V || !coopWorldOk(j) || (j.pid !== 1 && j.pid !== 2)) return coopRefuse("bad");
   CC.pid = j.pid;
+  if (!coopBuild(j)) return coopRefuse("cave");
   CC.started = !!j.started;
-  CC.heard = CC.now;
   CC.link.joined = true;
-  coopPuppets(j);
-  G.bossDead = !!j.bossDead;
-  // joined after the boss died: its gate is open, as bossFell leaves it
-  if (G.bossDead) openGate();
   NET = {
     client: true,
     live: false,
@@ -434,14 +439,59 @@ function coopJoin(j) {
     // the host owns the enemies: a death here rebuilds nothing
     onRespawn() {},
     onGate: coopGate,
+    onPortal: coopPortal,
     onPShot: coopPShot,
     onBlast: coopBlast,
     taken: coopTaken,
   };
   for (const q of Array.isArray(j.peers) ? j.peers : [])
     if (Array.isArray(q) && coopNum(q[0]) && typeof q[1] === "string") coopPeer(q[0], q[1]);
+}
+// Builds the world d describes, as a join or a world event carries it,
+// without leaving co-op: the co-op hall (in front of d.from's gate when it
+// came from one) or the grade's cave from its seed. False, with nothing
+// more done, when its checksum is not the host's. Otherwise this player is
+// made the class co-op plays (where the world put them), the host's enemies
+// become the puppets, the gate over a dead boss opens, and everything that
+// belonged to the last world goes: event numbers, guesses, queued events,
+// an execution under way, a gate or trip asked for, the other player's
+// snapshots. Then the host is told this page is there (at).
+function coopBuild(d) {
+  if (d.kind === "hub") enterHub(typeof d.from === "string" ? d.from : null, true);
+  else enterCave(d.grade, d.seed);
+  CC.world = G.world;
+  if (coopWorldSum(G.world) !== d.sum) return false;
+  // a hidden class plays as the first base class, as on the host; the save
+  // keeps it
+  const cls = coopBaseCls(CC.cls);
+  if (cls && G.player.clsId !== cls) {
+    const o = G.player;
+    G.player = makePlayer(cls);
+    Object.assign(G.player, { x: o.x, z: o.z, yaw: o.yaw });
+    snapCam();
+  }
+  coopPuppets(d);
+  G.bossDead = !!d.bossDead;
+  // built after the boss died: its gate is open, as bossFell leaves it
+  if (G.bossDead && G.world.boss) openGate();
+  Object.assign(CC, {
+    epoch: d.e,
+    kind: d.kind,
+    seq: 0,
+    pend: [],
+    ackR: 0,
+    evq: [],
+    snap: null,
+    fin: null,
+    exE: null,
+    gate: false,
+    trip: false,
+    heard: CC.now,
+  });
+  if (NET) for (const m of NET.mates) m.nb = [];
   // this page is in the host's world: until it says so the host ignores it
-  coopAsk("at", j.e);
+  coopAsk("at", d.e);
+  return true;
 }
 // The puppets, from the host's list as the join and reset events carry it:
 // [id, type, x, z, yaw] each, leaving out the ids in dead and any entry that
@@ -1035,15 +1085,8 @@ function coopNow(m) {
   else if (k === "cls") coopMateCls(m[1], m[2]);
   else if (k === "reset") coopReset(m[1]);
   else if (k === "started") CC.started = true;
-  else if (k === "end") {
-    // a friend who has not entered gets the room screen back
-    if (!NET.live) return coopRefuse("ended");
-    // a player took the gate: the run is over for both, and so is the room
-    G.runT = m[1];
-    G.state = "win";
-    SFX.win();
-    coopEnd("end");
-  } else if (k === "pshot") {
+  else if (k === "world") coopTravel(m[1]);
+  else if (k === "pshot") {
     // drawn and flown, and hurts nothing here (projUpdate passes over "m")
     const [, , x, y, z, vx, vz, r, g, b] = m;
     G.projs.push({ x, y, z, vx, vz, life: 3, own: "m", dmg: 0, kind: "arrow", c: [r, g, b] });
@@ -1159,9 +1202,74 @@ function coopReset(r) {
     p.t = 0;
   }
 }
-// The exit gate: asked of the host once; its end event closes the run.
+// The exit gate: asked of the host once; its world event takes both players
+// back to the hall.
 function coopGate() {
   if (CC.gate) return;
   CC.gate = true;
   coopAsk("gate");
+}
+
+// ---- travel between worlds ----
+
+// True when this page leads the party: with no co-op run, or as the host's
+// own page (pid 1). Only it opens a gate in the hall or returns to base.
+function coopLeads() {
+  return !NET || !NET.client || CC.pid === 1;
+}
+// A hall gate this player stands in (NET.onPortal, in place of startTrans).
+// The host's page asks the host to travel there, once per world: the first
+// trip with coopBegin's seed, any later one with a random seed. The friend
+// cannot open a gate and is told so, once each time it steps in.
+function coopPortal(grade) {
+  if (coopLeads()) {
+    if (CC.trip) return;
+    CC.trip = true;
+    const seed = CC.seed !== null ? CC.seed : (Math.random() * 1e9) | 0 || 7;
+    CC.seed = null;
+    coopAsk("travel", grade, seed);
+    return;
+  }
+  if (!(G.t - CC.portT < 0.1)) say("Only the host can open a gate.", "", 2.5);
+  CC.portT = G.t;
+}
+// Return to base in a co-op run: the host is asked to take the party to the
+// hall (it hears only the host's page).
+function coopBase() {
+  coopAsk("travel", "hub", 0);
+}
+// The host has built another world (a world event). A run not yet entered,
+// or under reduced motion, builds it at once; otherwise it fades out as a
+// solo gate does and builds it at full black (the transition's swap). A
+// player dead, paused or in a menu is taken along all the same and arrives
+// alive; one on the death screen lands on the play screen. A world this page
+// cannot read ends co-op ("bad"), and so does one it builds differently
+// ("cave"). From the exit gate (won, the host's run time) it says "OUT
+// ALIVE" and the time on arrival, in place of the win screen.
+function coopTravel(d) {
+  if (!coopWorldOk(d)) return coopEnd("bad");
+  const link = CC.link;
+  const swap = () => {
+    // co-op ended, or another run began, while the fade ran: nothing to do
+    if (!NET || CC.link !== link) return;
+    if (!coopBuild(d)) {
+      coopEnd("cave");
+      return false;
+    }
+    if (G.state === "dead") show("play");
+    if (coopNum(d.won)) {
+      const t = Math.floor(d.won);
+      say("OUT ALIVE", "big", 4);
+      say("Time " + Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0"), "", 4);
+    }
+  };
+  if (!NET.live || RM) return void swap();
+  const tr = G.trans;
+  // a second world before the first was built: build that one instead
+  if (tr && tr.swap && !tr.swapped) {
+    tr.swap = swap;
+    return;
+  }
+  SFX.blink();
+  G.trans = { t: tr ? sat(G.fade) * TRANS_HALF : 0, swapped: false, swap };
 }

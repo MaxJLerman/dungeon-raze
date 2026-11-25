@@ -31,6 +31,14 @@
   they built (kept through `respawn`, which keeps the world), and
   `DEV.noSave()` is true for that world or while god mode is on; `kill`
   then skips `clearGrade`, so a dev kill opens no gate for good.
+- **Co-op alone, with lag** (`#devCoop`, `src/dev/20_lagdial.js`, the lag
+  dial in `coop.md`). `coopSolo(o)` (`DF.coopSolo`) runs a co-op run alone
+  against a host stepped on the page. Besides the link's `ping`, `jit`,
+  `loss`, `rnd`, the scripted `mate`, `before`, `tamper` and `save`, it
+  takes `hub` (the host starts in the co-op hall; `seed` is then the first
+  trip's) and `pid` (2: this page is the friend and the scripted player is
+  the host's page, pid 1, which the returned `mateAsk(name, ...args)` can
+  have travel). Without `save` the dev run follows it from world to world.
 - **God mode** (`#devGod`, `devGod(on?)`) sets `DEV.god`, off on each load
   and kept through world swaps. `hurtPlayer` still runs the dodge (and
   perfect dodge), parry and block branches, so plates can be parried back;
