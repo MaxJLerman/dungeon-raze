@@ -433,10 +433,13 @@ Screenshots go to `shots/`.
 | `tests/t23.mjs` | The D enemies: behaviour hooks, the rat, the drowned and the brood mother, their bodies, and where the sewer places them, with screenshots. Run in `smoke` mode |
 | `tests/t24.mjs` | The siren, eel, bloater and drain grabber: rules for enemies bound to water or a wall, the held player, each type, and where the sewer places them, with screenshots. Run in `smoke` mode |
 | `tests/t25.mjs` | Old Sluicejaw, the D boss: its body, place, modes, death roll, health marks, a whole D run from the hall, the tunnel phase and its plates, the falling ceiling, the bloaters down the falls and its shadow, with screenshots. Run in `smoke` mode |
+| `tests/t26.mjs` | The dev menu: local pages only, opening and closing it, unlocking hidden classes, entering a gate, jumping to a boss, god mode, nothing saved, and the co-op lag dial. Run in `hub` mode |
+| `tests/t26-build.mjs` | The dev menu is in a local build and not in a `--release` one, the co-op build stamp, and the co-op host copy names nothing from a later file but a short list of names that never run there. Run on its own: `node tests/t26-build.mjs` |
 | `tests/t27.mjs` | Co-op client against a hand-stepped host over a fake link: puppets, hits, parries, executions, the cave checksum. Run in `smoke` mode |
 | `tests/t28.mjs` | Co-op: the other player on screen and the party rules. Run in `smoke` mode |
 | `tests/t29.mjs` | Co-op room screen up to the network: the button, codes, messages, the class fallback, a Worker host, the friend waiting for Start, a lost connection, the pause screen's code, Back by touch, Exit to main menu from a hosted run. Run in `title` mode, also with `DEVICE=oneplus-13` |
 | `tests/t30.mjs` | The main menu: its four buttons and no class picker, the solo and online paths through the class screen, Back, exits to the main menu from the hall, a cave, death and the win screen. Run in `title` mode, also with `DEVICE=iphone-se`. `node tests/t30-nogl.mjs` checks the menu in a browser with no WebGL 2 |
+| `tests/codes-print.mjs` | Not a test: writes every plaque code in `tests/codes.local.json` in all four notations to `tests/codes.local.md`, which git ignores and which must never be committed. Run in `title` mode |
 
 The co-op Node tests run without a page: `node tests/coop-host.mjs`,
 `node tests/coop-wire.mjs`, `node tests/coop-caves.mjs` (caves compared across
@@ -455,6 +458,8 @@ the simulation directly and are the ones to copy.
 
 ## Continuing the work
 
-`CLAUDE.md` holds the working notes: coordinate conventions, how the systems fit
-together, step-by-step recipes for adding a class, move or enemy, known problems
-and the backlog. Read it before changing code.
+`CLAUDE.md` holds the rules that apply to every change and an index of
+`docs/notes/`, which has one file per system: how it fits together, recipes for
+adding a class, move or enemy, tests and known problems. `docs/notes/status.md`
+has the history and the backlog. Read `CLAUDE.md`, and the notes for what you
+are changing, before changing code.

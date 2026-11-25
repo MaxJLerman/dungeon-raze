@@ -1,0 +1,110 @@
+# Status, history and backlog
+
+## Where the project stands
+
+- A playable combat spike, built in one conversation, tuned by automated tests
+  and screenshots only. No human had reported on feel when this was written.
+- The owner wants a hack-and-slash with Soulslike and God of War style combat,
+  set mostly in cave systems so that little art is needed. The inspirations are
+  Solo Leveling, Jujutsu Kaisen, Attack on Titan and Ghostwire Tokyo.
+- Names, characters and signature moves from those series are deliberately not
+  used. The classes are the generic hunter archetypes with original kits.
+- An earlier idea, a shadow-necromancer class that raises killed enemies, was
+  dropped by the owner. Do not reintroduce it unless asked.
+- The intended next stage is to widen the game with several agents working in
+  parallel, once the owner says the combat feels right.
+- Touch controls for phones and tablets were added on branch
+  `feat/touch-controls`, tested under Chromium device emulation only. No
+  phone has been played on yet.
+- The game starts in a base of operations: a built hall with six portal frames
+  graded E, D, C, B, A and S, and a training dummy. E is always open and
+  leads to the cave. D leads to the sewer and opens once E's boss is dead.
+  C to S are sealed. Grades carry no difficulty or rewards yet; the owner wants
+  enemy difficulty and kill rewards to scale by grade, with S the hardest.
+- Controller support was added on branch `feat/controller-support`, tested
+  with a faked Gamepad API only. No real pad has been played yet.
+- Branch `feat/plaques-enforcer` added three plaques on the hall's left wall,
+  an Inspect close-up, input codes that unlock hidden classes, and the first
+  hidden class, the Enforcer.
+- Branch `feat/sapper` added the second hidden class, the Sapper: a
+  sledgehammer, landmines joined by tripwires, and a cave-in that crushes a
+  pack and walls off a tunnel for a while.
+- Branch `feat/riftwalker` added the third and last plaque class, the
+  Riftwalker: paired rift ends that the player, regular enemies and shots
+  pass through, and a Drop that sends a pack through the floor and out of
+  the roof. No plaque is sealed now.
+- Branch `feat/sewer` is the first of three projects for the D gate: the
+  sewer zone, its water, and D opening once E's boss is dead. Branch
+  `feat/d-enemies` is project 2, built in two batches. Batch 1 added the
+  per-type hooks and the rat, the drowned and the brood mother, which fill
+  the brood rooms and the tunnels. Batch 2 (`feat/d-enemies-water`) added
+  the siren, eel, bloater and drain grabber, the rules for enemies bound to
+  water or a wall, a held player state, and their placement: sirens or eels
+  in pool rooms, bloaters in pools and gutters, grabbers at grates. Project
+  3 is the crocodile boss, built in two parts. Part one (`feat/crocodile`)
+  gave Old Sluicejaw its body, numbers and place in the cavern's centre
+  pool, in place of the Warden, and its fight cycle: it waits under until
+  the player enters the cavern, swims under, surfaces with a warning and
+  fights on land, where its death roll drags the player into the water. At
+  75%, 50% and 25% of its health no hit takes it past the mark, and
+  reaching one breaks off what it is doing. Part two (`feat/crocodile-2`)
+  added the rest: at a mark it leaps into the cavern's wall tunnels and
+  throws spiked plates from one mouth after another, then drops back into
+  the water. Shots hurt it there up to a cap per phase, and a parried plate
+  knocks it down onto the ring, staggered. Below half health chunks of the
+  cavern's ceiling fall on the dry ring and stay as rubble. Bloaters wash
+  down the falls during the fight, and its shadow shows under the light
+  shafts while it is under. With the crocodile finished, D is in
+  `LIVE_GRADES`: its portal opens in the hall once E's boss is dead, on the
+  published page too. A D run has no E type in it. The design is in
+  `docs/superpowers/specs/2026-11-19-d-enemies-design.md` for the enemies,
+  `docs/superpowers/specs/2026-11-18-sewer-d-gate-design.md` for the sewer
+  and `docs/superpowers/specs/2026-11-19-crocodile-boss-design.md` for the
+  crocodile.
+  It has been checked by tests and screenshots only, never played by hand.
+- Branch `feat/coop-cave` added two-player co-op through grade E's cave, the
+  first slice of co-op: the host's dungeon runs in a Web Worker in the
+  host's page, the friend joins through a small relay (`relay/`) with a
+  six-character code, and each page owns its own player. **Play online** on
+  the main menu leads to it, for every visitor. The owner
+  deployed the relay on 2026-11-25 and `COOP_RELAY` holds its address. It
+  has been checked by tests (Node, the page, and two Chromium pages through
+  a local relay) and once by two headless Chromium pages on one machine
+  through the deployed relay, never by hand or between two machines. More players, the
+  hall as a lobby, D, the hidden classes and party rules beyond the minimum
+  are later projects (see the spec's Non-goals).
+- Branch `feat/main-menu` made the first page a main menu: Play solo, Play
+  online, How to play and Controls, with no class picker on it. The class
+  is chosen after a Play button, and the pause, death and win screens can
+  exit to the main menu. `?coop=1` is no longer read. The design is
+  `docs/superpowers/specs/2026-11-25-main-menu-design.md`. Checked by tests
+  and screenshots only.
+
+## Backlog, roughly in the order discussed
+
+1. Tune feel from the owner's playtest: timing windows, sensitivity, difficulty.
+2. Give the portal grades meaning: enemy difficulty and kill rewards per
+   grade, then open D to S. D's place and water are built (`feat/sewer`) and
+   so are its enemies (`feat/d-enemies`, `feat/d-enemies-water`) and the
+   crocodile boss (`feat/crocodile`, `feat/crocodile-2`), and D is in
+   `LIVE_GRADES`. C is next. Revisit whether dying should send the player back
+   to the base once there are rewards to lose.
+3. Loot, inventory and an extraction loop. The owner asked for these early on
+   and they were set aside to get combat playable first.
+4. More enemy variety and a second boss.
+5. A harsher surface area or city zone, if the owner wants to leave the caves.
+6. Split the work into lanes for parallel agents: combat and camera, enemies,
+   world generation, loot and progression, rendering and effects, HUD, touch
+   layout, touch input, tests.
+   Agree shared data shapes (`CLASSES`, `MOVES`, `EDEF`) before fanning out.
+7. A jump. The owner first asked for it on Space and A or Cross, with dodge
+   on B. Dodge has since gone back to Space and Interact to G, so the
+   keyboard key for a jump needs asking again (not Ctrl: Ctrl+W closes the
+   tab). On a pad, near a plaque the same button inspects instead. What the
+   jump is for in a fight (movement, clearing slam shockwaves, jump attacks,
+   invulnerability) is undecided; ask the owner before building it. The floor is flat, so there is nothing to
+   jump onto. A touch Jump button must fit the owner's honeycomb layout.
+8. Hidden classes and joke classes. See `docs/ideas/joke-classes.md`. All
+   three plaque classes are built. Still to come: the joke classes, quests on
+   the plaques that open portals D to S to a class, and the in-game hunt that
+   leads players to the hidden list of codes.
