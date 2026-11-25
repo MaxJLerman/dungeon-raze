@@ -82,12 +82,12 @@ Read on 2026-11-24 from Cloudflare's own pages:
 
 Limits quoted from them:
 
-| | Free plan | Paid plan ($5 a month minimum) | Page |
-|---|---|---|---|
-| Worker requests | 100,000 a day | 10 million a month, then $0.30 per million | Workers pricing |
-| Durable Object requests | 100,000 a day | 1 million a month, then $0.15 per million | Durable Objects pricing |
+|                         | Free plan         | Paid plan ($5 a month minimum)                     | Page                    |
+| ----------------------- | ----------------- | -------------------------------------------------- | ----------------------- |
+| Worker requests         | 100,000 a day     | 10 million a month, then $0.30 per million         | Workers pricing         |
+| Durable Object requests | 100,000 a day     | 1 million a month, then $0.15 per million          | Durable Objects pricing |
 | Durable Object duration | 13,000 GB-s a day | 400,000 GB-s a month, then $12.50 per million GB-s | Durable Objects pricing |
-| SQLite rows written | 100,000 a day | 50 million a month, then $1.00 per million | Durable Objects pricing |
+| SQLite rows written     | 100,000 a day     | 50 million a month, then $1.00 per million         | Durable Objects pricing |
 
 How Cloudflare counts a WebSocket (Durable Objects pricing page): opening one
 is one request; messages the relay sends are not charged; incoming messages
