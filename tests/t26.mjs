@@ -163,6 +163,83 @@ export default [
   const p = G.player; p.hp = p.maxHp; p.iframe = 0; p.state = "free"; G.state = "play";
   const r = DF.hurtPlayer(10, null, { px: p.x + 1, pz: p.z }), badge = $("#devBadge");
   return { pass: r === "hit" && p.hp < p.maxHp && badge.hidden && $("#devGod").textContent === "God mode: off", r, hp: p.hp };`),
+  step("the co-op button starts a run alone and shows the lag dial", `
+  DF.enterHub(); DF.show("title"); DF.openMenu("dev"); await draw();
+  const btn = $("#devCoop");
+  btn.click(); await draw();
+  const net = DF.net() !== null, dial = $("#lagDial"), shown = !!dial && !dial.hidden && dial.offsetWidth > 0;
+  const r = DF.lagRun().out, cfg = { ping: r.cfg.ping, jit: r.cfg.jit, loss: r.cfg.loss };
+  const rc = dial && dial.getBoundingClientRect(), small = !!rc && rc.width < 280 && rc.height < 260;
+  const corner = !!rc && (rc.left < 40 || innerWidth - rc.right < 40);
+  const mate = !!r.mate && r.mate.mode === "fight";
+  return { pass: !!btn && btn.textContent === "Co-op alone, with lag" && net && shown && G.state === "play" && cfg.ping === 100 && cfg.jit === 8 && cfg.loss === 2 && mate && small && corner,
+    net, shown, state: G.state, cfg, mate, small, corner };`),
+  step("the ping slider changes the solo link", `
+  const r = DF.lagRun().out, sl = $('#lagDial [data-lag="ping"]');
+  sl.value = "300"; sl.dispatchEvent(new Event("input", { bubbles: true }));
+  const j = $('#lagDial [data-lag="jit"]'); j.value = "20"; j.dispatchEvent(new Event("input", { bubbles: true }));
+  const l = $('#lagDial [data-lag="loss"]'); l.value = "9"; l.dispatchEvent(new Event("input", { bubbles: true }));
+  const label = $('#lagDial [data-lag-v="ping"]').textContent;
+  return { pass: r.cfg.ping === 300 && r.cfg.jit === 20 && r.cfg.loss === 9 && label.includes("300"), cfg: { ...r.cfg }, label };`),
+  step("a click on the panel starts no attack and leaves the pointer alone", `
+  G.state = "play"; DF.taps.Mouse0 = false; DF.keys.Mouse0 = false;
+  const sl = $('#lagDial [data-lag="ping"]'), lock = document.pointerLockElement;
+  for (const t of ["pointerdown", "mousedown", "mouseup", "click"]) sl.dispatchEvent(new MouseEvent(t, { bubbles: true, button: 0 }));
+  sl.focus(); sl.dispatchEvent(new Event("change", { bubbles: true }));
+  const focus = document.activeElement === sl;
+  return { pass: !DF.taps.Mouse0 && !DF.keys.Mouse0 && document.pointerLockElement === lock && !focus, tap: DF.taps.Mouse0, focus };`),
+  step("the second player can be swapped during the run", `
+  const lag = DF.lagRun(), r = lag.out, sel = $('#lagDial [data-lag-mate]');
+  const set = async (v) => { sel.value = v; sel.dispatchEvent(new Event("change", { bubbles: true })); r.step(1.5); };
+  const out = {};
+  await set("none"); out.none = [r.mate, r.host.S.px.size, DF.net().mates.length];
+  await set("idle"); out.idle = [r.mate && r.mate.mode, r.host.S.px.size, DF.net().mates.length];
+  await set("follow"); out.follow = [r.mate && r.mate.mode, r.host.S.px.size, DF.net().mates.length];
+  await set("fight"); out.fight = [r.mate && r.mate.mode, r.host.S.px.size, DF.net().mates.length];
+  return { pass: out.none[0] === null && out.none[1] === 1 && out.none[2] === 0 &&
+    out.idle[0] === "idle" && out.idle[1] === 2 && out.idle[2] === 1 &&
+    out.follow[0] === "follow" && out.follow[1] === 2 && out.follow[2] === 1 &&
+    out.fight[0] === "fight" && out.fight[1] === 2 && out.fight[2] === 1, out };`),
+  step("the readout shows kB/s down and up and enemies per snapshot", `
+  const r = DF.lagRun().out; r.cfg.ping = 40; r.cfg.jit = 0; r.cfg.loss = 0;
+  // the sim in step with the clock, as the frame loop runs it
+  for (let i = 0; i < 12; i++) { r.step(0.1); await new Promise((f) => setTimeout(f, 100)); }
+  const txt = $("#lagStat").textContent, m = txt.match(/down ([\\d.]+) kB\\/s.*up ([\\d.]+) kB\\/s[\\s\\S]*?(\\d+) enemies/);
+  return { pass: !!m && +m[1] > 0 && +m[3] > 0 && DF.CC.snap.en.length === +m[3], txt, bytes: { ...r.bytes } };`),
+  step("[ and ] change the ping by 25 within 0 to 400, in play and unbound only", `
+  const r = DF.lagRun().out; G.state = "play"; r.cfg.ping = 100;
+  const out = [];
+  key("BracketRight"); out.push(r.cfg.ping);
+  const slider = $('#lagDial [data-lag="ping"]').value;
+  key("BracketLeft"); key("BracketLeft"); out.push(r.cfg.ping);
+  r.cfg.ping = 390; key("BracketRight"); out.push(r.cfg.ping);
+  r.cfg.ping = 10; key("BracketLeft"); out.push(r.cfg.ping);
+  r.cfg.ping = 100; G.state = "pause"; key("BracketRight"); const paused = r.cfg.ping; G.state = "play";
+  const was = DF.BIND.light; DF.BIND.light = "BracketRight"; key("BracketRight"); const bound = r.cfg.ping; DF.BIND.light = was;
+  return { pass: out.join() === "125,75,400,0" && paused === 100 && bound === 100 && slider === "125", out, paused, bound, slider };`),
+  step("a second click ends the old run and starts a fresh one", `
+  const a = DF.lagRun().out, link = DF.CC.link, step0 = a.host.S.step;
+  DF.show("title"); DF.openMenu("dev"); await draw();
+  $("#devCoop").click(); await draw();
+  const b = DF.lagRun().out;
+  a.step(0.5); const old = a.host.S.step - step0;
+  return { pass: b !== a && b.host !== a.host && DF.CC.link === b.link && DF.CC.link !== link && link.closed === true && DF.net() !== null && b.cfg.ping === 100 && old === 0 && !$("#lagDial").hidden, old, closed: link.closed };`),
+  step("the dial is not shown for a run the dev menu did not start", `
+  DF.coopSolo({ ping: 50 }); await new Promise((f) => setTimeout(f, 700));
+  const hidden = $("#lagDial").hidden, on = DF.net() !== null;
+  return { pass: hidden && on && DF.lagRun() === null, hidden, on };`),
+  step("leaving for the hall hides the panel", `
+  DF.show("title"); DF.openMenu("dev"); await draw();
+  $("#devCoop").click(); await draw();
+  const before = !$("#lagDial").hidden;
+  DF.enterHub(); await new Promise((f) => setTimeout(f, 700));
+  return { pass: before && $("#lagDial").hidden && DF.net() === null, before, hidden: $("#lagDial").hidden, net: DF.net() };`),
+  step("the panel hides when the run ends for another reason", `
+  DF.show("title"); DF.openMenu("dev"); await draw();
+  $("#devCoop").click(); await draw();
+  const before = !$("#lagDial").hidden;
+  DF.coopEnd("host"); await new Promise((f) => setTimeout(f, 700));
+  return { pass: before && $("#lagDial").hidden && DF.net() === null, before };`),
   step("the dev screen over the title", `
   DF.enterHub(); DF.show("title"); DF.openMenu("dev"); await draw(); await draw();
   return { pass: G.state === "dev" };`),

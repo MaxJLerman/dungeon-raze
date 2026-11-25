@@ -211,6 +211,9 @@ const UNLOCKED = new Set();
 // it. A release build leaves that folder out, so this stays null and every
 // `DEV &&` check is inert.
 let DEV = null;
+// Co-op (06d_coophost.js and the client): null except during a co-op run, so
+// every `NET` check is inert in single player. Its hooks are always all there.
+let NET = null;
 function classOpen(id) {
   return (
     Object.hasOwn(CLASSES, id) &&
@@ -2063,6 +2066,8 @@ function newRun(seed, grade = "E") {
 // Puts the player in the hall. With fromGrade they step out of that grade's
 // portal, facing into the hall; otherwise they stand at the start point.
 function enterHub(fromGrade = null) {
+  // leaving a co-op run for the base ends co-op before the world goes
+  if (NET && NET.client) coopEnd("left");
   G.zone = "hub";
   setEnv(ENV_HUB);
   G.world = genHub();
@@ -2158,7 +2163,9 @@ function respawn() {
   G.drips = [];
   G.pending = [];
   G.bossSeen = false;
-  spawnEnemies();
+  // in a co-op run the host owns the enemies: one death rebuilds none
+  if (NET) NET.onRespawn();
+  else spawnEnemies();
   cam.px = p.x;
   cam.pz = p.z;
   G.state = "play";
@@ -2260,6 +2267,8 @@ function ghost(p) {
 }
 function explode(x, z, r, dmg, post, c) {
   post *= G.player.cls.blastPost || 1;
+  // a co-op client shows its blast to the other player
+  if (NET) NET.onBlast(x, z, r, c);
   G.rings.push({ x, z, r, t: 0, dur: 0.4, kind: "shock", c });
   sparks(x, 0.8, z, 30, c, 9, 0.6, 0.15);
   G.shake = Math.max(G.shake, r > 4.5 ? 0.9 : 0.45);
@@ -2413,7 +2422,10 @@ function stagger(e, k = 1) {
   SFX.stagger();
   sparks(e.x, e.def.top * 0.6, e.z, 14, AMBER, 5);
 }
-function kill(e) {
+// quiet (a co-op client applying a death long after it happened) changes
+// the same state with no sound, sparks or message; single player never
+// passes it.
+function kill(e, quiet = false) {
   if (e.def.dummy) return;
   e.dead = true;
   e.state = "dead";
@@ -2425,8 +2437,10 @@ function kill(e) {
   p.focus = Math.min(100, p.focus + (e.born ? BROOD.focus : 6));
   // the roll is taken for every enemy, so E's draws are as they were
   if (Math.random() < 0.4 && !e.born) p.tool = Math.min(p.cls.tool.max, p.tool + 1);
-  SFX.kill();
-  sparks(e.x, e.def.top * 0.5, e.z, 26, e.fig.eye, 7, 0.7, 0.14);
+  if (!quiet) {
+    SFX.kill();
+    sparks(e.x, e.def.top * 0.5, e.z, 26, e.fig.eye, 7, 0.7, 0.14);
+  }
   if (p.lock === e) {
     p.lock = null;
     let b = null,
@@ -2441,23 +2455,36 @@ function kill(e) {
       }
     p.lock = b;
   }
-  if (e.def.boss) {
-    const grade = G.grade || "E";
-    const next = GRADE_IDS[GRADE_IDS.indexOf(grade) + 1];
-    const before = next ? portalOpen(next) : true;
-    // a kill in a run the dev menu started, or under its god mode, is not saved
-    if (!(DEV && DEV.noSave())) clearGrade(grade, OPT.cls);
-    G.bossDead = true;
-    G.gate = { x: G.world.boss.x, z: G.world.boss.z, t: 0 };
-    G.slowT = 1.2;
-    say(e.def.fell, "big", 4);
-    say("A gate opens. Step through to leave.", "", 6);
-    if (next && !before && portalOpen(next))
-      say("A new gate has opened in the base.", "good", 6);
-    SFX.win();
-  }
+  if (e.def.boss) bossFell(e, quiet);
   const b = EBEH[e.type];
   if (b && b.death) b.death(e);
+  if (NET) NET.onKill(e);
+}
+// A boss has died: the grade is cleared and the gate out opens. quiet as
+// for kill.
+function bossFell(e, quiet = false) {
+  const grade = G.grade || "E";
+  const next = GRADE_IDS[GRADE_IDS.indexOf(grade) + 1];
+  const before = next ? portalOpen(next) : true;
+  // a kill in a run the dev menu started, or under its god mode, is not
+  // saved; nor on a co-op host, which has no save and no player of its own.
+  // A co-op client saves it under the class that played (a hidden class
+  // plays as a base class there).
+  if (!(DEV && DEV.noSave()) && !(NET && NET.host))
+    clearGrade(grade, NET && NET.client ? G.player.clsId : OPT.cls);
+  G.bossDead = true;
+  openGate();
+  if (quiet) return;
+  G.slowT = 1.2;
+  say(e.def.fell, "big", 4);
+  say("A gate opens. Step through to leave.", "", 6);
+  if (next && !before && portalOpen(next))
+    say("A new gate has opened in the base.", "good", 6);
+  SFX.win();
+}
+// The gate out of a run, over the boss's chamber, once its boss is dead.
+function openGate() {
+  G.gate = { x: G.world.boss.x, z: G.world.boss.z, t: 0 };
 }
 // What any hit does to the one it lands on, before damage and knock: it
 // flashes, hunts (past the leash), learns where the player is and fills
@@ -2514,12 +2541,14 @@ function hitEnemy(e, dmg, post, o = {}) {
     }
   }
   let mult = 1;
-  const close = o.src === "melee" || o.src === "blink" || o.src === "exec";
   const back = Math.abs(angDiff(e.yaw, Math.atan2(p.x - e.x, p.z - e.z))) > 2.1;
   // An enemy that the boss chamber rule keeps from waking is not caught off
   // guard: without this every hit on it would be an ambush.
   const held = G.inBoss && !e.def.boss && !e.inArena;
-  if (
+  // o.pre: a co-op client's proposal, its multipliers already in the damage
+  if (o.pre) {
+    // nothing more
+  } else if (
     !e.aware &&
     !held &&
     o.src !== "reflect" &&
@@ -2539,22 +2568,18 @@ function hitEnemy(e, dmg, post, o = {}) {
     say("BACKSTAB", "crit", 0.8);
     SFX.crit();
   }
-  if (p.buff === "berserk") {
+  if (p.buff === "berserk" && !o.pre) {
     mult *= 1.4;
     p.hp = Math.min(p.maxHp, p.hp + dmg * 0.15);
   }
+  // a co-op client proposes its hit to the host and shows its own guess
+  if (NET && NET.onHit(e, dmg * mult, post, o, mult)) return;
   e.hp -= dmg * mult;
   if (e.def.dummy) e.hp = e.def.hp;
   // a type's least health after a hit, past every multiplier (the crocodile's marks)
   if (bh && bh.hpFloor) e.hp = Math.max(e.hp, bh.hpFloor(e));
   noticeHit(e, post);
-  const ox = o.fx !== undefined ? o.fx : p.x,
-    oz = o.fz !== undefined ? o.fz : p.z;
-  let dx = e.x - ox,
-    dz = e.z - oz;
-  const dl = Math.hypot(dx, dz) || 1;
-  dx /= dl;
-  dz /= dl;
+  const [dx, dz] = hitShow(e, o, mult);
   // o.dot: damage over time (a poison cloud's tick). It deals its damage and
   // posture and can stagger or kill, but gives no knockback, flinch, hitstop,
   // shake, focus or hit sound, like atk.dot in hurtPlayer.
@@ -2563,26 +2588,6 @@ function hitEnemy(e, dmg, post, o = {}) {
     e.kx = dx * k;
     e.kz = dz * k;
   }
-  sparks(
-    e.x - dx * e.r * 0.6,
-    1.0 * e.fig.o.sc + 0.2,
-    e.z - dz * e.r * 0.6,
-    o.dot ? 3 : o.heavy ? 16 : 9,
-    mult > 1 ? AMBER : close ? WHITE : c.col,
-    o.heavy ? 8 : 6,
-  );
-  if (o.dot) {
-    // nothing for the player
-  } else if (close) {
-    G.hitstop = Math.max(G.hitstop, o.heavy ? 0.1 : 0.055);
-    G.shake = Math.max(G.shake, o.heavy ? 0.5 : 0.28);
-    p.focus = Math.min(100, p.focus + (o.heavy ? 6 : 4));
-  } else if (o.src !== "reflect") {
-    G.shake = Math.max(G.shake, o.heavy ? 0.3 : 0.12);
-    p.focus = Math.min(100, p.focus + (o.src === "aoe" ? 2 : 3));
-  }
-  if (!o.dot) SFX.hit(o.heavy);
-  if (o.heavy && o.src === "melee") PAD.rumble("heavy");
   if (e.hp <= 0) {
     kill(e);
     return;
@@ -2612,25 +2617,82 @@ function hitEnemy(e, dmg, post, o = {}) {
     say("The Warden burns hotter", "", 2.5);
     return;
   }
-  if (e.state === "stagger" || e.state === "roar") return;
+  hitReact(e, o);
+}
+// What a hit shows and gives the player as it lands on e: sparks on the side
+// it came from (amber when a multiplier made it a crit), and unless it is
+// damage over time, hit-stop or shake, focus, the hit sound and, for a heavy
+// melee hit, the rumble. Shared by hitEnemy and a co-op client's guess.
+// Returns the unit direction from where it came to e.
+function hitShow(e, o, mult) {
+  const p = G.player,
+    c = p.cls,
+    close = o.src === "melee" || o.src === "blink" || o.src === "exec";
+  const ox = o.fx !== undefined ? o.fx : p.x,
+    oz = o.fz !== undefined ? o.fz : p.z;
+  let dx = e.x - ox,
+    dz = e.z - oz;
+  const dl = Math.hypot(dx, dz) || 1;
+  dx /= dl;
+  dz /= dl;
+  sparks(
+    e.x - dx * e.r * 0.6,
+    1.0 * e.fig.o.sc + 0.2,
+    e.z - dz * e.r * 0.6,
+    o.dot ? 3 : o.heavy ? 16 : 9,
+    mult > 1 ? AMBER : close ? WHITE : c.col,
+    o.heavy ? 8 : 6,
+  );
+  if (o.dot) {
+    // nothing for the player
+  } else if (close) {
+    G.hitstop = Math.max(G.hitstop, o.heavy ? 0.1 : 0.055);
+    G.shake = Math.max(G.shake, o.heavy ? 0.5 : 0.28);
+    p.focus = Math.min(100, p.focus + (o.heavy ? 6 : 4));
+  } else if (o.src !== "reflect") {
+    G.shake = Math.max(G.shake, o.heavy ? 0.3 : 0.12);
+    p.focus = Math.min(100, p.focus + (o.src === "aoe" ? 2 : 3));
+  }
+  if (!o.dot) SFX.hit(o.heavy);
+  if (o.heavy && o.src === "melee") PAD.rumble("heavy");
+  return [dx, dz];
+}
+// True when a hit flinches an enemy of kind def that is in state: never damage
+// over time; poise 0 always; poise 1 only from a heavy hit outside a wind-up.
+// One rule for hitEnemy, a co-op client's guess and the host's favour to the
+// attacker.
+function hitFlinches(def, heavy, dot, state) {
+  return (
+    !dot && (def.poise === 0 || (def.poise === 1 && heavy && state !== "wind"))
+  );
+}
+// What a hit that did not kill does to e's state: nothing in a stagger or a
+// roar; a stagger once its posture is full; else a flinch, unless it is mid
+// swing. True when its state changed. Shared by hitEnemy and a co-op
+// client's guess.
+function hitReact(e, o) {
+  if (e.state === "stagger" || e.state === "roar") return false;
   if (e.posture >= e.def.posture) {
     stagger(e);
-    return;
+    return true;
   }
-  const flinch =
-    !o.dot &&
-    (e.def.poise === 0 || (e.def.poise === 1 && o.heavy && e.state !== "wind"));
-  if (flinch && e.state !== "act") {
+  if (hitFlinches(e.def, o.heavy, o.dot, e.state) && e.state !== "act") {
     e.state = "hit";
     e.t = 0;
     e.hitT = 0;
     e.token = false;
+    return true;
   }
+  return false;
 }
 function hurtPlayer(dmg, e, atk) {
   const p = G.player,
     c = p.cls;
-  if (p.state === "dead" || G.state !== "play" || G.trans) return "none";
+  // a co-op host never judges a hit on a player: their own machine does
+  if (p.remote) return "remote";
+  // in a co-op run the dungeon does not pause, so a paused player can be hit
+  if (p.state === "dead" || (G.state !== "play" && !(NET && NET.live)) || G.trans)
+    return "none";
   if (p.state === "execute" || p.state === "blink") return "none";
   if (p.iframe > 0) {
     if (p.state === "dodge" && !p.pdUsed && !atk.dot) {
@@ -2834,7 +2896,14 @@ function nearestStaggered() {
   let b = null,
     bd = 3.7;
   for (const e of G.enemies)
-    if (!e.dead && !e.hidden && !e.aloft && e.state === "stagger") {
+    if (
+      !e.dead &&
+      !e.hidden &&
+      !e.aloft &&
+      e.state === "stagger" &&
+      // in co-op, one the other player has begun to execute is theirs
+      !(NET && NET.taken(e))
+    ) {
       const d = Math.hypot(e.x - p.x, e.z - p.z) - e.r;
       if (d < bd) {
         bd = d;
@@ -2924,6 +2993,8 @@ function fire(spec, a, extra) {
     big: !!s.big,
     hitSet: s.pierce ? new Set() : null,
   });
+  // a co-op client shows its shot to the other player
+  if (NET) NET.onPShot(G.projs[G.projs.length - 1]);
 }
 function startMove(id, base, free) {
   const p = G.player,
@@ -3497,6 +3568,87 @@ function useTool(ix, iz, il) {
   p.toolCD = 0.35;
   return true;
 }
+// The slash a melee move leaves as it lands: a straight thrust, a cut out of
+// a small tear beside its target, or an arc (two for a double). A co-op run
+// draws the other player's swings with it too, from their move and timing.
+function swingArcs(p, m) {
+  const c = p.cls;
+  if (m.lance)
+    G.arcs.push({
+      lance: true,
+      x: p.x,
+      y: 1.2,
+      z: p.z,
+      yaw: p.yaw,
+      len: m.range + 0.3,
+      t: 0,
+      dur: 0.2,
+      c: c.col,
+      wd: m.anim === "bash" ? 0.7 : 0.26,
+    });
+  else if (m.reach) {
+    // the cut comes out of a small tear 1.4 m short of the target, to
+    // one side
+    const e = G.enemies.find(
+        (e) =>
+          !e.dead &&
+          !e.hidden &&
+          !e.aloft &&
+          Math.hypot(e.x - p.x, e.z - p.z) < m.range + e.r &&
+          Math.abs(angDiff(p.yaw, Math.atan2(e.x - p.x, e.z - p.z))) <
+            m.arc / 2 + 0.2,
+      ),
+      d = e ? Math.max(0.8, Math.hypot(e.x - p.x, e.z - p.z) - 1.4) : 2,
+      sx = -Math.cos(p.yaw) * 0.5 * m.dir,
+      sz = Math.sin(p.yaw) * 0.5 * m.dir;
+    G.arcs.push({
+      x: p.x + Math.sin(p.yaw) * d + sx,
+      y: 1.2,
+      z: p.z + Math.cos(p.yaw) * d + sz,
+      yaw: p.yaw,
+      tilt: m.tilt,
+      r0: 0.2,
+      r1: 1.6,
+      a0: 1.25 * m.dir,
+      a1: -1.25 * m.dir,
+      t: 0,
+      dur: 0.24,
+      c: c.col,
+      tear: true,
+    });
+  } else {
+    const wd = m.wide || 1;
+    G.arcs.push({
+      x: p.x,
+      y: 1.2,
+      z: p.z,
+      yaw: p.yaw,
+      tilt: m.tilt,
+      r0: 0.9,
+      r1: m.range - 0.1,
+      a0: m.arc >= TAU ? 0 : 1.25 * m.dir * (m.tilt > 1.2 ? 1.5 : 1),
+      a1: m.arc >= TAU ? TAU : -1.25 * m.dir * (m.tilt > 1.2 ? 0.2 : 1),
+      t: 0,
+      dur: 0.2 * wd,
+      c: c.col,
+    });
+    if (m.dbl)
+      G.arcs.push({
+        x: p.x,
+        y: 1.2,
+        z: p.z,
+        yaw: p.yaw,
+        tilt: -m.tilt,
+        r0: 0.9,
+        r1: m.range - 0.1,
+        a0: -1.25,
+        a1: 1.25,
+        t: 0,
+        dur: 0.2,
+        c: c.col,
+      });
+  }
+}
 function playerUpdate(dt) {
   const p = G.player,
     w = G.world,
@@ -3779,81 +3931,7 @@ function playerUpdate(dt) {
           else if (m.proj.kind === "pellet") SFX.shotgun();
           else if (m.proj.kind === "bullet") SFX.gun(m.proj.heavy);
           else SFX.shot();
-        } else if (m.lance)
-          G.arcs.push({
-            lance: true,
-            x: p.x,
-            y: 1.2,
-            z: p.z,
-            yaw: p.yaw,
-            len: m.range + 0.3,
-            t: 0,
-            dur: 0.2,
-            c: c.col,
-            wd: m.anim === "bash" ? 0.7 : 0.26,
-          });
-        else if (m.reach) {
-          // the cut comes out of a small tear 1.4 m short of the target, to
-          // one side
-          const e = G.enemies.find(
-              (e) =>
-                !e.dead &&
-                !e.hidden &&
-                !e.aloft &&
-                Math.hypot(e.x - p.x, e.z - p.z) < m.range + e.r &&
-                Math.abs(angDiff(p.yaw, Math.atan2(e.x - p.x, e.z - p.z))) <
-                  m.arc / 2 + 0.2,
-            ),
-            d = e ? Math.max(0.8, Math.hypot(e.x - p.x, e.z - p.z) - 1.4) : 2,
-            sx = -Math.cos(p.yaw) * 0.5 * m.dir,
-            sz = Math.sin(p.yaw) * 0.5 * m.dir;
-          G.arcs.push({
-            x: p.x + Math.sin(p.yaw) * d + sx,
-            y: 1.2,
-            z: p.z + Math.cos(p.yaw) * d + sz,
-            yaw: p.yaw,
-            tilt: m.tilt,
-            r0: 0.2,
-            r1: 1.6,
-            a0: 1.25 * m.dir,
-            a1: -1.25 * m.dir,
-            t: 0,
-            dur: 0.24,
-            c: c.col,
-            tear: true,
-          });
-        } else {
-          const wd = m.wide || 1;
-          G.arcs.push({
-            x: p.x,
-            y: 1.2,
-            z: p.z,
-            yaw: p.yaw,
-            tilt: m.tilt,
-            r0: 0.9,
-            r1: m.range - 0.1,
-            a0: m.arc >= TAU ? 0 : 1.25 * m.dir * (m.tilt > 1.2 ? 1.5 : 1),
-            a1: m.arc >= TAU ? TAU : -1.25 * m.dir * (m.tilt > 1.2 ? 0.2 : 1),
-            t: 0,
-            dur: 0.2 * wd,
-            c: c.col,
-          });
-          if (m.dbl)
-            G.arcs.push({
-              x: p.x,
-              y: 1.2,
-              z: p.z,
-              yaw: p.yaw,
-              tilt: -m.tilt,
-              r0: 0.9,
-              r1: m.range - 0.1,
-              a0: -1.25,
-              a1: 1.25,
-              t: 0,
-              dur: 0.2,
-              c: c.col,
-            });
-        }
+        } else swingArcs(p, m);
       }
       if (
         !m.proj &&
@@ -4183,8 +4261,12 @@ function playerUpdate(dt) {
     G.gate.t > 1.2 &&
     Math.hypot(G.gate.x - p.x, G.gate.z - p.z) < 1.5
   ) {
-    G.state = "win";
-    SFX.win();
+    // in a co-op run the host ends it, for both players
+    if (NET) NET.onGate();
+    else {
+      G.state = "win";
+      SFX.win();
+    }
   }
 }
 
@@ -4303,6 +4385,7 @@ function shoot(e, a, dmg, spd) {
     kind: "spit",
     c: e.def.boss ? RED : [1, 0.45, 0.2],
   });
+  if (NET) NET.onShoot(G.projs[G.projs.length - 1]);
 }
 function enemyUpdate(e, dt) {
   const p = G.player,
@@ -5497,6 +5580,8 @@ function projUpdate(dt) {
       pr.life = -1;
       continue;
     }
+    // the other player's shot in a co-op run is only drawn here
+    if (pr.own === "m") continue;
     if (pr.own === "e") {
       if (Math.hypot(pr.x - p.x, pr.z - p.z) < 0.8) {
         const res = hurtPlayer(pr.dmg, null, {
@@ -5646,8 +5731,10 @@ function update(dt) {
   }
   if (G.grabGrace > 0) G.grabGrace = Math.max(0, G.grabGrace - dt);
   const prev = riftSnap();
-  playerUpdate(dt);
-  for (const e of G.enemies) enemyUpdate(e, dt);
+  // a co-op host has no player of its own, and steps its enemies itself
+  if (!(NET && NET.host)) playerUpdate(dt);
+  if (NET) NET.enemies(dt);
+  else for (const e of G.enemies) enemyUpdate(e, dt);
   if (prev) riftBodies(prev);
   projUpdate(dt);
   bombsUpdate(dt);
@@ -5716,7 +5803,10 @@ function update(dt) {
         }
       }
     }
-  if (p.state === "dead" && p.t > 1.6 && G.state === "play") G.state = "dead";
+  // in a co-op run a death under the pause screen or a menu shows the dead
+  // screen too, since the dungeon ran on under it
+  if (p.state === "dead" && p.t > 1.6 && (G.state === "play" || (NET && NET.live)))
+    G.state = "dead";
   // a local build's test switches top the player up (null in a release build)
   if (DEV) DEV.tick();
   // open portals in the hall: stepping into the arch starts the trip. This

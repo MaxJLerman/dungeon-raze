@@ -11,9 +11,10 @@ const SCREENS = [
   "class",
   "controls",
   "howto",
+  "coop",
 ];
 // screens opened on top of the title or pause screen, which Back returns to
-const MENUS = ["class", "controls", "howto"];
+const MENUS = ["class", "controls", "howto", "coop"];
 let menuBack = "title",
   rebind = null,
   swallowClick = false;
@@ -92,11 +93,19 @@ function toBase() {
   enterHub(G.grade);
   play();
 }
+// Back from a menu, by its Back button, Esc, a pad's back button (which
+// clicks the button) or the Back gesture: the screen it was opened over.
+// Leaving the room screen first ends a room not yet entered.
+function menuGoBack() {
+  if (G.state === "coop") coopLeaveRoom();
+  show(menuBack);
+}
 function openMenu(which) {
   if (!MENUS.includes(G.state)) menuBack = G.state;
   if (which === "controls") renderControls();
   else if (which === "class") renderPicker();
   show(which);
+  if (which === "coop") coopRoomOpen();
 }
 
 // ---- class picker ----
@@ -332,6 +341,16 @@ function camUpdate(dt) {
   }
   R.setCam(eye[0], eye[1], eye[2], look[0], look[1], look[2], cam.fov);
 }
+// In a co-op run the simulation runs whatever the screen; off the play and
+// dead screens nothing this player holds moves them, so a paused player
+// stands where they were (and can still be hit).
+function coopStill() {
+  if (!(NET && NET.live) || G.state === "play" || G.state === "dead") return;
+  for (const k in keys) keys[k] = false;
+  for (const k in taps) taps[k] = false;
+  PAD.move = { x: 0, y: 0, mag: 0 };
+  TOUCH.move.x = TOUCH.move.y = TOUCH.move.mag = 0;
+}
 let last = 0;
 function frame(now) {
   requestAnimationFrame(frame);
@@ -340,7 +359,11 @@ function frame(now) {
   if (!(dt > 0)) dt = 0.016;
   // tests set G.manual and poll the pads themselves
   if (!G.manual) PAD.poll(dt);
-  if (!G.manual && (G.state === "play" || G.state === "dead")) {
+  // a co-op run's link and clock move on real time, whatever the screen
+  if (NET && !G.manual) NET.frame(dt);
+  // a co-op run's dungeon runs on under every screen, where this player stands
+  if (!G.manual && (G.state === "play" || G.state === "dead" || (NET && NET.live))) {
+    coopStill();
     let sim = dt;
     if (G.hitstop > 0) {
       G.hitstop -= dt;
@@ -356,7 +379,7 @@ function frame(now) {
     for (const k in taps) taps[k] = false;
   }
   // nothing is simulated on the title, but its backdrop should still move
-  if (G.state === "title") G.t += dt;
+  if (G.state === "title" && !(NET && NET.live)) G.t += dt;
   camUpdate(dt);
   render();
   HUD.update(dt);
@@ -377,6 +400,7 @@ function boot() {
   HUD.init();
   TOUCH.init();
   PAD.init();
+  coopUiInit();
   enterHub();
   renderPicker();
   renderControls();
@@ -451,7 +475,7 @@ function boot() {
         play();
       } else if (G.state === "pause" || G.state === "title") play();
     }
-    if (e.code === "Escape" && MENUS.includes(G.state)) show(menuBack);
+    if (e.code === "Escape" && MENUS.includes(G.state)) menuGoBack();
   });
   addEventListener("keyup", (e) => {
     keys[e.code] = false;
@@ -520,8 +544,7 @@ function boot() {
     $(id).addEventListener("click", toBase);
   for (const b of document.querySelectorAll("[data-open]"))
     b.addEventListener("click", () => openMenu(b.dataset.open));
-  for (const b of document.querySelectorAll("[data-back]"))
-    b.addEventListener("click", () => show(menuBack));
+  for (const b of document.querySelectorAll("[data-back]")) b.addEventListener("click", menuGoBack);
   document.addEventListener("click", (e) => {
     const card = e.target.closest && e.target.closest(".card");
     if (card) {
@@ -750,10 +773,26 @@ window.DF = {
   openMenu,
   loadOpt,
   saveOpt,
+  net: () => NET,
+  CC,
+  coopBegin,
+  coopEnter,
+  coopEnd,
+  coopMakeHost,
+  coopSay,
+  coopWorldSum,
+  coopButton,
+  coopBuild: COOP_BUILD,
+  // tests: the relay's address, a stand-in for location, the next hosted seed
+  coopRelay: (url) => (COOP_RELAY = url || ""),
+  coopLoc: (loc) => (CR.loc = loc || null),
+  coopSeed: (seed) => (CR.seed = seed === null || seed === undefined ? null : seed),
   sim(sec, each) {
     const n = Math.round(sec * 60);
     for (let i = 0; i < n; i++) {
       if (each && each(i) === false) return i;
+      // as the frame loop does, for a co-op run under another screen
+      coopStill();
       update(1 / 60);
       for (const k in taps) taps[k] = false;
     }

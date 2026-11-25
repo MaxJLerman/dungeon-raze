@@ -89,6 +89,36 @@ Sound on or off has no pad button by default. A sprint attack starts the
 class dash. Playing with a pad goes fullscreen, because a pad has no pointer to
 lock. Leaving fullscreen pauses the game.
 
+## Co-op
+
+Two players can go through the E cave together over the internet. It is a
+first slice: grade E only, two players, the five base classes, and it has not
+yet been played by hand.
+
+For now the **Play with a friend** button shows only when the address ends
+with `?coop=1`, as in https://maxjlerman.github.io/dungeon-raze/?coop=1.
+
+- **Host:** choose a class on the title screen, press Play with a friend, then
+  Host a room. Send your friend the six-character code shown (Copy puts it on
+  the clipboard). Press Start when you like; you can start alone and be joined
+  later. While the room is open its code is also on your pause screen.
+- **Join:** choose a class, press Play with a friend, type the code and press
+  Join with a code. Press Enter the cave once the host has pressed Start.
+
+A hidden class plays as the Assassin in co-op; the saved choice is not
+changed. The dungeon does not pause in co-op. When either player steps into the
+exit gate the run ends for both, and the room closes. For another run, both
+reload the page and the host makes a new room. Both pages must be the same
+build of the game: the host refuses a page whose build differs, and says so.
+
+The host's dungeon runs in a Web Worker in the host's page, and the friend
+reaches it through a small relay, so co-op needs that relay deployed first: see
+`relay/README.md` for how the owner deploys it, then put its `wss://` address
+in `COOP_RELAY` in `src/08e_coopui.js`. Until then the room screen says it
+cannot reach the relay. Co-op runs from the GitHub Pages site and from
+`localhost` (`npm run dev`, then http://localhost:8000/?coop=1), not from the
+file on disk, and the hosted single page cannot play co-op.
+
 ## Technology
 
 | Area           | What is used                                                                |
@@ -143,7 +173,7 @@ is published must be built with `node build.mjs --release`.
 
 | File                 | What it holds                                                                               |
 | -------------------- | ------------------------------------------------------------------------------------------- |
-| `index.tpl.html`     | Page shell: CSS, HUD elements, and the title, pause, class, controls, how to play, death and win screens |
+| `index.tpl.html`     | Page shell: CSS, HUD elements, and the title, pause, class, controls, how to play, co-op room, death and win screens |
 | `src/01_math.js`     | Math helpers, seeded random numbers, value noise, 4x4 matrices                              |
 | `src/02_gl.js`       | Renderer `R`: lit pass, additive effects pass, scene nodes `Nd`, primitive meshes           |
 | `src/03_world.js`    | `genWorld(seed)`: cave graph, walkable field, collision, water layer, world mesh, lights, spawns; the room graph and wall builders it shares with the sewer |
@@ -159,8 +189,13 @@ is published must be built with `node build.mjs --release`.
 | `src/08b_touchlayout.js` | `touchLayout()`: where every touch button, the stick area and the HUD boxes go, and `layoutProblems()` |
 | `src/08c_touch.js`   | `TOUCH`: draws the buttons, tracks fingers, switches touch mode, fullscreen and Back        |
 | `src/08d_pad.js`     | `PAD`: reads controllers, sticks, camera, sprint latch, menu focus, rebinding, rumble       |
+| `src/06c_coopwire.js`, `src/06d_coophost.js` | Co-op: the wire format, the fake link, the host and its Worker driver (built into the host copy) |
+| `src/07c_coopclient.js` | Co-op: the client, its puppets, and the Worker and relay links                           |
+| `src/08e_coopui.js`  | Co-op: the room screen and the co-op HUD                                                     |
 | `src/09_main.js`     | Input events, menus, camera, main loop, test hook `window.DF`                               |
 | `src/dev/10_dev.js`  | The dev menu, left out of release builds                                                    |
+| `src/dev/20_lagdial.js` | The co-op lag dial: a co-op run alone over a fake link with ping, jitter and loss        |
+| `relay/`             | The co-op relay, a Cloudflare Worker, not part of the page build                            |
 | `build.mjs`          | The build script                                                                            |
 | `test.mjs`, `tests/` | Headless test runner and scenario scripts                                                   |
 
@@ -274,6 +309,15 @@ Screenshots go to `shots/`.
 | `tests/t23.mjs` | The D enemies: behaviour hooks, the rat, the drowned and the brood mother, their bodies, and where the sewer places them, with screenshots. Run in `smoke` mode |
 | `tests/t24.mjs` | The siren, eel, bloater and drain grabber: rules for enemies bound to water or a wall, the held player, each type, and where the sewer places them, with screenshots. Run in `smoke` mode |
 | `tests/t25.mjs` | Old Sluicejaw, the D boss: its body, place, modes, death roll, health marks, a whole D run from the hall, the tunnel phase and its plates, the falling ceiling, the bloaters down the falls and its shadow, with screenshots. Run in `smoke` mode |
+| `tests/t27.mjs` | Co-op client against a hand-stepped host over a fake link: puppets, hits, parries, executions, the cave checksum. Run in `smoke` mode |
+| `tests/t28.mjs` | Co-op: the other player on screen and the party rules. Run in `smoke` mode |
+| `tests/t29.mjs` | Co-op room screen up to the network: the button, codes, messages, the class fallback, a Worker host, the friend waiting for Start, a lost connection, the pause screen's code, Back by touch. Run in `title` mode, also with `DEVICE=oneplus-13` |
+
+The co-op Node tests run without a page: `node tests/coop-host.mjs`,
+`node tests/coop-wire.mjs`, `node tests/coop-caves.mjs` (caves compared across
+browser engines), `node tests/coop-relay.mjs` (the relay under `wrangler dev`)
+and `node tests/coop-e2e.mjs` (the built page on localhost:8123, the relay on
+localhost:8787 and several Chromium pages hosting and joining by code).
 
 The touch scripts `t14` and `t15` run under emulated phones and tablets. Run
 one device with `DEVICE=pixel-9 SCRIPT=$PWD/tests/t14.mjs node test.mjs smoke`,

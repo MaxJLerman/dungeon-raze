@@ -932,6 +932,16 @@ function render() {
   R.drawWorld(visiblePieces(w, R.cam.x, R.cam.z, p.x, p.z));
   posePlayer(p);
   R.drawNode(p.fig.root, p.fig.rim);
+  // a co-op run's other player, with a marker over its head in its class's
+  // colour; while it is away the marker is grey and it has no rim light
+  if (NET && NET.mates)
+    for (const m of NET.mates) {
+      posePlayer(m);
+      R.drawNode(m.fig.root, m.away ? null : m.fig.rim);
+      if (m.state !== "dead") R.blob(m.x, m.z, 0.8, 0.55);
+      const mc = m.away ? COOP_AWAY : m.cls.col;
+      R.sprite(m.x, 2.45, m.z, 0.3, mc[0], mc[1], mc[2], m.away ? 0.6 : 1.4);
+    }
   const cx = R.cam.x,
     cz = R.cam.z;
   for (const e of G.enemies) {
