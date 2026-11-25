@@ -18,6 +18,9 @@ const MENUS = ["class", "controls", "howto", "coop"];
 let menuBack = "title",
   rebind = null,
   swallowClick = false;
+// What the class screen was opened for: "solo" or "online" from the main
+// menu's Play buttons, null from the pause screen (a change mid-run).
+let classFor = null;
 function show(state) {
   // a plaque closes at once when play stops
   if (state !== "play") closePlaque(true);
@@ -93,6 +96,14 @@ function toBase() {
   enterHub(G.grade);
   play();
 }
+// Out to the main menu from the pause, death or win screen: a fresh hall
+// behind it, and nothing asked, since nothing is lost. enterHub ends a
+// co-op run for this page first, so a friend's exit leaves the host playing
+// and a host's exit closes the room.
+function toTitle() {
+  enterHub();
+  show("title");
+}
 // Back from a menu, by its Back button, Esc, a pad's back button (which
 // clicks the button) or the Back gesture: the screen it was opened over.
 // Leaving the room screen first ends a room not yet entered.
@@ -100,12 +111,47 @@ function menuGoBack() {
   if (G.state === "coop") coopLeaveRoom();
   show(menuBack);
 }
-function openMenu(which) {
+// why is read for the class screen only: "solo" or "online" when a Play
+// button on the main menu opens it, nothing when the pause screen does.
+function openMenu(which, why) {
   if (!MENUS.includes(G.state)) menuBack = G.state;
+  // under touch, Back from a menu over the main menu must have an entry to use
+  if (menuBack === "title") TOUCH.menuOpen();
   if (which === "controls") renderControls();
-  else if (which === "class") renderPicker();
+  else if (which === "class") {
+    classFor = why === "solo" || why === "online" ? why : null;
+    renderPicker();
+    classRender();
+  }
   show(which);
   if (which === "coop") coopRoomOpen();
+}
+// The class screen's forward button and its line, from classFor. Opened
+// from the pause screen there is no way forward, only Back.
+function classRender() {
+  const b = $("btnPlay");
+  b.textContent = classFor === "online" ? "Continue" : "Enter the hall";
+  b.hidden = !classFor;
+  b.toggleAttribute("data-padfirst", !!classFor);
+  $("classSub").hidden = !!classFor;
+}
+// The forward button: into the hall, or on to the room screen. A solo
+// start clears a line a co-op run left on the main menu ("The host has
+// left."), which would otherwise still be there after this run.
+function classGo() {
+  if (classFor === "online") openMenu("coop");
+  else if (classFor === "solo") {
+    coopSay("");
+    play();
+  }
+}
+// Play online on the main menu. A page that cannot play co-op at all (a
+// file, another site's copy, no relay) is told so here, on the main menu,
+// and goes no further.
+function playOnline() {
+  const bad = coopCheck();
+  if (bad) coopSay(COOP_SAY[bad]);
+  else openMenu("class", "online");
 }
 
 // ---- class picker ----
@@ -393,7 +439,8 @@ function boot() {
   if (!R.init(canvas)) {
     $("scr-title").querySelector(".sub").textContent =
       "This browser cannot start WebGL 2, so the game cannot draw. Try a recent Chrome, Edge, Firefox or Safari.";
-    $("btnPlay").disabled = true;
+    $("btnSolo").disabled = true;
+    $("btnCoop").disabled = true;
     return;
   }
   loadOpt();
@@ -473,7 +520,11 @@ function boot() {
       if (G.state === "dead") {
         respawn();
         play();
-      } else if (G.state === "pause" || G.state === "title") play();
+      } else if (G.state === "pause") play();
+      // on the main menu, what Play solo does; on the class screen a Play
+      // button opened, the way forward
+      else if (G.state === "title") openMenu("class", "solo");
+      else if (G.state === "class" && classFor) classGo();
     }
     if (e.code === "Escape" && MENUS.includes(G.state)) menuGoBack();
   });
@@ -534,7 +585,9 @@ function boot() {
     G.noLock = true;
   });
   // menus
-  $("btnPlay").addEventListener("click", play);
+  $("btnSolo").addEventListener("click", () => openMenu("class", "solo"));
+  $("btnCoop").addEventListener("click", playOnline);
+  $("btnPlay").addEventListener("click", classGo);
   $("btnResume").addEventListener("click", play);
   $("btnRise").addEventListener("click", () => {
     respawn();
@@ -542,6 +595,8 @@ function boot() {
   });
   for (const id of ["btnAgain", "btnBase", "btnDeadBase"])
     $(id).addEventListener("click", toBase);
+  for (const id of ["btnExit", "btnDeadExit", "btnWinExit"])
+    $(id).addEventListener("click", toTitle);
   for (const b of document.querySelectorAll("[data-open]"))
     b.addEventListener("click", () => openMenu(b.dataset.open));
   for (const b of document.querySelectorAll("[data-back]")) b.addEventListener("click", menuGoBack);
@@ -698,6 +753,7 @@ window.DF = {
   setClass,
   setBind,
   toBase,
+  toTitle,
   hitEnemy,
   alertE,
   hurtPlayer,
@@ -771,6 +827,7 @@ window.DF = {
   inputMode,
   resetPlaqueCodes,
   openMenu,
+  classFor: () => classFor,
   loadOpt,
   saveOpt,
   net: () => NET,
@@ -781,7 +838,6 @@ window.DF = {
   coopMakeHost,
   coopSay,
   coopWorldSum,
-  coopButton,
   coopBuild: COOP_BUILD,
   // tests: the relay's address, a stand-in for location, the next hosted seed
   coopRelay: (url) => (COOP_RELAY = url || ""),

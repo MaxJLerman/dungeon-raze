@@ -13,7 +13,7 @@ What you get:
 
 - Two players go through grade E's cave together over the internet.
 - Each of you picks one of the five base classes (Assassin, Fighter, Tanker,
-  Mage, Ranger) on the title screen.
+  Mage, Ranger) after pressing **Play online** on the main menu.
 - The host's computer runs the dungeon (the enemies, the boss). The friend's
   computer shows it and sends back what the friend does. A small relay on the
   internet passes messages between you. You cannot connect directly, because
@@ -30,8 +30,9 @@ What is not there yet:
 - A phone as one of the players. It may work. Question 4 below is how to find
   out.
 
-The page only shows the co-op button when the address ends with `?coop=1`.
-Nobody stumbles into it by accident.
+**Play online** is on the main menu for every visitor. (It once showed only
+when the address ended with `?coop=1`. A link that still has that on the end
+works the same.)
 
 ## 2. Try it alone first
 
@@ -50,7 +51,7 @@ so you can see how it plays before involving anyone.
    needs Python 3 on your computer (`python3 --version` shows whether you have
    it). Leave it running.
 2. Open http://localhost:8000/ in Chrome.
-3. On the title screen press the **Dev** button, then **Co-op alone, with
+3. On the main menu press the **Dev** button, then **Co-op alone, with
    lag**. You are in the cave with a second player (the pretend friend).
 4. A small panel appears at the bottom left, titled **LAG DIAL**. It has
    sliders for **Ping (round trip)**, **Jitter** and **Packet loss**, a menu
@@ -175,8 +176,8 @@ you would rather do it by hand, follow all three steps.
    npm run dev
    ```
 
-   Open http://localhost:8000/?coop=1. A **Play with a friend** button should
-   be on the title screen. Press it, then **Host a room**. After a moment a
+   Open http://localhost:8000. Press **Play online** on the main menu, choose
+   a class, press **Continue**, then **Host a room**. After a moment a
    six-character code appears. If instead you read "Cannot reach the co-op
    relay.", the address is wrong or the relay is not deployed. When you have
    seen it work, press Ctrl+C in the terminal to stop the local server, so
@@ -211,9 +212,9 @@ you would rather do it by hand, follow all three steps.
    (`.github/workflows/pages.yml`). Give it a couple of minutes. Check the
    Actions tab on GitHub to see it finish.
 
-   Afterwards, https://maxjlerman.github.io/dungeon-raze/?coop=1 shows **Play
-   with a friend** on the title screen, and **Host a room** there shows a
-   six-character code after a moment. If it says "Cannot reach the co-op
+   Afterwards, https://maxjlerman.github.io/dungeon-raze/ has **Play online**
+   on its main menu, and **Host a room** behind it shows a six-character code
+   after a moment. If it says "Cannot reach the co-op
    relay." instead, the published page does not have the line from step 1:
    check that the commit reached `main`.
 
@@ -222,8 +223,9 @@ Two things to know:
 - The relay only lets in the Pages site and your own computer (`localhost` or
   `127.0.0.1`). A page opened straight from a file (`file:` in the address
   bar) cannot play co-op. It says "Co-op does not run from a file. Run npm run
-  dev and open http://localhost:8000/?coop=1". The single-file hosted copy of
-  the game cannot either. It says to play on the Pages site.
+  dev and open http://localhost:8000". The single-file hosted copy of
+  the game cannot either. It says to play on the Pages site. Both say it on
+  the main menu, the moment **Play online** is pressed.
 - You and your friend must both be on the same version of the game. Every
   build of the game carries a stamp made from its code, and the host's page
   refuses a friend whose page has a different stamp (an old copy a browser
@@ -236,7 +238,7 @@ Two things to know:
 Send your friend this link:
 
 ```
-https://maxjlerman.github.io/dungeon-raze/?coop=1
+https://maxjlerman.github.io/dungeon-raze/
 ```
 
 Do not use your localhost address for a real session. Your friend cannot reach
@@ -244,8 +246,8 @@ it, and it may be on a different version.
 
 You (the host):
 
-1. Open the link. Pick your class on the title screen.
-2. Press **Play with a friend**, then **Host a room**.
+1. Open the link. Press **Play online** on the main menu.
+2. Pick your class, press **Continue**, then **Host a room**.
 3. Read out or send the six-character code. **Copy** puts it on your
    clipboard. A code nobody has used expires after 10 minutes. Once you are
    in, it stays good while you are there.
@@ -256,9 +258,9 @@ You (the host):
 
 Your friend:
 
-1. Open the link. Pick a class.
-2. Press **Play with a friend**. Type the code into the box (capitals or
-   small, spaces and dashes are ignored) and press **Join with a code**.
+1. Open the link. Press **Play online**, pick a class and press **Continue**.
+2. Type the code into the box (capitals or small, spaces and dashes are
+   ignored) and press **Join with a code**.
 3. The button at the bottom reads "Waiting for the host to start" and is
    greyed out until the host presses Start. When it reads **Enter the cave**,
    press it. If the host has already started, it reads that at once.
@@ -269,12 +271,15 @@ health, flasks and rest points. Dying sends you back to your own last lit
 rest point and brings no enemies back, unless you are both dead at once, in
 which case they all come back. When either of you steps into the exit gate
 after the boss, the run ends for both and the room closes. For another run,
-both of you reload the page, and the host makes a new room. If the run ends
+both of you press **Exit to main menu** and the host makes a new room; no
+reload is needed. Exit to main menu is on the pause, death and win screens,
+and it leaves the room: if the friend presses it the host plays on, and if
+the host presses it the room closes for both. If the run ends
 while the friend is still on the room screen, the friend reads "That run has
 ended. Ask the host for a new room."
 
 If the friend's own connection drops, or the friend hears nothing from the
-host for 10 seconds, the friend goes back to the title screen with "The
+host for 10 seconds, the friend goes back to the main menu with "The
 connection to the room was lost. You can join again with the same code." The
 room is still there while the host is: the friend joins again with the same
 code. "The host has left." means the host's page closed or lost its own
@@ -356,7 +361,7 @@ What to watch for, on the friend's screen:
   character turns grey, the character loses its coloured rim light, and their
   small health bar under the friend's own bars dims. Does it?
 - When the host comes back, does everything carry on, or does the friend end up
-  at the title screen with "The connection to the room was lost. You can join
+  at the main menu with "The connection to the room was lost. You can join
   again with the same code."? (That happens if nothing arrives from the host
   for 10 seconds. "The host has left." appears only when the host's page
   really closed or lost its own connection.)

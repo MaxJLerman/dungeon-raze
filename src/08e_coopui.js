@@ -5,7 +5,8 @@
 // note that the dungeon runs on (#pauseCoop) and, for the host, its room code
 // (#pauseCode), the room screen (#scr-coop)
 // and its line of news (#coopMsg). All but the last two are hidden whenever
-// NET is null.
+// NET is null. The room screen is reached from the main menu's Play online
+// button, by way of the class screen (09_main.js).
 
 // The deployed relay's wss:// address, set when the owner deploys it
 // (relay/README.md). Empty, co-op says it cannot reach the relay. POST /new
@@ -19,7 +20,7 @@ const COOP_SAY = {
   full: "That room is full.",
   relay: "Cannot reach the co-op relay.",
   copy: "This copy of the game cannot play co-op. Play at " + COOP_PAGES,
-  file: "Co-op does not run from a file. Run npm run dev and open http://localhost:8000/?coop=1",
+  file: "Co-op does not run from a file. Run npm run dev and open http://localhost:8000",
   cave: "This browser built a different cave from the host's. Co-op cannot run here.",
   version: "You and the host are on different versions of the game. Both reload the page.",
   worker: "This browser cannot host a room.",
@@ -44,26 +45,15 @@ const COOP_SAY = {
 const CR = { role: null, link: null, code: "", busy: false, try: 0, loc: null, seed: null, html: "", relay: false };
 
 // Writes the co-op line on the screen it is written on: the room screen
-// while it is up, else the title screen. An empty text clears and hides it.
+// while it is up, else the main menu. An empty text clears and hides it.
 function coopSay(text) {
   const el = $("coopMsg"),
     room = G.state === "coop",
-    at = room ? $("coopSlots") : $("scr-title").querySelector(".picker");
+    at = room ? $("coopSlots") : $("scr-title").querySelector(".row");
   if (at && el.nextElementSibling !== at) at.before(el);
   el.textContent = text || "";
   el.hidden = !text;
 }
-// Shows #btnCoop when the address asks for co-op (?coop=1).
-function coopButton(search = location.search) {
-  let on = false;
-  try {
-    on = new URLSearchParams(search).get("coop") === "1";
-  } catch (e) {
-    on = false;
-  }
-  $("btnCoop").hidden = !on;
-}
-
 // What stops co-op before any network use, in order, as a key of
 // COOP_SAY, or "" when nothing does. code is the tidied code for a join.
 function coopCheck(code) {
@@ -91,9 +81,17 @@ function coopRoomLive() {
 function coopRoomClear() {
   Object.assign(CR, { role: null, link: null, code: "", busy: false, relay: false });
 }
-// The room screen has just opened: its line starts empty.
+// The room screen has just opened: its line of news starts empty, and its
+// first line names the class this page plays, which is not the one chosen
+// when that one is hidden.
 function coopRoomOpen() {
   coopSay("");
+  const mine = coopMyCls();
+  $("coopSub").textContent =
+    "One of you hosts a room and sends the other its code. " +
+    (mine === OPT.cls
+      ? "You play the class you just chose."
+      : "The " + CLASSES[OPT.cls].name + " cannot play online yet, so you play the " + CLASSES[mine].name + ".");
   coopRoomRender();
 }
 // Ends a room that was not entered (Back on the room screen) and drops
@@ -238,8 +236,6 @@ function coopRoomRender() {
   }
 }
 function coopUiInit() {
-  coopButton();
-  $("btnCoop").addEventListener("click", () => openMenu("coop"));
   $("coopHost").addEventListener("click", coopHostRoom);
   $("coopJoin").addEventListener("click", coopJoinRoom);
   $("coopCode").addEventListener("keydown", (e) => {

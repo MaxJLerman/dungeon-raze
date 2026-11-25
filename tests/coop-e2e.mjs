@@ -15,7 +15,7 @@ const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || "playwright")
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DIST = path.join(ROOT, "dist");
 const PORT = 8123;
-const PAGE = "http://localhost:" + PORT + "/?coop=1";
+const PAGE = "http://localhost:" + PORT + "/";
 const RELAY = "ws://localhost:8787";
 const CODE_RE = /^[A-HJKMNP-Z2-9]{6}$/;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -138,7 +138,9 @@ async function openPage(name, { v0 = false } = {}) {
     if (m.type() === "error" && !/ERR_|Failed to load resource/.test(m.text())) errs.push(name + ": " + m.text());
   });
   p.on("pageerror", (e) => errs.push(name + ": PAGEERROR " + e.message));
-  await p.goto(PAGE);
+  // Play online needs nothing in the address. A friend's page keeps the
+  // old ?coop=1, which links already sent still carry and which does nothing.
+  await p.goto(PAGE + (/friend/i.test(name) ? "?coop=1" : ""));
   await prep(p);
   pages.push(p);
   p.__name = name;
@@ -159,8 +161,13 @@ const msg = (p) =>
     return el && !el.hidden && el.getClientRects().length ? el.textContent : "";
   });
 const state = (p) => p.evaluate(() => DF.G.state);
-async function hostRoom(p) {
+// Play online on the main menu, then Continue on the class screen
+async function toRoom(p) {
   await p.click("#btnCoop");
+  await p.click("#btnPlay");
+}
+async function hostRoom(p) {
+  await toRoom(p);
   // two clicks before the first has answered
   await p.evaluate(() => {
     const b = document.getElementById("coopHost");
@@ -177,7 +184,7 @@ async function hostRoom(p) {
   return code;
 }
 async function joinRoom(p, code) {
-  await p.click("#btnCoop");
+  await toRoom(p);
   await p.fill("#coopCode", code.toLowerCase().slice(0, 3) + "-" + code.toLowerCase().slice(3));
   await p.click("#coopJoin");
 }
@@ -418,10 +425,71 @@ async function main() {
     await until("the friend's answer", async () => (await msg(friend)) !== "", 10000);
     assert.equal(await msg(friend), "No room has that code.");
   });
+
+  // Exit to main menu, on two fresh pages that are never reloaded
+  const host3 = await openPage("host3");
+  const friend3 = await openPage("friend3");
+  const exit = (p) =>
+    p.evaluate(() => {
+      DF.show("pause");
+      document.getElementById("btnExit").click();
+    });
+  let code3 = "";
+  await check("the friend exits to the main menu: the host plays on", async () => {
+    code3 = await hostRoom(host3);
+    await joinRoom(friend3, code3);
+    await enter(host3);
+    await enter(friend3);
+    await until("the host to see the friend", () => host3.evaluate(() => DF.net().mates.length === 1), 15000);
+    await exit(friend3);
+    assert.equal(await state(friend3), "title");
+    // leaving by choice says nothing
+    assert.equal(await msg(friend3), "");
+    assert.equal(await friend3.evaluate(() => DF.net()), null);
+    assert.equal(await friend3.evaluate(() => DF.G.zone), "hub");
+    await until("the host to see the friend go", () => host3.evaluate(() => !!DF.net() && DF.net().mates.length === 0), 15000);
+    await sleep(2000);
+    assert.equal(await host3.evaluate(() => DF.G.state === "play" && !!DF.net() && DF.net().live), true);
+    assert.equal(await msg(host3), "");
+  });
+
+  await check("the host exits to the main menu: the room closes and the friend is told", async () => {
+    // back in with the same code, with no reload
+    await joinRoom(friend3, code3);
+    await enter(friend3);
+    await exit(host3);
+    assert.equal(await state(host3), "title");
+    assert.equal(await msg(host3), "");
+    assert.equal(await host3.evaluate(() => DF.net()), null);
+    await until("the host's Worker terminated", () => host3.evaluate(() => window.__workers.every((w) => w.__dead === true)), 5000);
+    await until(
+      "the friend on the main menu, told",
+      async () => (await state(friend3)) === "title" && (await msg(friend3)) === "The host has left.",
+      12000,
+    );
+    assert.equal(await friend3.evaluate(() => DF.net()), null);
+  });
+
+  await check("a second room on the same two pages, with no reload", async () => {
+    const code4 = await hostRoom(host3);
+    assert.match(code4, CODE_RE);
+    assert.notEqual(code4, code3);
+    await joinRoom(friend3, code4);
+    // opening the room screen cleared "The host has left."
+    assert.equal(await msg(friend3), "");
+    await enter(host3);
+    await enter(friend3);
+    await until("each to see the other", async () =>
+      (await host3.evaluate(() => DF.net().mates.length === 1)) && (await friend3.evaluate(() => DF.net().mates.length === 1)), 15000);
+    const a = await info(host3), b = await info(friend3);
+    assert.equal(a.sum, b.sum);
+    assert.equal(a.state, "play");
+    assert.equal(b.state, "play");
+  });
 }
 
 // Whatever goes wrong, the servers and the browser go with it.
-const WATCHDOG_MS = 300000;
+const WATCHDOG_MS = 420000;
 async function bail(why, code) {
   console.log("FAIL harness\n     " + why);
   killRelayNow();

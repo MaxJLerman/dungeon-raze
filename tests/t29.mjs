@@ -9,7 +9,7 @@ const MSG = {
   code: "That code is not valid.",
   relay: "Cannot reach the co-op relay.",
   copy: "This copy of the game cannot play co-op. Play at https://maxjlerman.github.io/dungeon-raze/",
-  file: "Co-op does not run from a file. Run npm run dev and open http://localhost:8000/?coop=1",
+  file: "Co-op does not run from a file. Run npm run dev and open http://localhost:8000",
   noroom: "No room has that code.",
   full: "That room is full.",
   version: "You and the host are on different versions of the game. Both reload the page.",
@@ -128,22 +128,14 @@ const step = (name, body, extra = {}) => ({
   eval: `(async () => { ${HELP} try { ${body} } finally { c9.restore(); } })()`,
 });
 export default [
-  step("#btnCoop is hidden without ?coop=1", `
+  step("Play online is always shown, with no ?coop=1", `
   const b = document.getElementById("btnCoop"), c = {};
   c.search = location.search === "";
   c.inTitle = !!b && b.closest(".scr") === document.getElementById("scr-title");
-  c.hidden = !!b && !c9.shown(b);
-  // the same check on an address that has it, and one that does not
-  DF.coopButton("?coop=1");
-  c.shownWith = c9.shown(b) && b.textContent.trim() === "Play with a friend";
-  DF.coopButton("?coop=10");
-  c.hiddenOther = !c9.shown(b);
-  DF.coopButton("?x=1&coop=1");
-  c.shownLater = c9.shown(b);
-  DF.coopButton("");
-  c.hiddenAgain = !c9.shown(b);
-  // nothing else on the title changed with it
-  c.rest = c9.shown(document.getElementById("btnPlay"));
+  c.shown = c9.shown(b) && b.textContent.trim() === "Play online";
+  // nothing reads the address any more
+  c.noGate = typeof DF.coopButton === "undefined";
+  c.rest = c9.shown(document.getElementById("btnSolo"));
   return { pass: Object.values(c).every(Boolean), c };`),
 
   step("the screen is a menu", `
@@ -151,8 +143,12 @@ export default [
   c.listed = DF.G.state === "title";
   DF.coopSay("The host has left.");
   c.msgOnTitle = c9.msg() === "The host has left." && document.getElementById("coopMsg").closest(".scr").id === "scr-title";
-  DF.coopButton("?coop=1");
+  // Play online, the class screen, then Continue
+  DF.coopLoc({ protocol: "http:", hostname: "localhost" });
+  DF.coopRelay("ws://localhost:1");
   document.getElementById("btnCoop").click();
+  c.viaClass = DF.G.state === "class" && document.getElementById("btnPlay").textContent === "Continue";
+  document.getElementById("btnPlay").click();
   await c9.frames();
   c.opened = DF.G.state === "coop" && scr.classList.contains("show") && !document.getElementById("scr-title").classList.contains("show");
   // opening it clears the message
@@ -182,7 +178,6 @@ export default [
   c.padBack = DF.G.state === "title";
   pads(); DF.PAD.poll(1 / 60); DF.PAD.setActive(false);
   DF.G.manual = was;
-  DF.coopButton("");
   return { pass: Object.values(c).every(Boolean), c };`),
 
   step("a loose code is tidied or refused before the network", `
@@ -309,6 +304,14 @@ export default [
   await c9.frames();
   const me = document.querySelector("#coopSlots .slot.me");
   c.slot = !!me && me.dataset.cls === base && me.textContent.includes(DF.CLASSES[base].name);
+  // the screen's line says which class plays, and does not claim the chosen one does
+  const line = () => document.querySelector("#scr-coop .sub").textContent.replace(/\\s+/g, " ").trim();
+  c.line = line() === "One of you hosts a room and sends the other its code. The " + DF.CLASSES.enforcer.name + " cannot play online yet, so you play the " + DF.CLASSES[base].name + ".";
+  c9.back();
+  DF.setClass(base);
+  c9.open();
+  c.lineBase = line() === "One of you hosts a room and sends the other its code. You play the class you just chose.";
+  DF.setClass("enforcer");
   c.two = document.querySelectorAll("#coopSlots .slot").length === 2;
   c.saveKept = DF.OPT.cls === "enforcer" && (JSON.parse(localStorage.getItem("dungeon-raze.v2") || "{}").o || {}).cls === "enforcer";
   c.base = base;
@@ -387,6 +390,38 @@ export default [
   c.backEnds = had && DF.G.state === "title" && DF.net() === null && DF.CC.link === null && DF.G.zone === "hub" && !!w2 && w2.dead === true && DF.CC.why === "left";
   DF.setClass(Object.keys(DF.CLASSES).find((k) => !DF.CLASSES[k].hidden));
   DF.show("title");
+  return { pass: Object.values(c).every(Boolean), c };`),
+  step("Exit to main menu leaves a hosted run and its Worker, and says nothing", `
+  const c = {};
+  c.hosted = await c9.hostLocal();
+  const w = c9.workers[0];
+  // Start is enabled by the frame after the join
+  await c9.frames();
+  document.getElementById("coopEnter").click();
+  c.play = DF.G.state === "play" && !!DF.net() && DF.net().live && DF.G.zone === "cave";
+  DF.show("pause");
+  await c9.frames();
+  const b = document.getElementById("btnExit");
+  c.btn = c9.shown(b) && c9.shown(document.getElementById("btnBase"));
+  b.click();
+  for (let i = 0; i < 40 && !(w && w.dead); i++) await new Promise((r) => setTimeout(r, 50));
+  c.left = DF.net() === null && DF.CC.link === null && DF.CC.why === "left" && !!w && w.dead === true;
+  c.menu = DF.G.state === "title" && DF.G.zone === "hub" && c9.msg() === "";
+  // the room screen is ready for another room, with no reload
+  c9.stubFetch("GHJKMN"); c9.countWorkers();
+  DF.coopLoc({ protocol: "http:", hostname: "localhost" });
+  DF.coopRelay("ws://localhost:1");
+  DF.coopSeed(99);
+  document.getElementById("btnCoop").click();
+  document.getElementById("btnPlay").click();
+  c.ready = DF.G.state === "coop" && c9.shown(document.getElementById("coopHost"));
+  document.getElementById("coopHost").click();
+  for (let i = 0; i < 200 && !DF.net(); i++) await new Promise((r) => setTimeout(r, 50));
+  c.second = !!DF.net() && document.getElementById("coopShow").textContent === "GHJKMN" && c9.workers.length === 1;
+  const w2 = c9.workers[0];
+  c9.back();
+  for (let i = 0; i < 40 && !(w2 && w2.dead); i++) await new Promise((r) => setTimeout(r, 50));
+  c.tidy = DF.net() === null && DF.G.state === "title";
   return { pass: Object.values(c).every(Boolean), c };`),
   step("a room that never answers the hello times out", `
   const c = {};
