@@ -321,33 +321,77 @@ async function main() {
     host.ws.close();
   });
 
-  await check("more than 120 frames in a second closes the sender 4008, 100 do not", async () => {
+  // The frame limit is a token bucket per socket: 600 frames, refilled at
+  // 120 a second, so a stall's backlog passes and only sustained sending
+  // over 120 a second is closed.
+  await check("a burst of 600 frames passes, and so does 100 a second after it", async () => {
     const { host, friend } = await pair();
     track(host), track(friend);
-    for (let i = 0; i < 100; i++) friend.send([1, i]);
-    for (let i = 0; i < 100; i++) assert.deepEqual(await host.next(), [2, 1, i]);
-    assert.equal(friend.code, null, "100 frames in a second are fine");
-    await sleep(1200);
-    for (let i = 0; i < 200; i++) friend.send([1, i & 255]);
-    assert.equal(await closeCode(friend), 4008);
+    for (let i = 0; i < 600; i++) friend.send([1, i >> 8, i & 255]);
+    for (let i = 0; i < 600; i++) assert.deepEqual(await host.next(), [2, 1, i >> 8, i & 255], "frame " + i);
+    assert.equal(friend.code, null, "a burst of 600 is not closed");
+    // below the refill rate the socket can go on for good, bucket or no bucket
+    await sleep(1000);
+    let n = 0;
+    await new Promise((res) => {
+      const t = setInterval(() => {
+        friend.send([3, n & 255]);
+        if (++n >= 300) {
+          clearInterval(t);
+          res();
+        }
+      }, 10);
+    });
+    for (let i = 0; i < 300; i++) assert.deepEqual(await host.next(), [2, 3, i & 255], "paced frame " + i);
+    assert.equal(friend.code, null, "100 a second for 3 s is not closed");
+    host.ws.close();
+    friend.ws.close();
+  });
+
+  await check("sustained sending far over 120 a second closes the sender 4008 once the burst is spent", async () => {
+    const { host, friend } = await pair();
+    track(host), track(friend);
+    // 3 frames every 10 ms, about 300 a second, until it is closed
+    const t0 = Date.now();
+    let sent = 0;
+    const t = setInterval(() => {
+      if (friend.ws.readyState !== 1) return;
+      for (let k = 0; k < 3; k++) friend.send([1, sent++ & 255]);
+    }, 10);
+    const code = await closeCode(friend, 12000);
+    clearInterval(t);
+    const after = (Date.now() - t0) / 1000;
+    assert.equal(code, 4008);
+    // the bucket's 600 lasted at least 2 s at that rate
+    assert.ok(after > 2, "closed after " + after + " s, " + sent + " frames sent");
     // the host got what passed, then hears the friend go
-    let last;
-    do last = await host.next();
-    while (last[0] === 2);
+    let got = 0,
+      last;
+    for (;;) {
+      last = await host.next();
+      if (last[0] !== 2) break;
+      got++;
+    }
     assert.deepEqual(last, [0, 2, 2]);
+    assert.ok(got >= 600, "frames that passed: " + got);
     host.ws.close();
   });
 
-  await check("the host is held to the same rate", async () => {
+  await check("the host is held to the same bucket", async () => {
     const { host, friend } = await pair();
     track(host), track(friend);
-    for (let i = 0; i < 200; i++) host.send([2, i & 255]);
+    for (let i = 0; i < 2000; i++) host.send([2, i & 255]);
     assert.equal(await closeCode(host), 4008);
     // the host going ends the room; the friend gets what passed, then hears it
-    let last;
-    do last = await friend.next();
-    while (last.length === 1);
+    let got = 0,
+      last;
+    for (;;) {
+      last = await friend.next();
+      if (last.length !== 1) break;
+      got++;
+    }
     assert.deepEqual(last, [0, 2]);
+    assert.ok(got >= 600 && got < 2000, "frames that passed: " + got);
   });
 
   await check("a text frame closes the sender 1003", async () => {
@@ -366,7 +410,7 @@ async function main() {
 }
 
 // Whatever goes wrong, the server goes with it.
-const WATCHDOG_MS = 150000;
+const WATCHDOG_MS = 200000;
 async function bail(why, code) {
   console.log("FAIL harness\n     " + why);
   killRelayNow();

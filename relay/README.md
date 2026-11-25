@@ -16,12 +16,19 @@ cannot reach each other directly. It is not part of the page build.
   `[0, 2]` when the host leaves. Two rules for the game's client: it must
   close its own socket when it receives `[0, 2]` (a close the relay starts from
   that side did not finish promptly under `wrangler dev`), and it must not send
-  a backlog in one burst after a stall, since more than 120 frames in a second
-  closes it with `4008`.
+  more than 120 frames a second for long: a burst of up to 600 passes (the
+  backlog of a stall of several seconds), but a socket that keeps sending
+  faster is closed with `4008` once the burst is spent.
 - The host's page is the game's server, so when the host leaves the room ends
   and its code stops working. When the friend leaves, another can take the seat.
-- A frame over 16,384 bytes closes the sender with `4009`, more than 120
-  frames in a second closes it with `4008`, a text frame closes it with `1003`.
+- A frame over 16,384 bytes closes the sender with `4009`, a text frame closes
+  it with `1003`, and a socket that sends too fast is closed with `4008`. The
+  frame limit is a token bucket per socket: it holds 600 frames, refills at 120
+  a second, and each frame takes one; a frame that finds it empty closes the
+  socket. So a socket may send 120 frames a second for ever, and a burst of
+  600 at once after a quiet spell. The bucket is two numbers in the room's
+  memory, never stored; when the room hibernates it is forgotten and starts
+  full again, which only ever lets a quiet socket through.
 - Only the origins in `ALLOWED_ORIGINS` (comma separated, set in
   `wrangler.toml`), `http://localhost:*` and `http://127.0.0.1:*` may call it,
   and a request with no `Origin` header is let through. Any other origin gets
@@ -60,8 +67,9 @@ own copy, with a clean state directory:
    Variables, in the Cloudflare dashboard.
 5. Wrangler prints the Worker's address, like
    `https://dungeon-raze-relay.<your-subdomain>.workers.dev`. Put it in the
-   `COOP_RELAY` constant in the game's source (Task 11 adds it), as a `wss://`
-   address for sockets and the `https://` one for `POST /new`.
+   `COOP_RELAY` constant near the top of `src/08e_coopui.js`, with `wss://` in
+   place of `https://`. That one address is all the game needs: it opens
+   sockets at it and sends `POST /new` to the same address over `https://`.
 
 To take it down: `npx wrangler delete`, or delete the Worker in the dashboard.
 
@@ -91,7 +99,9 @@ The arithmetic, for one room of two players:
 
 - Incoming messages to the relay: the host sends 20 frames a second to the
   friend, the friend sends 30 a second to the host, so 50 a second. Allow 10 a
-  second more for events (an estimate): 60 a second, 216,000 an hour.
+  second more for events (an estimate): 60 a second, 216,000 an hour. A burst
+  after a stall (up to 600 frames) only sends late what a steady connection
+  would have sent anyway, so it does not change these figures.
 - Billed at 20 to 1 that is 10,800 Durable Object requests an hour (9,000 an
   hour with no events at all).
 - A session also costs 3 Worker requests (`/new` and two upgrades) and 3
@@ -133,6 +143,12 @@ best effort, and a flood from many addresses passes it.
   millions a day would cost hundreds of dollars a day.
 - Guessing a code into a live room is not a practical risk: there are
   31^6 = 887,503,681 codes and each guess costs the guesser a request.
+- A script inside a room can send no more than the frame limit allows: 120
+  frames a second per socket sustained, with a one-off burst of 600 that does
+  not come back until the socket has been quiet. So one room costs at most
+  240 incoming frames a second however its pages behave (12 Durable Object
+  requests a second at 20 to 1), as before the burst was allowed: the bucket
+  raises the burst, not the sustained rate or the bound on cost.
 
 Advice: stay on the free plan for now. Before moving to the paid plan, add a
 Cloudflare rate-limiting rule on `POST /new` (Security, then WAF, then Rate
@@ -151,8 +167,10 @@ The test sets these with `wrangler dev --var`; leave them alone when deploying.
 It stores whether a room exists and when its code was issued, in the room's own
 storage, and deletes that when the host leaves or the code goes unused for 10
 minutes. The rate limit remembers each caller's address and recent request
-times in the Worker's memory only, for at most the window, and never writes
-them to storage or a log. It never reads a frame beyond the first byte of a
+times in the Worker's memory only, never in storage or a log. An address is
+dropped from that table when the table grows past 5,000 addresses and the
+address has been quiet for a window, or when Cloudflare recycles the isolate,
+whichever comes first; an address that stops calling is not dropped at once. It never reads a frame beyond the first byte of a
 host frame (the addressee). The code does not log anything, request logs and
 traces are turned off in `wrangler.toml` (`[observability]`), and nothing else
 about a player (name, class, what they did) is kept by the relay. Cloudflare itself, as the

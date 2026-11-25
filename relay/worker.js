@@ -18,7 +18,11 @@
 const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // 31 characters
 const CODE_RE = /^[A-HJKMNP-Z2-9]{6}$/;
 const MAX_FRAME = 16384; // bytes, as sent
-const MAX_RATE = 120; // frames in any one second, per socket
+// Frames per socket: a token bucket of BURST frames, refilled at RATE a
+// second. Sustained sending is held to RATE; a backlog after a stall of up to
+// BURST frames passes at once. An empty bucket closes the socket 4008.
+const RATE = 120;
+const BURST = 600;
 const WAIT_MS = 10 * 60 * 1000; // a code is good for a first socket this long
 // Per connecting address, in a window: calls to /new, and room upgrades.
 const RATE_NEW = 10;
@@ -153,7 +157,7 @@ export class Room {
   constructor(state, env) {
     this.state = state;
     this.env = env;
-    this.sent = new Map(); // socket -> recent frame times; lost on hibernation, which is harmless
+    this.bucket = new Map(); // socket -> { n, at }; lost on hibernation, which refills it: harmless
   }
 
   wait() {
@@ -214,13 +218,16 @@ export class Room {
     if (this.seats().length === 0) await this.end();
   }
 
+  // Takes a token for one frame; true when the bucket is empty.
   tooFast(ws) {
     const now = Date.now();
-    const times = this.sent.get(ws) || [];
-    times.push(now);
-    if (times.length > MAX_RATE + 1) times.shift();
-    this.sent.set(ws, times);
-    return times.length > MAX_RATE && now - times[0] < 1000;
+    let b = this.bucket.get(ws);
+    if (!b) this.bucket.set(ws, (b = { n: BURST, at: now }));
+    b.n = Math.min(BURST, b.n + ((now - b.at) / 1000) * RATE);
+    b.at = now;
+    if (b.n < 1) return true;
+    b.n -= 1;
+    return false;
   }
 
   async kick(ws, code, reason) {
@@ -279,7 +286,7 @@ export class Room {
   // A socket is gone, however it went. The friend going tells the host and
   // frees the seat; the host going tells the friend and ends the room.
   async leave(ws) {
-    this.sent.delete(ws);
+    this.bucket.delete(ws);
     const pid = this.retire(ws);
     if (pid === 2) {
       const host = this.seats(1)[0];
