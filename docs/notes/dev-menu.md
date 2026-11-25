@@ -7,8 +7,10 @@
   only as `DEV && ...`, so a release build behaves as if it were never there.
 - The dev file runs after `boot()`, so it builds `#scr-dev` in JS (the
   template carries nothing), binds its own clicks, and pushes `"dev"` onto
-  `SCREENS` and `MENUS`. `#btnDev` sits on the main menu and
-  `#btnDevPause` on the pause screen; Back, Esc and the pad's back button
+  `SCREENS` and `MENUS`. `#btnDev` ("Dev menu") is appended to
+  the main menu's `.row`, whose grid puts a fifth button alone under the
+  other four (`zones.md`), and `#btnDevPause` ("Dev") sits on the pause
+  screen; Back, Esc and the pad's back button
   return as from any menu. The backquote key runs `devToggle()`: from play
   it pauses and opens the menu over pause, on the menu it goes back, and on
   any other screen it does nothing. A player who binds backquote to an

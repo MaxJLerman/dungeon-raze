@@ -68,7 +68,11 @@
   `SCREENS`.
 - **The main menu** is the `title` state (`#scr-title`): `#btnSolo` "Play
   solo", `#btnCoop` "Play online", How to play and Controls, and no class
-  picker. Play solo opens the class screen with `openMenu("class",
+  picker or blurb. It is centred, title over buttons, and its `.row` is a
+  grid of two buttons to a row (`#scr-title .row` in the template); an odd
+  last button, which is the dev build's `#btnDev`, sits alone in the middle
+  beneath. Its `.sub` is empty and hidden, and only `boot()` shows it, to
+  say the browser has no WebGL 2. Play solo opens the class screen with `openMenu("class",
   "solo")`; the pause screen's Change class calls `openMenu("class")` with
   no reason. `classFor` holds it (`"solo"`, or `null` from pause) and
   `classRender()` sets the screen from it: from Play solo the forward
@@ -136,7 +140,8 @@
   smallest phone:
   `SCRIPT=$PWD/tests/t30.mjs node test.mjs title` and
   `DEVICE=iphone-se SCRIPT=$PWD/tests/t30.mjs node test.mjs title`. It
-  checks the four buttons and the missing picker, the solo path through
+  checks the four buttons, their grid and the centring, the missing
+  picker and blurb, the solo path through
   the class screen and the online path straight to the room screen, the
   class screen from pause (no forward button), Back, Esc and
   the touch Back gesture (a real one included), Enter on the menu, where the co-op line sits,

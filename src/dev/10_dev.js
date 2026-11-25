@@ -112,16 +112,16 @@ function devBuild() {
   scr
     .querySelector("[data-back]")
     .addEventListener("click", () => show(menuBack));
-  const open = (id) => {
+  const open = (id, text) => {
     const b = document.createElement("button");
     b.type = "button";
     b.id = id;
-    b.textContent = "Dev";
+    b.textContent = text;
     b.addEventListener("click", () => openMenu("dev"));
     return b;
   };
-  $("scr-title").querySelector(".row").append(open("btnDev"));
-  $("btnBase").before(open("btnDevPause"));
+  $("scr-title").querySelector(".row").append(open("btnDev", "Dev menu"));
+  $("btnBase").before(open("btnDevPause", "Dev"));
   $("devUnlock").addEventListener("click", devUnlockAll);
   $("devGod").addEventListener("click", () => devGod());
   // shown over the game while god mode is on, so it is never forgotten

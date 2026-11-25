@@ -442,8 +442,10 @@ function frame(now) {
 }
 function boot() {
   if (!R.init(canvas)) {
-    $("scr-title").querySelector(".sub").textContent =
+    const say = $("scr-title").querySelector(".sub");
+    say.textContent =
       "This browser cannot start WebGL 2, so the game cannot draw. Try a recent Chrome, Edge, Firefox or Safari.";
+    say.hidden = false;
     $("btnSolo").disabled = true;
     $("btnCoop").disabled = true;
     return;
