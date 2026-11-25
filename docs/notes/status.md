@@ -79,6 +79,14 @@
   exit to the main menu. `?coop=1` is no longer read. The design is
   `docs/superpowers/specs/2026-11-25-main-menu-design.md`. Checked by tests
   and screenshots only.
+- Branch `feat/coop-invite-link` added sharing a room by link and moved the
+  online class choice into the room. A host copies the code or an invite
+  link (the page's address with `?room=CODE`) from the room screen or the
+  pause screen; the link opens the room screen with the code filled in.
+  Play online goes straight to the room screen, each player picks a class
+  there once in the room, and a class changed in the room or from the
+  pause menu mid-run shows on the other page. No spec was written: the
+  detail is in `coop.md`. Checked by tests and screenshots only.
 
 ## Backlog, roughly in the order discussed
 

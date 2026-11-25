@@ -88,14 +88,21 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   `COOP.EVENT` (3): a JSON array, name first. A client's events are
   numbered (`[name, seq, ...]`, from 1, never wrapping) and are requests:
   `hello` (`["hello", 0, COOP_V, cls, COOP_BUILD]`), `hit`, `parry`, `pin`,
-  `exec`, `gate`, `pshot`, `pblast`. The host's events: `join` (seed,
+  `exec`, `gate`, `pshot`, `pblast`, `cls` (`["cls", seq, class]`, a class
+  picked on the room screen or changed from the pause menu mid-run: the
+  proxy becomes that class where it stands, with the same share of health,
+  a hidden one as the first base class, and the other player is told with
+  the host's own `cls`). The host's events: `join` (seed,
   grade, the cave's checksum, `started`, the enemy list, dead ids, the
   boss's death, the peers), `no` (`["no", "version"]` for a hello whose
   version is not `COOP_V` or whose build is not the host's `COOP_BUILD`, a
   hello with no build included), `started` (the host's page has sent its
   first state, so its player has pressed Start; sent once to a friend
   already in), `shot`, `ring`, `roar`, `kill` (with whose event caused it),
-  `reset`, `peer`, `end`, `pshot`, `pblast`. A client checks the join's
+  `reset`, `peer`, `cls` (`["cls", pid, class]`, the other player has
+  changed class: `coopMateCls` changes the mate in place, keeping where it
+  is and its share of health), `end`, `pshot`, `pblast`. A client
+  checks the join's
   shape before building anything (grade `"E"`, a finite seed, a string sum,
   pid 1 or 2, enemy and dead lists of the right shape with known types) and
   refuses one it cannot read as `"bad"`; it then builds the cave from the
@@ -204,18 +211,49 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
   not `http://localhost` or `http://127.0.0.1` on any port; a request with no
   `Origin` header is let through. 429 past the per-address limit. Game frames never start with 0.
 - **The room screen** (`08e`, screen `coop` in `SCREENS` and `MENUS`).
-  `#btnCoop` ("Play online") on the main menu is always shown, and reaches
-  this screen by way of the class screen's Continue; nothing reads
-  `?coop=1` any more, and an address that carries it works the same. The
-  screen's heading is "Play online", and `coopRoomOpen` writes its first
-  line (`#coopSub`): "You play the class you just chose.", or, for a hidden
-  class, "The Enforcer cannot play online yet, so you play the Assassin."
-  with the two names. `#coopHost` posts to `/new`,
-  starts the Worker with a random seed and joins it; it shows the code
-  (`#coopShow`, large and selectable, `#coopCopy`), the two slots
-  (`#coopSlots`, each `.slot` with `data-cls` once known, `.me` for this
-  player) and `#coopEnter` ("Start", which enters at once, alone if need
-  be). `#coopJoin` tidies `#coopCode` (upper case, no spaces or dashes) and
+  `#btnCoop` ("Play online") on the main menu is always shown, and opens
+  this screen at once (`playOnline`), with no class screen on the way;
+  nothing reads `?coop=1` any more, and an address that carries it works
+  the same. The screen's heading is "Play online", and `coopRoomRender`
+  keeps its first line (`#coopSub`, from `coopSubText`): "One of you hosts
+  a room and sends the other its code or invite link. You each choose a
+  class in the room.", or, while the saved class is a hidden one, "The
+  Enforcer cannot play online yet, so you play the Assassin unless you
+  choose another in the room." with the two names. `#coopHost` posts to
+  `/new`, starts the Worker with a random seed and joins it; it shows the
+  code (`#coopShow`, large and selectable), `#coopCopy` ("Copy code") and
+  `#coopCopyLink` ("Copy invite link"), the two slots (`#coopSlots`, each
+  `.slot` with `data-cls` once known, `.me` for this player) and
+  `#coopEnter` ("Start", which enters at once, alone if need be).
+  **The class is chosen in the room, not before it.** `#coopCls` (a
+  `.picker`, with its line `#coopClsLbl`) is shown only while this page is
+  joined, so to the host once its Worker has answered and to the friend
+  once the join has arrived, a friend who joins mid-run included.
+  `renderPicker` fills it with the base classes only and marks
+  `coopMyCls()`. A card's click is the one click handler for every `.card`
+  (`setClass`, so the save and this page's player change), which then
+  calls `coopClsPicked()`: in a co-op run `CC.cls` is set and the host is
+  asked with `cls`. The other page's slot follows from the `cls` the host
+  sends. The cards sit below Start and Back so those stay in reach on a
+  short screen. **The class can also change mid-run**, from the pause
+  screen's Change class, by the same click handler: during a co-op run
+  (`NET.client`) `renderPicker` gives every picker the base classes only
+  and marks `G.player.clsId`, so a hidden class cannot be picked there.
+  **The invite link** is this page's own address with `?room=CODE`
+  (`coopInviteUrl`; the address without its query or hash, so the Pages
+  site on the Pages site and localhost on localhost). `boot` calls
+  `coopInvite(location.search)` after it has shown the main menu: a code
+  of the right shape (`coopInviteCode`, tidied as a typed one is) opens
+  this screen as Play online does, fills `#coopCode`, focuses `#coopJoin`
+  and moves `data-padfirst` to it (`coopPadFirst`; `coopRoomOpen` puts it
+  back on `#coopHost`). Nothing is sent until Join is pressed. A page
+  `coopCheck` refuses says why on the main menu instead, and anything that
+  is not a code is ignored. The address keeps `?room=`, so a reload (which
+  some messages ask for) comes back to this screen with the code.
+  `coopCopy(button, text, shown)` is every copy button's click:
+  `navigator.clipboard`, else the older `execCommand("copy")` through a
+  textarea (`coopCopyOld`), else the button reads "Could not copy" and the
+  code on screen is selected; the button reads "Copied" for 1.5 s. `#coopJoin` tidies `#coopCode` (upper case, no spaces or dashes) and
   opens the socket; `#coopEnter` reads "Waiting for the host to start",
   disabled, until the join has arrived and the host has started, then
   "Enter the cave". Entering is
@@ -227,7 +265,10 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
   play (`coopLeaveRoom`), its Worker and the cave the join built, live or
   not. While a hosted room is open and the relay link is up, the pause
   screen shows "Room code" and the code (`#pauseCode`, `#pauseCodeV`,
-  selectable); a friend's pause screen shows no code. Before any network use, in order (`coopCheck`): the page must
+  selectable) and the same two copy buttons (`#pauseInvite`, which is laid
+  out as a `.row` but is not one, so `#scr-pause .row` is still the menu;
+  `#btnResume` carries `data-padfirst` so a pad still starts there); a
+  friend's pause screen shows neither. Before any network use, in order (`coopCheck`): the page must
   be the Pages site, `localhost`, `127.0.0.1` or a `file:`; `COOP_RELAY`
   must be set; a `file:` page is told to run `npm run dev`; a code must be
   six characters of the alphabet. `#coopMsg` is one element, written only by
@@ -239,7 +280,8 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
   sent something this page could not read. Both reload the page."). `COOP_RELAY` is the deployed relay's
   `wss://` address (empty, co-op says it cannot reach the relay); `POST /new` goes to
   the same address with `http` for `ws`. `DF.coopRelay`, `DF.coopLoc` (a
-  stand-in for `location`) and `DF.coopSeed` are for tests.
+  stand-in for `location`) and `DF.coopSeed` are for tests, which also
+  call `DF.coopInvite(search)` and `DF.coopInviteUrl(code)`.
 - **Privacy.** Only game frames cross the link. No name, no chat, no
   analytics, no logging. The relay stores only whether a room exists.
 - **The dev lag dial** (`src/dev/20_lagdial.js`, local builds only):
@@ -276,17 +318,26 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
     `tests/t28.mjs` (the other player and the party rules), both with
     `smoke`; `tests/t29.mjs` (the room screen up to the network: the button,
     the code's tidying and refusal, every message, the order of the checks,
-    the class fallback, a Worker host on the page, Back, Exit to main menu
+    the class fallback, a Worker host on the page, the class cards for the
+    host and the friend, the `cls` request from the room and from the pause
+    menu mid-run, the copy buttons with a
+    stand-in clipboard, an invite address through `DF.coopInvite`, Back,
+    Exit to main menu
     from a hosted run and a second room after it, a room that never
     answers, a Start that `play()` refuses, a Worker that fails) with
     `title`, on
     the desktop page and on a phone:
     `DEVICE=oneplus-13 SCRIPT=$PWD/tests/t29.mjs node test.mjs title`. Look
-    at `shots/t29-room.png` and `shots/oneplus-13-t29-room.png`.
+    at `shots/t29-room.png`, `shots/t29-room-class.png` (the cards and
+    the copy buttons) and the two `shots/oneplus-13-t29-*.png`.
   - `node tests/coop-e2e.mjs`: end to end. It serves `dist/` on port 8123,
     starts the relay on 8787, and drives Chromium pages: host and join by
-    code, both enter, the friend sees the host move, an old version
-    refused, the friend reloads and rejoins, a host page that stops drawing
+    code, each picks a class and the other page shows it, both enter as
+    what they picked, each changes class from the pause menu and the other
+    page shows that, the friend sees the host move, an old version
+    refused, the friend comes back by the invite link the host's pause
+    screen copies (a real page load with `?room=`), picks a class mid-run
+    and enters, a host page that stops drawing
     (marked away after 2 s while the dungeon runs on), a full room, the host
     leaving, the gate ending the run and the room, and then on two fresh
     pages the friend exiting to the main menu (the host plays on), the host
@@ -336,8 +387,7 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
 - The checksum that refuses a different cave covers the world mesh
   positions only.
 - In co-op, a dead player's screen still says the enemies come back, which
-  is not true of a single death; a class changed in the pause menu mid-run
-  is not shown to the other player (and may be a hidden class); a dead
+  is not true of a single death; a dead
   player's marker floats above the body; a dead player sees no Warden slam
   ring.
 - The relay's per-address limit is in memory, per isolate, best effort.
@@ -373,5 +423,11 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
 - When the relay closes under a host who is playing, the run goes on alone
   and a line says no friend can join; a friend already in is told the host
   has left.
+- An invite link opens the room screen but does not join: the friend
+  presses Join. The link stays in the address, so a page reloaded or
+  bookmarked after the room has closed opens on the room screen with a
+  dead code ("No room has that code." on Join). The copy buttons were
+  checked with a stand-in clipboard only, never against a real one, and
+  there is no share sheet (`navigator.share`) on phones.
 - The dev lag dial's panel swallows a mouse release over it in the
   no-pointer-lock fallback.

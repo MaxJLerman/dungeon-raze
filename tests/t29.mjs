@@ -143,18 +143,19 @@ export default [
   c.listed = DF.G.state === "title";
   DF.coopSay("The host has left.");
   c.msgOnTitle = c9.msg() === "The host has left." && document.getElementById("coopMsg").closest(".scr").id === "scr-title";
-  // Play online, the class screen, then Continue
+  // Play online goes straight to it: no class screen on the way
   DF.coopLoc({ protocol: "http:", hostname: "localhost" });
   DF.coopRelay("ws://localhost:1");
   document.getElementById("btnCoop").click();
-  c.viaClass = DF.G.state === "class" && document.getElementById("btnPlay").textContent === "Continue";
-  document.getElementById("btnPlay").click();
   await c9.frames();
   c.opened = DF.G.state === "coop" && scr.classList.contains("show") && !document.getElementById("scr-title").classList.contains("show");
   // opening it clears the message
   c.cleared = c9.msg() === "";
-  c.parts = ["coopHost", "coopCode", "coopJoin", "coopShow", "coopCopy", "coopSlots", "coopEnter"].every((id) => scr.contains(document.getElementById(id)));
-  c.noRoomYet = !c9.shown(document.getElementById("coopEnter")) && !c9.shown(document.getElementById("coopShow"));
+  c.parts = ["coopHost", "coopCode", "coopJoin", "coopShow", "coopCopy", "coopCopyLink", "coopSlots", "coopCls", "coopEnter"].every((id) => scr.contains(document.getElementById(id)));
+  c.noRoomYet = !c9.shown(document.getElementById("coopEnter")) && !c9.shown(document.getElementById("coopShow")) &&
+    !c9.shown(document.getElementById("coopCopy")) && !c9.shown(document.getElementById("coopCopyLink"));
+  // no class is chosen before there is a room
+  c.noCardsYet = !c9.shown(document.getElementById("coopCls")) && [...scr.querySelectorAll(".card")].every((e) => !c9.shown(e));
   c.hud = !document.getElementById("hud").classList.contains("show");
   // Back
   c9.back();
@@ -306,11 +307,12 @@ export default [
   c.slot = !!me && me.dataset.cls === base && me.textContent.includes(DF.CLASSES[base].name);
   // the screen's line says which class plays, and does not claim the chosen one does
   const line = () => document.querySelector("#scr-coop .sub").textContent.replace(/\\s+/g, " ").trim();
-  c.line = line() === "One of you hosts a room and sends the other its code. The " + DF.CLASSES.enforcer.name + " cannot play online yet, so you play the " + DF.CLASSES[base].name + ".";
+  const share = "One of you hosts a room and sends the other its code or invite link. ";
+  c.line = line() === share + "The " + DF.CLASSES.enforcer.name + " cannot play online yet, so you play the " + DF.CLASSES[base].name + " unless you choose another in the room.";
   c9.back();
   DF.setClass(base);
   c9.open();
-  c.lineBase = line() === "One of you hosts a room and sends the other its code. You play the class you just chose.";
+  c.lineBase = line() === share + "You each choose a class in the room.";
   DF.setClass("enforcer");
   c.two = document.querySelectorAll("#coopSlots .slot").length === 2;
   c.saveKept = DF.OPT.cls === "enforcer" && (JSON.parse(localStorage.getItem("dungeon-raze.v2") || "{}").o || {}).cls === "enforcer";
@@ -363,6 +365,73 @@ export default [
   c.wide = wide; c.small = small;
   return { pass: c.open && c.inside && c.sizes && c.touchOnPhone, c };`, { shot: "t29-room" }),
 
+  step("the host chooses a class in the room, and the code and the invite link are copied", `
+  const c = {}, pick = document.getElementById("coopCls"), cards = () => [...pick.querySelectorAll(".card")];
+  const base = Object.keys(DF.CLASSES).filter((k) => !DF.CLASSES[k].hidden);
+  const me = () => document.querySelector("#coopSlots .slot.me");
+  c.open = DF.G.state === "coop" && !!DF.net() && !DF.net().live;
+  // the cards: the base classes, the one this page plays marked
+  c.cards = c9.shown(pick) && JSON.stringify(cards().map((b) => b.dataset.cls)) === JSON.stringify(base);
+  const on = () => cards().filter((b) => b.classList.contains("on")).map((b) => b.dataset.cls).join();
+  c.marked = on() === base[0] && DF.OPT.cls === "enforcer";
+  c.label = c9.shown(document.getElementById("coopClsLbl"));
+  // Start and Back sit above the cards, in reach without scrolling
+  const enterBox = document.getElementById("coopEnter").getBoundingClientRect();
+  c.startInView = enterBox.bottom <= innerHeight && enterBox.bottom <= pick.getBoundingClientRect().top;
+  c.kit = !!pick.querySelector(".kit") && pick.querySelector(".kit").textContent.includes("Health " + DF.CLASSES[base[0]].hp);
+  // a pick: this page's player, the slot, the save and the screen's line
+  const to = base[3];
+  cards().find((b) => b.dataset.cls === to).click();
+  await c9.frames();
+  c.picked = DF.G.player.clsId === to && DF.G.player.maxHp === DF.CLASSES[to].hp && DF.G.player.hp === DF.CLASSES[to].hp;
+  c.slot = me().dataset.cls === to && me().textContent.includes(DF.CLASSES[to].name);
+  c.saved = DF.OPT.cls === to && on() === to;
+  c.line = document.getElementById("coopSub").textContent.trim().endsWith("You each choose a class in the room.");
+  c.stillRoom = DF.G.state === "coop" && !!DF.net() && DF.G.zone === "cave" && DF.G.enemies.length === 47;
+  // the copy buttons: the code, and this page's address with ?room=CODE
+  const copy = document.getElementById("coopCopy"), link = document.getElementById("coopCopyLink");
+  c.buttons = c9.shown(copy) && copy.textContent.trim() === "Copy code" && c9.shown(link) && link.textContent.trim() === "Copy invite link";
+  const got = [], exec0 = document.execCommand;
+  const clip = (fn) => Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: fn } });
+  try {
+    clip((t) => { got.push(t); return Promise.resolve(); });
+    copy.click();
+    await c9.wait(20);
+    c.code = got.length === 1 && got[0] === "ABCDEF" && copy.textContent === "Copied";
+    link.click();
+    await c9.wait(20);
+    const url = location.href.split(/[?#]/)[0] + "?room=ABCDEF";
+    c.link = got.length === 2 && got[1] === url && DF.coopInviteUrl("ABCDEF") === url && link.textContent === "Copied";
+    // the labels come back
+    await c9.wait(1700);
+    c.labels = copy.textContent === "Copy code" && link.textContent === "Copy invite link";
+    // a clipboard that refuses: the older copy command is used
+    const old = [];
+    clip(() => Promise.reject(new Error("denied")));
+    document.execCommand = (cmd) => { old.push([cmd, document.activeElement && document.activeElement.value]); return true; };
+    link.click();
+    await c9.wait(20);
+    c.older = old.length === 1 && old[0][0] === "copy" && old[0][1] === url && link.textContent === "Copied" && !document.querySelector("body > textarea");
+    // and with neither, the button says so and the code is selected to copy by hand
+    document.execCommand = () => false;
+    getSelection().removeAllRanges();
+    copy.click();
+    await c9.wait(20);
+    c.byHand = copy.textContent === "Could not copy" && String(getSelection()) === "ABCDEF";
+    // a browser with no clipboard at all
+    clip(undefined);
+    link.click();
+    await c9.wait(20);
+    c.none = link.textContent === "Could not copy";
+    // the labels are back for the screenshot
+    await c9.wait(1700);
+  } finally {
+    delete navigator.clipboard;
+    document.execCommand = exec0;
+    getSelection().removeAllRanges();
+  }
+  return { pass: Object.values(c).every(Boolean), c };`, { shot: "t29-room-class" }),
+
   step("Start enters the cave from the click; leaving ends the Worker", `
   const c = {};
   const w = c9.workers[0];
@@ -413,7 +482,6 @@ export default [
   DF.coopRelay("ws://localhost:1");
   DF.coopSeed(99);
   document.getElementById("btnCoop").click();
-  document.getElementById("btnPlay").click();
   c.ready = DF.G.state === "coop" && c9.shown(document.getElementById("coopHost"));
   document.getElementById("coopHost").click();
   for (let i = 0; i < 200 && !DF.net(); i++) await new Promise((r) => setTimeout(r, 50));
@@ -485,6 +553,8 @@ export default [
     c.refused = DF.G.state === "coop" && !!DF.net() && DF.net().live;
     upright(false);
     await c9.frames();
+    // the run is live, and the class can still be changed here
+    c.cards = c9.shown(document.getElementById("coopCls"));
     c.enabled = c9.shown(enter) && !enter.disabled;
     enter.click();
     c.plays = DF.G.state === "play" && !!DF.net() && DF.net().live;
@@ -562,6 +632,117 @@ export default [
   c.left = DF.net() === null && b.s.readyState === 3;
   return { pass: Object.values(c).every(Boolean), c };`),
 
+  step("a friend's class, picked in the room or changed mid-run, reaches the host, and the host's shows here", `
+  const c = {}, pick = document.getElementById("coopCls"), cards = () => [...pick.querySelectorAll(".card")];
+  const slots = () => [...document.querySelectorAll("#coopSlots .slot")].map((e) => e.dataset.cls || "");
+  const base = Object.keys(DF.CLASSES).filter((k) => !DF.CLASSES[k].hidden);
+  DF.setClass(base[0]);
+  // waiting for the join there are no cards
+  c9.stubSockets();
+  DF.coopLoc({ protocol: "http:", hostname: "localhost" });
+  DF.coopRelay("ws://localhost:1");
+  c9.open(); c9.join("ABCDEF");
+  await c9.frames();
+  c.noneBeforeJoin = DF.net() === null && !c9.shown(pick) && !c9.shown(document.getElementById("coopClsLbl"));
+  c9.back();
+  const { s, h } = await c9.friendIn();
+  c.cards = !!DF.net() && c9.shown(pick) && cards().length === base.length;
+  c.first = h.S.px.get(2).clsId === base[0] && slots()[0] === base[0];
+  // a pick: one numbered request, which the host takes
+  const n0 = s.sent.length, to = base[2];
+  cards().find((b) => b.dataset.cls === to).click();
+  await c9.frames();
+  const ev = s.sent.length === n0 + 1 ? c9.sentEv(s.sent[n0]) : null;
+  c.asked = JSON.stringify(ev) === JSON.stringify(["cls", 1, to]);
+  if (ev) h.recv(2, s.sent[n0].slice().buffer);
+  c.hostHas = h.S.px.get(2).clsId === to && h.S.px.get(2).maxHp === DF.CLASSES[to].hp;
+  c.mine = DF.G.player.clsId === to && DF.OPT.cls === to && slots()[0] === to && DF.CC.cls === to;
+  // the host's player arrives and then picks: its slot follows
+  h.join(1, base[1]);
+  await c9.frames();
+  c.mate = slots()[1] === base[1] && DF.net().mates.length === 1;
+  h.recv(1, h.wire.eventEncode(["cls", 1, base[4]]));
+  await c9.frames();
+  c.mateChanged = slots()[1] === base[4] && DF.net().mates.length === 1 && DF.net().mates[0].clsId === base[4];
+  // the friend enters as what it picked
+  c9.hostStarts(h);
+  await c9.frames();
+  document.getElementById("coopEnter").click();
+  c.plays = DF.G.state === "play" && DF.net().live && DF.G.player.clsId === to;
+  // mid-run, from the pause menu: the class screen offers the base classes
+  // only, the change keeps this player's place and goes to the host
+  DF.unlockClass("enforcer");
+  const p = DF.G.player;
+  p.x += 1.5; p.hp = p.maxHp / 2;
+  const at = [p.x, p.z];
+  DF.show("pause");
+  document.querySelector('#scr-pause [data-open="class"]').click();
+  const own = [...document.querySelectorAll("#scr-class .card")];
+  c.pauseCards = DF.G.state === "class" && JSON.stringify(own.map((b) => b.dataset.cls)) === JSON.stringify(base) &&
+    document.querySelector("#scr-class .card.on").dataset.cls === to;
+  const n1 = s.sent.length, to2 = base[1];
+  own.find((b) => b.dataset.cls === to2).click();
+  const evs = s.sent.slice(n1).map((b) => c9.sentEv(b)).filter((e) => e && e[0] === "cls");
+  c.askedMidRun = evs.length === 1 && evs[0][1] === 2 && evs[0][2] === to2;
+  for (const b of s.sent.slice(n1)) h.recv(2, b.slice().buffer);
+  c.hostHasMidRun = h.S.px.get(2).clsId === to2;
+  c.kept = DF.G.player.clsId === to2 && DF.G.player.x === at[0] && DF.G.player.z === at[1] &&
+    Math.abs(DF.G.player.hp - DF.CLASSES[to2].hp / 2) < 1e-6 && !!DF.net() && DF.net().live;
+  // and the host's change mid-run is the same mate, where it stood
+  const m0 = DF.net().mates[0], mx = m0.x;
+  h.recv(1, h.wire.eventEncode(["cls", 2, base[0]]));
+  await c9.frames();
+  c.mateMidRun = DF.net().mates.length === 1 && DF.net().mates[0] === m0 && m0.clsId === base[0] &&
+    m0.maxHp === DF.CLASSES[base[0]].hp && m0.x === mx && m0.flash === 0;
+  // outside a run the class screen offers the hidden class again
+  DF.coopEnd("test"); DF.enterHub(); DF.show("title");
+  DF.openMenu("class", "solo");
+  c.soloCards = [...document.querySelectorAll("#scr-class .card")].some((b) => b.dataset.cls === "enforcer");
+  DF.show("title");
+  DF.setClass(base[0]);
+  return { pass: Object.values(c).every(Boolean), c };`),
+
+  step("an invite link opens the room screen with its code filled in", `
+  const c = {}, code = document.getElementById("coopCode"), join = document.getElementById("coopJoin"), host = document.getElementById("coopHost");
+  c9.stubSockets(); c9.stubFetch("ABCDEF"); c9.countWorkers();
+  DF.coopLoc({ protocol: "http:", hostname: "localhost" });
+  DF.coopRelay("ws://localhost:1");
+  const home = () => { if (DF.G.state !== "title") c9.back(); DF.show("title"); code.value = ""; DF.coopSay(""); };
+  // an address with no code, or with something that is not one, is the plain page
+  const plain = {};
+  for (const q of ["", "?touch=1", "?room=", "?room=ABC", "?room=ABCDE0", "?room=ABCDEFG", "?broom=ABCDEF", "?room=%E0%A4%A"]) {
+    home();
+    plain[q] = DF.coopInvite(q) === false && DF.G.state === "title" && code.value === "";
+  }
+  c.plain = Object.values(plain).every(Boolean);
+  c.plainEach = plain;
+  // a code: the room screen, the code tidied, Join in hand, nothing sent
+  home();
+  c.opens = DF.coopInvite("?room=abc-def") === true && DF.G.state === "coop" && code.value === "ABCDEF";
+  c.pickShown = c9.shown(join) && c9.shown(host) && document.activeElement === join;
+  c.padJoin = join.hasAttribute("data-padfirst") && !host.hasAttribute("data-padfirst");
+  c.nothingOut = c9.socks.length === 0 && c9.fetches.length === 0 && c9.workers.length === 0 && DF.CC.link === null;
+  c.quiet = c9.msg() === "";
+  // Join goes to that room
+  join.click();
+  c.joins = c9.socks.length === 1 && c9.socks[0].url === "ws://localhost:1/room/ABCDEF";
+  // Back is the main menu, and the screen opened by hand starts on Host again
+  c9.back();
+  c.back = DF.G.state === "title";
+  DF.openMenu("coop");
+  c.padHost = host.hasAttribute("data-padfirst") && !join.hasAttribute("data-padfirst");
+  // beside other things in the address
+  home();
+  c.among = DF.coopInvite("?touch=1&room=GHJKMN&x=2") === true && code.value === "GHJKMN";
+  // a page that cannot play co-op says so on the main menu
+  home();
+  DF.coopLoc({ protocol: "https:", hostname: "example.com" });
+  c.refused = DF.coopInvite("?room=ABCDEF") === false && DF.G.state === "title" && c9.msg() === MSG.copy && code.value === "";
+  home();
+  // this page was opened with no code, and booted on the main menu
+  c.boot = !/[?&]room=/.test(location.search);
+  return { pass: Object.values(c).every((v) => v === true || typeof v === "object"), c };`),
+
   step("a lost connection after the join says so, and the host leaving says that", `
   const c = {}, r = {};
   // in play: the socket drops (1006)
@@ -631,10 +812,25 @@ export default [
   c.shown = txt() === "Room code ABCDEF";
   const v = document.getElementById("pauseCodeV");
   c.selectable = !!v && v.textContent === "ABCDEF" && getComputedStyle(v).userSelect !== "none";
+  // with it, the two copy buttons
+  const copy = document.getElementById("pauseCopy"), link = document.getElementById("pauseCopyLink"), got = [];
+  c.buttons = c9.shown(copy) && copy.textContent.trim() === "Copy code" && c9.shown(link) && link.textContent.trim() === "Copy invite link";
+  try {
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: (t) => { got.push(t); return Promise.resolve(); } } });
+    copy.click(); link.click();
+    await c9.wait(20);
+  } finally {
+    delete navigator.clipboard;
+  }
+  c.copied = JSON.stringify(got) === JSON.stringify(["ABCDEF", location.href.split(/[?#]/)[0] + "?room=ABCDEF"]);
+  // the pause screen still fits, and a pad still starts on Resume
+  const scr = document.getElementById("scr-pause"), vw = document.documentElement.clientWidth;
+  c.fits = [...scr.querySelectorAll("button")].filter((e) => c9.shown(e)).every((e) => { const r = e.getBoundingClientRect(); return r.left >= -0.5 && r.right <= vw + 0.5; });
+  c.padFirst = document.getElementById("btnResume").hasAttribute("data-padfirst");
   // and closes again
   DF.CC.link.onrelay("closed");
   await c9.frames();
-  c.closedHidden = txt() === "";
+  c.closedHidden = txt() === "" && !c9.shown(copy) && !c9.shown(link);
   DF.CC.link.onrelay("open");
   const w = c9.workers[0];
   DF.toBase();
@@ -648,7 +844,7 @@ export default [
   document.getElementById("coopEnter").click();
   DF.show("pause");
   await c9.frames();
-  c.friendHidden = !!DF.net() && txt() === "";
+  c.friendHidden = !!DF.net() && txt() === "" && !c9.shown(document.getElementById("pauseCopy"));
   DF.coopEnd("test"); DF.enterHub(); DF.show("title");
   return { pass: Object.values(c).every(Boolean), c };`),
 

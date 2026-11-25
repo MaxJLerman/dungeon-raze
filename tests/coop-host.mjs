@@ -196,6 +196,63 @@ check("the join says whether the host has started, and a friend already in is to
   const d = fakeClient(h, 2, "mage");
   assert.equal(d.join.started, false);
 });
+check("a class change, in the room or mid-run, changes the proxy in place and tells the other player", () => {
+  const h = cave();
+  const a = fakeClient(h, 1, "fighter");
+  const b = fakeClient(h, 2, "mage");
+  const px = h.S.px.get(2);
+  // on the room screen, before its first state
+  const mageHp = px.maxHp;
+  b.ev("cls", "tanker");
+  assert.equal(h.S.px.get(2), px, "the same proxy");
+  assert.equal(px.clsId, "tanker");
+  assert.equal(px.maxHp, px.cls.hp);
+  assert.equal(px.hp, px.cls.hp);
+  assert.ok(px.maxHp > mageHp, "a tanker's health, not a mage's");
+  assert.equal(px.pid, 2);
+  assert.equal(px.remote, true);
+  assert.equal(px.heard, -Infinity, "still not entered");
+  assert.deepEqual(a.events.at(-1), ["cls", 2, "tanker"]);
+  assert.equal(named(b, "cls").length, 0, "the one who picked is not told");
+  assert.equal(named(a, "peer").length, 1, "no second peer: it has not joined again");
+  // the event is acknowledged like any other
+  assert.equal(px.ack, 1);
+  // a class co-op does not offer plays as the first base class
+  const base = "assassin";
+  b.ev("cls", "enforcer");
+  assert.equal(px.clsId, base);
+  assert.deepEqual(a.events.at(-1), ["cls", 2, base]);
+  // not a class id at all, or the class it already is: nothing changes or is said
+  const n = named(a, "cls").length;
+  b.ev("cls", 7);
+  b.ev("cls");
+  b.ev("cls", base);
+  assert.equal(px.clsId, base);
+  assert.equal(named(a, "cls").length, n);
+  // a later joiner sees the class as changed
+  b.ev("cls", "mage");
+  h.leave(1);
+  const a2 = fakeClient(h, 1, "fighter");
+  assert.deepEqual(a2.join.peers, [[2, "mage"]]);
+  // mid-run, hurt: the same place, the same share of health, the new class
+  const sp = h.G.world.spawn;
+  b.at(sp.x + 2, sp.z, { hp: 0.5 });
+  // (the share travels as a byte)
+  const share = px.hp / px.maxHp;
+  assert.ok(Math.abs(share - 0.5) < 0.01);
+  const x0 = px.x;
+  b.ev("cls", "tanker");
+  assert.equal(px.clsId, "tanker");
+  assert.ok(Math.abs(px.hp - px.cls.hp * share) < 1e-9, "the same share of a tanker's health");
+  assert.equal(px.x, x0, "where it stood");
+  assert.ok(Math.abs(px.x - (sp.x + 2)) < 0.05);
+  assert.notEqual(px.heard, -Infinity);
+  assert.deepEqual(a2.events.at(-1), ["cls", 2, "tanker"]);
+  // the host's own page changes the same way, and the friend hears it
+  a2.ev("cls", "ranger");
+  assert.equal(h.S.px.get(1).clsId, "ranger");
+  assert.deepEqual(b.events.at(-1), ["cls", 1, "ranger"]);
+});
 check("an enemy hunts the nearer player and keeps it within 3 m", () => {
   const h = cave(),
     e = husk(h, 37);

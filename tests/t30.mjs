@@ -94,16 +94,16 @@ export default [
   step("play online", `
   const c = {};
   home();
+  // straight to the room screen: the class is chosen there, in a room
   id("btnCoop").click();
-  c.state = G.state === "class" && DF.classFor() === "online";
-  c.forward = shown(id("btnPlay")) && txt("btnPlay") === "Continue";
-  id("btnPlay").click();
   await frames();
   c.room = G.state === "coop" && id("scr-coop").classList.contains("show");
+  c.noClassScreen = !id("scr-class").classList.contains("show") && DF.classFor() !== "online";
   c.heading = $("#scr-coop h1").textContent.trim() === "Play online";
-  c.line = $("#scr-coop .sub").textContent.replace(/\\s+/g, " ").includes("You play the class you just chose.");
+  c.line = $("#scr-coop .sub").textContent.replace(/\\s+/g, " ").includes("You each choose a class in the room.");
   const me = $("#coopSlots .slot.me");
   c.slot = !!me && me.dataset.cls === DF.OPT.cls;
+  c.noCards = !shown(id("coopCls"));
   $("#scr-coop [data-back]").click();
   c.back = G.state === "title";
   return all(c);`),
@@ -137,11 +137,12 @@ export default [
   key("Space");
   await frames();
   c.spacePlays = G.state === "play";
-  // for an online start it is Continue
+  // the class screen has no online way forward any more
   home(); idle();
   DF.openMenu("class", "online");
+  c.noOnline = DF.classFor() === null && !shown(id("btnPlay"));
   key("Enter");
-  c.online = G.state === "coop";
+  c.enterNothing = G.state === "class";
   home();
   // opened from pause there is no way forward, and Enter does nothing
   DF.show("pause"); DF.openMenu("class"); idle();
@@ -182,7 +183,7 @@ export default [
     id("btnSolo").click();
     c.solo = G.state === "class";
     d.ok = says({ protocol: "https:", hostname: "maxjlerman.github.io" });
-    c.ok = d.ok.state === "class" && d.ok.msg === "" && DF.classFor() === "online";
+    c.ok = d.ok.state === "coop" && d.ok.msg === "";
   } finally {
     DF.coopLoc({ protocol: "http:", hostname: "localhost" });
     home(); DF.coopSay("");
@@ -209,7 +210,6 @@ export default [
     dispatchEvent(new PopStateEvent("popstate", { state: null }));
     c.fromClass = G.state === "title";
     id("btnCoop").click();
-    id("btnPlay").click();
     c.inRoom = G.state === "coop";
     dispatchEvent(new PopStateEvent("popstate", { state: null }));
     c.fromRoom = G.state === "title";
@@ -235,7 +235,6 @@ export default [
     id("btnSolo").click();
     c.fromClass = (await back()) && G.state === "title";
     id("btnCoop").click();
-    id("btnPlay").click();
     c.fromRoom = (await back()) && G.state === "title";
     id("btnSolo").click();
     $("#scr-class [data-back]").click();

@@ -1,6 +1,6 @@
 // Co-op end to end: the built page served from dist/ on localhost:8123, the
 // relay under wrangler dev on localhost:8787, and several Chromium pages
-// hosting and joining by code. Every HTTP request but to localhost is
+// hosting, joining by code and by invite link, and picking classes. Every HTTP request but to localhost is
 // aborted. Playwright's routing does not see WebSockets: the only socket
 // address the pages are given is the local relay (DF.coopRelay).
 // Run with: node build.mjs && node tests/coop-e2e.mjs
@@ -161,11 +161,20 @@ const msg = (p) =>
     return el && !el.hidden && el.getClientRects().length ? el.textContent : "";
   });
 const state = (p) => p.evaluate(() => DF.G.state);
-// Play online on the main menu, then Continue on the class screen
+// Play online on the main menu goes straight to the room screen
 async function toRoom(p) {
   await p.click("#btnCoop");
-  await p.click("#btnPlay");
 }
+// Picks a class card on the room screen (the cards show once in the room).
+async function pickCls(p, cls) {
+  await until(p.__name + "'s class cards", () =>
+    p.evaluate(() => document.getElementById("coopCls").getClientRects().length > 0),
+  );
+  await p.click('#coopCls .card[data-cls="' + cls + '"]');
+}
+// The class in each slot, this page's first: "" for one not here.
+const slotCls = (p) =>
+  p.evaluate(() => [...document.querySelectorAll("#coopSlots .slot")].map((s) => s.dataset.cls || ""));
 async function hostRoom(p) {
   await toRoom(p);
   // two clicks before the first has answered
@@ -242,6 +251,22 @@ async function main() {
     assert.deepEqual(await btn(), { text: "Waiting for the host to start", off: true });
   });
 
+  await check("each picks a class in the room and the other page shows it", async () => {
+    await pickCls(friend, "tanker");
+    await until("the host to show the friend's class", async () => (await slotCls(host))[1] === "tanker");
+    assert.equal((await slotCls(friend))[0], "tanker");
+    await pickCls(host, "mage");
+    await until("the friend to show the host's class", async () => (await slotCls(friend))[1] === "mage");
+    assert.deepEqual(await slotCls(host), ["mage", "tanker"]);
+    // a second thought, before entering
+    await pickCls(friend, "ranger");
+    await until("the host to show the change", async () => (await slotCls(host))[1] === "ranger");
+    assert.deepEqual(await slotCls(friend), ["ranger", "mage"]);
+    // still waiting on the host, and nothing was said
+    assert.equal(await msg(friend), "");
+    assert.equal(await msg(host), "");
+  });
+
   await check("both enter: in play, 47 enemies each and the same cave", async () => {
     await enter(host);
     // the host's Start lets the friend in
@@ -258,6 +283,32 @@ async function main() {
     assert.equal(b.enemies, 47);
     assert.equal(a.seed, 99);
     assert.equal(a.sum, b.sum);
+    // each plays what it picked, and is drawn as that on the other page
+    const who = (p) => p.evaluate(() => [DF.G.player.clsId, DF.net().mates.map((m) => m.clsId).join()]);
+    assert.deepEqual(await who(host), ["mage", "ranger"]);
+    assert.deepEqual(await who(friend), ["ranger", "mage"]);
+  });
+
+  await check("a class changed from the pause menu mid-run shows on the other page", async () => {
+    // Pause, Change class, a card, Back, Resume, as a player would
+    const change = (p, cls) =>
+      p.evaluate((cls) => {
+        DF.show("pause");
+        document.querySelector('#scr-pause [data-open="class"]').click();
+        document.querySelector('#scr-class .card[data-cls="' + cls + '"]').click();
+        document.querySelector("#scr-class [data-back]").click();
+        DF.show("play");
+        return DF.G.player.clsId;
+      }, cls);
+    const mate = (p) => p.evaluate(() => (DF.net() && DF.net().mates[0] ? DF.net().mates[0].clsId : ""));
+    assert.equal(await change(friend, "assassin"), "assassin");
+    await until("the host to see the friend's new class", async () => (await mate(host)) === "assassin");
+    assert.equal(await change(host, "tanker"), "tanker");
+    await until("the friend to see the host's new class", async () => (await mate(friend)) === "tanker");
+    // both are still in the same run
+    assert.equal(await state(host), "play");
+    assert.equal(await state(friend), "play");
+    assert.equal((await info(friend)).enemies, 47);
   });
 
   await check("the host's pause screen shows the room code while the relay is up; the friend's does not", async () => {
@@ -325,11 +376,36 @@ async function main() {
     pages.splice(pages.indexOf(old), 1);
   });
 
-  await check("the friend reloads, rejoins with the same code and enters", async () => {
+  await check("the friend comes back by the host's invite link, picks a class and enters", async () => {
+    // the link as the host's pause screen copies it
+    const link = await host.evaluate(async () => {
+      const got = [];
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: (t) => (got.push(t), Promise.resolve()) } });
+      DF.show("pause");
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      document.getElementById("pauseCopyLink").click();
+      await new Promise((r) => setTimeout(r, 50));
+      delete navigator.clipboard;
+      DF.show("play");
+      return got.join();
+    });
+    assert.equal(link, PAGE + "?room=" + code);
+    await friend.goto(link);
     await prep(friend);
     friend.__name = "friend";
-    await joinRoom(friend, code);
+    // the room screen, the code filled in, and nothing sent yet
+    assert.equal(await state(friend), "coop");
+    assert.equal(await friend.inputValue("#coopCode"), code);
+    assert.equal(await friend.evaluate(() => window.__socks.length + window.__workers.length), 0);
+    assert.equal(await friend.evaluate(() => document.activeElement && document.activeElement.id), "coopJoin");
+    await friend.click("#coopJoin");
+    // the run is under way: the class can still be picked before entering
+    await pickCls(friend, "fighter");
+    await until("the host to see the friend's new class", () =>
+      host.evaluate(() => DF.net() && DF.net().mates.length === 1 && DF.net().mates[0].clsId === "fighter"),
+    );
     await enter(friend);
+    assert.equal(await friend.evaluate(() => DF.G.player.clsId), "fighter");
     const b = await info(friend);
     assert.equal(b.enemies, 47);
     assert.ok(b.net);

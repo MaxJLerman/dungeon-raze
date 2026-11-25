@@ -2,8 +2,17 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
     <title>DungeonRaze</title>
+    <!-- the tab icon, inlined so the page stays one file -->
+    <link
+      rel="icon"
+      type="image/x-icon"
+      href="data:image/x-icon;base64,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"
+    />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link
       href="https://fonts.googleapis.com/css2?family=Marcellus+SC&family=Barlow+Condensed:wght@400;500;600&display=swap"
@@ -414,7 +423,9 @@
         background: color-mix(in srgb, var(--pc) 35%, transparent);
         box-shadow: 0 0 1.4vmin var(--pc);
         color: #fff;
-        font: 700 clamp(9px, 1.9vmin, 14px) / 1 system-ui, sans-serif;
+        font:
+          700 clamp(9px, 1.9vmin, 14px) / 1 system-ui,
+          sans-serif;
         white-space: nowrap;
       }
       #plaqueClose {
@@ -534,7 +545,10 @@
         transform: translateX(-50%);
         display: none;
         z-index: 4;
-        font: 11px ui-monospace, Menlo, monospace;
+        font:
+          11px ui-monospace,
+          Menlo,
+          monospace;
         color: var(--dim);
         pointer-events: none;
       }
@@ -571,14 +585,24 @@
         font-size: clamp(22px, 3.4vw, 34px);
         letter-spacing: 0.08em;
         color: var(--bone);
-        text-shadow: 0 0 14px #000, 0 0 4px #000;
+        text-shadow:
+          0 0 14px #000,
+          0 0 4px #000;
       }
       #mateBar[hidden],
       #coopWait[hidden],
       #pauseCoop[hidden],
       #pauseCode[hidden],
+      #pauseInvite[hidden],
       #coopMsg[hidden] {
         display: none;
+      }
+      /* the host's copy buttons: laid out as a .row, but not one, so the
+         pause screen's .row is still its menu */
+      #pauseInvite {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
       }
       #pauseCodeV {
         font-family: var(--display);
@@ -597,6 +621,8 @@
       /* the room screen */
       #coopPick[hidden],
       #coopRoom[hidden],
+      #coopCls[hidden],
+      #coopClsLbl[hidden],
       #coopEnter[hidden] {
         display: none;
       }
@@ -1280,7 +1306,8 @@
           font-size: 18px;
           padding: 6px 20px;
         }
-        .row {
+        .row,
+        #pauseInvite {
           gap: 8px;
         }
         .picker {
@@ -1389,15 +1416,18 @@
         <path d="M22 37h4" />
       </svg>
       <p>Turn your device sideways to play.</p>
-      <small>Tap to try landscape. If it stays upright, turn off rotation lock.</small>
+      <small
+        >Tap to try landscape. If it stays upright, turn off rotation
+        lock.</small
+      >
     </div>
     <div id="fade" class="vig"></div>
 
     <div id="scr-title" class="scr wide">
       <h1>DungeonRaze</h1>
       <p class="sub">
-        Six gates stand in the hall, graded E to S. Step through the first
-        and come back alive. Killing its boss opens the second.
+        Six gates stand in the hall, graded E to S. Step through the first and
+        come back alive. Killing its boss opens the second.
       </p>
       <p class="touch-note">
         On a phone or tablet, turn it sideways. The controls appear when you
@@ -1413,10 +1443,18 @@
     </div>
     <div id="scr-pause" class="scr">
       <h1>Paused</h1>
-      <p class="sub" id="pauseCoop" hidden>The dungeon does not pause in co-op.</p>
-      <p class="sub" id="pauseCode" hidden>Room code <span id="pauseCodeV"></span></p>
+      <p class="sub" id="pauseCoop" hidden>
+        The dungeon does not pause in co-op.
+      </p>
+      <p class="sub" id="pauseCode" hidden>
+        Room code <span id="pauseCodeV"></span>
+      </p>
+      <div id="pauseInvite" hidden>
+        <button id="pauseCopy" type="button">Copy code</button
+        ><button id="pauseCopyLink" type="button">Copy invite link</button>
+      </div>
       <div class="row">
-        <button id="btnResume" type="button">Resume</button
+        <button id="btnResume" type="button" data-padfirst>Resume</button
         ><button type="button" data-open="class">Change class</button
         ><button type="button" data-open="howto">How to play</button
         ><button type="button" data-open="controls">Controls</button
@@ -1442,8 +1480,8 @@
         cancels. A key already in use swaps places.
       </p>
       <p class="sub padonly">
-        Choose a controller binding with ✕ or A, then press the button you
-        want. Options or Menu cancels.
+        Choose a controller binding with ✕ or A, then press the button you want.
+        Options or Menu cancels.
       </p>
       <p id="pnote" hidden>
         This browser doesn't fully recognise your controller, so buttons may be
@@ -1477,10 +1515,13 @@
           <span id="topacV">60%</span></label
         >
         <label for="tnotch"
-          ><input id="tnotch" type="checkbox" checked />
-          Keep controls clear of the notch and rounded corners</label
+          ><input id="tnotch" type="checkbox" checked /> Keep controls clear of
+          the notch and rounded corners</label
         >
-        <p id="tnotchNote">Off can put buttons under the notch or a curved corner, where touches may not register.</p>
+        <p id="tnotchNote">
+          Off can put buttons under the notch or a curved corner, where touches
+          may not register.
+        </p>
       </div>
       <div class="opts">
         <label for="sens"
@@ -1518,8 +1559,8 @@
           <span id="psensV">1.00×</span></label
         >
         <label for="padHideTouch"
-          ><input id="padHideTouch" type="checkbox" checked />
-          Hide touch buttons while a controller is connected</label
+          ><input id="padHideTouch" type="checkbox" checked /> Hide touch
+          buttons while a controller is connected</label
         >
         <label for="rumble"
           ><input id="rumble" type="checkbox" checked /> Vibration</label
@@ -1561,9 +1602,9 @@
           <b>Orange bar full:</b> the enemy kneels. Attack beside it to execute.
         </li>
         <li>
-          <b>Out of sight:</b> enemies chase what they can see. Break their
-          line of sight and they search where they last saw you, then go back
-          to their post. They will not follow you into the boss chamber.
+          <b>Out of sight:</b> enemies chase what they can see. Break their line
+          of sight and they search where they last saw you, then go back to
+          their post. They will not follow you into the boss chamber.
         </li>
         <li>
           <b>Shrines</b> are checkpoints and refill everything.
@@ -1579,8 +1620,8 @@
     <div id="scr-coop" class="scr wide">
       <h1 class="sm">Play online</h1>
       <p class="sub" id="coopSub">
-        One of you hosts a room and sends the other its code. You play the
-        class you just chose.
+        One of you hosts a room and sends the other its code or invite link. You
+        each choose a class in the room.
       </p>
       <div id="coopPick">
         <button id="coopHost" type="button" data-padfirst>Host a room</button>
@@ -1600,13 +1641,18 @@
       <div id="coopRoom" hidden>
         <span class="lbl">Room code</span>
         <output id="coopShow" aria-label="Room code"></output>
-        <button id="coopCopy" type="button">Copy</button>
+        <button id="coopCopy" type="button">Copy code</button>
+        <button id="coopCopyLink" type="button">Copy invite link</button>
       </div>
       <div id="coopSlots"></div>
       <div class="row">
         <button id="coopEnter" type="button" hidden disabled>Start</button
         ><button type="button" data-back="1">Back</button>
       </div>
+      <p class="sub" id="coopClsLbl" hidden>
+        Choose your class. You can change it later from the pause screen.
+      </p>
+      <div id="coopCls" class="picker" hidden></div>
     </div>
     <div id="scr-dead" class="scr">
       <h1 class="red">You fell</h1>

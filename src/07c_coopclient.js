@@ -362,6 +362,8 @@ const COOP_TAKE = {
 const COOP_NOW = {
   // ["peer", pid, class], or class null when that player has left
   peer: (m) => coopNum(m[1]) && (m[2] === null || typeof m[2] === "string"),
+  // ["cls", pid, class]: the other player has changed class
+  cls: (m) => coopNum(m[1]) && typeof m[2] === "string",
   // ["reset", { enemies, dead, bossDead }, t]: after a wipe
   reset: (m) => !!m[1] && typeof m[1] === "object" && Array.isArray(m[1].enemies),
   // ["end", run time]: a player took the gate
@@ -1028,6 +1030,7 @@ function coopBlast(x, z, r, c) {
 function coopNow(m) {
   const k = m[0];
   if (k === "peer") coopPeer(m[1], m[2]);
+  else if (k === "cls") coopMateCls(m[1], m[2]);
   else if (k === "reset") coopReset(m[1]);
   else if (k === "started") CC.started = true;
   else if (k === "end") {
@@ -1068,6 +1071,24 @@ function coopPeer(pid, cls) {
   // away until a snapshot says otherwise: the host has not heard it yet
   Object.assign(m, { remote: true, pid, nb: [], away: true, ddur: m.cls.dodge.dur, swing: null });
   ms.push(m);
+}
+// The other player has changed class, on the room screen or mid-run: the
+// same mate where it stands, with the same share of health (so no flash),
+// as the new class.
+function coopMateCls(pid, cls) {
+  const m = NET.mates.find((q) => q.pid === pid);
+  if (!m) return;
+  const n = makePlayer(coopBaseCls(cls)),
+    fr = m.maxHp > 0 ? m.hp / m.maxHp : 1;
+  Object.assign(m, {
+    cls: n.cls,
+    clsId: n.clsId,
+    maxHp: n.maxHp,
+    hp: n.maxHp * fr,
+    parryWin: n.parryWin,
+    fig: n.fig,
+    ddur: n.cls.dodge.dur,
+  });
 }
 // The other player at the drawn time rt: where it was, what it was doing and
 // how long it had been at it, so posePlayer animates it; a flash when its

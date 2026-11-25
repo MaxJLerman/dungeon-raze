@@ -77,8 +77,8 @@ To take it down: `npx wrangler delete`, or delete the Worker in the dashboard.
 
 Read on 2026-11-24 from Cloudflare's own pages:
 
-- Durable Objects pricing, https://developers.cloudflare.com/durable-objects/platform/pricing/
-- Workers pricing, https://developers.cloudflare.com/workers/platform/pricing/
+- Durable Objects pricing, <https://developers.cloudflare.com/durable-objects/platform/pricing/>
+- Workers pricing, <https://developers.cloudflare.com/workers/platform/pricing/>
 
 Limits quoted from them:
 
