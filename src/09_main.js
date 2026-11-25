@@ -96,6 +96,14 @@ function toBase() {
   enterHub(G.grade);
   play();
 }
+// Out to the main menu from the pause, death or win screen: a fresh hall
+// behind it, and nothing asked, since nothing is lost. enterHub ends a
+// co-op run for this page first, so a friend's exit leaves the host playing
+// and a host's exit closes the room.
+function toTitle() {
+  enterHub();
+  show("title");
+}
 // Back from a menu, by its Back button, Esc, a pad's back button (which
 // clicks the button) or the Back gesture: the screen it was opened over.
 // Leaving the room screen first ends a room not yet entered.
@@ -570,6 +578,8 @@ function boot() {
   });
   for (const id of ["btnAgain", "btnBase", "btnDeadBase"])
     $(id).addEventListener("click", toBase);
+  for (const id of ["btnExit", "btnDeadExit", "btnWinExit"])
+    $(id).addEventListener("click", toTitle);
   for (const b of document.querySelectorAll("[data-open]"))
     b.addEventListener("click", () => openMenu(b.dataset.open));
   for (const b of document.querySelectorAll("[data-back]")) b.addEventListener("click", menuGoBack);
@@ -726,6 +736,7 @@ window.DF = {
   setClass,
   setBind,
   toBase,
+  toTitle,
   hitEnemy,
   alertE,
   hurtPlayer,

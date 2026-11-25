@@ -381,6 +381,38 @@ export default [
   DF.setClass(Object.keys(DF.CLASSES).find((k) => !DF.CLASSES[k].hidden));
   DF.show("title");
   return { pass: Object.values(c).every(Boolean), c };`),
+  step("Exit to main menu leaves a hosted run and its Worker, and says nothing", `
+  const c = {};
+  c.hosted = await c9.hostLocal();
+  const w = c9.workers[0];
+  // Start is enabled by the frame after the join
+  await c9.frames();
+  document.getElementById("coopEnter").click();
+  c.play = DF.G.state === "play" && !!DF.net() && DF.net().live && DF.G.zone === "cave";
+  DF.show("pause");
+  await c9.frames();
+  const b = document.getElementById("btnExit");
+  c.btn = c9.shown(b) && c9.shown(document.getElementById("btnBase"));
+  b.click();
+  for (let i = 0; i < 40 && !(w && w.dead); i++) await new Promise((r) => setTimeout(r, 50));
+  c.left = DF.net() === null && DF.CC.link === null && DF.CC.why === "left" && !!w && w.dead === true;
+  c.menu = DF.G.state === "title" && DF.G.zone === "hub" && c9.msg() === "";
+  // the room screen is ready for another room, with no reload
+  c9.stubFetch("GHJKMN"); c9.countWorkers();
+  DF.coopLoc({ protocol: "http:", hostname: "localhost" });
+  DF.coopRelay("ws://localhost:1");
+  DF.coopSeed(99);
+  document.getElementById("btnCoop").click();
+  document.getElementById("btnPlay").click();
+  c.ready = DF.G.state === "coop" && c9.shown(document.getElementById("coopHost"));
+  document.getElementById("coopHost").click();
+  for (let i = 0; i < 200 && !DF.net(); i++) await new Promise((r) => setTimeout(r, 50));
+  c.second = !!DF.net() && document.getElementById("coopShow").textContent === "GHJKMN" && c9.workers.length === 1;
+  const w2 = c9.workers[0];
+  c9.back();
+  for (let i = 0; i < 40 && !(w2 && w2.dead); i++) await new Promise((r) => setTimeout(r, 50));
+  c.tidy = DF.net() === null && DF.G.state === "title";
+  return { pass: Object.values(c).every(Boolean), c };`),
   step("a room that never answers the hello times out", `
   const c = {};
   c9.stubSockets();

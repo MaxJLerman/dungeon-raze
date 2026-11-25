@@ -425,10 +425,71 @@ async function main() {
     await until("the friend's answer", async () => (await msg(friend)) !== "", 10000);
     assert.equal(await msg(friend), "No room has that code.");
   });
+
+  // Exit to main menu, on two fresh pages that are never reloaded
+  const host3 = await openPage("host3");
+  const friend3 = await openPage("friend3");
+  const exit = (p) =>
+    p.evaluate(() => {
+      DF.show("pause");
+      document.getElementById("btnExit").click();
+    });
+  let code3 = "";
+  await check("the friend exits to the main menu: the host plays on", async () => {
+    code3 = await hostRoom(host3);
+    await joinRoom(friend3, code3);
+    await enter(host3);
+    await enter(friend3);
+    await until("the host to see the friend", () => host3.evaluate(() => DF.net().mates.length === 1), 15000);
+    await exit(friend3);
+    assert.equal(await state(friend3), "title");
+    // leaving by choice says nothing
+    assert.equal(await msg(friend3), "");
+    assert.equal(await friend3.evaluate(() => DF.net()), null);
+    assert.equal(await friend3.evaluate(() => DF.G.zone), "hub");
+    await until("the host to see the friend go", () => host3.evaluate(() => !!DF.net() && DF.net().mates.length === 0), 15000);
+    await sleep(2000);
+    assert.equal(await host3.evaluate(() => DF.G.state === "play" && !!DF.net() && DF.net().live), true);
+    assert.equal(await msg(host3), "");
+  });
+
+  await check("the host exits to the main menu: the room closes and the friend is told", async () => {
+    // back in with the same code, with no reload
+    await joinRoom(friend3, code3);
+    await enter(friend3);
+    await exit(host3);
+    assert.equal(await state(host3), "title");
+    assert.equal(await msg(host3), "");
+    assert.equal(await host3.evaluate(() => DF.net()), null);
+    await until("the host's Worker terminated", () => host3.evaluate(() => window.__workers.every((w) => w.__dead === true)), 5000);
+    await until(
+      "the friend on the main menu, told",
+      async () => (await state(friend3)) === "title" && (await msg(friend3)) === "The host has left.",
+      12000,
+    );
+    assert.equal(await friend3.evaluate(() => DF.net()), null);
+  });
+
+  await check("a second room on the same two pages, with no reload", async () => {
+    const code4 = await hostRoom(host3);
+    assert.match(code4, CODE_RE);
+    assert.notEqual(code4, code3);
+    await joinRoom(friend3, code4);
+    // opening the room screen cleared "The host has left."
+    assert.equal(await msg(friend3), "");
+    await enter(host3);
+    await enter(friend3);
+    await until("each to see the other", async () =>
+      (await host3.evaluate(() => DF.net().mates.length === 1)) && (await friend3.evaluate(() => DF.net().mates.length === 1)), 15000);
+    const a = await info(host3), b = await info(friend3);
+    assert.equal(a.sum, b.sum);
+    assert.equal(a.state, "play");
+    assert.equal(b.state, "play");
+  });
 }
 
 // Whatever goes wrong, the servers and the browser go with it.
-const WATCHDOG_MS = 300000;
+const WATCHDOG_MS = 420000;
 async function bail(why, code) {
   console.log("FAIL harness\n     " + why);
   killRelayNow();

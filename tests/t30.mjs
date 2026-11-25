@@ -147,6 +147,99 @@ export default [
   home();
   return { ...all(c), d };`),
 
+  step("exit from the hall", `
+  const c = {};
+  DF.enterHub(); DF.show("play"); DF.show("pause");
+  await frames();
+  c.btn = shown(id("btnExit")) && txt("btnExit") === "Exit to main menu";
+  c.noBase = !shown(id("btnBase"));
+  c.last = $("#scr-pause .row").lastElementChild === id("btnExit");
+  const hall = G.enemies.length;
+  id("btnExit").click();
+  await frames();
+  c.title = G.state === "title" && id("scr-title").classList.contains("show");
+  c.hall = G.zone === "hub" && G.enemies.length === hall;
+  c.hud = !id("hud").classList.contains("show");
+  return all(c);`),
+
+  step("exit from a cave", `
+  const c = {};
+  DF.enterHub();
+  const hall = G.enemies.length;
+  DF.enterCave("E", 99); DF.show("play"); G.kills = 3; DF.show("pause");
+  await frames();
+  c.both = shown(id("btnBase")) && shown(id("btnExit"));
+  c.order = id("btnBase").nextElementSibling === id("btnExit");
+  id("btnExit").click();
+  await frames();
+  c.title = G.state === "title";
+  c.fresh = G.zone === "hub" && G.enemies.length === hall && G.kills === 0;
+  c.hud = !id("hud").classList.contains("show");
+  return all(c);`),
+
+  step("exit from death", `
+  const c = {};
+  DF.enterCave("E", 99); G.player.state = "dead"; G.player.hp = 0; G.player.t = 2; DF.show("play"); DF.sim(0.1); DF.show("dead");
+  await frames();
+  c.btn = shown(id("btnDeadExit")) && txt("btnDeadExit") === "Exit to main menu";
+  c.last = $("#scr-dead .row").lastElementChild === id("btnDeadExit");
+  id("btnDeadExit").click();
+  await frames();
+  await frames();
+  c.title = G.state === "title" && !id("scr-dead").classList.contains("show");
+  c.alive = G.player.state !== "dead" && G.player.hp === G.player.maxHp && G.zone === "hub";
+  return all(c);`),
+
+  step("exit from the win screen", `
+  const c = {};
+  DF.enterCave("E", 99); DF.show("win");
+  await frames();
+  c.btn = shown(id("btnWinExit")) && txt("btnWinExit") === "Exit to main menu";
+  c.last = $("#scr-win .row").lastElementChild === id("btnWinExit");
+  id("btnWinExit").click();
+  await frames();
+  await frames();
+  c.title = G.state === "title" && !id("scr-win").classList.contains("show");
+  c.hall = G.zone === "hub";
+  return all(c);`),
+
+  // Review Focus 3
+  step("the class picked after an exit is the one played", `
+  const c = {};
+  DF.enterCave("E", 99); DF.show("play"); DF.show("pause");
+  id("btnExit").click();
+  const to = other();
+  id("btnSolo").click();
+  card(to).click();
+  id("btnPlay").click();
+  await frames();
+  c.play = G.state === "play" && G.zone === "hub";
+  c.cls = G.player.clsId === to && DF.OPT.cls === to;
+  c.full = G.player.hp === G.player.maxHp;
+  home();
+  return all(c);`),
+
+  // Review Focus 4
+  step("exit during a portal fade", `
+  const c = {}, was = G.manual;
+  G.manual = true;
+  try {
+    DF.enterHub(); DF.show("play");
+    G.trans = { t: 0, grade: "E", swapped: false };
+    DF.sim(0.05);
+    c.fading = !!G.trans && G.zone === "hub";
+    DF.toTitle();
+    c.cleared = G.trans === null && G.state === "title";
+    id("btnSolo").click();
+    id("btnPlay").click();
+    DF.sim(2);
+    c.stays = G.zone === "hub" && G.state === "play" && G.trans === null;
+  } finally {
+    G.manual = was;
+    home();
+  }
+  return all(c);`),
+
   // shots to look at: shots/[device-]t30-menu.png and t30-class.png
   { name: "shot: the main menu", eval: `DF.show("title")`, wait: 400, shot: "t30-menu" },
   { name: "shot: the class screen for a solo start", eval: `document.getElementById("btnSolo").click()`, wait: 400, shot: "t30-class" },
