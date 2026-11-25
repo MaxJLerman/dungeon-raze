@@ -173,7 +173,9 @@ you would rather do it by hand, follow all three steps.
    Open http://localhost:8000/?coop=1. A **Play with a friend** button should
    be on the title screen. Press it, then **Host a room**. After a moment a
    six-character code appears. If instead you read "Cannot reach the co-op
-   relay.", the address is wrong or the relay is not deployed.
+   relay.", the address is wrong or the relay is not deployed. When you have
+   seen it work, press Ctrl+C in the terminal to stop the local server, so
+   the terminal is free for the next step.
 3. Publish. The co-op work is on the branch `feat/coop-cave`, and the site is
    published from `main`. The line from step 1 is only on your computer until
    it is committed and pushed, and a merge on GitHub takes the branch as
@@ -349,8 +351,10 @@ What to watch for, on the friend's screen:
   character turns grey, the character loses its coloured rim light, and their
   small health bar under the friend's own bars dims. Does it?
 - When the host comes back, does everything carry on, or does the friend end up
-  at the title screen with "The host has left."? (That happens if the host is
-  gone for 10 seconds with no update.)
+  at the title screen with "The connection to the room was lost. You can join
+  again with the same code."? (That happens if nothing arrives from the host
+  for 10 seconds. "The host has left." appears only when the host's page
+  really closed or lost its own connection.)
 
 What to write down, for each host browser: did the enemies keep moving (yes,
 no, partly), did "Waiting for the host" appear and when, did the host show as
