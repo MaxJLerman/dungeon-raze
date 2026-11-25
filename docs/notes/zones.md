@@ -59,6 +59,8 @@
   once E's boss is dead and C to S stay sealed. A test that takes D out
   through `DF.LIVE_GRADES` puts it back before it ends.
 
+- A button style that outranks `.scr button:hover` and sets a background sets
+  the text colour too, or the hover's dark text shows on it.
 - `G` is the single state object. `G.state` is one of `title`, `play`,
   `pause`, `dead`, `win`, `class`, `controls`, `howto`, `coop`, and `show(state)`
   switches screens. `MENUS` in `09_main.js` lists the screens that open on top
@@ -125,7 +127,7 @@
   main menu and then Enter the hall on the class screen; `title` stays on
   the main menu.
 - Run `tests/t30.mjs` after any change to the main menu, the class screen's
-  forward button or Exit to main menu, on the desktop page and on the
+  forward button or cards, or Exit to main menu, on the desktop page and on the
   smallest phone:
   `SCRIPT=$PWD/tests/t30.mjs node test.mjs title` and
   `DEVICE=iphone-se SCRIPT=$PWD/tests/t30.mjs node test.mjs title`. It
@@ -137,7 +139,9 @@
   exit in the middle of a portal fade, that a co-op line does not outlive a
   solo start, and that Play online on a page that cannot play co-op says so
   on the main menu (the test page is a `file:`, so every step stands in
-  `localhost` through `DF.coopLoc`). Look at `shots/t30-menu.png`,
+  `localhost` through `DF.coopLoc`), and that a class card, selected or
+  not, stays readable under a real mouse (`__mouse(x, y)`, desktop only).
+  Look at `shots/t30-menu.png`,
   `shots/t30-class.png` and the two `shots/iphone-se-t30-*.png`.
   `node tests/t30-nogl.mjs` opens the page in a browser with no WebGL 2 and
   checks the message and that both Play buttons are disabled.

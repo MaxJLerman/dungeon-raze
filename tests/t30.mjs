@@ -54,6 +54,31 @@ export default [
   c.cls = G.player.clsId === to;
   return all(c);`),
 
+  // a real mouse over the cards; a phone has no __mouse and no hover
+  step("cards stay readable under the mouse", `
+  const c = {}, d = {};
+  if (!window.__mouse) return { pass: true, skipped: true };
+  home();
+  id("btnSolo").click();
+  const lum = (s) => {
+    const v = s.match(/[\\d.]+/g).map(Number), f = (x) => ((x /= 255) <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4),
+      a = v.length > 3 ? v[3] : 1;
+    // a see-through background lies over a near black screen
+    return 0.2126 * f(v[0] * a) + 0.7152 * f(v[1] * a) + 0.0722 * f(v[2] * a);
+  };
+  const ratio = (el, bg) => { const x = lum(getComputedStyle(el).color), y = lum(bg); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+  for (const k of ["on", "other"]) {
+    const el = k === "on" ? $("#scr-class .card.on") : card(other()), r = el.getBoundingClientRect();
+    await window.__mouse(r.left + r.width / 2, r.top + r.height / 2);
+    await frames();
+    const bg = getComputedStyle(el).backgroundColor;
+    d[k] = [ratio(el.querySelector("b"), bg), ratio(el.querySelector("span"), bg)].map((x) => +x.toFixed(1));
+    c[k] = el.matches(":hover") && d[k].every((x) => x >= 4.5);
+  }
+  await window.__mouse(1, 1);
+  home();
+  return { ...all(c), d };`),
+
   // Review Focus 1: no forward button mid-run
   step("class from pause", `
   const c = {};
