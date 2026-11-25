@@ -112,10 +112,9 @@ reload the page and the host makes a new room. Both pages must be the same
 build of the game: the host refuses a page whose build differs, and says so.
 
 The host's dungeon runs in a Web Worker in the host's page, and the friend
-reaches it through a small relay, so co-op needs that relay deployed first: see
-`relay/README.md` for how the owner deploys it, then put its `wss://` address
-in `COOP_RELAY` in `src/08e_coopui.js`. Until then the room screen says it
-cannot reach the relay. Co-op runs from the GitHub Pages site and from
+reaches it through a small relay on Cloudflare. Its `wss://` address is
+`COOP_RELAY` in `src/08e_coopui.js`, and `relay/README.md` says how the owner
+deploys it. Co-op runs from the GitHub Pages site and from
 `localhost` (`npm run dev`, then http://localhost:8000/?coop=1), not from the
 file on disk, and the hosted single page cannot play co-op.
 
