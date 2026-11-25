@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import crypto from "node:crypto";
 // node build.mjs [--release] [--out <file>]
 // --release leaves out src/dev/ (the dev menu), as the published page must.
 const argv = process.argv.slice(2),
@@ -22,13 +23,24 @@ const files = [
 ];
 const read = (f) => fs.readFileSync(f, "utf8"),
   base = (f) => f.pathname.split("/").pop();
+// The co-op build stamp: 8 hex characters of a hash of the core sources
+// (src/*.js in order, not src/dev/), so a dev build and a release build of
+// the same sources carry the same one, and any change to the game's own code
+// gives another. A co-op host refuses a friend's page with a different stamp.
+const core = list(new URL("./src/", import.meta.url));
+const stamp = crypto
+  .createHash("sha256")
+  .update(core.map((f) => base(f) + "\n" + read(f)).join("\n"))
+  .digest("hex")
+  .slice(0, 8);
+const BUILD = "const COOP_BUILD = " + JSON.stringify(stamp) + ";\n";
 // The co-op host is a second copy of the simulation: files 01 to 06d, which
 // need no browser, a few stand-ins for what later files declare, and the
 // source ends by returning COOP_HOST. Every build carries it as a string,
 // COOP_HOST_SRC, which a Worker or a Node test evaluates. COOP_HEADLESS comes
 // first because 06c reads it with typeof, which a const declared later would
 // make a ReferenceError.
-const HOST_HEAD = "const COOP_HEADLESS = true;\n";
+const HOST_HEAD = "const COOP_HEADLESS = true;\n" + BUILD;
 const HOST_STUBS = `
 const PAD = { rumble() {}, move: { x: 0, y: 0, mag: 0 }, active: false, sprint: false, fam: "xb" },
   TOUCH = { move: { x: 0, y: 0, mag: 0 }, on: false },
@@ -50,6 +62,7 @@ const js =
   "const COOP_HOST_SRC = " +
   JSON.stringify(hostSrc).replace(/</g, "\\u003c") +
   ";\n" +
+  BUILD +
   files.map(read).join("\n") +
   "\n})();";
 const tpl = fs.readFileSync(
@@ -63,5 +76,5 @@ console.log(
   files.length,
   "files,",
   (js.length / 1024).toFixed(1),
-  "KiB js" + (release ? " (release)" : ""),
+  "KiB js" + (release ? " (release)" : "") + ", co-op build " + stamp,
 );
