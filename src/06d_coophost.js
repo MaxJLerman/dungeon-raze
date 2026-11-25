@@ -14,21 +14,40 @@ const COOP_HOST = COOP_HEADLESS_HERE
       // ended: the run is over (a player took the gate); nothing more happens.
       // started: the host's own page (pid 1) has sent a state in this run,
       // so its player has pressed Start; it stays set.
-      const S = { px: new Map(), byId: new Map(), step: 0, ended: false, started: false };
+      // epoch: raised by one with each world the host builds, from 1. kind:
+      // "hub" (the hall) or "cave". n: the players the world was built for.
+      const S = {
+        px: new Map(),
+        byId: new Map(),
+        step: 0,
+        ended: false,
+        started: false,
+        epoch: 0,
+        kind: "cave",
+        n: 1,
+      };
       let acc = 0,
         ph = null, // the placeholder
         armed = true, // a wipe may fire; cleared by one, set again by a living player
-        by = 0; // the pid whose proposal is being applied, 0 outside one
+        by = 0, // the pid whose proposal is being applied, 0 outside one
+        sum = "", // the world's checksum, taken once per build
+        // raised by every kill and wipe: a proxy remembers it when its world
+        // or join is sent, and gets the enemies again on arrival if it moved
+        ver = 0;
       const now = () => S.step * COOP.STEP;
       const send = (pid, buf) => {
         if (host.send) host.send(pid, buf);
       };
       const tell = (pid, ev) => send(pid, coopEventEncode(ev));
+      // A proxy that has not answered the world with its at is not there:
+      // events about this world's enemies are not sent to it.
+      const BOUND = ["shot", "ring", "roar", "kill", "reset"];
+      const hears = (px, ev) => px.here || !BOUND.includes(ev[0]);
       const others = (pid, ev) => {
-        for (const id of S.px.keys()) if (id !== pid) tell(id, ev);
+        for (const [id, px] of S.px) if (id !== pid && hears(px, ev)) tell(id, ev);
       };
       const all = (ev) => {
-        for (const id of S.px.keys()) tell(id, ev);
+        for (const [id, px] of S.px) if (hears(px, ev)) tell(id, ev);
       };
       const r2 = (v) => Math.round(v * 100) / 100;
       // co-op offers the base classes; anything else plays as the first
@@ -39,7 +58,7 @@ const COOP_HOST = COOP_HEADLESS_HERE
 
       // Who an enemy hunts: the nearest proxy that is there, alive and not
       // away, kept unless another is COOP.STICK nearer. 0 is nobody.
-      const live = (px) => px && !px.away && px.state !== "dead";
+      const live = (px) => px && px.here && !px.away && px.state !== "dead";
       function pick(e) {
         const cur = S.px.get(e.tg);
         let best = null,
@@ -102,14 +121,14 @@ const COOP_HOST = COOP_HEADLESS_HERE
           if (e.pin && e.state !== "stagger" && !e.dead) e.pin = 0;
         }
       }
-      // Every present player (joined and not away) dead: the enemies are
-      // made again as a respawn makes them. Once per wipe: it fires again
+      // Every present player (joined, there and not away) dead: the enemies
+      // are made again as a respawn makes them. Once per wipe: it fires again
       // only after a present player has been alive.
       function wipe() {
         let n = 0,
           up = false;
         for (const px of S.px.values())
-          if (!px.away) {
+          if (px.here && !px.away) {
             n++;
             if (px.state !== "dead") up = true;
           }
@@ -118,6 +137,7 @@ const COOP_HOST = COOP_HEADLESS_HERE
         armed = false;
         spawnEnemies();
         number();
+        ver++;
         all(["reset", roster(), now()]);
       }
       // Ids are spawn indices. spawnEnemies makes one enemy per spawn, in
@@ -145,11 +165,28 @@ const COOP_HOST = COOP_HEADLESS_HERE
           bossDead: G.bossDead,
         };
       }
+      // The world as join and world carry it: epoch, kind, grade (null in
+      // the hall), seed (0 in the hall), checksum, the players it was built
+      // for, the enemies and host time.
+      function describe() {
+        const hub = S.kind === "hub";
+        return {
+          e: S.epoch,
+          kind: S.kind,
+          grade: hub ? null : G.grade,
+          seed: hub ? 0 : G.seed,
+          sum,
+          n: S.n,
+          ...roster(),
+          t: now(),
+        };
+      }
 
       // What a client is sent: every other proxy, and each enemy that is
       // awake, not idle, dying, or within COOP.RANGE of it, kept a second
-      // after it stops qualifying.
+      // after it stops qualifying. A proxy not there is sent nothing.
       function snap(px) {
+        if (!px.here) return;
         const t = now(),
           players = [],
           list = [];
@@ -168,17 +205,29 @@ const COOP_HOST = COOP_HEADLESS_HERE
         send(px.pid, coopSnapEncode(t, px.ack, players, list));
       }
 
-      const start = ({ seed, grade }) => {
-        newRun(seed, grade);
-        S.px.clear();
-        S.step = 0;
-        S.ended = false;
-        S.started = false;
-        acc = 0;
+      // Builds a world and takes every proxy there: the hall with
+      // enterHub(from, true), in front of from's gate when from is a grade,
+      // or a cave with newRun(seed, grade). Each proxy arrives where the
+      // world put its player (the cave's start, or before the gate), at full
+      // health and not yet there: it is sent the world and is heard again
+      // once its at for this epoch arrives. Its event numbers start again.
+      // won: the run time when the exit gate caused the trip, else null.
+      function build(kind, grade, seed, from, won = null) {
+        if (kind === "hub") enterHub(from, true);
+        else newRun(seed, grade);
+        S.kind = kind;
+        S.n = 1;
+        S.epoch++;
+        sum = coopWorldSum(G.world);
         armed = true;
-        by = 0;
         number();
-        ph = G.player;
+        // where the world put its player, before that player becomes the
+        // placeholder
+        const p = G.player,
+          ax = p.x,
+          az = p.z,
+          ayaw = p.yaw;
+        ph = p;
         // off the field's grid, where resolve leaves it alone
         Object.assign(ph, {
           remote: true,
@@ -189,6 +238,44 @@ const COOP_HOST = COOP_HEADLESS_HERE
           pid: 0,
           inBoss: false,
         });
+        for (const px of S.px.values()) {
+          Object.assign(px, {
+            here: false,
+            heard: -Infinity,
+            away: true,
+            ack: 0,
+            inBoss: false,
+            hp: px.maxHp,
+            state: "free",
+            t: 0,
+            move: null,
+            x: ax,
+            z: az,
+            yaw: ayaw,
+            vx: 0,
+            vz: 0,
+            speed: 0,
+            sprint: false,
+          });
+          px.seen.clear();
+        }
+        const d = { ...describe(), from: kind === "hub" ? from : null, won };
+        for (const px of [...S.px.values()]) {
+          px.ver = ver;
+          tell(px.pid, ["world", d]);
+        }
+      }
+      // A room's first world: the hall with { hub: true }, else the cave
+      // from seed and grade.
+      const start = ({ hub = false, seed, grade = "E" } = {}) => {
+        S.px.clear();
+        S.step = 0;
+        S.ended = false;
+        S.started = false;
+        S.epoch = 0;
+        acc = 0;
+        by = 0;
+        ver = 0;
         NET = {
           host: true,
           enemies,
@@ -202,6 +289,8 @@ const COOP_HOST = COOP_HEADLESS_HERE
           onBlast() {},
           taken: () => false,
         };
+        if (hub) build("hub", null, 0, null);
+        else build("cave", grade, seed, null);
       };
       const join = (pid, cls) => {
         const id = baseCls(cls),
@@ -213,25 +302,14 @@ const COOP_HOST = COOP_HEADLESS_HERE
           away: true,
           inBoss: false,
           ack: 0,
+          here: false, // until its at for this epoch
+          ver,
           seen: new Map(), // enemy id -> host time it last qualified for this client
         });
         S.px.delete(pid);
         const peers = [...S.px.values()].map((o) => [o.pid, o.clsId]);
         S.px.set(pid, px);
-        tell(pid, [
-          "join",
-          {
-            v: COOP_V,
-            pid,
-            seed: G.seed,
-            grade: G.grade,
-            sum: coopWorldSum(G.world),
-            started: S.started,
-            ...roster(),
-            peers,
-            t: now(),
-          },
-        ]);
+        tell(pid, ["join", { v: COOP_V, pid, started: S.started, peers, ...describe() }]);
         others(pid, ["peer", pid, id]);
       };
       const leave = (pid) => {
@@ -250,6 +328,7 @@ const COOP_HOST = COOP_HEADLESS_HERE
         if (e.kSent) return;
         e.kSent = true;
         e.kBy = by;
+        ver++;
         all(["kill", e.id, by, now()]);
       }
 
@@ -330,6 +409,12 @@ const COOP_HOST = COOP_HEADLESS_HERE
         exec(px, [eid]) {
           const e = live1(eid);
           if (!e || e.pin !== px.pid) return;
+          if (e.def.dummy) {
+            // the dummy takes the execution and stands back up, as in
+            // single player
+            Object.assign(e, { hp: e.def.hp, posture: 0, pin: 0, state: "idle", t: 0 });
+            return;
+          }
           e.hp = 0;
           as(px, () => kill(e));
         },
@@ -337,6 +422,24 @@ const COOP_HOST = COOP_HEADLESS_HERE
           if (!G.bossDead) return;
           all(["end", G.runT]);
           S.ended = true;
+        },
+        // ["travel", seq, to, seed]: the host's own player (pid 1) takes the
+        // party from the hall to a grade's cave from seed, or from a cave
+        // back to the hall, in front of that grade's gate
+        travel(px, [to, seed]) {
+          if (px.pid !== 1) return;
+          if (to === "hub") {
+            if (S.kind !== "hub") build("hub", null, 0, G.grade);
+          } else if (S.kind === "hub" && COOP.GRADES.includes(to) && num(seed))
+            build("cave", to, seed, null);
+        },
+        // ["at", seq, e]: this player is in the world of epoch e. If the
+        // enemies have changed since its world or join was sent, it is sent
+        // them again.
+        at(px, [e]) {
+          if (px.here || e !== S.epoch) return;
+          px.here = true;
+          if (px.ver !== ver) tell(px.pid, ["reset", roster(), now()]);
         },
         pshot(px, a) {
           if (a.length < 8 || !a.slice(0, 8).every(num)) return;
@@ -372,19 +475,25 @@ const COOP_HOST = COOP_HEADLESS_HERE
       // only the host sends) are ignored. A seq must be an integer from 1 to
       // 65535 (a client counts from 1 and never wraps): any other is refused
       // and not acknowledged. A good seq is acknowledged whether or not the
-      // event was honoured.
+      // event was honoured, unless it swapped the world: the new world's
+      // numbers start again from 0. From a player not there (no at for this
+      // epoch yet) only an at is heard; anything else is dropped and not
+      // acknowledged, so nothing meant for the old world lands in the new.
       function ask(px, ev) {
         if (!Array.isArray(ev)) return;
         const [name, seq, ...args] = ev;
         if (!Number.isInteger(seq) || seq < 1 || seq > 65535) return;
+        if (!px.here && name !== "at") return;
+        const b0 = by,
+          e0 = S.epoch;
         try {
           if (typeof name === "string" && Object.hasOwn(ASK, name)) {
             by = px.pid;
             ASK[name](px, args);
           }
         } finally {
-          by = 0;
-          px.ack = Math.max(px.ack, seq);
+          by = b0;
+          if (S.epoch === e0) px.ack = Math.max(px.ack, seq);
         }
       }
 
@@ -398,8 +507,9 @@ const COOP_HOST = COOP_HEADLESS_HERE
         if (ev[2] === COOP_V && ev[4] === COOP_BUILD) join(pid, ev[3]);
         else tell(pid, ["no", "version"]);
       }
-      // A STATE frame moves its proxy; an EVENT is a request. Anything that
-      // does not decode is dropped. After the run has ended nothing is heard.
+      // A STATE frame moves its proxy (not one that is not there); an EVENT
+      // is a request. Anything that does not decode is dropped. After the
+      // run has ended nothing is heard.
       const recv = (pid, buf) => {
         const px = S.px.get(pid);
         if (S.ended) return;
@@ -408,6 +518,7 @@ const COOP_HOST = COOP_HEADLESS_HERE
           if (!px) {
             if (k === COOP.EVENT) hello(pid, coopEventDecode(buf));
           } else if (k === COOP.STATE) {
+            if (!px.here) return;
             const s = coopStateDecode(buf);
             px.x = s.x;
             px.z = s.z;
@@ -577,6 +688,9 @@ const COOP_HOST = COOP_HEADLESS_HERE
         S,
         worker,
         sum: coopWorldSum,
+        // for tests: the hall as either kind of page builds it, and a save
+        genHub,
+        clearGrade,
         wire: {
           type: coopType,
           snapEncode: coopSnapEncode,

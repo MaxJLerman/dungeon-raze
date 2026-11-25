@@ -2065,12 +2065,14 @@ function newRun(seed, grade = "E") {
 }
 // Puts the player in the hall. With fromGrade they step out of that grade's
 // portal, facing into the hall; otherwise they stand at the start point.
-function enterHub(fromGrade = null) {
+// coop builds the co-op hall (genHub) for a co-op world swap, which stays in
+// co-op.
+function enterHub(fromGrade = null, coop = false) {
   // leaving a co-op run for the base ends co-op before the world goes
-  if (NET && NET.client) coopEnd("left");
+  if (!coop && NET && NET.client) coopEnd("left");
   G.zone = "hub";
   setEnv(ENV_HUB);
-  G.world = genHub();
+  G.world = genHub(coop);
   SFX.setEcho(!!G.world.sewer);
   R.setWorld(G.world.pos, G.world.col, G.world.mat, G.world.pieces);
   resetRun();

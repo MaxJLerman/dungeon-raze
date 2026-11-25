@@ -440,6 +440,8 @@ function coopJoin(j) {
   };
   for (const q of Array.isArray(j.peers) ? j.peers : [])
     if (Array.isArray(q) && coopNum(q[0]) && typeof q[1] === "string") coopPeer(q[0], q[1]);
+  // this page is in the host's world: until it says so the host ignores it
+  coopAsk("at", j.e);
 }
 // The puppets, from the host's list as the join and reset events carry it:
 // [id, type, x, z, yaw] each, leaving out the ids in dead and any entry that

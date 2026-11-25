@@ -1133,6 +1133,7 @@ export default [
         DF.DEV.god = false;
         // a second player on the host, whose hit lands as this page's pin does
         h.join(2, "fighter");
+        recv(2, h.wire.eventEncode(["at", 1, h.S.epoch]));
         const p = G.player,
           he = co.husk(37),
           pe = co.pup(37);
@@ -1146,7 +1147,7 @@ export default [
           if (pid === 1 && h.wire.type(buf) === 3) {
             const ev = h.wire.eventDecode(buf);
             if (ev[0] === "pin" && ev[2] === he.id)
-              recv(2, h.wire.eventEncode(["hit", 1, he.id, 500, 0, 0, "melee", null, null, "stagger", he.an]));
+              recv(2, h.wire.eventEncode(["hit", 2, he.id, 500, 0, 0, "melee", null, null, "stagger", he.an]));
           }
           return out;
         };
@@ -1197,6 +1198,7 @@ export default [
       DF.setClass("mage");
       // a second player on the host, to see what it forwards
       h.join(2, "fighter");
+      h.recv(2, h.wire.eventEncode(["at", 1, h.S.epoch]));
       const got = [];
       h.send = (pid, buf) => {
         if (pid === 2 && h.wire.type(buf) === 3) {

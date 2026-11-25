@@ -180,8 +180,9 @@ export default [
       } finally {
         DF.SFX.hit = hit0;
       }
+      // this page sent no event but its at (seq 1)
       return {
-        pass: he.dead && he.kBy === 2 && pe.dead && flash > 0 && quiet > 0 && loud === 0 && arcs > 0 && swung && G.kills === 0 && DF.CC.seq === 0,
+        pass: he.dead && he.kBy === 2 && pe.dead && flash > 0 && quiet > 0 && loud === 0 && arcs > 0 && swung && G.kills === 0 && DF.CC.seq === 1,
         hostDead: he.dead,
         killedBy: he.kBy,
         puppetDead: pe.dead,
@@ -662,6 +663,7 @@ export default [
           before: (h) => {
             const ask = (ev) => h.recv(9, h.wire.eventEncode([ev[0], ++c8.seq, ...ev.slice(1)]));
             h.recv(9, h.wire.eventEncode(["hello", 0, h.v, "fighter", h.build]));
+            ask(["at", h.S.epoch]);
             const husks = [...h.S.byId.values()].filter((e) => e.type === "husk" && e.id !== 37);
             const [a, b] = husks,
               s = h.S.byId.get(37);
@@ -801,6 +803,7 @@ export default [
         before: (h) => {
           const ask = (ev) => h.recv(9, h.wire.eventEncode([ev[0], ++c8.seq, ...ev.slice(1)]));
           h.recv(9, h.wire.eventEncode(["hello", 0, h.v, "fighter", h.build]));
+          ask(["at", h.S.epoch]);
           const wd = [...h.S.byId.values()].find((e) => e.def.boss);
           for (let i = 0; i < 20 && !wd.dead; i++) ask(["hit", wd.id, 500, 0, 1, "melee", wd.x, wd.z, wd.state, wd.an]);
           killed = wd.dead && h.G.bossDead;

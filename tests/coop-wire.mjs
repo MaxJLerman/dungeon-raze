@@ -1,7 +1,7 @@
 // The co-op wire formats and the fake link.
 // Run with: node build.mjs && node tests/coop-wire.mjs
 import assert from "node:assert/strict";
-import { loadHost, check, done } from "./lib/coop.mjs";
+import { loadHost, fakeClient, check, done } from "./lib/coop.mjs";
 
 const host = loadHost();
 host.start({ seed: 99, grade: "E" });
@@ -140,6 +140,33 @@ check("state and event round trips", () => {
   assert.equal(d.guardT, 0);
   assert.equal(d.sprint, true);
   assert.equal(W.stateDecode(W.stateEncode({ ...p, move: null, sprint: false })).move, null);
+});
+
+check("a world event with a full description survives the round trip", () => {
+  const h = loadHost();
+  h.start({ hub: true });
+  const c = fakeClient(h, 1, "fighter");
+  c.ev("travel", "E", 99);
+  const ev = c.events.find((q) => q[0] === "world");
+  assert.ok(ev, "no world event");
+  const d = ev[1];
+  for (const k of ["e", "kind", "grade", "seed", "sum", "n", "enemies", "dead", "bossDead", "t", "from", "won"])
+    assert.ok(Object.hasOwn(d, k), "the description has no " + k);
+  assert.deepEqual(W.eventDecode(W.eventEncode(ev)), ev);
+  // and a hand-made one, back to the hall with a run time
+  const back = ["world", { ...d, e: 3, kind: "hub", grade: null, seed: 0, enemies: [[0, "dummy", -5, -1, 3.14]],
+    dead: [], bossDead: false, from: "E", won: 312.45 }];
+  assert.deepEqual(W.eventDecode(W.eventEncode(back)), back);
+});
+
+check("a join of cave 99 fits in one relay frame", () => {
+  const h = loadHost();
+  h.start({ seed: 99, grade: "E" });
+  const c = fakeClient(h, 1, "fighter");
+  fakeClient(h, 2, "mage");
+  const b = W.eventEncode(["join", c.join]);
+  // the relay closes a socket on a frame over 16,384 bytes; it adds the pid byte
+  assert.ok(b.byteLength + 1 < 16384, "a join of " + b.byteLength + " bytes");
 });
 
 check("the fake link delays, keeps order and never drops", () => {

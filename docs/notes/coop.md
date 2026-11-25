@@ -57,7 +57,10 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
     `NET.onShoot`, and `playerUpdate` at the exit gate `NET.onGate()`.
     `nearestStaggered` skips an enemy `NET.taken(e)` (the other player has
     begun to execute it). `enterHub` ends a client's co-op run
-    (`coopEnd("left")`).
+    (`coopEnd("left")`), unless its second argument, `coop`, is true:
+    `enterHub(fromGrade, true)` is a co-op world swap to the co-op hall
+    (`genHub(true)`, `zones.md`), which the host's `build` makes and which
+    stays in co-op.
   - `09_main.js`: `frame` calls `NET.frame(dt)` every frame in real time
     and runs the simulation under every screen while `NET.live`
     (`coopStill` keeps a paused player still, and the title's own clock
@@ -72,13 +75,47 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   of its own. Each joined player is a proxy (`makePlayer`, flagged `remote`,
   never stepped, moved to where its machine last said it was). `G.player`
   is a placeholder, dead and far off the grid, so code that reads it outside
-  an enemy's step finds nobody. Each enemy has a target (`e.tg`, a pid): the
+  an enemy's step finds nobody. Every world the host builds makes a new
+  `G.player`, which becomes the placeholder. Each enemy has a target (`e.tg`, a pid): the
   nearest proxy that is there, alive and not away, kept unless another is
   `COOP.STICK` (3 m) nearer. For each enemy's step `as(px, fn)` points
   `G.player` and `G.inBoss` at that proxy and puts them back after. A hit
   from a player the enemy can see turns it on them. This leaves the
   single-player code and its tests alone, at the cost of the leaks listed in
   Known problems.
+- **Worlds and travel** (the host, `06d`). A room's world is the hall
+  (`S.kind` `"hub"`) or a grade's cave from a seed (`"cave"`).
+  `host.start({ hub: true })` starts in the hall; `host.start({ seed,
+  grade })` still starts in a cave (the lag dial, t27, t28, the Node tests
+  and, until the room screen changes, the Worker). Every world comes from
+  one internal `build(kind, grade, seed, from, won)`: `enterHub(from, true)`
+  or `newRun(seed, grade)`, the placeholder re-pointed, `number()`, and
+  `S.epoch` raised by one (the first world is epoch 1). Every proxy is
+  taken along: moved to where the world put its player (the cave's start,
+  or 3.5 m in front of `from`'s gate in the hall), full health, state
+  `"free"`, its `seen` cleared, `heard` `-Infinity`, `ack` 0 and `here`
+  false; then each is sent `world`. `S.n` is the players the world was
+  built for, always 1 for now. The co-op hall has E open and every other
+  gate sealed whatever the save says (`genHub(true)`), so the host, which
+  has no save, and both pages build one mesh. `NET` is set once in `start`,
+  before the first build. **Only pid 1 travels** (`travel`): to a grade in
+  `COOP.GRADES` (`["E"]`) with a finite seed from the hall, or to `"hub"`
+  from a cave (back in front of that grade's gate). Anything else is
+  ignored. **A proxy is not there** (`here` false) from its join or a world
+  until its `at` for the current epoch arrives: its states are ignored, of
+  its events only `at` is heard (the rest are dropped unacknowledged, so a
+  hit meant for the old world cannot land on an enemy that reuses its id,
+  and a `gate` or `travel` crossing a swap does nothing), it is not `live()`
+  (not hunted) and not counted by `wipe()`, it is sent no snapshots, and
+  `all` and `others` skip it for the world-bound events `shot`, `ring`,
+  `roar`, `kill` and `reset`. A counter (`ver`) is raised by every kill and
+  wipe and remembered on each proxy when its join or world is sent; an `at`
+  that finds it changed is answered with `reset` (the enemies again). An
+  event that swaps the world is not acknowledged, since the new world's
+  numbers start again: the host's ack is 0 and the client counts from 1
+  (its `at`). In the hall the dummy is a host enemy like any other; an
+  `exec` on it gives back its health and posture, clears the pin and sends
+  no `kill`, as single player's execution does.
 - **The wire** (`06c`). Every frame is an `ArrayBuffer` whose first byte is
   its kind: `COOP.SNAP` (1), host to client, 20 a second: host time, the
   ack (the client's highest event seq processed), the other player's record
@@ -86,15 +123,27 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   `COOP.RANGE` (45 m) of that client, kept a second after it stops
   qualifying; `COOP.STATE` (2), client to host, 30 a second: its player;
   `COOP.EVENT` (3): a JSON array, name first. A client's events are
-  numbered (`[name, seq, ...]`, from 1, never wrapping) and are requests:
-  `hello` (`["hello", 0, COOP_V, cls, COOP_BUILD]`), `hit`, `parry`, `pin`,
+  numbered (`[name, seq, ...]`, from 1 in each world, never wrapping) and
+  are requests: `hello` (`["hello", 0, COOP_V, cls, COOP_BUILD]`), `at`
+  (`["at", seq, e]`: this page is in the world of epoch `e`; a page sends it
+  as soon as it has applied a join, a joiner of a cave included, and must
+  send it for every `world`), `travel` (`["travel", seq, to, seed]`, `to`
+  `"hub"` or a grade in `COOP.GRADES`, `seed` ignored for `"hub"`; pid 1
+  only), `hit`, `parry`, `pin`,
   `exec`, `gate`, `pshot`, `pblast`, `cls` (`["cls", seq, class]`, a class
   picked on the room screen or changed from the pause menu mid-run: the
   proxy becomes that class where it stands, with the same share of health,
   a hidden one as the first base class, and the other player is told with
-  the host's own `cls`). The host's events: `join` (seed,
-  grade, the cave's checksum, `started`, the enemy list, dead ids, the
-  boss's death, the peers), `no` (`["no", "version"]` for a hello whose
+  the host's own `cls`). The host's events carry a world description `D =
+  { e, kind, grade, seed, sum, n, enemies, dead, bossDead, t }`: the epoch,
+  `"hub"` or `"cave"`, the grade (`null` in the hall), the seed (0 in the
+  hall), the world's checksum, the players it was built for, the enemy
+  list, dead ids, the boss's death and host time. `join` is `["join", { v,
+  pid, started, peers, ...D }]`; `world` is `["world", { ...D, from, won
+  }]`, sent to every player on each swap (`from`, the grade whose gate the
+  party comes out of in the hall, else `null`; `won`, the run time when the
+  exit gate caused it, else `null`; for now the gate still sends `end`).
+  The rest: `no` (`["no", "version"]` for a hello whose
   version is not `COOP_V` or whose build is not the host's `COOP_BUILD`, a
   hello with no build included), `started` (the host's page has sent its
   first state, so its player has pressed Start; sent once to a friend
@@ -108,7 +157,10 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   refuses one it cannot read as `"bad"`; it then builds the cave from the
   seed and refuses the run if `coopWorldSum` (FNV-1a over the mesh
   positions) differs; it never reads its own spawn list, only the host's.
-  All numbers are in `COOP`.
+  All numbers are in `COOP`. `COOP_V` is 2 (it was 1 before `world`,
+  `travel` and `at`). The page does not yet follow a `world` event or start
+  a room in the hall. A join of cave 99 is about 1.5 kB, well under the
+  relay's 16,384-byte frame.
 - **The clock.** The client draws the host's world `COOP.DELAY` (100 ms)
   behind its estimate of the host's time, `CC.est`: its own real-time clock
   plus the largest offset (host time less arrival time) of any snapshot that
@@ -288,7 +340,9 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
   `coopSolo` runs a co-op run alone over the fake link (`coopFakePair`)
   with a host stepped on the page, and the dev menu's "Co-op alone, with
   lag" button opens a panel with ping, jitter, loss and a scripted second
-  player. It is the tool for checking feel. The fake link draws its jitter
+  player (`coopMateBot`, which answers its join and every `world` with
+  `at`, counting its events from 1 again after a world). It is the tool for
+  checking feel. The fake link draws its jitter
   and loss from `cfg.rnd` (`Math.random` when unset); `coopSolo` takes
   `rnd` and otherwise makes a generator from the fixed `LAG_SEED` for each
   run, so a test sees the same jitter and loss every time, while the lag
@@ -303,10 +357,20 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
   ends `all passed`:
   - `node tests/coop-host.mjs`: the host copy in Node with scripted fake
     clients (targets and the swap, proposals, parries, executions, kill
-    credit, the boss chamber, wipes, joining mid-run), and the Worker
+    credit, the boss chamber, wipes, joining mid-run; a room that starts in
+    the hall, `travel` and its refusals, the epoch and `at`, back to the
+    hall, a second trip, crossing requests, a join mid-swap, the dummy's
+    execution), and the Worker
     driver with a stand-in for the Worker's global (the 0.25 s cap, the
     pid byte, relay notices, a closed relay, stop and the end).
-  - `node tests/coop-wire.mjs`: the wire formats and the fake link.
+    `fakeClient(host, pid, cls, { at = true })` in `tests/lib/coop.mjs`
+    answers every join and world with `at` at once, as a page does; with
+    `at` false the test sends it with `c.arrive()`. Its event numbers start
+    again after each world, and `c.world` is the latest description. A test
+    that joins a player some other way (`host.join`, a hello) must send that
+    player's `at` itself, or the host ignores it.
+  - `node tests/coop-wire.mjs`: the wire formats and the fake link, a
+    `world` event's round trip and a join's size against the relay's cap.
   - `node tests/coop-caves.mjs`: caves built from seeds 1 to 40 in Node,
     Chromium, Firefox and WebKit compared by checksum (run it after any
     change to cave generation).
@@ -381,9 +445,10 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
   drawn body.
 - A guessed-dead enemy that is still alive on the host but further than
   45 m away stays dead on that client.
-- A co-op run with more than 65,535 events from one player stops being
-  acknowledged: the seq travels in the JSON event and never wraps, but the
-  ack in a snapshot is 16 bits, and the host refuses a seq above 65,535.
+- A co-op world in which one player sends more than 65,535 events stops
+  acknowledging them: the seq travels in the JSON event and never wraps,
+  but the ack in a snapshot is 16 bits, and the host refuses a seq above
+  65,535. The count starts again with each world.
 - The checksum that refuses a different cave covers the world mesh
   positions only.
 - In co-op, a dead player's screen still says the enemies come back, which

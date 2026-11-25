@@ -5,7 +5,7 @@
 // changes. Pages on different builds are told apart by COOP_BUILD, which
 // build.mjs declares before the sources (a hash of them), so neither needs
 // remembering when MOVES or EDEF are tuned.
-const COOP_V = 1;
+const COOP_V = 2;
 const COOP = {
   SNAP: 1, // message kinds
   STATE: 2,
@@ -27,6 +27,7 @@ const COOP = {
   // 600 frames through and holds a socket to 120 a second after that.
   SOCK_FULL: 8192,
   TICK_MAX: 0.25, // the most elapsed time the Worker hands the host in one call
+  GRADES: ["E"], // the grades a co-op room may travel to (the co-op hall opens E only)
 };
 // True only in the host copy, whose build declares COOP_HEADLESS first.
 const COOP_HEADLESS_HERE = typeof COOP_HEADLESS !== "undefined";

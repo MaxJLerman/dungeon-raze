@@ -113,6 +113,8 @@ const HELP = `
       // its page does once Start has been pressed
       hostStarts(host) {
         if (!host.S.px.has(1)) host.join(1, "fighter");
+        // its page answers the join with its at before anything else
+        if (!host.S.px.get(1).here) host.recv(1, host.wire.eventEncode(["at", 1, host.S.epoch]));
         const sp = host.G.world.spawn;
         host.recv(1, host.wire.stateEncode({ x: sp.x, z: sp.z, yaw: 0, vx: 0, vz: 0, state: "free", t: 0, move: null, hp: 1, maxHp: 1, speed: 0, guardT: 0, sprint: false }));
       },
@@ -215,7 +217,7 @@ export default [
   c.held = s.sent.length === 0;
   s.open();
   const hello = s.sent.length ? c9.sentEv(s.sent[0]) : null;
-  c.hello = !!hello && hello[0] === "hello" && hello[2] === 1 && DF.CLASSES[hello[3]] && !DF.CLASSES[hello[3]].hidden &&
+  c.hello = !!hello && hello[0] === "hello" && hello[2] === 2 && DF.CLASSES[hello[3]] && !DF.CLASSES[hello[3]].hidden &&
     /^[0-9a-f]{8}$/.test(hello[4]) && hello[4] === DF.coopBuild;
   // Back leaves the room and closes the socket
   c9.back();
@@ -254,7 +256,7 @@ export default [
   s.open(); s.hear([0, 1]);
   c.joinedIgnored = DF.CC.link !== null && c9.msg() === "";
   // a cave that is not the host's: the join's sum does not match
-  s.hear(c9.ev(["join", { v: 1, pid: 2, seed: 99, grade: "E", sum: "00000000", enemies: [], dead: [], bossDead: false, peers: [], t: 0 }]));
+  s.hear(c9.ev(["join", { v: 2, e: 1, kind: "cave", n: 1, pid: 2, seed: 99, grade: "E", sum: "00000000", enemies: [], dead: [], bossDead: false, peers: [], t: 0 }]));
   c.cave = c9.msg() === MSG.cave && DF.G.zone === "hub" && DF.net() === null && s.readyState === 3;
   c.r = Object.fromEntries(Object.entries(r).map(([k, o]) => [k, o.msg]));
   return { pass: Object.values(c).every((v) => v === true || typeof v === "object"), c };`),
@@ -648,20 +650,21 @@ export default [
   const { s, h } = await c9.friendIn();
   c.cards = !!DF.net() && c9.shown(pick) && cards().length === base.length;
   c.first = h.S.px.get(2).clsId === base[0] && slots()[0] === base[0];
-  // a pick: one numbered request, which the host takes
+  // a pick: one numbered request (the page's first was its at), which the host takes
   const n0 = s.sent.length, to = base[2];
   cards().find((b) => b.dataset.cls === to).click();
   await c9.frames();
   const ev = s.sent.length === n0 + 1 ? c9.sentEv(s.sent[n0]) : null;
-  c.asked = JSON.stringify(ev) === JSON.stringify(["cls", 1, to]);
+  c.asked = JSON.stringify(ev) === JSON.stringify(["cls", 2, to]);
   if (ev) h.recv(2, s.sent[n0].slice().buffer);
   c.hostHas = h.S.px.get(2).clsId === to && h.S.px.get(2).maxHp === DF.CLASSES[to].hp;
   c.mine = DF.G.player.clsId === to && DF.OPT.cls === to && slots()[0] === to && DF.CC.cls === to;
   // the host's player arrives and then picks: its slot follows
   h.join(1, base[1]);
+  h.recv(1, h.wire.eventEncode(["at", 1, h.S.epoch]));
   await c9.frames();
   c.mate = slots()[1] === base[1] && DF.net().mates.length === 1;
-  h.recv(1, h.wire.eventEncode(["cls", 1, base[4]]));
+  h.recv(1, h.wire.eventEncode(["cls", 2, base[4]]));
   await c9.frames();
   c.mateChanged = slots()[1] === base[4] && DF.net().mates.length === 1 && DF.net().mates[0].clsId === base[4];
   // the friend enters as what it picked
@@ -683,14 +686,14 @@ export default [
   const n1 = s.sent.length, to2 = base[1];
   own.find((b) => b.dataset.cls === to2).click();
   const evs = s.sent.slice(n1).map((b) => c9.sentEv(b)).filter((e) => e && e[0] === "cls");
-  c.askedMidRun = evs.length === 1 && evs[0][1] === 2 && evs[0][2] === to2;
+  c.askedMidRun = evs.length === 1 && evs[0][1] === 3 && evs[0][2] === to2;
   for (const b of s.sent.slice(n1)) h.recv(2, b.slice().buffer);
   c.hostHasMidRun = h.S.px.get(2).clsId === to2;
   c.kept = DF.G.player.clsId === to2 && DF.G.player.x === at[0] && DF.G.player.z === at[1] &&
     Math.abs(DF.G.player.hp - DF.CLASSES[to2].hp / 2) < 1e-6 && !!DF.net() && DF.net().live;
   // and the host's change mid-run is the same mate, where it stood
   const m0 = DF.net().mates[0], mx = m0.x;
-  h.recv(1, h.wire.eventEncode(["cls", 2, base[0]]));
+  h.recv(1, h.wire.eventEncode(["cls", 3, base[0]]));
   await c9.frames();
   c.mateMidRun = DF.net().mates.length === 1 && DF.net().mates[0] === m0 && m0.clsId === base[0] &&
     m0.maxHp === DF.CLASSES[base[0]].hp && m0.x === mx && m0.flash === 0;

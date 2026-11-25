@@ -5,8 +5,10 @@
 - `G.zone` is `"hub"` for the hall or `"cave"`, and stays `"cave"` for every
   grade's run, the sewer included. `G.grade` says which. `G.world` holds
   whichever world is active, and nothing else is kept loaded.
-- `enterHub(fromGrade)` builds the hall and puts the player at the start, or
-  in front of that grade's portal looking toward the middle of the hall. `enterCave(gradeId, seed)` calls
+- `enterHub(fromGrade, coop = false)` builds the hall and puts the player at
+  the start, or in front of that grade's portal looking toward the middle of
+  the hall. With `coop` true it builds the co-op hall (`genHub(true)`) and
+  does not end co-op: that is a co-op world swap (`coop.md`). `enterCave(gradeId, seed)` calls
   `newRun(seed, gradeId)`. `newRun(seed, grade = "E")` records `G.grade`, sets
   the air from `ENV_GRADE[grade]` (the cave's when the grade has none), builds
   the world with `WORLD_GEN[grade]` (`genWorld` when the grade has none), turns
@@ -15,6 +17,8 @@
 - `genHub()` returns every field `genWorld` returns, with empty arrays where a
   field has no meaning, plus `hub: true`, `portals` and `dummySpot`. Keep it
   that way: code that reads `G.world` has no checks for the hall.
+  `genHub(true)` is the co-op hall, built from `hubPortals(true)`; a test may
+  pass a list of portals in place of the flag.
 - The hall and the cave share `fieldFns` and `meshSink` in `03_world.js`, so
   both collide and pack triangles the same way.
 - The hall is centred on the origin with north at +Z. The player starts facing
@@ -55,7 +59,9 @@
 - **Which gates are open.** `LIVE_GRADES` (in `03b_hub.js`) is the set of
   grades whose content is finished. `portalOpen(grade)`: E is always open;
   a higher grade is open when it is in `LIVE_GRADES` and the grade below is
-  cleared. `hubPortals()` takes `open` from it. It holds E and D, so D opens
+  cleared. `hubPortals()` takes `open` from it. `hubPortals(true)`, the
+  co-op hall's, ignores the save: E open, every other gate sealed, so a
+  co-op host with no save and both pages build the same mesh. It holds E and D, so D opens
   once E's boss is dead and C to S stay sealed. A test that takes D out
   through `DF.LIVE_GRADES` puts it back before it ends.
 

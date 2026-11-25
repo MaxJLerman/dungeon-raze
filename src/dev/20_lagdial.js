@@ -225,11 +225,15 @@ function coopMateBot(host, mode) {
       host.leave(2);
     },
     // what the host sends it: a wipe brings it back at the start, as a page
-    // respawns at its first shrine; the end stops it
+    // respawns at its first shrine; the end stops it; a world it answers
+    // with its at at once, counting its events from 1 again
     recv(buf) {
       if (bot.left || wire.type(buf) !== COOP.EVENT) return;
       const ev = wire.eventDecode(buf);
-      if (ev[0] === "reset") {
+      if (ev[0] === "world") {
+        seq = 0;
+        ask("at", ev[1].e);
+      } else if (ev[0] === "reset") {
         bot.resets++;
         if (p.state === "dead") {
           bot.revive();
@@ -278,6 +282,9 @@ function coopMateBot(host, mode) {
     },
   };
   host.recv(2, wire.eventEncode(["hello", 0, host.v, cls, host.build]));
+  // its join went out before the caller kept the bot, so recv never saw
+  // it: it answers the join's world here
+  if (host.S.px.has(2)) ask("at", host.S.epoch);
   return bot;
 }
 DF.coopSolo = coopSolo;
