@@ -580,7 +580,13 @@ is what you need to change the code without breaking it.
   `popstate` under touch pauses from play and arms another entry. From the
   pause, dead and win screens it only arms another, and from a menu it goes
   to the menu's return screen as that screen's Back button does, so a second
-  Back does not leave the page. Back is not caught on the title screen. Each
+  Back does not leave the page. `TOUCH.menuOpen`, which `openMenu` calls
+  for a menu opened over the main menu, arms the entry too, so Back on the
+  class screen, the room screen, How to play or Controls returns to the
+  main menu even before the first play (`tests/t30.mjs` checks it with a
+  real `history.back()`, since a made-up `popstate` cannot tell). Back is
+  not caught on the main menu itself; an entry left armed there (the
+  menu's own Back button was used) takes one Back that does nothing. Each
   of fullscreen and the lock can be refused or missing, as on iPhone, and
   every refusal is caught.
 - Under touch the game also pauses when fullscreen ends (Android's Back
@@ -1941,7 +1947,7 @@ The class picker and HUD read `CLASSES` and need no changes.
   `DEVICE=iphone-se SCRIPT=$PWD/tests/t30.mjs node test.mjs title`. It
   checks the four buttons and the missing picker, the solo and online
   paths, the class screen from pause (no forward button), Back, Esc and
-  the touch Back gesture, Enter on the menu, where the co-op line sits,
+  the touch Back gesture (a real one included), Enter on the menu, where the co-op line sits,
   that everything fits, the exits from the hall, a cave, the death and win
   screens, that a class picked after an exit is the one played, and an
   exit in the middle of a portal fade. Look at `shots/t30-menu.png`,

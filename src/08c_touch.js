@@ -20,6 +20,7 @@ const TOUCH = {
   relayout: null,
   checkPortrait: null,
   enterPlay: null,
+  menuOpen: null,
   release() {},
 };
 (() => {
@@ -492,7 +493,8 @@ const TOUCH = {
       true,
     );
     // The Back gesture pauses the game instead of leaving the page. Back on the
-    // pause screen or a menu stays where it is, as its Back button would.
+    // pause screen or a menu stays where it is, as its Back button would. A
+    // menu opened from the main menu has its entry from TOUCH.menuOpen.
     addEventListener("popstate", () => {
       armed = false;
       if (!TOUCH.on) return;
@@ -570,6 +572,12 @@ const TOUCH = {
   TOUCH.enterPlay = () => {
     arm();
     goLandscape();
+  };
+  // From the tap that opens a menu over the main menu: the Back catcher, so
+  // that Back there returns to the main menu and does not leave the page.
+  // Before the first play nothing else has armed one.
+  TOUCH.menuOpen = () => {
+    if (TOUCH.on) arm();
   };
   TOUCH.setOn = setOn;
   TOUCH.relayout = () => {

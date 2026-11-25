@@ -115,6 +115,8 @@ function menuGoBack() {
 // button on the main menu opens it, nothing when the pause screen does.
 function openMenu(which, why) {
   if (!MENUS.includes(G.state)) menuBack = G.state;
+  // under touch, Back from a menu over the main menu must have an entry to use
+  if (menuBack === "title") TOUCH.menuOpen();
   if (which === "controls") renderControls();
   else if (which === "class") {
     classFor = why === "solo" || why === "online" ? why : null;

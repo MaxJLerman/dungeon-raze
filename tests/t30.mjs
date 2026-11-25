@@ -131,6 +131,35 @@ export default [
   }
   return all(c);`),
 
+  // A real Back, not a made-up event: before the first play nothing has
+  // given the browser an entry to go back to but the page before the game.
+  step("a real Back under touch on the class screen stays on the page", `
+  const c = {}, touch0 = DF.TOUCH.on;
+  const back = () => new Promise((res) => {
+    const on = () => { clearTimeout(t); res(true); };
+    const t = setTimeout(() => { removeEventListener("popstate", on); res(false); }, 1500);
+    addEventListener("popstate", on, { once: true });
+    history.back();
+  });
+  try {
+    DF.TOUCH.setOn(true);
+    home();
+    id("btnSolo").click();
+    c.fromClass = (await back()) && G.state === "title";
+    id("btnCoop").click();
+    id("btnPlay").click();
+    c.fromRoom = (await back()) && G.state === "title";
+    id("btnSolo").click();
+    $("#scr-class [data-back]").click();
+    id("btnSolo").click();
+    c.afterButton = (await back()) && G.state === "title";
+    c.here = location.pathname.endsWith("index.html");
+  } finally {
+    DF.TOUCH.setOn(touch0);
+    home();
+  }
+  return all(c);`),
+
   // Review Focus 5
   step("fits a small screen", `
   const c = {}, d = {};
