@@ -113,8 +113,9 @@ build of the game: the host refuses a page whose build differs, and says so.
 
 The host's dungeon runs in a Web Worker in the host's page, and the friend
 reaches it through a small relay on Cloudflare. Its `wss://` address is
-`COOP_RELAY` in `src/08e_coopui.js`, and `relay/README.md` says how the owner
-deploys it. Co-op runs from the GitHub Pages site and from
+`COOP_RELAY` in `src/08e_coopui.js`, and [Deploy](#deploy) below says how
+both the page and the relay are put on the internet. Co-op runs from the
+GitHub Pages site and from
 `localhost` (`npm run dev`, then http://localhost:8000/?coop=1), not from the
 file on disk, and the hosted single page cannot play co-op.
 
@@ -167,6 +168,109 @@ stamina, flasks, tool charges and focus kept full (dodge, parry and block
 still work). Nothing it does is saved: a boss killed in a run it started, or
 under god mode, does not count as a cleared grade. Any copy of the page that
 is published must be built with `node build.mjs --release`.
+
+## Deploy
+
+There are two things on the internet, and they are deployed separately:
+
+| What      | Where                 | Address                                                | How it gets there                      |
+| --------- | --------------------- | ------------------------------------------------------ | -------------------------------------- |
+| The game  | GitHub Pages          | https://maxjlerman.github.io/dungeon-raze/             | Every push to `main`, by itself        |
+| The relay | A Cloudflare Worker   | https://dungeon-raze-relay.dungeon-raze.workers.dev    | The owner runs `npx wrangler deploy`   |
+
+Single player needs only the game. The relay is used by co-op alone.
+
+### The game (GitHub Pages)
+
+Nothing is run by hand. A push to `main`, which a merged pull request is,
+starts `.github/workflows/pages.yml`: it runs `node build.mjs --release` and
+publishes `dist/` to GitHub Pages. The page is live about a minute later.
+Reload it once to get the new build. The workflow can also be started from
+the repository's Actions tab (Pages, then Run workflow).
+
+### The relay (Cloudflare, with Wrangler)
+
+The relay is the code in `relay/`. Wrangler is Cloudflare's command-line
+tool, and it is already a dev dependency of this repository, so nothing is
+installed globally. A free Cloudflare account is enough. The deploy goes to
+whichever account is signed in, so only the owner of this one can update the
+relay players use.
+
+The first time:
+
+1. Install the tools, from the repository root:
+
+       npm install
+
+2. Go to the relay's folder. Wrangler reads `wrangler.toml` from the folder
+   it is run in:
+
+       cd relay
+
+3. Sign in. This opens a browser; sign in to Cloudflare and press Allow.
+
+       npx wrangler login
+
+   `npx wrangler whoami` shows which account is signed in.
+
+4. Deploy:
+
+       npx wrangler deploy
+
+   On an account's first deploy Wrangler asks "What would you like your
+   workers.dev subdomain to be?". The answer is the account's name for every
+   Worker it will ever have, not the relay's address. This account's is
+   `dungeon-raze`.
+
+5. Wrangler prints the relay's address. It is the Worker's name (`name` in
+   `wrangler.toml`) in front of the subdomain:
+
+       https://dungeon-raze-relay.dungeon-raze.workers.dev
+
+   `https://dungeon-raze.workers.dev` alone is not an address and does not
+   resolve.
+
+6. Check that it answers. A new subdomain takes about a minute to get its
+   certificate, and until then the request fails with a TLS error.
+
+       curl -X POST -H "Origin: http://localhost:8000" https://dungeon-raze-relay.dungeon-raze.workers.dev/new
+
+   It should print a room code, like `{"code":"MZRFRJ"}`.
+
+7. Go back to the repository root:
+
+       cd ..
+
+8. Tell the game the address. `COOP_RELAY` near the top of
+   `src/08e_coopui.js` holds it, with `wss://` in place of `https://`:
+
+       let COOP_RELAY = "wss://dungeon-raze-relay.dungeon-raze.workers.dev";
+
+   Then `node build.mjs`, try it at http://localhost:8000/?coop=1 with
+   `npm run dev`, and merge the change to `main` so that the published page
+   has it.
+
+Steps 1 to 8 were done on 2026-11-25. After that:
+
+- **A change to `relay/`** reaches players only after `cd relay` and
+  `npx wrangler deploy` again. Merging to `main` does not deploy the relay.
+  The address stays the same, so the game needs no change.
+- **A change to the game** needs no relay deploy.
+- **Which sites may use the relay** is `ALLOWED_ORIGINS` in
+  `relay/wrangler.toml`, now `https://maxjlerman.github.io`. `localhost` and
+  `127.0.0.1` are always allowed. Any other site is refused with HTTP 403.
+  Edit the line and deploy again to change it.
+- **To take the relay down:** `cd relay`, then `npx wrangler delete`. It is
+  also in the Cloudflare dashboard under Workers & Pages, as
+  `dungeon-raze-relay`.
+- **Stay on the free plan.** It allows about 9 hours of two-player co-op a
+  day, and past that co-op stops until 00:00 UTC with nothing billed. The
+  paid plan has no spending cap.
+
+`relay/README.md` has the relay's rules, what it costs, what it stores, and
+how to run it on this machine without an account.
+`docs/coop-first-session.md` walks through the same steps at more length,
+with what to check in a first session with a friend.
 
 ## Source layout
 
