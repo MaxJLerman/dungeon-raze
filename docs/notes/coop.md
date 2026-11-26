@@ -169,6 +169,10 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   extras). **Attack turns:** `takeToken` with `NET.two` counts only token
   holders with the same target (`tg`), up to `turns` each, so two players
   face up to four attackers; otherwise it is the solo rule, two in all.
+  `pick` can change a holder's target afterwards (the target dies, is away,
+  or the other is `COOP.STICK` nearer), so the host's `enemies()` makes a
+  non-boss holder that changes from one player to another give its turn up
+  (`e.token = false`) when the new target already has `turns` other holders.
   **The feed:** each tick `present()` remembers every proxy's state
   (`was`, reset to `"free"` by `build`); a change to `"dead"` inside the
   boss chamber, in a dungeon for two with the boss alive and `aware`,

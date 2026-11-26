@@ -253,7 +253,8 @@ async function intoE(h, f) {
   assert.equal(a.enemies, b.enemies);
   assert.ok(a.enemies > 0, "enemies");
   if (a.seed === 99) assert.equal(a.enemies, 62);
-  assert.equal(a.husk, Math.round(42 * 1.3), "a husk's health for two");
+  // (a cave of another seed may have no husk: then there is no health to read)
+  if (a.husk !== undefined) assert.equal(a.husk, Math.round(42 * 1.3), "a husk's health for two");
   assert.equal(b.husk, a.husk);
   return a.seed;
 }

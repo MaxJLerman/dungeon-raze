@@ -124,7 +124,15 @@ const COOP_HOST = COOP_HEADLESS_HERE
         present();
         for (const e of G.enemies) {
           const s0 = e.state,
+            t0 = e.tg,
             tg = pick(e);
+          // in a dungeon for two a turn is held against one player: one that
+          // changes to a player who already has the most gives its turn up
+          if (NET.two && e.token && !e.def.boss && t0 && e.tg && e.tg !== t0) {
+            let n = 0;
+            for (const o of G.enemies) if (o !== e && o.token && !o.dead && o.tg === e.tg) n++;
+            if (n >= COOP_TWO.turns) e.token = false;
+          }
           as(tg, () => enemyUpdate(e, dt));
           // a new swing gets a new number, so a client can tell swings apart
           if (e.state === "wind" && s0 !== "wind") e.an = (e.an + 1) & 255;

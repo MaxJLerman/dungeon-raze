@@ -1701,7 +1701,10 @@ check("tougher", () => {
 // Six husks awake, three beside each of two players standing d metres apart
 // and in sight of their own three, away from the boss chamber. Returns, over
 // sec seconds, the most tokens held against one player and in all.
-function crowd(h, a, b, sec = 10, d = 30) {
+// opts.b(step) may give b's state fields for that step; opts.each(step, per)
+// sees the holders of each target after the step; opts.keep leaves the
+// targets at the end unchecked.
+function crowd(h, a, b, sec = 10, d = 30, opts = {}) {
   const w = h.G.world,
     bc = w.boss,
     ok = (q) => w.fieldAt(q.x, q.z) > 2.5 && Math.hypot(q.x - bc.x, q.z - bc.z) > bc.r + 12;
@@ -1734,9 +1737,10 @@ function crowd(h, a, b, sec = 10, d = 30) {
   let most = 0,
     total = 0;
   const per = new Map();
+  let step = 0;
   run(h, sec, () => {
     a.at(pair[0].x, pair[0].z);
-    b.at(pair[1].x, pair[1].z);
+    b.at(pair[1].x, pair[1].z, opts.b ? opts.b(step) : {});
     per.clear();
     let n = 0;
     for (const e of h.G.enemies)
@@ -1746,10 +1750,14 @@ function crowd(h, a, b, sec = 10, d = 30) {
       }
     for (const v of per.values()) most = Math.max(most, v);
     total = Math.max(total, n);
+    if (opts.each) opts.each(step, per);
+    step++;
   });
-  assert.ok(husks.every((e) => e.aware), "a husk did not wake");
-  assert.equal(husks[0].tg, 1);
-  assert.equal(husks[1].tg, 2);
+  if (!opts.keep) {
+    assert.ok(husks.every((e) => e.aware), "a husk did not wake");
+    assert.equal(husks[0].tg, 1);
+    assert.equal(husks[1].tg, 2);
+  }
   return { most, total };
 }
 check("two attackers per player", () => {
@@ -1766,6 +1774,35 @@ check("two attackers per player", () => {
   assert.ok(r1.total <= 2, "in all, for one: " + r1.total);
   assert.ok(r1.total > 0, "nobody attacked");
 });
+// Four hold a turn, two against each player; then pid 2 sends dead states or
+// goes quiet for longer than COOP.AWAY and its three hunt pid 1: from the tick
+// after the switch on, no more than two turns are held against pid 1.
+for (const how of ["dead states", "silence"]) {
+  check("a switched target gives up the turn: " + how, () => {
+    const { h, a, b } = forTwo();
+    let start = -1,
+      sw = -1,
+      worst = 0;
+    const quiet = { at: () => {} },
+      bb = how === "silence" ? { at: (x, z, o) => (start >= 0 ? quiet.at() : b.at(x, z, o)) } : b;
+    crowd(h, a, bb, 12, 30, {
+      keep: true,
+      b: () => (start >= 0 && how === "dead states" ? { state: "dead", hp: 0 } : {}),
+      each: (step, per) => {
+        const n = [...per.values()].reduce((x, y) => x + y, 0),
+          mine = h.G.enemies.filter((e) => e.type === "husk").slice(0, 6)[1];
+        if (start < 0) {
+          if (step >= 120 && n === 4 && per.get(1) === 2 && per.get(2) === 2) start = step;
+        } else if (sw < 0) {
+          if (mine.tg === 1) sw = step;
+        } else worst = Math.max(worst, per.get(1) || 0);
+      },
+    });
+    assert.ok(start >= 0, "never four holders, two each");
+    assert.ok(sw >= 0, "the three never switched to pid 1");
+    assert.ok(worst <= 2, "against the living player: " + worst);
+  });
+}
 // pids 1 and 2 in the boss chamber with the Warden awake. dead(on) has pid
 // 2 send dead states from the next tick.
 function atBoss(h, a, b) {
