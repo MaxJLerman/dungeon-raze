@@ -46,6 +46,26 @@
   the host's page, pid 1, which the returned `mateAsk(name, ...args)` can
   have travel) and `two` (the host's cave is a dungeon for two, whoever is
   in it). Without `save` the dev run follows it from world to world.
+- **Warden for two, alone** (`[data-dev-w2]` "Fight", `[data-dev-w2p="2"]` to
+  `"4"` "Phase 2" to "Phase 4"; `devWardenTwo(seed?)`, `devWardenPhase(n)`,
+  `devWardenRun()`, all on `DF`). Fight runs `coopSolo({ two: true, mate:
+  "fight" })` (a random cave for two without a seed), then stands this player
+  at `sealDoor(world)` (the door spot, 9 m from the chamber's centre on the
+  route in, inside the ring the seal will lay) and the scripted player 1.6 m
+  to its right, lights the last rest point and makes it the checkpoint, as
+  `devBoss` does, and returns the run. The link `coopSolo` makes carries
+  `solo = true`, which is how Fight tells its own run from a real room. **A
+  room with a real friend, or one being joined, is never torn down:** Fight
+  starts nothing and `#devW2Msg` on the dev screen says so; only a run
+  `coopSolo` made is replaced. A Phase button calls `host.phase(n)` on the
+  run and returns to play (a roar, and at 4 the seal and the dark, as a real
+  hit does it); it does nothing with no live run, or once the Warden is in
+  that phase or later. `devWardenRun()` is the run while the page is still in
+  it, else `null`. Nothing is saved (`DEV.run` follows the run, as with the
+  lag dial). The pause menu's Exit and `enterHub` end the room, so `NET` is
+  `null`, the link closed and `G.seal` `null` afterwards; Return to base in a
+  co-op run goes to the co-op hall, as it does for a real pair. A wipe takes
+  the seal down and the room goes on, as in any co-op run.
 - **God mode** (`#devGod`, `devGod(on?)`) sets `DEV.god`, off on each load
   and kept through world swaps. `hurtPlayer` still runs the dodge (and
   perfect dodge), parry and block branches, so plates can be parried back;

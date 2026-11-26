@@ -54,6 +54,58 @@ function devBoss(grade, seed) {
   snapCam();
   play();
 }
+// The Warden for two, fought alone: a co-op run over the fake link (coopSolo)
+// in a cave for two, with the scripted second player fighting. This player
+// and that one stand at the door spot, the way into the chamber the seal
+// leaves, and the last rest point is lit and the checkpoint, as devBoss does.
+// Nothing is saved (coopSolo makes the run the dev run). A room with a real
+// friend, or one being joined, is not torn down: nothing starts and the dev
+// screen says why. Returns the run (see coopSolo), or null.
+let wardenRun = null;
+function devWardenSay(text) {
+  const m = $("devW2Msg");
+  if (!m) return;
+  m.textContent = text;
+  m.hidden = !text;
+}
+function devWardenTwo(seed = 1 + Math.floor(Math.random() * 99999)) {
+  if ((NET || CC.link) && !(CC.link && CC.link.solo)) {
+    devWardenSay("A co-op room is open. Leave it first.");
+    return null;
+  }
+  devWardenSay("");
+  wardenRun = null;
+  const out = coopSolo({ two: true, seed, mate: "fight" });
+  if (!NET) {
+    devWardenSay("The run did not start" + (out.refused ? ": " + out.refused : "."));
+    return null;
+  }
+  wardenRun = out;
+  const w = G.world,
+    p = G.player,
+    sh = w.shrines[w.shrines.length - 1],
+    d = sealDoor(w),
+    m = out.mate.p;
+  sh.lit = true;
+  G.checkpoint = sh;
+  Object.assign(p, { x: d.x, z: d.z, yaw: d.yaw });
+  // beside this player, to its right
+  Object.assign(m, { x: d.x - Math.cos(d.yaw) * 1.6, z: d.z + Math.sin(d.yaw) * 1.6, yaw: d.yaw });
+  out.host.G.world.resolve(m, m.r);
+  snapCam();
+  play();
+  return out;
+}
+// The run the Fight button started, while it is the page's run, else null.
+function devWardenLive() {
+  return wardenRun && NET && CC.link === wardenRun.link ? wardenRun : null;
+}
+// The Warden of that run put at the start of phase n (2 to 4), as host.phase
+// does; null with no such run, or once it is in phase n or later.
+function devWardenPhase(n) {
+  const r = devWardenLive();
+  return r ? r.host.phase(n) : null;
+}
 // God mode: hurtPlayer takes nothing and grabPlayer refuses while it is on,
 // and tick keeps everything full. It stays on through world swaps and is
 // off on every page load. Returns the new setting.
@@ -115,6 +167,12 @@ function devBuild() {
         '<button type="button" data-dev-boss="' + g + '">' + name + "</button>",
     ).join("") +
     "</div>" +
+    '<p class="sub">Warden for two</p><div class="row">' +
+    '<button type="button" data-dev-w2="1">Fight</button>' +
+    [2, 3, 4]
+      .map((n) => '<button type="button" data-dev-w2p="' + n + '">Phase ' + n + "</button>")
+      .join("") +
+    '</div><p class="sub" id="devW2Msg" hidden></p>' +
     '<div class="row"><button type="button" data-back="1">Back</button></div>';
   $("scr-title").after(scr);
   scr
@@ -148,6 +206,11 @@ function devBuild() {
   scr.querySelector("[data-dev-big]").addEventListener("click", () => devBigCave());
   for (const b of scr.querySelectorAll("[data-dev-boss]"))
     b.addEventListener("click", () => devBoss(b.dataset.devBoss));
+  scr.querySelector("[data-dev-w2]").addEventListener("click", () => devWardenTwo());
+  for (const b of scr.querySelectorAll("[data-dev-w2p]"))
+    b.addEventListener("click", () => {
+      if (devWardenPhase(+b.dataset.devW2p)) play();
+    });
   SCREENS.push("dev");
   MENUS.push("dev");
   addEventListener("keydown", (e) => {
@@ -167,7 +230,7 @@ if (devHost(location)) {
     // a boss kill now is not saved as a cleared grade
     noSave: () => DEV.god || (!!G.world && DEV.run === G.world),
   };
-  Object.assign(DF, { DEV, devUnlockAll, devGate, devBigCave, devBoss, devGod });
+  Object.assign(DF, { DEV, devUnlockAll, devGate, devBigCave, devBoss, devGod, devWardenTwo, devWardenPhase, devWardenRun: devWardenLive });
   devBuild();
 }
 DF.devHost = devHost;

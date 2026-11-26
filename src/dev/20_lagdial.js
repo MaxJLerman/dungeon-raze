@@ -50,6 +50,8 @@ function coopSolo({
       return send(buf);
     };
   }
+  // marks the link as the fake one, which no real room has (devWardenTwo)
+  pair.client.solo = true;
   host.start(hub ? { hub: true } : { seed, grade: "E", two });
   if (before) before(host);
   const out = {

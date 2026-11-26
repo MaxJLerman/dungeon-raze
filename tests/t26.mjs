@@ -259,6 +259,75 @@ export default [
   const before = !$("#lagDial").hidden;
   DF.coopEnd("host"); await new Promise((f) => setTimeout(f, 700));
   return { pass: before && $("#lagDial").hidden && DF.net() === null, before };`),
+  step("the Warden for two row has Fight and the three phase buttons", `
+  DF.enterHub(); DF.show("title"); DF.openMenu("dev"); await draw();
+  const f = $("#scr-dev [data-dev-w2]"), ps = [2, 3, 4].map((n) => $('#scr-dev [data-dev-w2p="' + n + '"]'));
+  const labels = [f && f.textContent, ...ps.map((b) => b && b.textContent)];
+  const shown = [f, ...ps].every((b) => b && b.offsetWidth > 0);
+  return { pass: !!f && ps.every(Boolean) && shown && labels.join("|") === "Fight|Phase 2|Phase 3|Phase 4" && typeof DF.devWardenTwo === "function" && typeof DF.devWardenPhase === "function", labels, shown };`),
+  step("Fight starts the Warden for two alone, at the chamber's mouth, saving nothing", `
+  const cleared = JSON.stringify(DF.CLEARED), saved0 = localStorage.getItem("dungeon-raze.v2");
+  $("#scr-dev [data-dev-w2]").click(); await draw();
+  const run = DF.devWardenRun(), B = G.enemies.find((e) => e.def.boss), w = G.world, bc = w.boss;
+  const d = Math.hypot(G.player.x - bc.x, G.player.z - bc.z);
+  const mate = run && run.mate && Math.hypot(run.mate.p.x - bc.x, run.mate.p.z - bc.z);
+  const hb = run && run.host.G.enemies.find((e) => e.def.boss);
+  const sh = w.shrines.at(-1);
+  const out = { live: !!run && DF.net() !== null, duo: !!B && B.def.duo === true, hostDuo: !!hb && hb.def.duo === true, big: !!w.big, n: w.nodes.length,
+    d: +d.toFixed(1), mate: mate && +mate.toFixed(1), mode: run && run.mate.mode, state: G.state, noSave: DF.DEV.noSave(),
+    cp: G.checkpoint === sh && sh.lit, same: JSON.stringify(DF.CLEARED) === cleared, phase: B && B.phase, seal: G.seal };
+  return { pass: out.live && out.duo && out.hostDuo && out.big && out.n === 36 && d < 25 && mate < 25 && out.mode === "fight" && out.state === "play" && out.noSave && out.cp && out.same && out.phase === 1 && out.seal === null, out };`),
+  step("Phase 4 puts the puppet in phase 4 and the seal stands within 3 s", `
+  const run = DF.devWardenRun();
+  DF.devGod(true);
+  try { $("#scr-dev [data-dev-w2p]"); DF.show("dev"); $('#scr-dev [data-dev-w2p="4"]').click(); run.step(3, () => (G.seal && G.enemies.find((e) => e.def.boss).phase === 4 ? false : undefined)); } finally { DF.devGod(false); }
+  const B = G.enemies.find((e) => e.def.boss), hb = run.host.G.enemies.find((e) => e.def.boss);
+  return { pass: B.phase === 4 && hb.phase === 4 && !!G.seal && !!run.host.G.seal, puppet: B.phase, host: hb.phase, seal: !!G.seal, hostSeal: !!run.host.G.seal };`),
+  { shot: "t26-warden2" },
+  step("a phase cannot be asked for twice, and no run means nothing", `
+  const again = DF.devWardenPhase(4), ph = DF.devWardenPhase(2);
+  DF.enterHub(); await draw();
+  const none = DF.devWardenPhase(3), run = DF.devWardenRun();
+  return { pass: again === null && ph === null && none === null && run === null && DF.net() === null && G.seal === null, again, ph, none, run, net: DF.net(), seal: G.seal };`),
+  step("Phase 2 and 3 buttons start from phase 1", `
+  const seen = [];
+  for (const n of [2, 3]) {
+    DF.devWardenTwo(99); DF.devGod(true);
+    try { const run = DF.devWardenRun(); DF.show("dev"); $('#scr-dev [data-dev-w2p="' + n + '"]').click(); run.step(0.5); seen.push(G.enemies.find((e) => e.def.boss).phase); } finally { DF.devGod(false); }
+  }
+  DF.enterHub();
+  return { pass: seen.join() === "2,3", seen };`),
+  step("Fight refuses to tear down a room with a real friend", `
+  DF.devWardenTwo(99);
+  const run = DF.devWardenRun(), link = DF.CC.link, net = DF.net();
+  link.solo = false;
+  DF.show("dev"); await draw();
+  $("#scr-dev [data-dev-w2]").click(); await draw();
+  const msg = $("#devW2Msg").textContent, same = DF.CC.link === link && DF.net() === net && !link.closed;
+  const r = DF.devWardenTwo(5);
+  link.solo = true;
+  $("#scr-dev [data-dev-w2]").click(); await draw();
+  return { pass: same && r === null && msg.length > 0 && msg.length < 90 && DF.devWardenRun() !== run && $("#devW2Msg").textContent === "", msg, same, r };`),
+  step("leaving the fight leaves no room, host or seal", `
+  const run = DF.devWardenRun(), link = DF.CC.link;
+  DF.devGod(true);
+  try { DF.devWardenPhase(4); run.step(3, () => (G.seal ? false : undefined)); } finally { DF.devGod(false); }
+  const sealed = !!G.seal;
+  G.state = "pause"; DF.show("pause"); await draw();
+  $("#btnExit").click(); await draw();
+  return { pass: sealed && DF.net() === null && DF.CC.link === null && link.closed === true && G.seal === null && G.zone === "hub" && DF.devWardenRun() === null,
+    sealed, net: DF.net(), seal: G.seal, closed: link.closed, zone: G.zone };`),
+  step("a wipe in the sealed fight takes the seal down", `
+  DF.devWardenTwo(99);
+  const run = DF.devWardenRun();
+  DF.devGod(true);
+  try { DF.devWardenPhase(4); run.step(3, () => (G.seal ? false : undefined)); } finally { DF.devGod(false); }
+  const sealed = !!G.seal && !!run.host.G.seal;
+  run.mate.kill(); G.player.hp = 0; G.player.state = "dead";
+  run.step(6, () => (G.seal === null && run.host.G.seal === null ? false : undefined));
+  const out = { sealed, seal: G.seal === null, hostSeal: run.host.G.seal === null, net: DF.net() !== null };
+  DF.enterHub();
+  return { pass: sealed && out.seal && out.hostSeal && DF.net() === null, out };`),
   step("the dev screen over the title", `
   DF.enterHub(); DF.show("title"); DF.openMenu("dev"); await draw(); await draw();
   return { pass: G.state === "dev" };`),

@@ -736,7 +736,7 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
   starts the host's cave as a dungeon for two, so the big cave (passed to
   `host.start`; nothing for the hall). Without `save` the dev run
   (`DEV.run`) follows the run from world to world, so nothing it does is
-  saved. The fake link draws its jitter
+  saved. The page's end of the fake link has `solo = true`, which the dev menu's Warden for two button reads (`dev-menu.md`). The fake link draws its jitter
   and loss from `cfg.rnd` (`Math.random` when unset); `coopSolo` takes
   `rnd` and otherwise makes a generator from the fixed `LAG_SEED` for each
   run, so a test sees the same jitter and loss every time, while the lag
