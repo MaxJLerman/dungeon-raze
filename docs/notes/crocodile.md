@@ -368,3 +368,6 @@ w, i)` makes it under wall tunnel `i` (a random one when not given):
   seed over seeds 1 to 12); the light it shows against there is drawn
   for it, round its body. Swimming along the shore, part of it lies under
   the pool's kerb.
+- `tests/t25.mjs` has one flaky check, "rubble never traps it". Now and
+  then it fails and passes on a rerun, and it failed the same way on the code
+  from before the big cave branch. The cause is not investigated.

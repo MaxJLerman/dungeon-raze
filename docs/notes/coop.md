@@ -109,8 +109,9 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   `host.start({ hub: true })` starts in the hall, as every room the page
   hosts does; `host.start({ seed, grade })` still starts in a cave (the lag
   dial, t27, t28 and the Node tests). Every world comes from
-  one internal `build(kind, grade, seed, from, won)`: `enterHub(from, true)`
-  or `newRun(seed, grade)`, the placeholder re-pointed, `number()`, and
+  one internal `build(kind, grade, seed, from, won, two)`: `S.n` settled
+  first (below), then `enterHub(from, true)` or `newRun(seed, grade, S.n
+  === 2)`, the placeholder re-pointed, `number()`, and
   `S.epoch` raised by one (the first world is epoch 1). Every proxy is
   taken along: moved to where the world put its player (the cave's start,
   or 3.5 m in front of `from`'s gate in the hall), pid 2's `COOP.BESIDE`
@@ -144,13 +145,26 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   finish's health and focus stand. A puppet of a type with no speed (the
   dummy) is put where the host has it, never glided.
 - **A dungeon for two** (`06c`, `06d`, `07c`). **When:** `build` counts
-  `S.px.size` as it builds a cave: two or more joined players (entered or
-  still on the room screen) make it a dungeon for two (`S.n` 2) for as
-  long as that world lasts, wipes included; one makes the usual cave, and a
-  friend who joins it mid-run changes nothing. The hall is never tuned and
+  `S.px.size` before it builds a cave: two or more joined players (entered
+  or still on the room screen) make it a dungeon for two (`S.n` 2) for as
+  long as that world lasts, wipes included and after a player leaves; one
+  makes the usual cave, and a friend who joins it mid-run gets that cave
+  and changes nothing. A friend who leaves a cave for two and joins again
+  gets it back, enemies as they stand. The hall is never tuned and
   the dummy never scaled. `host.start({ seed, grade, two: true })` forces
   it (tests, `coopSolo({ two })`). The count travels as `n` in `join` and
-  `world`. **The table** is `COOP_TWO` in `06c`: `{ extra: 1, extraDeep:
+  `world`. **The big cave:** a cave for two is the big cave (`world.md`):
+  the host builds `newRun(seed, grade, S.n === 2)`, so `S.n === 2` and
+  `world.big` go together for grade E; any other grade ignores `big` (a
+  sewer started for two in a test is the sewer, with `n` 2). The page
+  decides from the description alone: `coopBuild` builds `enterCave(grade,
+  seed, d.n === 2)`. No new field travels; a world whose `n` does not match
+  what the host built gives another sum and is refused (`"cave"`, t27).
+  The host copy skips the pieces' sight lines (`sees:
+  !COOP_HEADLESS_HERE` in `genWorld`), so its pieces' `sees` are empty and
+  a host build takes about 60 to 120 ms in Node (the first in a fresh copy the
+  slowest), against about 700 ms on a page; `pos` is the same either way,
+  so `coopWorldSum` agrees (t27, t28, `coop-caves`, `coop-e2e`). **The table** is `COOP_TWO` in `06c`: `{ extra: 1, extraDeep:
   2, hp: 1.3, post: 1.3, bossHp: 1.8, bossPost: 1.5, turns: 2, bossHeal:
   0.25 }`. **Tougher:** `coopTwoDefs()` is a table with every key of
   `EDEF`: the dummy's own entry, and for every other type
@@ -165,15 +179,21 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   puppets are made (cave 99: a husk 55 health and 65 posture, the Warden
   1116 and 210). **More enemies:** `coopExtras(world, seed)` groups the
   spawns by `node` (rooms only: no tunnel post, node -1, and no boss); a
-  pack whose types sorted are `brute, brute, spit` (the last row of
-  `genWorld`'s table) gets `extraDeep`, any other `extra`. Each extra is a
+  deep pack, one holding two or more brutes, gets `extraDeep`, any other
+  `extra` (in the small cave only `brute, brute, spit` is deep; in the big
+  cave its two larger packs are too). Each extra is a
   copy of a member drawn with `rng(seed ^ 0x2c0)` in spawn order, 1 to
   2.5 m from it, then `world.resolve(o, 1.2)`. `build` appends them to
   `G.world.spawns` after generation (the generator and t22's hashes are
   untouched; the checksum covers the mesh only) and runs `spawnEnemies()`
   and `number()` again, so they are host enemies like any other and reach
-  clients in the enemy list. Cave 99 for two has 62 enemies (47 and 15
-  extras). **Attack turns:** `takeToken` with `NET.two` counts only token
+  clients in the enemy list. Big cave 99 for two has 188 enemies; over
+  seeds 1 to 20 and 99 the count for two is 155 to 199, mean 178.1, and over
+  seeds 1 to 300 it is 155 to 216 (seed 103 has 216)
+  (`coop-host`, "the enemy count for two"). The design first expected 150
+  to 190 and nothing was tuned. A host step in big cave 99
+  with one player at the start and one five rooms along costs about
+  0.35 ms in Node (a minute's mean, "a minute in the big cave"). **Attack turns:** `takeToken` with `NET.two` counts only token
   holders with the same target (`tg`), up to `turns` each, so two players
   face up to four attackers; otherwise it is the solo rule, two in all.
   `pick` can change a holder's target afterwards (the target dies, is away,
@@ -240,9 +260,13 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   refused); it then builds the world (`coopBuild`) and refuses it
   if `coopWorldSum` (FNV-1a over the mesh positions) differs; it never reads
   its own spawn list, only the host's. All numbers are in `COOP`. `COOP_V`
-  is 2 (it was 1 before `world`, `travel` and `at`). The page follows every
-  `world` (see the client between worlds). A join of cave 99 is about 1.5 kB, and about 2 kB
-  built for two (62 enemies), well under the relay's 16,384-byte frame.
+  is 3 (1 before `world`, `travel` and `at`; 2 until a world for two
+  meant the big cave). The page follows every
+  `world` (see the client between worlds). A join of cave 99 is about 1.5 kB; a join
+  of big cave 99 built for two (188 enemies) is 5,901 bytes, and the largest
+  of seeds 1 to 20 (seed 18, 199 enemies) 6,233 bytes, under the relay's
+  16,384-byte frame. Snapshots carry only the enemies within
+  `COOP.RANGE`, so their size follows the fight, not the cave.
 - **The clock.** The client draws the host's world `COOP.DELAY` (100 ms)
   behind its estimate of the host's time, `CC.est`: its own real-time clock
   plus the largest offset (host time less arrival time) of any snapshot that
@@ -290,7 +314,7 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   (`coopBaseCls`), on both sides, and the save is not changed.
 - **The client between worlds** (`07c`). `coopBuild(d)` builds the world a
   join or a `world` describes without leaving co-op (`enterHub(d.from,
-  true)` or `enterCave(grade, seed)`), returns false if its sum differs,
+  true)` or `enterCave(grade, seed, d.n === 2)`), returns false if its sum differs,
   makes this player the class co-op plays where the world put them, makes
   the puppets, opens the gate over a dead boss, and clears what belonged to
   the last world: `CC.seq` (the `at` is 1 again), `pend`, `ackR`, `evq`,
@@ -495,8 +519,8 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
   the friend and the scripted player in first as the host's page (pid 1,
   idle unless `mate` says otherwise), and `out.mateAsk(name, ...args)` has
   it ask the host anything (`travel` included). `coopSolo({ two: true })`
-  starts the host's cave as a dungeon for two (passed to `host.start`;
-  nothing for the hall). Without `save` the dev run
+  starts the host's cave as a dungeon for two, so the big cave (passed to
+  `host.start`; nothing for the hall). Without `save` the dev run
   (`DEV.run`) follows the run from world to world, so nothing it does is
   saved. The fake link draws its jitter
   and loss from `cfg.rnd` (`Math.random` when unset); `coopSolo` takes
@@ -523,7 +547,11 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
     scaled health and posture and the Warden's phase change, two attackers
     per player, a turn given up when a target changes or a hit turns the
     holder, the boss's feed and where it does not happen, a wipe, the
-    hall never tuned), and the Worker driver with a stand-in for the Worker's
+    hall never tuned; the big cave: built exactly for two, a friend who
+    joins a cave for one gets the small cave, it stays big through a wipe
+    and a leave, a friend who joins it again under way, its extras, the
+    enemy count over seeds 1 to 20 and 99, the build time and a minute's
+    step cost, each printed), and the Worker driver with a stand-in for the Worker's
     global (the 0.25 s cap, the pid byte, relay notices, a closed relay,
     stop, and a gate that does not stop it; a start in the hall, as the page
     posts it, and one with a seed and a grade in a cave).
@@ -534,21 +562,24 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
     that joins a player some other way (`host.join`, a hello) must send that
     player's `at` itself, or the host ignores it.
   - `node tests/coop-wire.mjs`: the wire formats and the fake link, a
-    `world` event's round trip and the size of a join of cave 99 built for
-    two against the relay's cap.
-  - `node tests/coop-caves.mjs`: caves built from seeds 1 to 40 and the
-    co-op hall in Node, Chromium, Firefox and WebKit compared by checksum
-    (run it after any change to cave or hall generation).
+    `world` event's round trip and the size of the joins of big cave 99 and
+    of the seed of 1 to 20 with the most enemies, built for two, against
+    the relay's cap (the larger printed).
+  - `node tests/coop-caves.mjs`: caves built from seeds 1 to 40, big caves
+    for two from seeds 1 to 10 and the co-op hall in Node, Chromium,
+    Firefox and WebKit compared by checksum (run it after any change to
+    cave or hall generation).
   - `node tests/coop-relay.mjs`: the relay under `wrangler dev` on port 8787
     (started and always stopped by `tests/lib/relay.mjs`, metrics off, no
     login, no deploy).
   - Page tests: `tests/t27.mjs` (the client against a hand-stepped host over
     the fake link: puppets, hits, parries, executions, the checksum, a
     world that differs mid-run, a join's epoch, the other player after a
-    swap, puppets and the boss bar scaled for two and a plain solo run
-    after it) and `tests/t28.mjs` (the other player and
+    swap, puppets and the boss bar scaled for two in the big cave with the
+    host's sum and a plain solo run after it, a world for two that says
+    `n` 1 refused) and `tests/t28.mjs` (the other player and
     the party rules: the gate back to the hall, from the hall to the cave
-    and back, a second trip, the friend taken along and turned away at a
+    (the big cave, in pieces, with the host's sum) and back, a second trip, the friend taken along and turned away at a
     gate, a paused player taken along, the feed's line, Return to base, an
     exit mid-fade, the player's own hall after co-op, a plaque that takes no code, no new-gate line, reduced motion,
     an execution on the dummy that leaves it standing on both sides and
@@ -579,8 +610,8 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
     hall as what they picked, each with the other there, each changes class
     from the pause menu and the other page shows that, the friend sees the
     host walk in the hall, the host walks into E's gate and both pages are
-    in one cave (same seed and sum, built for two: 62 enemies and scaled
-    husks), an old version refused, the friend
+    in one cave (same seed and sum, built for two: the big cave on both,
+    188 enemies and scaled husks), an old version refused, the friend
     comes back by the invite link the host's pause screen copies (a real
     page load with `?room=`) and lands in the cave, picks a class mid-run
     and enters, a host page that stops drawing
@@ -600,6 +631,9 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
 - The numbers of a dungeon for two (`COOP_TWO`) are the owner's starting
   guesses and have not been played by hand. A friend who joins a cave built
   for one makes it easier: the count is taken only when the cave is built.
+- A run for two is in the big cave, 36 rooms and about 178 enemies against
+  16 rooms and about 47 alone. How long such a run takes, and whether that
+  is too long, has not been tried by hand.
 
 - Co-op is grade E, two players and the five base classes, and assumes
   desktop Chrome or Safari. It has not been played by hand or between two
@@ -710,9 +744,10 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
   and gets the exit gate, but `bossFell` does not run on it, so that page's
   save does not record the clear of E.
 - The `tests/coop-host.mjs` check "nothing on the host hurts or moves a
-  proxy" fails about 1 run in 200 on its last assertion, the swing-number
+  proxy" fails now and then on its last assertion, the swing-number
   count (for example `an 8 vs 0+7`: the husk's swing number is one more
-  than the swings the check counted). It failed 2 of 400 runs on 81a32fe,
-  the commit this branch started from, so it is older than the co-op
-  lobby. The cause is not investigated; a failure of that one check alone
+  than the swings the check counted). It failed 2 of 400 runs on 81a32fe
+  (the commit this branch started from, on an idle machine) and 1 of 13 runs
+  during the final review of the big cave, so the rate is not known, and it
+  is older than the co-op lobby. The cause is not investigated; a failure of that one check alone
   is run again before it is believed.

@@ -2052,13 +2052,15 @@ function snapCam() {
   cam.px = G.player.x;
   cam.pz = G.player.z;
 }
-// Starts a cave from a seed. Tests call this directly.
-function newRun(seed, grade = "E") {
+// Starts a cave from a seed. Tests call this directly. big builds the big
+// cave, and only for grade E: any other grade's generator never sees it.
+function newRun(seed, grade = "E", big = false) {
   G.zone = "cave";
   G.grade = grade;
   setEnv(ENV_GRADE[grade] || ENV_CAVE);
   G.seed = seed;
-  G.world = (WORLD_GEN[grade] || genWorld)(seed);
+  const gen = WORLD_GEN[grade] || genWorld;
+  G.world = grade === "E" ? gen(seed, big) : gen(seed);
   SFX.setEcho(!!G.world.sewer);
   R.setWorld(G.world.pos, G.world.col, G.world.mat, G.world.pieces);
   resetRun();
@@ -2094,9 +2096,14 @@ function enterHub(fromGrade = null, coop = false) {
   spawnEnemies();
   snapCam();
 }
-// Enters a freshly generated cave through the portal of the given grade.
-function enterCave(gradeId, seed = (Math.random() * 1e9) | 0 || 7) {
-  newRun(seed, gradeId);
+// Enters a freshly generated cave through the portal of the given grade. big
+// is passed on to newRun.
+function enterCave(
+  gradeId,
+  seed = (Math.random() * 1e9) | 0 || 7,
+  big = false,
+) {
+  newRun(seed, gradeId, big);
   say(GRADES[gradeId].name.toUpperCase(), "big", 3);
 }
 // Begins the fade into a cave. A cut swaps at once, for reduced motion. A

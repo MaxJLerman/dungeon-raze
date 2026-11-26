@@ -218,7 +218,7 @@ export default [
   c.held = s.sent.length === 0;
   s.open();
   const hello = s.sent.length ? c9.sentEv(s.sent[0]) : null;
-  c.hello = !!hello && hello[0] === "hello" && hello[2] === 2 && DF.CLASSES[hello[3]] && !DF.CLASSES[hello[3]].hidden &&
+  c.hello = !!hello && hello[0] === "hello" && hello[2] === 3 && DF.CLASSES[hello[3]] && !DF.CLASSES[hello[3]].hidden &&
     /^[0-9a-f]{8}$/.test(hello[4]) && hello[4] === DF.coopBuild;
   // Back leaves the room and closes the socket
   c9.back();
@@ -257,7 +257,7 @@ export default [
   s.open(); s.hear([0, 1]);
   c.joinedIgnored = DF.CC.link !== null && c9.msg() === "";
   // a cave that is not the host's: the join's sum does not match
-  s.hear(c9.ev(["join", { v: 2, e: 1, kind: "cave", n: 1, pid: 2, seed: 99, grade: "E", sum: "00000000", enemies: [], dead: [], bossDead: false, peers: [], t: 0 }]));
+  s.hear(c9.ev(["join", { v: 3, e: 1, kind: "cave", n: 1, pid: 2, seed: 99, grade: "E", sum: "00000000", enemies: [], dead: [], bossDead: false, peers: [], t: 0 }]));
   c.cave = c9.msg() === MSG.cave && DF.G.zone === "hub" && DF.net() === null && s.readyState === 3;
   c.r = Object.fromEntries(Object.entries(r).map(([k, o]) => [k, o.msg]));
   return { pass: Object.values(c).every((v) => v === true || typeof v === "object"), c };`),

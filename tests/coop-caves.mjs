@@ -1,14 +1,16 @@
 // Two browsers must build the same cave from a seed, and the same co-op hall.
-// This builds seeds 1 to 40 of grade E and the co-op hall (a room's first
-// world) in Node and in Chromium, Firefox and WebKit, and compares a
-// checksum of each world's vertex positions (coopWorldSum).
+// This builds seeds 1 to 40 of grade E, seeds 1 to 10 for two (the big
+// cave) and the co-op hall (a room's first world) in Node and in Chromium,
+// Firefox and WebKit, and compares a checksum of each world's vertex
+// positions (coopWorldSum).
 // Fails only if Node throws or Chromium differs from Node. A difference in
 // Firefox or WebKit, or one that will not launch, is printed as a finding.
 // Run with: node build.mjs && node tests/coop-caves.mjs
 // Set PLAYWRIGHT_MODULE to a full path if playwright is not resolvable from here.
 import { loadHost, hostSource } from "./lib/coop.mjs";
 
-const SEEDS = Array.from({ length: 40 }, (_, i) => i + 1);
+const SEEDS = Array.from({ length: 40 }, (_, i) => i + 1),
+  BIG = Array.from({ length: 10 }, (_, i) => i + 1);
 let fail = false;
 
 // Node
@@ -18,17 +20,27 @@ for (const s of SEEDS) {
   host.start({ seed: s, grade: "E" });
   ref[s] = host.sum(host.G.world);
 }
+const refBig = {};
+for (const s of BIG) {
+  host.start({ seed: s, grade: "E", two: true });
+  if (!host.G.world.big) throw new Error("seed " + s + " for two is not the big cave");
+  refBig[s] = host.sum(host.G.world);
+}
 host.start({ hub: true });
 const refHub = host.sum(host.G.world);
-console.log("node     " + SEEDS.length + " caves and the co-op hall built");
+console.log("node     " + SEEDS.length + " caves, " + BIG.length + " big caves and the co-op hall built");
 
 // The same code, run inside a page. Takes the host source and the seeds.
-const inPage = ({ src, seeds }) => {
+const inPage = ({ src, seeds, big }) => {
   const h = new Function("localStorage", "document", "window", "navigator", src)();
-  const out = {};
+  const out = { big: {} };
   for (const s of seeds) {
     h.start({ seed: s, grade: "E" });
     out[s] = h.sum(h.G.world);
+  }
+  for (const s of big) {
+    h.start({ seed: s, grade: "E", two: true });
+    out.big[s] = h.G.world.big ? h.sum(h.G.world) : "small";
   }
   h.start({ hub: true });
   out.hub = h.sum(h.G.world);
@@ -44,13 +56,21 @@ for (const name of ["chromium", "firefox", "webkit"]) {
     br = await pw[name].launch();
     const page = await br.newPage();
     await page.goto("about:blank");
-    const got = await page.evaluate(inPage, { src, seeds: SEEDS });
+    const got = await page.evaluate(inPage, { src, seeds: SEEDS, big: BIG });
     const bad = SEEDS.filter((s) => got[s] !== ref[s]);
     const line =
       name.padEnd(8) + " " + (SEEDS.length - bad.length) + "/" + SEEDS.length + " match";
     console.log(line);
     if (bad.length) {
       const msg = name + " differs on seeds " + bad.join(", ");
+      console.log("FINDING " + msg);
+      findings.push(msg);
+      if (name === "chromium") fail = true;
+    }
+    const badBig = BIG.filter((s) => got.big[s] !== refBig[s]);
+    console.log(name.padEnd(8) + " " + (BIG.length - badBig.length) + "/" + BIG.length + " big caves match");
+    if (badBig.length) {
+      const msg = name + " differs on big caves " + badBig.join(", ");
       console.log("FINDING " + msg);
       findings.push(msg);
       if (name === "chromium") fail = true;

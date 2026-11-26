@@ -15,6 +15,7 @@ subagent, name the notes files it must read.
 | --- | --- | --- |
 | Renderer, shaders, materials, sprites (`02`, `07`) | `rendering.md` | t9, t11, t22 |
 | Cave generation, the field, collision, sight, routes, rock, water (`03`) | `world.md` | t5, t12, t20, t22 |
+| The big cave (`genWorld` with `big`) | `world.md` | t31, t22 |
 | The sewer: layout, water, pillars, pieces, dressing, spawns (`03c` to `03e`) | `sewer.md`, `world.md` | t22, t23, t24 |
 | Hall, portals, grades, run and reset, game state, main menu, screens (`03b`, `06`, `09`); **recipe: open a portal** | `zones.md` | t8, t9, t22, t30 |
 | Dev menu, god mode (`src/dev/10_dev.js`) | `dev-menu.md` | t26, t26-build |
@@ -48,8 +49,9 @@ notes file and a row above.
   enemy types, Old Sluicejaw; opens once E's boss is dead), five base classes
   and three hidden ones, touch, controller, dev menu, main menu and two-player
   co-op. A co-op room meets in the hall, the two travel through gate E
-  together and back, and a cave entered by two is harder. In co-op D is
-  sealed too. C to S are sealed. Grades carry no difficulty or rewards yet.
+  together and back, and a cave entered by two is a much bigger cave (36
+  rooms, drawn in pieces) and harder. In co-op D is sealed too. C to S are
+  sealed. Grades carry no difficulty or rewards yet.
 - Next: the owner's verdict on the combat, then widening the game with several
   agents in parallel. The detail and the backlog are in `docs/notes/status.md`.
 

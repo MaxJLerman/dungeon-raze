@@ -51,6 +51,108 @@ H, seg)` runs marching squares and calls `seg` for each wall segment. `genWorld`
   (`{ x, z, yaw, kind }`, `kind` being `"grate"` or `"drain"`, for the drain grabber), `world.wallTunnels` the boss
   cavern's high wall outlets, and `world.shafts` its light shafts. All three
   are arrays on every world, empty in the cave and hall.
+- **Pieces and `cut`.** Every world has `pieces`, `pieceGrid`, `pieceAt` and
+  `cut`, a number of metres: how far a piece can see, which `visiblePieces`
+  (`03e_sewerview.js`) reads from the world. The small cave and the hall
+  have no pieces (`pieces: null`) and `cut: 0`; the sewer's is
+  `SEWER.piece.fog / ENV_SEWER.fogD` and the big cave's
+  `SEWER.piece.fog / ENV_CAVE.fogD` (71.5 m). `cutPieces(o)` in `03e` is the one
+  routine that cuts a mesh into pieces. It takes
+  `{ nodes, edges, F, W, H, minX, minZ, P, C, M, los }` and what makes it fit a
+  world: `roomBox(n)` (`[x0, z0, x1, z1]` holding room `n`), `inRoom(n, x, z)`
+  (above 0 where the point is in room `n`), `line(e)` (a tunnel's polyline of
+  `{ x, z }`), `runs` (polyline segments to a piece), `reach` (how far from its
+  polyline a tunnel's cells are looked for), `pad`, `sample`, `edge`, `cut`
+  and `sees` (default true). It returns `{ pieces, pieceGrid, pieceAt, pos,
+  col, mat }`. `M` may be `null`, and then `mat` is `null`. With `sees: false`
+  no sight line is cast and every piece's `sees` is `[]`. It touches `R`
+  nowhere, so the host copy can build pieces. The sewer calls it through
+  `sewerPieces` (see `sewer.md`).
+
+## The big cave (`genWorld(seed, true)`)
+
+The cave for two players: 36 rooms on a 6 by 6 grid. `world.big` is `true`
+on it and `false` on every other world (the small cave, the hall, the
+sewer). Game code does not branch on it; it is for tests and the dev build.
+Unlike the small cave it is drawn in pieces (below).
+
+- **When it is built.** Only when a caller passes `big`; nothing reads
+  `NET` to decide. A co-op cave built for two is the big cave: the host's
+  `build` settles `S.n` first and calls `newRun(seed, grade, S.n === 2)`,
+  and a page's `coopBuild` calls `enterCave(grade, seed, d.n === 2)` from
+  the world description (`coop.md`, "A dungeon for two"). Tests build it
+  with `DF.newRun(seed, "E", true)`. The single-player game never passes
+  it.
+
+- **What differs.** Only these; every branch on `big` leaves the small cave
+  drawing from `Rn` exactly as before (t22's hashes of caves 1, 7 and 99).
+  The room options are `CAVE_PLAN` with `GX` and `GZ` 6, so rooms, spacing,
+  jitter and the start's and Warden's radii are the small cave's. The order
+  of the steps that draw from `Rn` is the small cave's too: layout, tunnels,
+  dressing, crystals, packs, posts.
+- **The redraw rule.** `bigCaveGraph(seed)` (on `DF`) plans draw `k` = 0, 1,
+  2 ... from `rng(seed + k * 7919)` and keeps the first whose route (the
+  `path` from `linkGraph`) holds at least 10 rooms, the start and the boss's
+  counted. Diagonal tunnels can cut a 6 by 6 route to 8 rooms. Draw 8 is
+  made with `diagP: 0`: with no diagonals a route has to cross 5 columns and
+  5 rows one room at a time, so it holds at least 11 rooms and the loop
+  always ends there. It returns `{ Rn, nodes, edges, start, boss, path }`,
+  `linkGraph` applied, and `genWorld` carries on drawing from that `Rn`.
+  A rejected draw's nodes are thrown away with it, so their `adj` and
+  `depth` never reach the kept layout. Over seeds 1 to 200: 143 seeds took
+  the first draw and the most was 6; routes of 10 rooms (136 seeds), 11
+  (60) and 12 (4).
+- **Dressing** is doubled with the area: 920 floor rocks in 18,000 tries,
+  1,040 stalactites in 18,000, at most 116 crystals in 28,000. The 12.5 m
+  spacing and the red within 40 m of the boss stay. Every one of seeds 1 to
+  200 reaches 116 crystals.
+- **Rest points.** The start; then route rooms 4, 7, 10 ... (`path[3]`,
+  `path[6]` ...) while the index is at most `path.length - 4`; then
+  `path[path.length - 2]`. No two are neighbours on the route, and a route
+  of 10 to 12 rooms has four. They are built and marked as the small cave's
+  shrines, so a rest room holds no pack.
+- **Packs.** The small cave's six, then `brute, brute, spit, husk, husk` and
+  `brute, brute, spit, spit, husk, husk`. `deepest` is the greatest `depth`
+  of a node whose `kind` is still `"room"` once the rest rooms are marked
+  (no boss room, no rest room). A room's index is
+  `floor((depth - 1) / (deepest - 1) * 7)` (0 when `deepest` is 1) plus the
+  small cave's `(Rn() * 2) | 0`, clamped to the table. So rooms at depth 1
+  hold two husks or two husks and a spitter, and the deepest rooms a
+  two-brute pack. Tunnel posts and the Warden are the small cave's. Over
+  seeds 1 to 20 one player meets 119 to 152 spawns (Warden and 19 to 32
+  tunnel posts counted), and the most common pack is in at most 42% of a
+  cave's pack rooms (seed 7).
+- `newRun(seed, grade, big)` hands `big` to the generator only for grade E
+  (`zones.md`).
+- **Pieces.** Drawn whole it is 179,663 to 210,583 triangles over seeds 1 to 200; the limit for any
+  frame is the whole of cave 99 (81,835). So `genWorld` hands it to
+  `cutPieces` with `CAVE_PIECE = { runs: 6, reach: 6, pad: 3, sample: 3,
+  edge: 2, slack: 0.5 }`: each room's circle (`n.r - Math.hypot(x - n.x,
+  z - n.z)` and the box round it), `e.pts` as a tunnel's line, `M: null`,
+  and as `los` a sight line that marches as `world.los` does (0.8 m steps)
+  but is blocked only where `fieldAt` is below `-CAVE_PIECE.slack`.
+  `world.los` itself is unchanged. It returns the cutter's `pieces`,
+  `pieceGrid`, `pieceAt`, `pos` and `col`; `mat` stays `null`. The small
+  cave never reaches the cutter, so t22's hashes stand.
+- **Why the slack.** With `world.los` as the sight line (walls where the
+  field is below 0.05) a view could see past a corner that no pair of
+  samples cleared: t31's sight step misses on seeds 5 and 13 (three views,
+  a walkable point 42 to 43 m off in a piece not listed), and 11 views in
+  118,824 over seeds 1 to 24 miss. Denser samples (`sample: 2`, `edge: 1`)
+  cost four times the sight lines and did not cure it (the plan's trial).
+  Counting walls half a metre thinner did: no miss in 118,824 views over
+  seeds 1 to 24. It only lengthens the lists; the triangles stay well under
+  the limit.
+- **Measured** (headless Chromium on this machine unless said): 165 to 218
+  pieces over seeds 1 to 200 (184 on seed 99). Over the sight step's 22,384 views on six seeds
+  the worst listed 57,980 triangles and the average 28,275; the most a real
+  frame drew along the route of seeds 1, 7 and 99 was 28,073. A build
+  (`newRun(11, "E", true)`) takes about 700 ms, nearly all of it the sight
+  lines.
+- **The co-op host skips the sight lines.** It passes
+  `sees: !COOP_HEADLESS_HERE`, so in the host copy every piece's `sees` is
+  `[]` and the build takes about 60 to 120 ms in Node. The host never draws, and
+  `pos` is sorted the same either way, so the checksum agrees with the page.
 
 ## Tests
 
@@ -59,3 +161,20 @@ H, seg)` runs marching squares and calls `seg` for each wall segment. `genWorld`
   on a hand-built corridor, then cave-ins in a tunnel of cave 99.
 - Run `tests/t5.mjs` after any change to cave generation and `tests/t6.mjs`
   after any change to classes or combat rules.
+- Run `tests/t31.mjs` and `tests/t22.mjs` after any change to the big cave:
+  `SCRIPT=$PWD/tests/t31.mjs node test.mjs smoke`. t31 checks 36 rooms all
+  reachable, the route over 200 seeds, the rest rule, the packs, the tunnel
+  guards, the crystals and that `big` is for grade E only; then the pieces:
+  every triangle in one piece, every walkable point in sight of a camera
+  in a listed piece (seeds 1, 5, 7, 13, 42 and 99, about a minute), no
+  view's list and no drawn frame over cave 99's whole count, a player
+  moved across the cave drawn where they stand, the camera outside every
+  piece, the build time (under 2 s, aim 800 ms) and a `GOLD` of the mesh,
+  route, spawns and pieces of seeds 1, 7 and 99. t22's first step proves
+  the small cave did not move. Look at `shots/t31-start.png`, `t31-room`,
+  `t31-tunnel` and `t31-boss` beside `shots/t22-cave99.png`; `t31-map` and
+  `t31-map-big` (the whole map seen; also as `iphone-se-t31-map` with
+  `DEVICE=iphone-se`); `t31-far` (the longest clear view across a room into
+  a tunnel: nothing may appear at the cut); and `t31-bend-1` to `-3` (round
+  the sharpest bend clear of any room, across a piece's edge: no wall,
+  floor or ceiling may be missing).

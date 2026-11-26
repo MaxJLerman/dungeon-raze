@@ -900,8 +900,11 @@ export default [
       c.went = c8.walkIn("E");
       const w = G.world,
         p = G.player;
-      // two in the room: a dungeon for two, with the host's extra enemies
-      c.cave = G.zone === "cave" && G.seed === 99 && h.S.n === 2 && G.enemies.length === h.G.enemies.length && G.enemies.length > 47 && G.enemies.every((e) => !!e.nb);
+      // two in the room: a dungeon for two, the big cave drawn in pieces
+      // with the host's extra enemies (188 in big cave 99)
+      c.cave = G.zone === "cave" && G.seed === 99 && h.S.n === 2 && G.enemies.length === h.G.enemies.length && G.enemies.length === 188 && G.enemies.every((e) => !!e.nb);
+      c.big = w.big === true && h.G.world.big === true && Array.isArray(w.pieces) && w.pieces.length > 0 &&
+        DF.coopWorldSum(w) === h.sum(h.G.world);
       c.atStart = Math.hypot(p.x - w.spawn.x, p.z - w.spawn.z) < 1e-6;
       c.hostCave = h.S.kind === "cave" && h.G.seed === 99 && c8.px(1).here === true && c8.px(2).here === true;
       // the Warden dies on the host; this page steps into its gate

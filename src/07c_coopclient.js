@@ -454,7 +454,8 @@ function coopJoin(j) {
 }
 // Builds the world d describes, as a join or a world event carries it,
 // without leaving co-op: the co-op hall (in front of d.from's gate when it
-// came from one) or the grade's cave from its seed. False, with nothing
+// came from one) or the grade's cave from its seed, the big cave when it was
+// built for two (d.n 2, as the host's build decides). False, with nothing
 // more done, when its checksum is not the host's. Otherwise this player is
 // made the class co-op plays (where the world put them), the host's enemies
 // become the puppets, the gate over a dead boss opens, and everything that
@@ -467,7 +468,7 @@ function coopJoin(j) {
 // this page is there (at), and of its class.
 function coopBuild(d) {
   if (d.kind === "hub") enterHub(typeof d.from === "string" ? d.from : null, true);
-  else enterCave(d.grade, d.seed);
+  else enterCave(d.grade, d.seed, d.n === 2);
   CC.world = G.world;
   if (coopWorldSum(G.world) !== d.sum) return false;
   // a hidden class plays as the first base class, as on the host; the save

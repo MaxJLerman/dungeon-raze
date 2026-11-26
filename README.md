@@ -129,7 +129,10 @@ class; the other player sees the change. A hidden class plays
 as the Assassin in co-op unless another is chosen there, and the room screen
 says so. The dungeon does not pause in co-op. A room starts in the host's hall,
 where only E's gate is open. When the host steps into it both players go into
-the same cave; the friend cannot open a gate. When either player steps into
+the same cave; the friend cannot open a gate. A cave entered by two players
+is the big cave, 36 rooms in place of 16, with about 180 enemies that take
+more to kill; a friend who joins a cave the host entered alone gets that
+cave. When either player steps into
 the exit gate after the Warden falls, or the host presses Return to base, both
 are taken back to the hall and the room stays open: the next trip is a new
 cave. Exit to main menu leaves the room. When the friend
@@ -440,17 +443,18 @@ Screenshots go to `shots/`.
 | `tests/t23.mjs` | The D enemies: behaviour hooks, the rat, the drowned and the brood mother, their bodies, and where the sewer places them, with screenshots. Run in `smoke` mode |
 | `tests/t24.mjs` | The siren, eel, bloater and drain grabber: rules for enemies bound to water or a wall, the held player, each type, and where the sewer places them, with screenshots. Run in `smoke` mode |
 | `tests/t25.mjs` | Old Sluicejaw, the D boss: its body, place, modes, death roll, health marks, a whole D run from the hall, the tunnel phase and its plates, the falling ceiling, the bloaters down the falls and its shadow, with screenshots. Run in `smoke` mode |
-| `tests/t26.mjs` | The dev menu: local pages only, opening and closing it, unlocking hidden classes, entering a gate, jumping to a boss, god mode, nothing saved, and the co-op lag dial. Run in `hub` mode |
+| `tests/t26.mjs` | The dev menu: local pages only, opening and closing it, unlocking hidden classes, entering a gate, jumping to a boss, god mode, nothing saved, the dev menu's big cave button and the co-op lag dial. Run in `hub` mode |
 | `tests/t26-build.mjs` | The dev menu is in a local build and not in a `--release` one, the co-op build stamp, and the co-op host copy names nothing from a later file but a short list of names that never run there. Run on its own: `node tests/t26-build.mjs` |
-| `tests/t27.mjs` | Co-op client against a hand-stepped host over a fake link: puppets, hits, parries, executions, the cave checksum. Run in `smoke` mode |
+| `tests/t27.mjs` | Co-op client against a hand-stepped host over a fake link: puppets, hits, parries, executions, the cave checksum, the big cave for two. Run in `smoke` mode |
 | `tests/t28.mjs` | Co-op: the other player on screen and the party rules. Run in `smoke` mode |
 | `tests/t29.mjs` | Co-op room screen up to the network: the button, codes, messages, the class fallback, a Worker host that starts in the hall, the friend's button naming the hall or the dungeon, a world refused before entering, the class cards in the room, the copy buttons, an invite link, the friend waiting for Start, a lost connection, the pause screen's code, Back by touch, Exit to main menu from a hosted run. Run in `title` mode, also with `DEVICE=oneplus-13` |
 | `tests/t30.mjs` | The main menu: its four buttons and no class picker, the solo path through the class screen and the online path straight to the room screen, Back, exits to the main menu from the hall, a cave, death and the win screen. Run in `title` mode, also with `DEVICE=iphone-se`. `node tests/t30-nogl.mjs` checks the menu in a browser with no WebGL 2 |
+| `tests/t31.mjs` | The big cave for two (`genWorld` with `big`): 36 rooms all reachable, a route of at least 10 rooms over 200 seeds, rest points along it, packs that deepen, tunnel guards, crystals, grade E only; its pieces: every camera's view drawn, no view or frame over cave 99's whole count, build time, hashes; with screenshots. Run in `smoke` mode |
 | `tests/codes-print.mjs` | Not a test: writes every plaque code in `tests/codes.local.json` in all four notations to `tests/codes.local.md`, which git ignores and which must never be committed. Run in `title` mode |
 
 The co-op Node tests run without a page: `node tests/coop-host.mjs`,
-`node tests/coop-wire.mjs`, `node tests/coop-caves.mjs` (caves and the co-op
-hall compared across browser engines), `node tests/coop-relay.mjs` (the relay
+`node tests/coop-wire.mjs`, `node tests/coop-caves.mjs` (caves, big caves for
+two and the co-op hall compared across browser engines), `node tests/coop-relay.mjs` (the relay
 under `wrangler dev`) and `node tests/coop-e2e.mjs` (the built page on
 localhost:8123, the relay on localhost:8787 and several Chromium pages hosting
 and joining by code, meeting in the hall and going through E together).

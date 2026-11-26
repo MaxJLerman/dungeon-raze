@@ -5,7 +5,7 @@
 // changes. Pages on different builds are told apart by COOP_BUILD, which
 // build.mjs declares before the sources (a hash of them), so neither needs
 // remembering when MOVES or EDEF are tuned.
-const COOP_V = 2;
+const COOP_V = 3;
 const COOP = {
   SNAP: 1, // message kinds
   STATE: 2,
@@ -31,8 +31,8 @@ const COOP = {
   BESIDE: 1.2, // metres to the right of the arrival point the friend (pid 2) arrives
 };
 // A cave entered by two players is harder (docs/notes/coop.md, "A dungeon for
-// two"). extra: enemies added to each room pack, extraDeep to a pack of the
-// last row of genWorld's table (brute, brute, spit); hp and post: health and
+// two"). extra: enemies added to each room pack, extraDeep to a deep pack,
+// one holding two or more brutes; hp and post: health and
 // posture of regular enemies, bossHp and bossPost the boss's; turns: attack
 // turns held against each player at once; bossHeal: the share of its full
 // health the boss regains when a player dies in its chamber.
@@ -70,7 +70,7 @@ function coopExtras(world, seed) {
     groups.get(s.node).push(s);
   }
   for (const [node, g] of groups) {
-    const deep = g.map((s) => s.type).sort().join() === "brute,brute,spit",
+    const deep = g.filter((s) => s.type === "brute").length >= 2,
       n = deep ? COOP_TWO.extraDeep : COOP_TWO.extra;
     for (let k = 0; k < n; k++) {
       const m = g[Math.floor(R() * g.length)],
