@@ -443,7 +443,7 @@ Screenshots go to `shots/`.
 | `tests/t23.mjs` | The D enemies: behaviour hooks, the rat, the drowned and the brood mother, their bodies, and where the sewer places them, with screenshots. Run in `smoke` mode |
 | `tests/t24.mjs` | The siren, eel, bloater and drain grabber: rules for enemies bound to water or a wall, the held player, each type, and where the sewer places them, with screenshots. Run in `smoke` mode |
 | `tests/t25.mjs` | Old Sluicejaw, the D boss: its body, place, modes, death roll, health marks, a whole D run from the hall, the tunnel phase and its plates, the falling ceiling, the bloaters down the falls and its shadow, with screenshots. Run in `smoke` mode |
-| `tests/t26.mjs` | The dev menu: local pages only, opening and closing it, unlocking hidden classes, entering a gate, jumping to a boss, god mode, nothing saved, and the co-op lag dial. Run in `hub` mode |
+| `tests/t26.mjs` | The dev menu: local pages only, opening and closing it, unlocking hidden classes, entering a gate, jumping to a boss, god mode, nothing saved, the dev menu's big cave button and the co-op lag dial. Run in `hub` mode |
 | `tests/t26-build.mjs` | The dev menu is in a local build and not in a `--release` one, the co-op build stamp, and the co-op host copy names nothing from a later file but a short list of names that never run there. Run on its own: `node tests/t26-build.mjs` |
 | `tests/t27.mjs` | Co-op client against a hand-stepped host over a fake link: puppets, hits, parries, executions, the cave checksum, the big cave for two. Run in `smoke` mode |
 | `tests/t28.mjs` | Co-op: the other player on screen and the party rules. Run in `smoke` mode |

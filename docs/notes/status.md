@@ -109,16 +109,17 @@
   it alone. The design is
   `docs/superpowers/specs/2026-11-26-coop-big-cave-design.md`; the detail is
   in `world.md` and `coop.md`. What was measured, on this machine:
-  - The cave is 174 to 210 pieces and about 185,000 to 200,000 triangles
-    whole.
+  - The cave is 165 to 218 pieces over seeds 1 to 200 and 179,663 to
+    210,583 triangles whole (the same seeds).
   - The worst view lists 57,980 triangles and the average is 28,275, over
     22,384 views on six seeds. The worst real frame along the route on three
     seeds draws 28,073. The limit is 81,835, the whole of small cave 99.
   - Building it takes 679 to 708 ms in the page (headless Chromium). The host
-    copy skips working out what each piece sees and takes 60 to 116 ms in
+    copy skips working out what each piece sees and takes about 60 to 120 ms in
     Node.
   - Enemies for two on seeds 1 to 20 and 99: 155 to 199, mean 178, and 188 for
-    seed 99. The design expected 150 to 190; seeds 5 (193), 8 (191) and 18
+    seed 99 (155 to 216 over seeds 1 to 300; seed 103 has 216). The design
+    first expected 150 to 190; seeds 5 (193), 8 (191) and 18
     (199) run above it. Nothing was tuned.
   - The largest join message is 6,233 bytes against the relay's 16,384. A host
     step in the big cave costs 0.35 ms on average.
@@ -164,8 +165,9 @@
     every device and `tests/t29.mjs` on four short phones. See the known
     problems in `touch.md` and `coop.md`. Causes not investigated.
 12. A flaky host check older than the co-op lobby: "nothing on the host
-    hurts or moves a proxy" in `tests/coop-host.mjs` fails about 1 run in
-    200. See the known problems in `coop.md`. Cause not investigated.
+    hurts or moves a proxy" in `tests/coop-host.mjs` fails now and then (2 runs in
+    400 on an idle machine, 1 run of 13 during the final review of the big
+    cave, so the rate is not known). See the known problems in `coop.md`. Cause not investigated.
     A second flaky check, "rubble never traps it" in `tests/t25.mjs`, fails
     now and then and passes on a rerun. See the known problems in
     `crocodile.md`. Cause not investigated.

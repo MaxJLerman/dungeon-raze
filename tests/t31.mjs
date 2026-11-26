@@ -76,8 +76,8 @@ export default [
   return { pass: Object.values(c).every(Boolean), c, n, cut };`),
   // The view is cast from where the camera sits, as t22 does for the sewer:
   // every 2 m on the way to the boss at four headings, five spots in every
-  // room at eight (the centre and 0.6 of its radius off it on each axis, as
-  // t22 takes 0.6 of a room's half sizes) and every
+  // room at eight (the centre and the four corners, 0.6 of its radius off it
+  // on both axes at once, as t22 takes 0.6 of a room's half sizes) and every
   // third point of every tunnel at four, the camera also at 1.35 times its
   // distance near the Warden. Every walkable point in sight within the cut
   // must be in a listed piece, and the listed pieces never hold more
@@ -125,7 +125,9 @@ export default [
     const from = w.pieceAt(p.x, p.z); await frame(); await frame();
     const n = w.nodes[w.path[w.path.length - 2]]; p.x = n.x; p.z = n.z; cam.px = p.x; cam.pz = p.z; await frame(); await frame();
     const tris = DF.R.stats.tris, here = w.pieceAt(p.x, p.z), ids = DF.visiblePieces(w, DF.R.cam.x, DF.R.cam.z, p.x, p.z) || [];
-    return { pass: tris > 0 && here >= 0 && from >= 0 && ids.includes(here) && !ids.includes(from), tris, here, from, n: ids.length }; })()` },
+    // the list is the frame's: the triangles drawn are the listed pieces' (the renderer's camera is still the frame's)
+    const listed = ids.reduce((a, id) => a + w.pieces[id].count / 3, 0);
+    return { pass: tris > 0 && here >= 0 && from >= 0 && ids.includes(here) && !ids.includes(from) && tris === listed, tris, listed, here, from, n: ids.length }; })()` },
   step("the camera outside every piece still draws the player's pieces", `DF.newRun(99, "E", true); const w = G.world, b = w.boss, own = w.pieceAt(b.x, b.z);
   const out = DF.visiblePieces(w, w.minX - 50, w.minZ - 50, w.spawn.x, w.spawn.z), miss = [];
   for (let h = 0; h < 8; h++) { const yaw = (h * Math.PI) / 4, ids = DF.visiblePieces(w, b.x - Math.sin(yaw) * 22, b.z - Math.cos(yaw) * 22, b.x, b.z, false) || [];

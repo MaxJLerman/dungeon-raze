@@ -14,7 +14,11 @@ function cave() {
 const SMALL99 = "91628121";
 // The generator's own spawns of a world: up to and including the Warden's,
 // which genWorld pushes last; any after it are the extras for two.
-const ownSpawns = (w) => w.spawns.slice(0, w.spawns.findIndex((s) => s.type === "warden") + 1);
+const ownSpawns = (w) => {
+  const at = w.spawns.findIndex((s) => s.type === "warden");
+  assert.ok(at >= 0, "the Warden is among the spawns");
+  return w.spawns.slice(0, at + 1);
+};
 // A host that starts in the hall, as a room does.
 function hall() {
   const h = loadHost();
@@ -2239,6 +2243,9 @@ check("the host builds the big cave quickly", () => {
   const ms = performance.now() - t0;
   assert.equal(h.G.world.big, true);
   assert.ok(ms < 1000, ms.toFixed(0) + " ms");
+  // the host skipped the sight lines: the time alone cannot tell
+  assert.ok(h.G.world.pieces.length > 0);
+  assert.ok(h.G.world.pieces.every((q) => q.sees.length === 0));
   console.log("     a host build of big cave 11: " + ms.toFixed(0) + " ms");
 });
 check("a minute in the big cave", () => {

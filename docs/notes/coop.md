@@ -162,7 +162,7 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   what the host built gives another sum and is refused (`"cave"`, t27).
   The host copy skips the pieces' sight lines (`sees:
   !COOP_HEADLESS_HERE` in `genWorld`), so its pieces' `sees` are empty and
-  a host build takes 60 to 120 ms in Node (the first in a fresh copy the
+  a host build takes about 60 to 120 ms in Node (the first in a fresh copy the
   slowest), against about 700 ms on a page; `pos` is the same either way,
   so `coopWorldSum` agrees (t27, t28, `coop-caves`, `coop-e2e`). **The table** is `COOP_TWO` in `06c`: `{ extra: 1, extraDeep:
   2, hp: 1.3, post: 1.3, bossHp: 1.8, bossPost: 1.5, turns: 2, bossHeal:
@@ -188,8 +188,10 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   untouched; the checksum covers the mesh only) and runs `spawnEnemies()`
   and `number()` again, so they are host enemies like any other and reach
   clients in the enemy list. Big cave 99 for two has 188 enemies; over
-  seeds 1 to 20 and 99 the count for two is 155 to 199, mean 178.1
-  (`coop-host`, "the enemy count for two"). A host step in big cave 99
+  seeds 1 to 20 and 99 the count for two is 155 to 199, mean 178.1, and over
+  seeds 1 to 300 it is 155 to 216 (seed 103 has 216)
+  (`coop-host`, "the enemy count for two"). The design first expected 150
+  to 190 and nothing was tuned. A host step in big cave 99
   with one player at the start and one five rooms along costs about
   0.35 ms in Node (a minute's mean, "a minute in the big cave"). **Attack turns:** `takeToken` with `NET.two` counts only token
   holders with the same target (`tg`), up to `turns` each, so two players
@@ -742,9 +744,10 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
   and gets the exit gate, but `bossFell` does not run on it, so that page's
   save does not record the clear of E.
 - The `tests/coop-host.mjs` check "nothing on the host hurts or moves a
-  proxy" fails about 1 run in 200 on its last assertion, the swing-number
+  proxy" fails now and then on its last assertion, the swing-number
   count (for example `an 8 vs 0+7`: the husk's swing number is one more
-  than the swings the check counted). It failed 2 of 400 runs on 81a32fe,
-  the commit this branch started from, so it is older than the co-op
-  lobby. The cause is not investigated; a failure of that one check alone
+  than the swings the check counted). It failed 2 of 400 runs on 81a32fe
+  (the commit this branch started from, on an idle machine) and 1 of 13 runs
+  during the final review of the big cave, so the rate is not known, and it
+  is older than the co-op lobby. The cause is not investigated; a failure of that one check alone
   is run again before it is believed.

@@ -124,7 +124,7 @@ Unlike the small cave it is drawn in pieces (below).
   cave's pack rooms (seed 7).
 - `newRun(seed, grade, big)` hands `big` to the generator only for grade E
   (`zones.md`).
-- **Pieces.** Drawn whole it is about 190,000 triangles; the limit for any
+- **Pieces.** Drawn whole it is 179,663 to 210,583 triangles over seeds 1 to 200; the limit for any
   frame is the whole of cave 99 (81,835). So `genWorld` hands it to
   `cutPieces` with `CAVE_PIECE = { runs: 6, reach: 6, pad: 3, sample: 3,
   edge: 2, slack: 0.5 }`: each room's circle (`n.r - Math.hypot(x - n.x,
@@ -143,15 +143,15 @@ Unlike the small cave it is drawn in pieces (below).
   Counting walls half a metre thinner did: no miss in 118,824 views over
   seeds 1 to 24. It only lengthens the lists; the triangles stay well under
   the limit.
-- **Measured** (headless Chromium on this machine unless said): 174 to 210
-  pieces (184 on seed 99). Over the sight step's 22,384 views on six seeds
+- **Measured** (headless Chromium on this machine unless said): 165 to 218
+  pieces over seeds 1 to 200 (184 on seed 99). Over the sight step's 22,384 views on six seeds
   the worst listed 57,980 triangles and the average 28,275; the most a real
   frame drew along the route of seeds 1, 7 and 99 was 28,073. A build
   (`newRun(11, "E", true)`) takes about 700 ms, nearly all of it the sight
   lines.
 - **The co-op host skips the sight lines.** It passes
   `sees: !COOP_HEADLESS_HERE`, so in the host copy every piece's `sees` is
-  `[]` and the build takes 50 to 90 ms in Node. The host never draws, and
+  `[]` and the build takes about 60 to 120 ms in Node. The host never draws, and
   `pos` is sorted the same either way, so the checksum agrees with the page.
 
 ## Tests

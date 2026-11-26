@@ -527,7 +527,10 @@ const CAVE_PLAN = {
 // runs segments of its polyline, its cells are looked for within reach of
 // it, a piece reaches pad past its cells, sight samples are sample apart and
 // on every edge-th rim cell. slack: the sight lines that make the lists count
-// walls this much thinner than world.los does, in metres
+// walls this much thinner than world.los does, in metres. genWorld reads
+// ENV_CAVE (06_game.js), SEWER.piece.fog (03c) and COOP_HEADLESS_HERE (06c)
+// at call time, all inside the host copy. Changing the sewer's fog constant
+// moves the cave's cut distance and so the piece hashes in tests/t31.mjs
 const CAVE_PIECE = { runs: 6, reach: 6, pad: 3, sample: 3, edge: 2, slack: 0.5 };
 // The big cave's layout for a seed, with linkGraph applied, and the stream
 // that made it, for genWorld to carry on with. Draw k plans from
@@ -897,7 +900,8 @@ function genWorld(seed, big = false) {
   const shrineIds = [start.id];
   if (big) {
     // every third room along the route while three short of the boss's, and
-    // the room before the boss's
+    // the room before the boss's. No includes guard is needed: a route of 10
+    // or more rooms makes these indices distinct
     for (let i = 3; i <= path.length - 4; i += 3) shrineIds.push(path[i]);
     shrineIds.push(path[path.length - 2]);
   } else if (path.length >= 4) {
