@@ -705,3 +705,14 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
   pointer lock: the death screen released it and the swap is not a click,
   so on desktop the camera does not turn until the first click, which also
   swings.
+- A page that arrives in a cave after the boss has died there (its tab was
+  stalled through the fight) is told the boss is dead by the host's `reset`
+  and gets the exit gate, but `bossFell` does not run on it, so that page's
+  save does not record the clear of E.
+- The `tests/coop-host.mjs` check "nothing on the host hurts or moves a
+  proxy" fails about 1 run in 200 on its last assertion, the swing-number
+  count (for example `an 8 vs 0+7`: the husk's swing number is one more
+  than the swings the check counted). It failed 2 of 400 runs on 81a32fe,
+  the commit this branch started from, so it is older than the co-op
+  lobby. The cause is not investigated; a failure of that one check alone
+  is run again before it is believed.

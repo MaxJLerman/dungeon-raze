@@ -140,3 +140,6 @@
 11. Two phone test failures older than the co-op lobby: `tests/t14.mjs` on
     every device and `tests/t29.mjs` on four short phones. See the known
     problems in `touch.md` and `coop.md`. Causes not investigated.
+12. A flaky host check older than the co-op lobby: "nothing on the host
+    hurts or moves a proxy" in `tests/coop-host.mjs` fails about 1 run in
+    200. See the known problems in `coop.md`. Cause not investigated.
