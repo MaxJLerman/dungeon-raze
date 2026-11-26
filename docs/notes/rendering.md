@@ -33,8 +33,9 @@
   count toward `draws` only, effects toward neither). `R.boxVisible(box)`
   tests `[x0, y0, z0, x1, y1, z1]` against the view of the current frame.
   `render()` passes `R.drawWorld` the ids from `visiblePieces`, which keeps
-  the pieces within the world's own `w.cut` metres of the camera (0 and
-  `pieces: null` in the cave and hall, which are drawn whole).
+  the pieces within the world's own `w.cut` metres of the camera. The sewer
+  and the big co-op cave are drawn by pieces; the small cave and the hall
+  have `pieces: null` and `cut: 0` and are drawn whole.
 - `R.nodePos(node, x, y, z)` returns a world position on a figure, valid after
   that figure has been drawn in the current frame.
 - `R.toScreen(x, y, z)` projects to CSS pixels for HUD elements.

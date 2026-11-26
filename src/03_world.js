@@ -523,6 +523,12 @@ const CAVE_PLAN = {
   loopP: 0.5,
   loopDiagP: 0.6,
 };
+// The big cave's culling, as the sewer's (SEWER.piece): a tunnel piece is
+// runs segments of its polyline, its cells are looked for within reach of
+// it, a piece reaches pad past its cells, sight samples are sample apart and
+// on every edge-th rim cell. slack: the sight lines that make the lists count
+// walls this much thinner than world.los does, in metres
+const CAVE_PIECE = { runs: 6, reach: 6, pad: 3, sample: 3, edge: 2, slack: 0.5 };
 // The big cave's layout for a seed, with linkGraph applied, and the stream
 // that made it, for genWorld to carry on with. Draw k plans from
 // rng(seed + k * 7919); the first whose route holds at least 10 rooms is
@@ -1013,6 +1019,45 @@ function genWorld(seed, big = false) {
     ),
     node: boss.id,
   });
+  // the big cave is cut into pieces for culling; the co-op host never draws,
+  // so it casts no sight lines (the mesh is the same either way)
+  const cut = big ? SEWER.piece.fog / ENV_CAVE.fogD : 0;
+  // world.los, with walls counted CAVE_PIECE.slack thinner
+  const losSlack = (ax, az, bx, bz) => {
+    const d = Math.hypot(bx - ax, bz - az),
+      n = Math.max(1, Math.ceil(d / 0.8));
+    for (let i = 1; i < n; i++) {
+      const t = i / n;
+      if (fieldAt(lerp(ax, bx, t), lerp(az, bz, t)) < -CAVE_PIECE.slack)
+        return false;
+    }
+    return true;
+  };
+  const cutUp = big
+    ? cutPieces({
+        nodes,
+        edges,
+        F,
+        W,
+        H,
+        minX,
+        minZ,
+        P,
+        C,
+        M: null,
+        los: losSlack,
+        roomBox: (n) => [n.x - n.r, n.z - n.r, n.x + n.r, n.z + n.r],
+        inRoom: (n, x, z) => n.r - Math.hypot(x - n.x, z - n.z),
+        line: (e) => e.pts,
+        runs: CAVE_PIECE.runs,
+        reach: CAVE_PIECE.reach,
+        pad: CAVE_PIECE.pad,
+        sample: CAVE_PIECE.sample,
+        edge: CAVE_PIECE.edge,
+        cut,
+        sees: !COOP_HEADLESS_HERE,
+      })
+    : null;
   const sp = { x: start.x, z: start.z };
   resolve(sp, 1);
   return {
@@ -1040,13 +1085,13 @@ function genWorld(seed, big = false) {
     grates: [],
     wallTunnels: [],
     shafts: [],
-    pieces: null,
-    pieceGrid: null,
-    pieceAt: () => -1,
-    cut: 0,
+    pieces: cutUp ? cutUp.pieces : null,
+    pieceGrid: cutUp ? cutUp.pieceGrid : null,
+    pieceAt: cutUp ? cutUp.pieceAt : () => -1,
+    cut,
     big,
-    pos: new Float32Array(P),
-    col: new Uint8Array(C),
+    pos: cutUp ? cutUp.pos : new Float32Array(P),
+    col: cutUp ? cutUp.col : new Uint8Array(C),
     mat: null,
     lights,
     halos,

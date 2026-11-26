@@ -21,8 +21,9 @@ in `world.md`.
   a piece's rim) and errs generous: its grid neighbours are always in it, and
   so are the neighbours of every piece that sight put in it, because the
   camera can see round a corner that no pair of samples clears. `world.pieceGrid` and `world.pieceAt(x, z)` give the piece at a
-  point, or -1 outside every piece. The cave and hall have `pieces: null` and
-  are drawn whole.
+  point, or -1 outside every piece. The small cave and hall have
+  `pieces: null` and are drawn whole; the big co-op cave is cut too
+  (`world.md`).
 - `visiblePieces(w, cx, cz, px, pz, frustum = true)` returns the ids to draw:
   what the camera's piece and the player's piece see, within the fog distance
   (`w.cut`, the sewer's `SEWER.piece.fog / ENV_SEWER.fogD`) and, with `frustum`, inside the view

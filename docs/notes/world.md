@@ -53,9 +53,10 @@ H, seg)` runs marching squares and calls `seg` for each wall segment. `genWorld`
   are arrays on every world, empty in the cave and hall.
 - **Pieces and `cut`.** Every world has `pieces`, `pieceGrid`, `pieceAt` and
   `cut`, a number of metres: how far a piece can see, which `visiblePieces`
-  (`03e_sewerview.js`) reads from the world. The cave and the hall have no
-  pieces (`pieces: null`) and `cut: 0`; the sewer's is
-  `SEWER.piece.fog / ENV_SEWER.fogD`. `cutPieces(o)` in `03e` is the one
+  (`03e_sewerview.js`) reads from the world. The small cave and the hall
+  have no pieces (`pieces: null`) and `cut: 0`; the sewer's is
+  `SEWER.piece.fog / ENV_SEWER.fogD` and the big cave's
+  `SEWER.piece.fog / ENV_CAVE.fogD` (71.5 m). `cutPieces(o)` in `03e` is the one
   routine that cuts a mesh into pieces. It takes
   `{ nodes, edges, F, W, H, minX, minZ, P, C, M, los }` and what makes it fit a
   world: `roomBox(n)` (`[x0, z0, x1, z1]` holding room `n`), `inRoom(n, x, z)`
@@ -73,8 +74,7 @@ H, seg)` runs marching squares and calls `seg` for each wall segment. `genWorld`
 The cave for two players: 36 rooms on a 6 by 6 grid. `world.big` is `true`
 on it and `false` on every other world (the small cave, the hall, the
 sewer). Game code does not branch on it; it is for tests and the dev build.
-In this state it is drawn whole: `pieces: null` and `cut: 0`, as the small
-cave.
+Unlike the small cave it is drawn in pieces (below).
 
 - **What differs.** Only these; every branch on `big` leaves the small cave
   drawing from `Rn` exactly as before (t22's hashes of caves 1, 7 and 99).
@@ -116,6 +116,35 @@ cave.
   cave's pack rooms (seed 7).
 - `newRun(seed, grade, big)` hands `big` to the generator only for grade E
   (`zones.md`).
+- **Pieces.** Drawn whole it is about 190,000 triangles; the limit for any
+  frame is the whole of cave 99 (81,835). So `genWorld` hands it to
+  `cutPieces` with `CAVE_PIECE = { runs: 6, reach: 6, pad: 3, sample: 3,
+  edge: 2, slack: 0.5 }`: each room's circle (`n.r - Math.hypot(x - n.x,
+  z - n.z)` and the box round it), `e.pts` as a tunnel's line, `M: null`,
+  and as `los` a sight line that marches as `world.los` does (0.8 m steps)
+  but is blocked only where `fieldAt` is below `-CAVE_PIECE.slack`.
+  `world.los` itself is unchanged. It returns the cutter's `pieces`,
+  `pieceGrid`, `pieceAt`, `pos` and `col`; `mat` stays `null`. The small
+  cave never reaches the cutter, so t22's hashes stand.
+- **Why the slack.** With `world.los` as the sight line (walls where the
+  field is below 0.05) a view could see past a corner that no pair of
+  samples cleared: t31's sight step misses on seeds 5 and 13 (three views,
+  a walkable point 42 to 43 m off in a piece not listed), and 11 views in
+  118,824 over seeds 1 to 24 miss. Denser samples (`sample: 2`, `edge: 1`)
+  cost four times the sight lines and did not cure it (the plan's trial).
+  Counting walls half a metre thinner did: no miss in 118,824 views over
+  seeds 1 to 24. It only lengthens the lists; the triangles stay well under
+  the limit.
+- **Measured** (headless Chromium on this machine unless said): 174 to 210
+  pieces (184 on seed 99). Over the sight step's 22,384 views on six seeds
+  the worst listed 57,980 triangles and the average 28,275; the most a real
+  frame drew along the route of seeds 1, 7 and 99 was 28,073. A build
+  (`newRun(11, "E", true)`) takes about 700 ms, nearly all of it the sight
+  lines.
+- **The co-op host skips the sight lines.** It passes
+  `sees: !COOP_HEADLESS_HERE`, so in the host copy every piece's `sees` is
+  `[]` and the build takes 50 to 90 ms in Node. The host never draws, and
+  `pos` is sorted the same either way, so the checksum agrees with the page.
 
 ## Tests
 
@@ -127,6 +156,17 @@ cave.
 - Run `tests/t31.mjs` and `tests/t22.mjs` after any change to the big cave:
   `SCRIPT=$PWD/tests/t31.mjs node test.mjs smoke`. t31 checks 36 rooms all
   reachable, the route over 200 seeds, the rest rule, the packs, the tunnel
-  guards, the crystals and that `big` is for grade E only; t22's first step
-  proves the small cave did not move. Look at `shots/t31-start.png`,
-  `t31-room`, `t31-tunnel` and `t31-boss` beside `shots/t22-cave99.png`.
+  guards, the crystals and that `big` is for grade E only; then the pieces:
+  every triangle in one piece, every walkable point in sight of a camera
+  in a listed piece (seeds 1, 5, 7, 13, 42 and 99, about a minute), no
+  view's list and no drawn frame over cave 99's whole count, a player
+  moved across the cave drawn where they stand, the camera outside every
+  piece, the build time (under 2 s, aim 800 ms) and a `GOLD` of the mesh,
+  route, spawns and pieces of seeds 1, 7 and 99. t22's first step proves
+  the small cave did not move. Look at `shots/t31-start.png`, `t31-room`,
+  `t31-tunnel` and `t31-boss` beside `shots/t22-cave99.png`; `t31-map` and
+  `t31-map-big` (the whole map seen; also as `iphone-se-t31-map` with
+  `DEVICE=iphone-se`); `t31-far` (the longest clear view across a room into
+  a tunnel: nothing may appear at the cut); and `t31-bend-1` to `-3` (round
+  the sharpest bend clear of any room, across a piece's edge: no wall,
+  floor or ceiling may be missing).
