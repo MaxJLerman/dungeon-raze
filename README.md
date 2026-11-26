@@ -132,7 +132,11 @@ where only E's gate is open. When the host steps into it both players go into
 the same cave; the friend cannot open a gate. A cave entered by two players
 is the big cave, 36 rooms in place of 16, with about 180 enemies that take
 more to kill; a friend who joins a cave the host entered alone gets that
-cave. When either player steps into
+cave. Its Warden is a harder fight in four phases:
+it turns on whoever has hurt it most, every slam sends a ring along the floor,
+from the third phase it can seize one player until the other breaks its grip,
+and in the last the chamber is sealed with a ring of rock and goes dark until
+the Warden falls or both players are down. When either player steps into
 the exit gate after the Warden falls, or the host presses Return to base, both
 are taken back to the hall and the room stays open: the next trip is a new
 cave. Exit to main menu leaves the room. When the friend
@@ -450,12 +454,12 @@ Screenshots go to `shots/`.
 | `tests/t29.mjs` | Co-op room screen up to the network: the button, codes, messages, the class fallback, a Worker host that starts in the hall, the friend's button naming the hall or the dungeon, a world refused before entering, the class cards in the room, the copy buttons, an invite link, the friend waiting for Start, a lost connection, the pause screen's code, Back by touch, Exit to main menu from a hosted run. Run in `title` mode, also with `DEVICE=oneplus-13` |
 | `tests/t30.mjs` | The main menu: its four buttons and no class picker, the solo path through the class screen and the online path straight to the room screen, Back, exits to the main menu from the hall, a cave, death and the win screen. Run in `title` mode, also with `DEVICE=iphone-se`. `node tests/t30-nogl.mjs` checks the menu in a browser with no WebGL 2 |
 | `tests/t31.mjs` | The big cave for two (`genWorld` with `big`): 36 rooms all reachable, a route of at least 10 rooms over 200 seeds, rest points along it, packs that deepen, tunnel guards, crystals, grade E only; its pieces: every camera's view drawn, no view or frame over cave 99's whole count, build time, hashes; with screenshots. Run in `smoke` mode |
-| `tests/t32.mjs` | The Warden for two on the page: the boss bar's notches at its phase marks for two and none alone, with a screenshot. Run in `smoke` mode |
+| `tests/t32.mjs` | The Warden for two on the page: the boss bar's notches at its phase marks for two and none alone, the aftershock (hurts once, a dodge and a guard, none in phase 1), the grab (held, broken by the other player, the crush, a refused seize), the seal (the rock after its warning, a player brought to the door, a death getting up inside, a join, a wipe and the Warden's death opening it), no sealed frame over cave 99's triangles, and the dark (the sealed chamber dimmer, the Warden's wind-up still bright, the light back after), with screenshots. Run in `smoke` mode, also with `DEVICE=iphone-se` |
 | `tests/codes-print.mjs` | Not a test: writes every plaque code in `tests/codes.local.json` in all four notations to `tests/codes.local.md`, which git ignores and which must never be committed. Run in `title` mode |
 
 The co-op Node tests run without a page: `node tests/coop-host.mjs`,
 `node tests/coop-wire.mjs`, `node tests/coop-warden.mjs` (the Warden for two
-on the host: its health, its four phases and their roars),
+on the host: its health, its four phases and their roars, its attention, the grab and the seal),
 `node tests/coop-caves.mjs` (caves, big caves for
 two and the co-op hall compared across browser engines), `node tests/coop-relay.mjs` (the relay
 under `wrangler dev`) and `node tests/coop-e2e.mjs` (the built page on

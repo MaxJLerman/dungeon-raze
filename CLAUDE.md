@@ -51,10 +51,15 @@ notes file and a row above.
   and three hidden ones, touch, controller, dev menu, main menu and two-player
   co-op. A co-op room meets in the hall, the two travel through gate E
   together and back, and a cave entered by two is a much bigger cave (36
-  rooms, drawn in pieces) and harder. In co-op D is sealed too. C to S are
+  rooms, drawn in pieces) and harder, and its Warden is a harder fight of
+  four phases (it hunts whoever hurt it most, an aftershock follows each slam,
+  a grab only the other player can break, and a last phase that seals the
+  chamber and puts the lights out). In co-op D is sealed too. C to S are
   sealed. Grades carry no difficulty or rewards yet.
-- Next: the owner's verdict on the combat, then widening the game with several
-  agents in parallel. The detail and the backlog are in `docs/notes/status.md`.
+- Next: the owner's verdict on the combat and a playtest of co-op with two
+  people (every number of the Warden for two, `WARDEN2`, is a first guess),
+  then widening the game with several agents in parallel. The detail and the
+  backlog are in `docs/notes/status.md`.
 
 ## Rules of the build
 
