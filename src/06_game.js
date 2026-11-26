@@ -4282,7 +4282,7 @@ function playerUpdate(dt) {
     G.gate.t > 1.2 &&
     Math.hypot(G.gate.x - p.x, G.gate.z - p.z) < 1.5
   ) {
-    // in a co-op run the host ends it, for both players
+    // in a co-op run the host takes both players back to the hall
     if (NET) NET.onGate();
     else {
       G.state = "win";

@@ -675,7 +675,9 @@ export default [
   enter.click();
   const p = DF.G.player, sp = DF.G.world.spawn;
   c.plays = DF.G.state === "play" && DF.net().live && DF.G.zone === "cave";
-  c.atStart = Math.hypot(p.x - sp.x, p.z - sp.z) < 0.05;
+  // the friend arrives beside the cave's start, on walkable ground
+  const d = Math.hypot(p.x - sp.x, p.z - sp.z);
+  c.atStart = d >= 0.8 && d <= 1.6 && DF.G.world.fieldAt(p.x, p.z) > 0;
   const where = [p.x, p.z, sp.x, sp.z];
   DF.coopEnd("test"); DF.enterHub(); DF.show("title");
   return { pass: Object.values(c).every((v) => v === true), c, where };`),

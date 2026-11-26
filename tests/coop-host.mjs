@@ -19,6 +19,16 @@ function hall() {
 const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 const named = (c, name) => c.events.filter((ev) => ev[0] === name);
 const front = (q, d) => ({ x: q.x + Math.sin(q.yaw) * d, z: q.z + Math.cos(q.yaw) * d });
+// Where pid arrives in the host's world whose arrival point is at: pid 1 on
+// it, the friend (pid 2) 1.2 m to its right, out of the rock. The
+// placeholder keeps the arrival's facing.
+function arrival(h, pid, at) {
+  if (pid !== 2) return at;
+  const yaw = h.G.player.yaw,
+    q = { x: at.x - Math.cos(yaw) * 1.2, z: at.z + Math.sin(yaw) * 1.2 };
+  h.G.world.resolve(q, 0.45);
+  return q;
+}
 const worlds = (c) => named(c, "world").map((ev) => ev[1]);
 // A walkable point d metres from enemy e, in its line of sight, searching
 // round from angle a0.
@@ -1108,7 +1118,7 @@ check("the gate takes both back to the hall, only once the boss is dead, and the
     assert.equal(d.won, runT);
     assert.equal(named(c, "end").length, 0);
   }
-  for (const px of h.S.px.values()) assert.ok(dist(px, f) < 0.01, "pid " + px.pid + " is not in front of E's gate");
+  for (const px of h.S.px.values()) assert.ok(dist(px, arrival(h, px.pid, f)) < 0.01, "pid " + px.pid + " is not in front of E's gate");
   // the room stays open: the host steps and snapshots on, and the party can
   // set out again
   const step = h.S.step,
@@ -1292,9 +1302,9 @@ check("the host's player travels", () => {
   assert.equal(h.S.kind, "cave");
   assert.equal(h.S.epoch, 2);
   assert.equal(h.G.enemies.length, h.G.world.spawns.length);
-  // both stand at the cave's start at full health
+  // both stand at the cave's start at full health, the friend beside it
   for (const px of h.S.px.values()) {
-    assert.ok(dist(px, h.G.world.spawn) < 1e-9);
+    assert.ok(dist(px, arrival(h, px.pid, h.G.world.spawn)) < 1e-9);
     assert.equal(px.hp, px.maxHp);
     assert.equal(px.state, "free");
   }
@@ -1348,7 +1358,7 @@ check("a player is not there until it answers", () => {
     b.at(q.x, q.z);
   });
   assert.equal(b.nsnap, n, "a snapshot before its at");
-  assert.ok(dist(px, h.G.world.spawn) < 1e-9, "a state moved it");
+  assert.ok(dist(px, arrival(h, 2, h.G.world.spawn)) < 1e-9, "a state moved it");
   hit(b, e, 10);
   assert.equal(e.hp, e.def.hp, "a hit landed");
   assert.equal(px.ack, 0, "a hit was acknowledged");
@@ -1465,7 +1475,7 @@ check("back to the hall", () => {
   }
   const f = front(h.G.world.portals.find((q) => q.grade === "E"), 3.5);
   for (const px of h.S.px.values()) {
-    assert.ok(dist(px, f) < 0.01, "pid " + px.pid + " is not in front of E's gate");
+    assert.ok(dist(px, arrival(h, px.pid, f)) < 0.01, "pid " + px.pid + " is not in front of E's gate");
     assert.equal(px.hp, px.maxHp);
     assert.equal(px.state, "free");
   }
@@ -1540,6 +1550,47 @@ check("a join mid-swap", () => {
   assert.equal(b.join.e, h.S.epoch);
   assert.equal(b.join.sum, h.sum(h.G.world));
   assert.equal(h.S.px.get(2).here, true);
+});
+// Every world puts the friend's proxy beside the host's, never inside it,
+// until the friend's page is heard; the host's on the arrival point.
+check("the friend's proxy arrives beside the host's", () => {
+  const h = hall();
+  const a = fakeClient(h, 1, "fighter"),
+    b = fakeClient(h, 2, "mage");
+  const beside = (why, at) => {
+    const p1 = h.S.px.get(1),
+      p2 = h.S.px.get(2),
+      d = dist(p1, p2);
+    assert.ok(dist(p1, at) < 1e-6, why + ": pid 1 is off the arrival point");
+    assert.ok(d >= 0.8 && d <= 1.6, why + ": " + d.toFixed(3) + " m apart");
+    assert.ok(h.G.world.fieldAt(p2.x, p2.z) > 0, why + ": pid 2 in the rock");
+  };
+  beside("the join", h.G.world.spawn);
+  a.ev("travel", "E", 99);
+  beside("the cave", h.G.world.spawn);
+  a.ev("travel", "hub");
+  beside("back in the hall", front(h.G.world.portals.find((q) => q.grade === "E"), 3.5));
+  assert.equal(b.world.kind, "hub");
+});
+// A class picked as the host travels: dropped while that player is not
+// there, and taken from the cls a page sends after its at.
+check("a cls across a swap: dropped before the at, heard after it", () => {
+  const h = hall();
+  const a = fakeClient(h, 1, "fighter"),
+    b = fakeClient(h, 2, "mage", { at: false });
+  b.arrive();
+  a.ev("travel", "E", 99);
+  assert.equal(h.S.px.get(2).here, false);
+  b.ev("cls", "tanker");
+  assert.equal(h.S.px.get(2).clsId, "mage");
+  assert.equal(named(a, "cls").length, 0);
+  b.arrive();
+  b.ev("cls", "tanker");
+  assert.equal(h.S.px.get(2).clsId, "tanker");
+  assert.deepEqual(named(a, "cls"), [["cls", 2, "tanker"]]);
+  // the same class again changes nothing and tells nobody
+  b.ev("cls", "tanker");
+  assert.equal(named(a, "cls").length, 1);
 });
 check("the dummy stands back up", () => {
   const h = hall();
@@ -1803,6 +1854,40 @@ for (const how of ["dead states", "silence"]) {
     assert.ok(worst <= 2, "against the living player: " + worst);
   });
 }
+// Two hold a turn against pid 1 and a third holds one against pid 2, the
+// players side by side: a hit from pid 1 that turns the third onto pid 1
+// leaves at most two holders against pid 1 on the next tick.
+check("a turn is given up on a target change by a hit", () => {
+  const { h, a, b } = forTwo(),
+    w = h.G.world;
+  let me = null,
+    third = null,
+    after = null;
+  crowd(h, a, b, 12, 3, {
+    keep: true,
+    each: (step, per) => {
+      if (third && !after) {
+        after = { mine: per.get(1) || 0, tg: third.tg, token: third.token };
+        return;
+      }
+      if (third || step < 60 || per.get(1) !== 2) return;
+      me = h.S.px.get(1);
+      const you = h.S.px.get(2);
+      // one that the hit turns and whose new target then sticks
+      third = h.G.enemies.find(
+        (e) =>
+          e.token && !e.dead && !e.def.boss && e.tg === 2 && w.los(e.x, e.z, me.x, me.z) &&
+          Math.hypot(e.x - me.x, e.z - me.z) - Math.hypot(e.x - you.x, e.z - you.z) < 2.5,
+      ) || null;
+      // a damage-over-time tick: no flinch, so nothing else drops its turn
+      if (third) a.ev("hit", third.id, 1, 0, 2, "", me.x, me.z, third.state, third.an);
+    },
+  });
+  assert.ok(third, "never two against pid 1 and one against pid 2 that a hit could turn");
+  assert.ok(after, "no tick after the hit");
+  assert.equal(after.tg, 1, "the hit did not turn it");
+  assert.ok(after.mine <= 2, "against pid 1: " + after.mine);
+});
 // pids 1 and 2 in the boss chamber with the Warden awake. dead(on) has pid
 // 2 send dead states from the next tick.
 function atBoss(h, a, b) {

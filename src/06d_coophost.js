@@ -120,19 +120,23 @@ const COOP_HOST = COOP_HEADLESS_HERE
           G.inBoss = b0;
         }
       }
+      // In a dungeon for two a turn is held against one player: a holder
+      // whose target has just changed from t0 to a player who already has
+      // COOP_TWO.turns other holders gives its turn up. pick and a hit both
+      // change targets.
+      function retarget(e, t0) {
+        if (!NET.two || !e.token || e.def.boss || !t0 || !e.tg || e.tg === t0) return;
+        let n = 0;
+        for (const o of G.enemies) if (o !== e && o.token && !o.dead && o.tg === e.tg) n++;
+        if (n >= COOP_TWO.turns) e.token = false;
+      }
       function enemies(dt) {
         present();
         for (const e of G.enemies) {
           const s0 = e.state,
             t0 = e.tg,
             tg = pick(e);
-          // in a dungeon for two a turn is held against one player: one that
-          // changes to a player who already has the most gives its turn up
-          if (NET.two && e.token && !e.def.boss && t0 && e.tg && e.tg !== t0) {
-            let n = 0;
-            for (const o of G.enemies) if (o !== e && o.token && !o.dead && o.tg === e.tg) n++;
-            if (n >= COOP_TWO.turns) e.token = false;
-          }
+          retarget(e, t0);
           as(tg, () => enemyUpdate(e, dt));
           // a new swing gets a new number, so a client can tell swings apart
           if (e.state === "wind" && s0 !== "wind") e.an = (e.an + 1) & 255;
@@ -270,6 +274,8 @@ const COOP_HOST = COOP_HEADLESS_HERE
           inBoss: false,
         });
         for (const px of S.px.values()) {
+          // the friend beside the point, as its page puts itself
+          const q = coopSpot(G.world, px.pid, ax, az, ayaw, px.r);
           Object.assign(px, {
             here: false,
             heard: -Infinity,
@@ -281,8 +287,8 @@ const COOP_HOST = COOP_HEADLESS_HERE
             was: "free",
             t: 0,
             move: null,
-            x: ax,
-            z: az,
+            x: q.x,
+            z: q.z,
             yaw: ayaw,
             vx: 0,
             vz: 0,
@@ -331,8 +337,13 @@ const COOP_HOST = COOP_HEADLESS_HERE
       };
       const join = (pid, cls) => {
         const id = baseCls(cls),
-          px = makePlayer(id);
+          px = makePlayer(id),
+          w = G.world,
+          // where its page will put it: the world's start, the friend beside it
+          q = coopSpot(w, pid, w.spawn.x, w.spawn.z, w.spawnYaw, px.r);
         Object.assign(px, {
+          x: q.x,
+          z: q.z,
           remote: true,
           pid,
           heard: -Infinity, // until its first state: the player has not entered
@@ -391,8 +402,13 @@ const COOP_HOST = COOP_HEADLESS_HERE
           const flinch = hitFlinches(d, heavy, dot, seenState);
           if (flinch && seenState !== "act" && e.state === "act" && e.an === seenAn)
             e.state = "chase";
-          // a hit from a player it can see turns it on them
-          if (e.tg !== px.pid && G.world.los(e.x, e.z, px.x, px.z)) e.tg = px.pid;
+          // a hit from a player it can see turns it on them, and a turn
+          // held against the other may go with that
+          if (e.tg !== px.pid && G.world.los(e.x, e.z, px.x, px.z)) {
+            const t0 = e.tg;
+            e.tg = px.pid;
+            retarget(e, t0);
+          }
           const ph0 = e.phase,
             // an execution that need not kill (the Warden's) comes as a hit:
             // from the player who pinned it, it recoils as in single player

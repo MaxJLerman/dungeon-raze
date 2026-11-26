@@ -159,11 +159,14 @@ check("a world event with a full description survives the round trip", () => {
   assert.deepEqual(W.eventDecode(W.eventEncode(back)), back);
 });
 
-check("a join of cave 99 fits in one relay frame", () => {
+check("a join of cave 99 built for two fits in one relay frame", () => {
   const h = loadHost();
-  h.start({ seed: 99, grade: "E" });
+  // the largest: a dungeon for two, with its extra enemies
+  h.start({ seed: 99, grade: "E", two: true });
   const c = fakeClient(h, 1, "fighter");
   fakeClient(h, 2, "mage");
+  assert.equal(c.join.n, 2);
+  assert.equal(c.join.enemies.length, 62);
   const b = W.eventEncode(["join", c.join]);
   // the relay closes a socket on a frame over 16,384 bytes; it adds the pid byte
   assert.ok(b.byteLength + 1 < 16384, "a join of " + b.byteLength + " bytes");

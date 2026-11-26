@@ -460,9 +460,11 @@ function coopJoin(j) {
 // become the puppets, the gate over a dead boss opens, and everything that
 // belonged to the last world goes: event numbers, guesses, queued events,
 // an execution under way, a gate or trip asked for, the other player's
-// snapshots. The other player is not drawn where it stood in the last world:
-// it waits, away, where this player arrived until a snapshot of this world
-// moves it. Then the host is told this page is there (at).
+// snapshots. The friend (pid 2) arrives COOP.BESIDE to the right of the
+// world's arrival point (coopSpot), the host's page on it. The other player
+// is not drawn where it stood in the last world: it waits, away, where it
+// arrives until a snapshot of this world moves it. Then the host is told
+// this page is there (at), and of its class.
 function coopBuild(d) {
   if (d.kind === "hub") enterHub(typeof d.from === "string" ? d.from : null, true);
   else enterCave(d.grade, d.seed);
@@ -475,6 +477,17 @@ function coopBuild(d) {
     const o = G.player;
     G.player = makePlayer(cls);
     Object.assign(G.player, { x: o.x, z: o.z, yaw: o.yaw });
+    snapCam();
+  }
+  // where the world put this player: the friend arrives beside it, so the
+  // two do not stand inside each other (the host's build agrees)
+  const ax = G.player.x,
+    az = G.player.z,
+    ayaw = G.player.yaw;
+  if (CC.pid === 2) {
+    const q = coopSpot(G.world, 2, ax, az, ayaw, G.player.r);
+    G.player.x = q.x;
+    G.player.z = q.z;
     snapCam();
   }
   // a dungeon built for two: the puppets take the host's scaled definitions
@@ -499,12 +512,13 @@ function coopBuild(d) {
     heard: CC.now,
   });
   if (NET)
-    for (const m of NET.mates)
+    for (const m of NET.mates) {
+      const q = coopSpot(G.world, m.pid, ax, az, ayaw, m.r);
       Object.assign(m, {
         nb: [],
-        x: G.player.x,
-        z: G.player.z,
-        yaw: G.player.yaw,
+        x: q.x,
+        z: q.z,
+        yaw: ayaw,
         away: true,
         state: "free",
         move: null,
@@ -516,8 +530,14 @@ function coopBuild(d) {
         flash: 0,
         hp: m.maxHp,
       });
+    }
   // this page is in the host's world: until it says so the host ignores it
   coopAsk("at", d.e);
+  // and so it dropped a class picked while this world was on its way (on the
+  // room screen or under the fade): this page's class again, which the host
+  // ignores when it changes nothing. A join needs none: its hello carried
+  // the class, and none can be picked before NET is set.
+  if (NET && typeof CC.cls === "string") coopAsk("cls", CC.cls);
   return true;
 }
 // The puppets, from the host's list as the join and reset events carry it:
@@ -689,10 +709,11 @@ function coopPuppet(e, dt, rt, drt) {
   // The limit is in drawn time, so while the clock catches up (after slow
   // motion, say) a puppet keeps up with its spot, and the host's own pace
   // between the two snapshots lets a charge or a lunge through at its speed.
+  // A type with no speed (the dummy, which never moves) is put there.
   const pace = B ? Math.hypot(B.x - A.x, B.z - A.z) / Math.max(1e-3, B.t - A.t) : 0,
-    lim = drt * Math.max(COOP_GLIDE * d.speed, 1.2 * pace),
+    lim = drt * Math.max(COOP_GLIDE * (d.speed || 0), 1.2 * pace),
     gap = Math.hypot(tx - e.gx, tz - e.gz);
-  if (gap <= lim || gap > COOP_SNAP_D) {
+  if (gap <= lim || gap > COOP_SNAP_D || !d.speed) {
     e.gx = tx;
     e.gz = tz;
   } else {
@@ -956,8 +977,12 @@ function coopExec() {
       e.ov = null;
     } else CC.exPre = { hp: p.hp, focus: p.focus, tool: p.tool, kills: G.kills };
   } else if (!CC.exSkip && !CC.exRec && CC.exPin && CC.exPre) {
-    // the finish ran this step: what it gave, and the event it sent
+    // the finish ran this step: what it gave, and the event it sent. The
+    // dummy's finish kills nothing, so kill() has not told the host: it is
+    // told here, and the puppet stands as the finish left it until the host
+    // has had it.
     CC.exRec = true;
+    if (e.def.dummy) e.ov = { seq: coopAsk("exec", e.id), life: COOP_GUESS };
     const a = CC.exPre;
     CC.fin = {
       e,
@@ -979,8 +1004,9 @@ function coopExec() {
 // taken back. Before the host has had the finish, not pinned by this one:
 // taken back; pinned by it: a boss's stands, a regular enemy's waits for its
 // kill. After: a regular enemy still alive refused the exec, so taken back,
-// and a boss's stands. A dead enemy waits for its kill event, which decides
-// by its pid. With no answer in COOP_FIN_WAIT seconds what it gave stays.
+// and a boss's stands. The dummy is judged as a boss: its execution never
+// kills it. A dead enemy waits for its kill event, which decides by its pid.
+// With no answer in COOP_FIN_WAIT seconds what it gave stays.
 function coopFinCheck() {
   const f = CC.fin;
   if (!f) return;
@@ -990,7 +1016,7 @@ function coopFinCheck() {
   }
   const r = f.e.nb[f.e.nb.length - 1];
   if (!r || r.ack < f.pin || r.dead) return;
-  const boss = f.e.def.boss;
+  const boss = f.e.def.boss || f.e.def.dummy;
   if (r.pin && r.pin !== CC.pid) coopTakeBack();
   else if (r.ack < f.seq) {
     if (r.pin !== CC.pid) coopTakeBack();
@@ -1216,11 +1242,15 @@ function coopMateSwing(m, rt) {
 // every guess and pending hit, the enemies' shots, this player's bombs and
 // blasts still due, the lock, and an execution under way (it ends, and sends
 // nothing more). A dead player stays dead where they fell, on the dead
-// screen; Rise again respawns them as in single player. The kill count, the
-// run's time and the boss's death are kept.
+// screen; Rise again respawns them as in single player. The kill count and
+// the run's time are kept. The boss's death is the host's: a page that
+// missed it (an at answered late, after the fight) has it from the list and
+// its gate opens, as a world built after it does.
 function coopReset(r) {
   const p = G.player;
   coopPuppets(r);
+  G.bossDead = !!r.bossDead;
+  if (G.bossDead && G.world.boss && !G.gate) openGate();
   CC.pend = [];
   CC.evq = [];
   CC.fin = null;

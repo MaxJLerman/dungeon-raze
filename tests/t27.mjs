@@ -523,7 +523,8 @@ export default [
         c = {
           heard: hall.away === false,
           built: !!first && G.zone === "cave" && G.seed === 99,
-          first: !!first && first.same && first.away === true && first.d < 0.05 && first.fromHall > 5 && first.state === "free",
+          // the friend (pid 2) waits where it arrives: 1.2 m to this player's right
+          first: !!first && first.same && first.away === true && first.d > 0.8 && first.d < 1.6 && first.fromHall > 5 && first.state === "free",
           // a snapshot of the new world moves it and it is there again
           later: !mm.away && Math.hypot(mm.x - px.x, mm.z - px.z) < 0.5,
         };

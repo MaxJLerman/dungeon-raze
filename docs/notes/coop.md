@@ -62,7 +62,8 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
     the co-op hall keeps D sealed. `kill(e, quiet)` and `bossFell(e, quiet)` take a second argument only
     the client passes: the same state with no sound, sparks, slow motion or
     message. `openGate()` (the gate over the boss's chamber) is shared by
-    `bossFell` and a world built after the boss's death. `respawn` calls `NET.onRespawn()` in place of
+    `bossFell`, a world built after the boss's death and a client's
+    `reset` that says the boss is dead. `respawn` calls `NET.onRespawn()` in place of
     `spawnEnemies` (one death rebuilds no enemies). `explode` calls
     `NET.onBlast`, the player's `fire` `NET.onPShot`, an enemy's `shoot`
     `NET.onShoot`, and `playerUpdate` at the exit gate `NET.onGate()`.
@@ -112,7 +113,8 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   or `newRun(seed, grade)`, the placeholder re-pointed, `number()`, and
   `S.epoch` raised by one (the first world is epoch 1). Every proxy is
   taken along: moved to where the world put its player (the cave's start,
-  or 3.5 m in front of `from`'s gate in the hall), full health, state
+  or 3.5 m in front of `from`'s gate in the hall), pid 2's `COOP.BESIDE`
+  (1.2 m) to the right of that point (`coopSpot`, below), full health, state
   `"free"`, its `seen` cleared, `heard` `-Infinity`, `ack` 0 and `here`
   false; then each is sent `world`. `S.n` is the players the world was
   built for: 2 for a dungeon for two (below), else 1. The co-op hall has E open and every other
@@ -135,7 +137,12 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   numbers start again: the host's ack is 0 and the client counts from 1
   (its `at`). In the hall the dummy is a host enemy like any other; an
   `exec` on it gives back its health and posture, clears the pin and sends
-  no `kill`, as single player's execution does.
+  no `kill`, as single player's execution does. The page's finish on the
+  dummy never runs `kill`, so `coopExec` sends that `exec` itself when it
+  records the finish, and holds the puppet standing (`e.ov`) until the host
+  has had it; `coopFinCheck` judges the dummy as it judges a boss, so the
+  finish's health and focus stand. A puppet of a type with no speed (the
+  dummy) is put where the host has it, never glided.
 - **A dungeon for two** (`06c`, `06d`, `07c`). **When:** `build` counts
   `S.px.size` as it builds a cave: two or more joined players (entered or
   still on the room screen) make it a dungeon for two (`S.n` 2) for as
@@ -170,9 +177,11 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   holders with the same target (`tg`), up to `turns` each, so two players
   face up to four attackers; otherwise it is the solo rule, two in all.
   `pick` can change a holder's target afterwards (the target dies, is away,
-  or the other is `COOP.STICK` nearer), so the host's `enemies()` makes a
-  non-boss holder that changes from one player to another give its turn up
-  (`e.token = false`) when the new target already has `turns` other holders.
+  or the other is `COOP.STICK` nearer), and so can a hit (`ASK.hit` turns
+  an enemy on a player it can see), so both call the host's `retarget(e,
+  t0)`: a non-boss holder that changes from one player to another gives its
+  turn up (`e.token = false`) when the new target already has `turns` other
+  holders.
   A swing already under way is not cut off, so a third attacker may begin
   one against that target while it finishes.
   **The feed:** each tick `present()` remembers every proxy's state
@@ -232,8 +241,8 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   if `coopWorldSum` (FNV-1a over the mesh positions) differs; it never reads
   its own spawn list, only the host's. All numbers are in `COOP`. `COOP_V`
   is 2 (it was 1 before `world`, `travel` and `at`). The page follows every
-  `world` (see the client between worlds). A join of cave 99 is about 1.5 kB, well under the
-  relay's 16,384-byte frame.
+  `world` (see the client between worlds). A join of cave 99 is about 1.5 kB, and about 2 kB
+  built for two (62 enemies), well under the relay's 16,384-byte frame.
 - **The clock.** The client draws the host's world `COOP.DELAY` (100 ms)
   behind its estimate of the host's time, `CC.est`: its own real-time clock
   plus the largest offset (host time less arrival time) of any snapshot that
@@ -272,7 +281,11 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   `"stopped"`; on the friend's link (`link.viaRelay`) only `"hostleft"` is
   `"host"`, and every other close, the friend's own drop included, is
   `"lost"`; on any other link it is `"host"`. A world built after the
-  boss's death opens the gate (`openGate`). `coopPeer` takes pids 1 and 2
+  boss's death opens the gate (`openGate`), and so does a `reset` whose
+  `bossDead` is true: `coopReset` takes `G.bossDead` from the list, so a
+  page whose `at` the host answered after the fight (it was told nothing of
+  the kill) has the boss dead and its gate open. A wipe after the boss's
+  death sends `bossDead` true again and the gate is left as it is. `coopPeer` takes pids 1 and 2
   only, never its own. A hidden class plays as the first base class
   (`coopBaseCls`), on both sides, and the save is not changed.
 - **The client between worlds** (`07c`). `coopBuild(d)` builds the world a
@@ -282,10 +295,24 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   the puppets, opens the gate over a dead boss, and clears what belonged to
   the last world: `CC.seq` (the `at` is 1 again), `pend`, `ackR`, `evq`,
   `snap`, `fin`, `exE`, `gate`, `trip` and every mate's snapshots; it sets
-  `CC.world`, `CC.epoch`, `CC.kind` and `CC.heard`, then sends `at`. The
+  `CC.world`, `CC.epoch`, `CC.kind` and `CC.heard`, then sends `at`, and
+  for a `world` (not a join) `cls` with this page's class (`CC.cls`): the
+  host drops a `cls` from a player not there, so a card clicked under the
+  fade, or on the room screen within a round trip of the host's travel,
+  would otherwise change this page's class and not the proxy's. The host
+  ignores a `cls` that changes nothing. A join needs none: its hello
+  carried the class, and no card calls the host before `NET` is set. The
   other player (a mate) is not drawn where it stood in the last world: each
-  mate is marked away and put where this player arrived (full health, state
-  `"free"`) until a snapshot of the new world moves it.
+  mate is marked away and put where it arrives (full health, state
+  `"free"`) until a snapshot of the new world moves it. **Where each
+  arrives:** `coopSpot(world, pid, x, z, yaw, r)` in `06c`, from the
+  world's arrival point and facing: pid 1 on the point, the friend (pid 2)
+  `COOP.BESIDE` (1.2 m) to its right (`(-cos yaw, 0, sin yaw)`), moved out
+  of the rock by `world.resolve`. The host's `build` (and `join`, from the
+  world's start) and the page's `coopBuild` both place by it, so the host's
+  proxy of a friend not yet heard stands where that friend's page put
+  itself, and the two figures never stand inside each other; the camera is
+  snapped after.
   `coopJoin` is `coopWorldOk`, then `coopBuild`, then `NET`. A `world` goes
   to `coopTravel(d)`: a run not yet live (a friend on the room screen) or
   reduced motion (`RM`) builds at once; otherwise it fades out as a solo gate
@@ -308,7 +335,8 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   gate." once each time it steps in (`CC.portT`). `coopBase()` asks `travel`
   to `"hub"`.
 - **The party rules.** Both arrive at the world's arrival point (the
-  cave's start, or in front of the gate they came out of); the host starts
+  cave's start, or in front of the gate they came out of), the friend 1.2 m
+  to the host's right; the host starts
   when it likes, the friend may join before or during a run and rejoining is
   joining. The friend cannot enter before the host has pressed Start (the
   join's `started`, or the `started` event; it stays set, so a friend who
@@ -489,10 +517,12 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
     the hall, `travel` and its refusals, the epoch and `at` (an `at` for
     another epoch is not acknowledged), back to the hall, the gate back to
     the hall with the run's time and the room still open, a second trip,
-    crossing requests in both orders, a join mid-swap, the dummy's
+    crossing requests in both orders, a join mid-swap, the friend's proxy
+    beside the host's on every arrival, a `cls` across a swap, the dummy's
     execution; a dungeon for two: the count of players, the extras, the
     scaled health and posture and the Warden's phase change, two attackers
-    per player, the boss's feed and where it does not happen, a wipe, the
+    per player, a turn given up when a target changes or a hit turns the
+    holder, the boss's feed and where it does not happen, a wipe, the
     hall never tuned), and the Worker driver with a stand-in for the Worker's
     global (the 0.25 s cap, the pid byte, relay notices, a closed relay,
     stop, and a gate that does not stop it; a start in the hall, as the page
@@ -504,7 +534,8 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
     that joins a player some other way (`host.join`, a hello) must send that
     player's `at` itself, or the host ignores it.
   - `node tests/coop-wire.mjs`: the wire formats and the fake link, a
-    `world` event's round trip and a join's size against the relay's cap.
+    `world` event's round trip and the size of a join of cave 99 built for
+    two against the relay's cap.
   - `node tests/coop-caves.mjs`: caves built from seeds 1 to 40 and the
     co-op hall in Node, Chromium, Firefox and WebKit compared by checksum
     (run it after any change to cave or hall generation).
@@ -519,7 +550,11 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
     the party rules: the gate back to the hall, from the hall to the cave
     and back, a second trip, the friend taken along and turned away at a
     gate, a paused player taken along, the feed's line, Return to base, an
-    exit mid-fade, the player's own hall after co-op, a plaque that takes no code, no new-gate line, reduced motion),
+    exit mid-fade, the player's own hall after co-op, a plaque that takes no code, no new-gate line, reduced motion,
+    an execution on the dummy that leaves it standing on both sides and
+    keeps its rewards, a `reset` with the boss dead that opens its gate, a
+    class picked while a world is on its way reaching the host after it,
+    the friend arriving beside the host's arrival point),
     both with `smoke`; `tests/t29.mjs` (the room screen up to the network: the button,
     the code's tidying and refusal, every message, the order of the checks,
     the class fallback, a Worker host on the page that starts in the hall,

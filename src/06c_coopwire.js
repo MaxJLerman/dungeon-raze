@@ -28,6 +28,7 @@ const COOP = {
   SOCK_FULL: 8192,
   TICK_MAX: 0.25, // the most elapsed time the Worker hands the host in one call
   GRADES: ["E"], // the grades a co-op room may travel to (the co-op hall opens E only)
+  BESIDE: 1.2, // metres to the right of the arrival point the friend (pid 2) arrives
 };
 // A cave entered by two players is harder (docs/notes/coop.md, "A dungeon for
 // two"). extra: enemies added to each room pack, extraDeep to a pack of the
@@ -81,6 +82,18 @@ function coopExtras(world, seed) {
     }
   }
   return out;
+}
+
+// Where player pid arrives in world, whose arrival point (where it puts its
+// player) is (x, z) facing yaw: pid 1 on the point, the friend (pid 2)
+// COOP.BESIDE metres to its right, pushed out of the rock for a body of
+// radius r, so the two do not stand inside each other. The host's build and
+// a page's coopBuild both place by it, so they agree.
+function coopSpot(world, pid, x, z, yaw, r) {
+  if (pid !== 2) return { x, z };
+  const q = { x: x - Math.cos(yaw) * COOP.BESIDE, z: z + Math.sin(yaw) * COOP.BESIDE };
+  world.resolve(q, r);
+  return q;
 }
 
 // True only in the host copy, whose build declares COOP_HEADLESS first.

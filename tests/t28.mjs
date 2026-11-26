@@ -966,7 +966,8 @@ export default [
         o = DF.portalFront(c8.portal("E"), -0.75);
       c.inGate = Math.hypot(G.player.x - o.x, G.player.z - o.z) < 1;
       c.line = log().filter((t) => t === line).length === 1;
-      c.stays = G.zone === "hub" && h.S.epoch === e0 && !G.trans && DF.CC.seq === 1;
+      // nothing asked since this world's at and cls
+      c.stays = G.zone === "hub" && h.S.epoch === e0 && !G.trans && DF.CC.seq === 2;
       return { pass: Object.values(c).every((v) => v === true), c, msgs: log() };
     },
   },
@@ -987,7 +988,9 @@ export default [
       const p = G.player,
         sp = G.world.spawn;
       c.cave = G.zone === "cave" && G.seed === 99 && !G.trans;
-      c.atStart = Math.hypot(p.x - sp.x, p.z - sp.z) < 1e-6;
+      // the friend: beside the cave's start, on walkable ground
+      const d = Math.hypot(p.x - sp.x, p.z - sp.z);
+      c.atStart = d >= 0.8 && d <= 1.6 && G.world.fieldAt(p.x, p.z) > 0;
       c.live = DF.net() !== null && DF.net().live === true;
       c.stillPaused = G.state === "pause" && c8.shown("scr-pause");
       DF.show("play");
@@ -1436,6 +1439,214 @@ export default [
         zone: G.zone,
         pauseNote: note,
       };
+    },
+  },
+  {
+    name: "an execution on the dummy in a co-op hall leaves it standing, here and on the host, and its rewards stand",
+    eval: () => {
+      const { G } = DF,
+        c8 = window.__c8;
+      G.manual = true;
+      const r = c8.solo({ hub: true, ping: 50 }),
+        h = r.host,
+        p = G.player,
+        he = h.G.enemies[0],
+        pe = c8.pup(he.id),
+        c = {};
+      c.dummy = he.def.dummy === true && !!pe && pe.def.dummy === true;
+      // what this page asks of the host
+      const sent = [],
+        recv = h.recv;
+      h.recv = (pid, buf) => {
+        if (pid === 1 && h.wire.type(buf) === 3) sent.push(h.wire.eventDecode(buf)[0]);
+        return recv(pid, buf);
+      };
+      c8.near(he, 2);
+      // the host staggers it, and this page shows it
+      Object.assign(he, { state: "stagger", t: 0, dur: 3.0, posture: he.def.posture });
+      c8.step(1, () => (pe.state === "stagger" ? false : undefined));
+      c.shown = pe.state === "stagger";
+      // drawn where the host has it (a type with no speed once glided to NaN)
+      c.drawn = Math.hypot(pe.x - he.x, pe.z - he.z) < 0.05;
+      c8.near(he, 2);
+      p.focus = 0;
+      const hp0 = (p.hp = p.maxHp - 30);
+      let started = false,
+        fin = null,
+        after = -1,
+        host = null,
+        last = null,
+        drop = 0,
+        hpDrop = 0,
+        again = false;
+      c8.step(4, (i) => {
+        p.yaw = DF.cam.yaw = Math.atan2(pe.x - p.x, pe.z - p.z);
+        // until it starts: a swing can eat one press
+        if (!started && i % 10 === 0) DF.taps[DF.BIND.light] = true;
+        if (p.state === "execute") started = true;
+        if (!fin && started && p.exDone) {
+          fin = { hp: p.hp, focus: p.focus };
+          after = 0;
+        } else if (fin) after++;
+        // half a second after the finish: the host's dummy as it stands
+        if (after === 30) host = { state: he.state, pin: he.pin, hp: he.hp, dead: he.dead };
+        // the hall fills focus on its own; a take-back is a fall
+        if (last) {
+          drop = Math.min(drop, p.focus - last.focus);
+          hpDrop = Math.min(hpDrop, p.hp - last.hp);
+        }
+        last = { hp: p.hp, focus: p.focus };
+        if (fin && pe.state === "stagger") again = true;
+      });
+      h.recv = recv;
+      c.started = started && !!fin;
+      c.execSent = sent.includes("pin") && sent.includes("exec");
+      c.host = !!host && host.state !== "stagger" && host.pin === 0 && host.hp === he.def.hp && host.dead === false;
+      c.hostNow = he.state !== "stagger" && he.pin === 0 && he.hp === he.def.hp && !he.dead && h.G.enemies[0] === he;
+      c.puppet = !pe.dead && pe.state !== "stagger" && pe.hp === pe.def.hp && !again;
+      c.paid = !!fin && Math.abs(fin.hp - hp0 - 10) < 1e-6 && p.hp === fin.hp && hpDrop === 0 && drop === 0 && DF.CC.fin === null;
+      return {
+        pass: Object.values(c).every((v) => v === true),
+        c,
+        sent,
+        host,
+        fin,
+        drop,
+        hpDrop,
+        hp: [hp0, p.hp],
+        puppet: { state: pe.state, hp: pe.hp, again },
+      };
+    },
+  },
+  {
+    name: "a reset with the Warden dead opens its gate; with it alive, the boss stands and there is no gate",
+    eval: () => {
+      const { G } = DF,
+        c8 = window.__c8;
+      G.manual = true;
+      const c = {};
+      // a player 9 is in the cave; this page's at is still on its way
+      let r = c8.solo({
+        ping: 200,
+        before: (h) => {
+          h.recv(9, h.wire.eventEncode(["hello", 0, h.v, "fighter", h.build]));
+          h.recv(9, h.wire.eventEncode(["at", ++c8.seq, h.S.epoch]));
+        },
+      });
+      let h = r.host;
+      const wd = [...h.S.byId.values()].find((e) => e.def.boss);
+      c.notHere = c8.px(1).here === false;
+      // the Warden dies before the host has heard this page: it is told
+      // nothing of the kill, and its at is answered with the enemies again
+      for (let i = 0; i < 20 && !wd.dead; i++)
+        h.recv(9, h.wire.eventEncode(["hit", ++c8.seq, wd.id, 500, 0, 1, "melee", wd.x, wd.z, wd.state, wd.an]));
+      c.killed = wd.dead && h.G.bossDead;
+      c8.step(1);
+      c.here = c8.px(1).here === true;
+      c.dead = G.bossDead === true && !!G.gate && !G.enemies.some((e) => e.def.boss && !e.dead);
+      c.gateAt = !!G.gate && Math.hypot(G.gate.x - G.world.boss.x, G.gate.z - G.world.boss.z) < 1e-9;
+      // a wipe after the boss's death says it is dead again: the gate stays
+      const g = G.gate,
+        list = (dead) => {
+          const es = [...h.S.byId.values()].filter((e) => !(dead && e.def.boss));
+          return { enemies: es.map((e) => [e.id, e.type, e.x, e.z, e.yaw]), dead: [], bossDead: dead };
+        };
+      c8.tell(["reset", list(true), h.S.step / 60]);
+      c8.step(0.2);
+      c.kept = G.gate === g && G.bossDead === true;
+      h.leave(9);
+      // with the boss alive a wipe sends it alive: its puppet stands, no gate
+      r = c8.solo({ ping: 50 });
+      h = r.host;
+      c8.step(0.3);
+      c8.tell(["reset", list(false), h.S.step / 60]);
+      c8.step(0.2);
+      const b = G.enemies.find((e) => e.def.boss);
+      c.alive = !!b && !b.dead && G.bossDead === false && !G.gate;
+      return { pass: Object.values(c).every((v) => v === true), c };
+    },
+  },
+  {
+    name: "a class picked while a world is on its way reaches the host after it",
+    eval: () => {
+      const { G } = DF,
+        c8 = window.__c8;
+      G.manual = true;
+      const r = c8.solo({ hub: true, pid: 2, ping: 50 }),
+        h = r.host,
+        c = {},
+        told = [],
+        send = h.send;
+      h.send = (to, buf) => {
+        if (to === 1 && h.wire.type(buf) === 3) {
+          const ev = h.wire.eventDecode(buf);
+          if (ev[0] === "cls") told.push(ev);
+        }
+        return send(to, buf);
+      };
+      const base = Object.keys(DF.CLASSES).filter((k) => !DF.CLASSES[k].hidden),
+        saved = DF.OPT.cls,
+        was = c8.px(2).clsId,
+        to = base.find((k) => k !== was && k !== G.player.clsId);
+      c.was = G.player.clsId === was;
+      // the host travels; this page picks a class before its world arrives
+      r.mateAsk("travel", "E", 99);
+      c.away = c8.px(2).here === false;
+      const card = document.createElement("button");
+      card.className = "card";
+      card.dataset.cls = to;
+      document.body.appendChild(card);
+      card.click();
+      card.remove();
+      c.mine = G.player.clsId === to && DF.CC.cls === to;
+      c8.step(0.08);
+      // the host dropped it: this player was not there
+      c.dropped = c8.px(2).clsId === was && told.length === 0;
+      c8.arrive("cave");
+      c8.step(0.5);
+      c.cave = G.zone === "cave" && c8.px(2).here === true;
+      c.proxy = c8.px(2).clsId === to;
+      c.told = told.length === 1 && told[0][1] === 2 && told[0][2] === to;
+      c.still = G.player.clsId === to;
+      h.send = send;
+      // the save as it was, for the steps after
+      DF.setClass(saved);
+      return { pass: Object.values(c).every((v) => v === true), c, was, to, proxy: c8.px(2).clsId, told };
+    },
+  },
+  {
+    name: "the friend arrives beside the host's arrival point, on walkable ground",
+    eval: () => {
+      const { G } = DF,
+        c8 = window.__c8;
+      G.manual = true;
+      const r = c8.solo({ hub: true, pid: 2, ping: 50 }),
+        h = r.host,
+        c = {},
+        at = {};
+      // within 0.8 to 1.6 m of where pid 1 arrives, on walkable ground, and
+      // where the host put this player's proxy before hearing it
+      const beside = (k, q, px) => {
+        const p = G.player,
+          d = Math.hypot(p.x - q.x, p.z - q.z);
+        at[k] = { d: +d.toFixed(3), field: +G.world.fieldAt(p.x, p.z).toFixed(3), proxy: px && +Math.hypot(p.x - px.x, p.z - px.z).toFixed(3) };
+        return d >= 0.8 && d <= 1.6 && G.world.fieldAt(p.x, p.z) > 0 && (!px || Math.hypot(p.x - px.x, p.z - px.z) < 0.05);
+      };
+      const mark = () => ({ p1: { x: c8.px(1).x, z: c8.px(1).z }, p2: { x: c8.px(2).x, z: c8.px(2).z } });
+      c.join = beside("join", G.world.spawn, null);
+      r.mateAsk("travel", "E", 99);
+      let m = mark();
+      c8.arrive("cave");
+      const sp = G.world.spawn;
+      c.p1Cave = Math.hypot(m.p1.x - sp.x, m.p1.z - sp.z) < 1e-6;
+      c.cave = G.zone === "cave" && beside("cave", sp, m.p2);
+      r.mateAsk("travel", "hub");
+      m = mark();
+      c8.arrive("hub");
+      const f = DF.portalFront(c8.portal("E"), 3.5);
+      c.p1Hall = Math.hypot(m.p1.x - f.x, m.p1.z - f.z) < 0.05;
+      c.hall = G.zone === "hub" && beside("hall", f, m.p2);
+      return { pass: Object.values(c).every((v) => v === true), c, at };
     },
   },
   {
