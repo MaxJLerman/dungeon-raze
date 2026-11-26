@@ -15,6 +15,12 @@
   else is additive. `R.blob(x, z, s, a, yaw, len, y)` takes an optional
   heading, a stretch along it (an ellipse `len` times as long as wide) and
   a height (0.12 by default).
+- **Aftershock rings** (`G.waves`, the Warden for two's slam, `coop.md`) are
+  drawn straight from the list, not from `G.rings`: in the effects pass after
+  the rings, `R.ring` from `rr - band / 2` to `rr + band / 2` at height 0.2 in
+  `RED`, where `rr` is the radius `wavesUpdate` judges
+  (`(t - o.wait) * o.speed`), so what is drawn is where it hurts. Nothing is
+  drawn before `o.wait`. `tests/t32.mjs` takes `shots/t32-wave.png`.
 - **Materials.** The world mesh has one material byte per vertex, a fourth
   attribute (`aMat`, location 3). `MAT` in `03_world.js` names the values:
   0 plain, `MAT.BRICK` 1, `MAT.WATER` 2. `meshSink` takes a `mat` argument on

@@ -228,7 +228,11 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   `WARDEN2`), and an `atks` object of its own that holds the solo Warden's
   attack objects in the same key order: the snapshot sends an attack as its
   index in `Object.keys(def.atks)` and finds it by identity, so a later
-  attack goes after them. `EDEF.warden` has none of these keys.
+  attack goes after them. Its `slam` is a copy of the solo one with
+  `after: WARDEN2.wave`, at the same key position (each side calls
+  `coopTwoDefs()` once per world and uses its own result, so both hold the
+  same copy). `EDEF.warden` has none of these keys, and its slam has no
+  `after`.
   `def.duo` is how code tells this Warden from today's. **Four phases:**
   `hitEnemy` gives a boss without `ownPhases` phase 1 plus the number of
   its `marks` its health is below (`enemies.md`), so this Warden enters
@@ -237,8 +241,25 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   never falls but on its reset (home, or a wipe), and the feed can lift its
   health over a mark without undoing one. Everything today's second phase
   gives (speed 1.2, tempo 0.85, the volley, the glow) holds from phase 2
-  on (`e.phase >= 2`, on the host and in the page's puppet). Phases 3 and 4
-  add nothing yet. **Attention** (`WARDEN2.heed`, `{ half: 4, lead: 1.3,
+  on (`e.phase >= 2`, on the host and in the page's puppet). Phase 2 adds
+  the aftershock; phases 3 and 4 add nothing else yet. **The aftershock**
+  (`WARDEN2.wave`, `{ from: 2, wait: 0.35, speed: 11, reach: 24, band: 1.2,
+  dmg: 14 }`): a slam whose attack has an `after` calls `waveStart(x, z,
+  after)` where it lands, when the Warden's phase is at least `after.from`:
+  on the host in `enemyUpdate`'s slam landing, on a page in `coopPuppet`'s
+  (once a slam, as the ring and the sound are). `G.waves` is a list of `{ x,
+  z, t, o, hit }`; `wavesUpdate(dt)`, beside `shocksUpdate` in `update`,
+  ages them. The ring's radius is `(t - o.wait) * o.speed`. Each page judges
+  it on its own player only: on the step the radius plus half of `o.band`
+  reaches the player's distance from `(x, z)` it calls `hurtPlayer(o.dmg,
+  null, { dmg: o.dmg, px: x, pz: z })` once and sets `hit`, so a dodge in
+  its iframes takes nothing and a guard facing the centre blocks (`hurtPlayer`
+  takes the source from `px` and `pz` when `e` is null). On the host
+  `hurtPlayer` returns `"remote"`, so the host's own `G.waves` only
+  age. A wave is dropped when its radius passes `o.reach`; `resetRun` and
+  `respawn` empty `G.waves`. The page's wave starts at the slam's landing as
+  the page sees it, about 100 ms after the host's. It is drawn at the judged
+  radius (`rendering.md`). **Attention** (`WARDEN2.heed`, `{ half: 4, lead: 1.3,
   every: 3 }`; host only, nothing on a page changes): the host keeps `e.heed`
   on a `duo` boss, a score per pid. Each hit `ASK.hit` accepts adds the
   health it took off (its health before `hitEnemy` less after, never below
@@ -624,7 +645,9 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
     at each mark with its phase to both players, one roar for a hit across
     two marks, a phase that does not fall, the phase 4 roar's 2.2 s and
     `host.phase`. Its helpers (`duo`, `inChamber`, `stand`, `strike`,
-    `strikeTo`) are for the checks later parts of this fight add.
+    `strikeTo`) are for the checks later parts of this fight add. It also
+    checks that the slam for two carries the aftershock, the solo slam does
+    not, and the key order is unchanged.
   - `node tests/coop-wire.mjs`: the wire formats and the fake link, the
     phases 1 to 4 beside the other flags and `COOP_V` 4, a
     `world` event's round trip and the size of the joins of big cave 99 and
@@ -655,7 +678,14 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
     `smoke`: the boss bar's three notches for two and none alone; look at
     `shots/t32-bar.png`, three notches at a quarter, half and three
     quarters of the bar; its `window.__w2` helpers start a run for two,
-    stand this player in the chamber and wake the Warden); `tests/t29.mjs` (the room screen up to the network: the button,
+    stand this player in the chamber and wake the Warden, and force a slam
+    on the host's Warden at phase n with this player 12 m from where it
+    lands: `slamSetup`, `runSlam`). It also covers the aftershock: it hurts
+    for 14 once between 1.2 and 1.7 s after the landing, a dodge through
+    it takes nothing, a guard facing it blocks (stamina and chip read), a
+    phase 1 slam sends none, and a respawn and a new world clear it; look at
+    `shots/t32-wave.png`, a red ring half way out between the Warden and
+    this player, on the floor; `tests/t29.mjs` (the room screen up to the network: the button,
     the code's tidying and refusal, every message, the order of the checks,
     the class fallback, a Worker host on the page that starts in the hall,
     the friend's button naming the hall or the dungeon, a `world` refused

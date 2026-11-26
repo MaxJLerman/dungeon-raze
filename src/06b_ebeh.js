@@ -1757,10 +1757,15 @@ function crocRollSpot(e, c) {
 //          other player when that score is at least lead times the
 //          target's, at most once every every seconds, and never in a
 //          swing ("wind", "act") or a hold
+//   wave   the aftershock its slam sends from phase from on (the slam's
+//          after): a ring rolls out from where the slam landed, wait s
+//          after it, at speed m/s to reach m, band m deep, and hurts the
+//          player it passes for dmg (waveStart, wavesUpdate in 06)
 const WARDEN2 = {
   hp: 2.5,
   marks: [0.75, 0.5, 0.25],
   roar: { 4: 2.2 },
   lines: { 2: "The Warden burns hotter", 3: "The Warden reaches for you", 4: "The way out is gone" },
   heed: { half: 4, lead: 1.3, every: 3 },
+  wave: { from: 2, wait: 0.35, speed: 11, reach: 24, band: 1.2, dmg: 14 },
 };

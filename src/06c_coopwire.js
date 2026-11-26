@@ -43,7 +43,8 @@ const COOP_TWO = { extra: 1, extraDeep: 2, hp: 1.3, post: 1.3, bossHp: 2.5, boss
 // left as it is. EDEF itself is never changed. The Warden's is the Warden
 // for two (WARDEN2 in 06b): duo, its marks and roar lengths, and an atks
 // object of its own holding the solo Warden's attacks, the same objects in
-// the same order, since a snapshot finds an attack by its index there.
+// the same order, since a snapshot finds an attack by its index there; its
+// slam is a copy with the aftershock, at the same place in that order.
 function coopTwoDefs() {
   const out = {};
   for (const [k, d] of Object.entries(EDEF)) {
@@ -60,7 +61,7 @@ function coopTwoDefs() {
         duo: true,
         marks: WARDEN2.marks,
         roarT: WARDEN2.roar,
-        atks: { ...d.atks },
+        atks: { ...d.atks, slam: { ...d.atks.slam, after: WARDEN2.wave } },
       });
     out[k] = o;
   }

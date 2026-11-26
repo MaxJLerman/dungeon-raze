@@ -69,7 +69,20 @@ check("the solo definition is untouched", () => {
     two = Object.keys(boss.def.atks);
   assert.deepEqual(two.slice(0, solo.length), solo);
   // the same attack objects, so the snapshot's attack index finds them
-  for (const k of solo) assert.equal(boss.def.atks[k], W.atks[k], k);
+  // (but for the slam, which is a copy that carries the aftershock)
+  for (const k of solo) if (k !== "slam") assert.equal(boss.def.atks[k], W.atks[k], k);
+});
+check("the slam for two carries an aftershock and the solo slam does not", () => {
+  const { h, boss } = duo(),
+    W = h.EDEF.warden;
+  assert.equal(boss.def.atks.slam.after.dmg, 14);
+  assert.deepEqual(boss.def.atks.slam.after, { from: 2, wait: 0.35, speed: 11, reach: 24, band: 1.2, dmg: 14 });
+  assert.equal(W.atks.slam.after, undefined);
+  assert.notEqual(boss.def.atks.slam, W.atks.slam);
+  // the same slam otherwise, and the same place in the key order
+  assert.deepEqual({ ...boss.def.atks.slam, after: undefined }, { ...W.atks.slam, after: undefined });
+  assert.deepEqual(Object.keys(boss.def.atks).slice(0, Object.keys(W.atks).length), Object.keys(W.atks));
+  assert.equal(Object.keys(boss.def.atks).indexOf("slam"), Object.keys(W.atks).indexOf("slam"));
 });
 check("a cave for one has today's Warden", () => {
   const { h, a, boss } = solo(),

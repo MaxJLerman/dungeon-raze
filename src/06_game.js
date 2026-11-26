@@ -50,6 +50,8 @@ const G = {
   clouds: [],
   // the pools an eel has shocked, { body, room, t, dur }
   shocks: [],
+  // the aftershocks of the Warden for two's slam, { x, z, t, o, hit } (waveStart)
+  waves: [],
   // chunks of the crocodile's cavern ceiling, falling and fallen (crocCeiling)
   chunks: [],
 };
@@ -2017,6 +2019,7 @@ function resetRun() {
   G.holes = [];
   G.clouds = [];
   G.shocks = [];
+  G.waves = [];
   G.chunks = [];
   G.insp = null;
   G.grabGrace = 0;
@@ -2177,6 +2180,7 @@ function respawn() {
   G.holes = [];
   G.clouds = [];
   G.shocks = [];
+  G.waves = [];
   G.chunks = [];
   G.world.resolve(p, 0.6);
   G.projs = [];
@@ -4869,6 +4873,7 @@ function enemyUpdate(e, dt) {
             c: RED,
           });
           sparks(e.x, 0.3, e.z, 40, [1, 0.5, 0.2], 9, 0.6, 0.16);
+          if (a.after && e.phase >= a.after.from) waveStart(e.x, e.z, a.after);
           if (Math.hypot(p.x - e.x, p.z - e.z) < a.radius)
             hurtPlayer(a.dmg, e, a);
           e.state = "rec";
@@ -5560,6 +5565,29 @@ function shocksUpdate(dt) {
   for (const s of G.shocks) s.t += dt;
   G.shocks = G.shocks.filter((s) => s.t < s.dur);
 }
+// An aftershock of a slam (an attack's after, WARDEN2.wave): a ring rolling
+// out from (x, z), o.wait seconds after the landing, at o.speed up to o.reach.
+// Each page judges it on its own player (wavesUpdate); the host's player is a
+// placeholder, so there it hurts nobody.
+function waveStart(x, z, o) {
+  G.waves.push({ x, z, t: 0, o, hit: false });
+}
+// A wave hurts this player once, on the step its front edge (half a band
+// ahead of the radius) reaches them; hurtPlayer judges it, so a dodge, a
+// parry or a guard facing its centre answers it as they answer a slam.
+function wavesUpdate(dt) {
+  if (!G.waves.length) return;
+  const p = G.player;
+  for (const w of G.waves) {
+    w.t += dt;
+    const o = w.o;
+    if (!w.hit && (w.t - o.wait) * o.speed >= Math.hypot(p.x - w.x, p.z - w.z) - o.band / 2) {
+      w.hit = true;
+      hurtPlayer(o.dmg, null, { dmg: o.dmg, px: w.x, pz: w.z });
+    }
+  }
+  G.waves = G.waves.filter((w) => (w.t - w.o.wait) * w.o.speed <= w.o.reach);
+}
 function holesUpdate(dt) {
   for (const h of G.holes) {
     h.t += dt;
@@ -5781,6 +5809,7 @@ function update(dt) {
   holesUpdate(dt);
   cloudsUpdate(dt);
   shocksUpdate(dt);
+  wavesUpdate(dt);
   for (const q of G.pending) {
     q.t -= dt;
     if (q.t <= 0) {

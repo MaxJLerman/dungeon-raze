@@ -815,6 +815,7 @@ function coopPuppet(e, dt, rt, drt) {
       c: RED,
     });
     sparks(e.x, 0.3, e.z, 40, [1, 0.5, 0.2], 9, 0.6, 0.16);
+    if (a.after && e.phase >= a.after.from) waveStart(e.x, e.z, a.after);
     hit = dist < a.radius;
   } else if (s !== "act") return;
   else if (a.kind === "charge") hit = dist < e.r + p.r + 0.9;

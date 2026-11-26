@@ -80,7 +80,10 @@
   `enemyUpdate`, the glow and sprite in `07_render.js`, a co-op page's
   tempo) read `e.phase >= 2`. Only the Warden for two (`coop.md`) has
   `marks` or `roarT` today, and no attack has `from`; `EDEF` carries none
-  of them.
+  of them. An attack's `after` (the Warden for two's slam only, `coop.md`)
+  is data for an aftershock: where a `"slam"` lands in `enemyUpdate`, and in
+  a co-op page's puppet, an enemy whose phase is at least `after.from` calls
+  `waveStart(x, z, after)`; `EDEF` has none, so solo slams are as ever.
   `fell` is the big message `kill` shows for a boss (the Warden's is
   "THE WARDEN FALLS"; a boss type needs one). `spawnEnemies` leaves out any
   `boss` type once `G.bossDead`. `tests/t25.mjs` covers these and `atkOk`.
