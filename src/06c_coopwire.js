@@ -29,6 +29,60 @@ const COOP = {
   TICK_MAX: 0.25, // the most elapsed time the Worker hands the host in one call
   GRADES: ["E"], // the grades a co-op room may travel to (the co-op hall opens E only)
 };
+// A cave entered by two players is harder (docs/notes/coop.md, "A dungeon for
+// two"). extra: enemies added to each room pack, extraDeep to a pack of the
+// last row of genWorld's table (brute, brute, spit); hp and post: health and
+// posture of regular enemies, bossHp and bossPost the boss's; turns: attack
+// turns held against each player at once; bossHeal: the share of its full
+// health the boss regains when a player dies in its chamber.
+const COOP_TWO = { extra: 1, extraDeep: 2, hp: 1.3, post: 1.3, bossHp: 1.8, bossPost: 1.5, turns: 2, bossHeal: 0.25 };
+// The enemy definitions of a dungeon for two, by type: each type's own
+// entry behind an object with its health and posture scaled, the dummy's
+// left as it is. EDEF itself is never changed.
+function coopTwoDefs() {
+  const out = {};
+  for (const [k, d] of Object.entries(EDEF)) {
+    if (d.dummy) {
+      out[k] = d;
+      continue;
+    }
+    const o = Object.create(d);
+    o.hp = Math.round(d.hp * (d.boss ? COOP_TWO.bossHp : COOP_TWO.hp));
+    o.posture = Math.round(d.posture * (d.boss ? COOP_TWO.bossPost : COOP_TWO.post));
+    out[k] = o;
+  }
+  return out;
+}
+// The extra spawns of a dungeon for two, { type, x, z, yaw, node } each, to
+// go after the world's own. Room packs only: tunnel posts (node -1) and the
+// boss get none. Each extra is one more of a member of its pack, drawn in
+// spawn order from a generator of its own seeded from the cave's, standing 1
+// to 2.5 m from that member, pushed out of the rock as genWorld pushes its
+// own. The same world and seed give the same list.
+function coopExtras(world, seed) {
+  const R = rng(seed ^ 0x2c0),
+    groups = new Map(),
+    out = [];
+  for (const s of world.spawns) {
+    if (s.node < 0 || (EDEF[s.type] && EDEF[s.type].boss)) continue;
+    if (!groups.has(s.node)) groups.set(s.node, []);
+    groups.get(s.node).push(s);
+  }
+  for (const [node, g] of groups) {
+    const deep = g.map((s) => s.type).sort().join() === "brute,brute,spit",
+      n = deep ? COOP_TWO.extraDeep : COOP_TWO.extra;
+    for (let k = 0; k < n; k++) {
+      const m = g[Math.floor(R() * g.length)],
+        a = R() * TAU,
+        d = 1 + R() * 1.5,
+        o = { x: m.x + Math.sin(a) * d, z: m.z + Math.cos(a) * d };
+      world.resolve(o, 1.2);
+      out.push({ type: m.type, x: o.x, z: o.z, yaw: R() * TAU, node });
+    }
+  }
+  return out;
+}
+
 // True only in the host copy, whose build declares COOP_HEADLESS first.
 const COOP_HEADLESS_HERE = typeof COOP_HEADLESS !== "undefined";
 

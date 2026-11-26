@@ -900,7 +900,8 @@ export default [
       c.went = c8.walkIn("E");
       const w = G.world,
         p = G.player;
-      c.cave = G.zone === "cave" && G.seed === 99 && G.enemies.length === 47 && G.enemies.every((e) => !!e.nb);
+      // two in the room: a dungeon for two, with the host's extra enemies
+      c.cave = G.zone === "cave" && G.seed === 99 && h.S.n === 2 && G.enemies.length === h.G.enemies.length && G.enemies.length > 47 && G.enemies.every((e) => !!e.nb);
       c.atStart = Math.hypot(p.x - w.spawn.x, p.z - w.spawn.z) < 1e-6;
       c.hostCave = h.S.kind === "cave" && h.G.seed === 99 && c8.px(1).here === true && c8.px(2).here === true;
       // the Warden dies on the host; this page steps into its gate
@@ -951,7 +952,7 @@ export default [
       c.joined = G.zone === "hub" && DF.CC.pid === 2 && DF.net().mates.length === 1 && DF.net().mates[0].pid === 1;
       r.mateAsk("travel", "E", 99);
       c8.arrive("cave");
-      c.taken = G.zone === "cave" && G.seed === 99 && G.enemies.length === 47 && c8.px(2).here === true;
+      c.taken = G.zone === "cave" && G.seed === 99 && h.S.n === 2 && G.enemies.length === h.G.enemies.length && c8.px(2).here === true;
       r.mateAsk("travel", "hub");
       c8.arrive("hub");
       c.back = G.zone === "hub" && c8.px(2).here === true;
@@ -967,6 +968,77 @@ export default [
       c.line = log().filter((t) => t === line).length === 1;
       c.stays = G.zone === "hub" && h.S.epoch === e0 && !G.trans && DF.CC.seq === 1;
       return { pass: Object.values(c).every((v) => v === true), c, msgs: log() };
+    },
+  },
+  {
+    name: "a paused player is taken along",
+    eval: async () => {
+      const { G } = DF,
+        c8 = window.__c8;
+      G.manual = true;
+      const r = c8.solo({ hub: true, pid: 2, ping: 50 }),
+        c = {};
+      DF.show("pause");
+      await c8.frames();
+      c.paused = G.zone === "hub" && G.state === "pause" && c8.shown("scr-pause");
+      r.mateAsk("travel", "E", 99);
+      c8.arrive("cave");
+      await c8.frames();
+      const p = G.player,
+        sp = G.world.spawn;
+      c.cave = G.zone === "cave" && G.seed === 99 && !G.trans;
+      c.atStart = Math.hypot(p.x - sp.x, p.z - sp.z) < 1e-6;
+      c.live = DF.net() !== null && DF.net().live === true;
+      c.stillPaused = G.state === "pause" && c8.shown("scr-pause");
+      DF.show("play");
+      return { pass: Object.values(c).every((v) => v === true), c, where: [p.x, p.z, sp.x, sp.z] };
+    },
+  },
+  {
+    name: "the feed is announced",
+    eval: () => {
+      const { G } = DF,
+        c8 = window.__c8;
+      G.manual = true;
+      const line = "The Ossuary Warden feeds on the fallen.";
+      let wid = null;
+      // a fed for the Warden half a second after the join's time
+      const r = c8.solo({
+        ping: 50,
+        two: true,
+        tamper: (ev) => {
+          if (ev[0] !== "join") return ev;
+          const q = ev[1].enemies.find((o) => o[1] === "warden");
+          wid = q[0];
+          return [ev, ["fed", wid, ev[1].t + 0.5]];
+        },
+      });
+      const log = c8.msgLog(),
+        c = {};
+      c8.step(1.5, () => {
+        log();
+      });
+      c.said = log().filter((t) => t === line).length === 1;
+      // one long past its time is silent
+      c8.tell(["fed", wid, r.host.S.step / 60 - 3]);
+      c8.step(0.5, () => {
+        log();
+      });
+      c.lateQuiet = log().filter((t) => t === line).length === 1;
+      // a malformed one or one naming no enemy is ignored
+      c8.tell(["fed", 9999, r.host.S.step / 60]);
+      c8.tell(["fed", wid]);
+      c8.tell(["fed", String(wid), r.host.S.step / 60]);
+      let threw = null;
+      try {
+        c8.step(0.5, () => {
+          log();
+        });
+      } catch (e) {
+        threw = String(e);
+      }
+      c.ignored = !threw && log().filter((t) => t === line).length === 1 && !!DF.net();
+      return { pass: wid !== null && Object.values(c).every((v) => v === true), c, threw, msgs: log() };
     },
   },
   {

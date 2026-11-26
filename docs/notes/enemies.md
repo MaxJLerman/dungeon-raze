@@ -6,7 +6,15 @@
   `act`, `rec`, `hit`, `recoil`, `stagger`, `roar`, `return`, `dead`, and
   two more that only some enemies use: `fall` (Drop) and `hold` (a grab, below).
 - At most two non-boss enemies may attack at once. They claim a token with
-  `takeToken`; the rest circle.
+  `takeToken`; the rest circle. In a co-op dungeon built for two (`NET.two`,
+  only ever true on the host, where every enemy has a target `tg`) the limit
+  is `COOP_TWO.turns` against each player: only holders with the same `tg`
+  count (`coop.md`).
+- `makeEnemy` reads its definition from `(G.edef || EDEF)[type]`. `G.edef`
+  is `null` but in a co-op dungeon for two, where it is `coopTwoDefs()`:
+  each type's entry behind an object with its own scaled `hp` and
+  `posture` (the dummy's left as it is). So code reads health and posture
+  from `e.def`, never `EDEF[type]`, and nothing writes to `EDEF`.
 - `poise` 0 flinches on any hit, 1 only on heavy hits, 2 never.
 - Posture fills from hits and parries and breaks into `stagger`, which opens
   the enemy to an execution.

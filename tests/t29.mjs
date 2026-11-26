@@ -676,9 +676,9 @@ export default [
   const p = DF.G.player, sp = DF.G.world.spawn;
   c.plays = DF.G.state === "play" && DF.net().live && DF.G.zone === "cave";
   c.atStart = Math.hypot(p.x - sp.x, p.z - sp.z) < 0.05;
-  c.where = [p.x, p.z, sp.x, sp.z];
+  const where = [p.x, p.z, sp.x, sp.z];
   DF.coopEnd("test"); DF.enterHub(); DF.show("title");
-  return { pass: Object.values(c).every((v) => v === true || Array.isArray(v)), c };`),
+  return { pass: Object.values(c).every((v) => v === true), c, where };`),
 
   step("a friend's class, picked in the room or changed mid-run, reaches the host, and the host's shows here", `
   const c = {}, pick = document.getElementById("coopCls"), cards = () => [...pick.querySelectorAll(".card")];

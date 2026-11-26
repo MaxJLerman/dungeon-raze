@@ -39,8 +39,10 @@
   a `let`; `DF.setRM(on)` sets it for a test.
 - `resetRun()` clears everything that must not cross a world swap. Add new
   per-run state there. It clears `G.inBoss`, the flag for the player being
-  inside the boss chamber, and `G.chunks`, the crocodile's falling ceiling
-  (`respawn` clears it too).
+  inside the boss chamber, `G.chunks`, the crocodile's falling ceiling
+  (`respawn` clears it too), and `G.edef`, the scaled enemy definitions of
+  a co-op dungeon for two (`coop.md`), so every world starts with `EDEF`'s
+  own; a co-op build sets it again after.
 - `R.env` (ambient and fog) is set per zone from `ENV_HUB`, `ENV_CAVE` and, for
   the sewer, `ENV_SEWER` (damp green-dark, thicker fog), through `ENV_GRADE`.
   `setEnv` copies the preset.

@@ -38,7 +38,8 @@
   takes `hub` (the host starts in the co-op hall; `seed` is then the first
   trip's) and `pid` (2: this page is the friend and the scripted player is
   the host's page, pid 1, which the returned `mateAsk(name, ...args)` can
-  have travel). Without `save` the dev run follows it from world to world.
+  have travel) and `two` (the host's cave is a dungeon for two, whoever is
+  in it). Without `save` the dev run follows it from world to world.
 - **God mode** (`#devGod`, `devGod(on?)`) sets `DEV.god`, off on each load
   and kept through world swaps. `hurtPlayer` still runs the dodge (and
   perfect dodge), parry and block branches, so plates can be parried back;

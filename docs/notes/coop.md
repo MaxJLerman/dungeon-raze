@@ -36,7 +36,9 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   `mates`, the other player). With it `null` the game is the single-player
   game. Both sides define every hook, as a no-op or `false` where that side
   has nothing to do: `enemies`, `frame`, `onHit`, `onShoot`, `onKill`,
-  `onRespawn`, `onGate`, `onPortal`, `onPShot`, `onBlast`, `taken`. Core
+  `onRespawn`, `onGate`, `onPortal`, `onPShot`, `onBlast`, `taken`. The
+  host's also has `two`, a getter (`S.n === 2`), since `NET` is set once
+  and worlds change. Core
   reads it in these places and no others:
   - `update`: the host skips `playerUpdate`; with `NET` set
     `NET.enemies(dt)` replaces the enemy loop (the host steps its enemies
@@ -65,7 +67,9 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
     `NET.onBlast`, the player's `fire` `NET.onPShot`, an enemy's `shoot`
     `NET.onShoot`, and `playerUpdate` at the exit gate `NET.onGate()`.
     `nearestStaggered` skips an enemy `NET.taken(e)` (the other player has
-    begun to execute it). `enterHub` ends a client's co-op run
+    begun to execute it). `takeToken` reads `NET.two` (the host's, true in a
+    dungeon for two; a client's `NET` has no `two`): only holders with the
+    same `tg` count, up to `COOP_TWO.turns`. `enterHub` ends a client's co-op run
     (`coopEnd("left")`), unless its second argument, `coop`, is true:
     `enterHub(fromGrade, true)` is a co-op world swap to the co-op hall
     (`genHub(true)`, `zones.md`), which the host's `build` makes and which
@@ -111,7 +115,7 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   or 3.5 m in front of `from`'s gate in the hall), full health, state
   `"free"`, its `seen` cleared, `heard` `-Infinity`, `ack` 0 and `here`
   false; then each is sent `world`. `S.n` is the players the world was
-  built for, always 1 for now. The co-op hall has E open and every other
+  built for: 2 for a dungeon for two (below), else 1. The co-op hall has E open and every other
   gate sealed whatever the save says (`genHub(true)`), so the host, which
   has no save, and both pages build one mesh. `NET` is set once in `start`,
   before the first build. **Only pid 1 travels** (`travel`): to a grade in
@@ -124,7 +128,7 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   and a `gate` or `travel` crossing a swap does nothing), it is not `live()`
   (not hunted) and not counted by `wipe()`, it is sent no snapshots, and
   `all` and `others` skip it for the world-bound events `shot`, `ring`,
-  `roar`, `kill` and `reset`. A counter (`ver`) is raised by every kill and
+  `roar`, `kill`, `reset` and `fed`. A counter (`ver`) is raised by every kill and
   wipe and remembered on each proxy when its join or world is sent; an `at`
   that finds it changed is answered with `reset` (the enemies again). An
   event that swaps the world is not acknowledged, since the new world's
@@ -132,6 +136,47 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   (its `at`). In the hall the dummy is a host enemy like any other; an
   `exec` on it gives back its health and posture, clears the pin and sends
   no `kill`, as single player's execution does.
+- **A dungeon for two** (`06c`, `06d`, `07c`). **When:** `build` counts
+  `S.px.size` as it builds a cave: two or more joined players (entered or
+  still on the room screen) make it a dungeon for two (`S.n` 2) for as
+  long as that world lasts, wipes included; one makes the usual cave, and a
+  friend who joins it mid-run changes nothing. The hall is never tuned and
+  the dummy never scaled. `host.start({ seed, grade, two: true })` forces
+  it (tests, `coopSolo({ two })`). The count travels as `n` in `join` and
+  `world`. **The table** is `COOP_TWO` in `06c`: `{ extra: 1, extraDeep:
+  2, hp: 1.3, post: 1.3, bossHp: 1.8, bossPost: 1.5, turns: 2, bossHeal:
+  0.25 }`. **Tougher:** `coopTwoDefs()` is a table with every key of
+  `EDEF`: the dummy's own entry, and for every other type
+  `Object.create(EDEF[type])` with its own `hp` and `posture` multiplied by
+  `hp` and `post` (`bossHp` and `bossPost` for a boss), rounded. `EDEF`
+  itself is never changed. `G.edef` holds it for the world (`null` means
+  `EDEF`'s own), `makeEnemy` reads `(G.edef || EDEF)[type]` and
+  `resetRun()` clears it, so every reader of `e.def` (bars, the Warden's
+  half-health phase change, the snapshot's posture fraction, a wipe's
+  enemies) sees the scaled values. On the host `build` sets it after
+  `newRun`; a client's `coopBuild` sets it when `d.n === 2`, before the
+  puppets are made (cave 99: a husk 55 health and 65 posture, the Warden
+  1116 and 210). **More enemies:** `coopExtras(world, seed)` groups the
+  spawns by `node` (rooms only: no tunnel post, node -1, and no boss); a
+  pack whose types sorted are `brute, brute, spit` (the last row of
+  `genWorld`'s table) gets `extraDeep`, any other `extra`. Each extra is a
+  copy of a member drawn with `rng(seed ^ 0x2c0)` in spawn order, 1 to
+  2.5 m from it, then `world.resolve(o, 1.2)`. `build` appends them to
+  `G.world.spawns` after generation (the generator and t22's hashes are
+  untouched; the checksum covers the mesh only) and runs `spawnEnemies()`
+  and `number()` again, so they are host enemies like any other and reach
+  clients in the enemy list. Cave 99 for two has 62 enemies (47 and 15
+  extras). **Attack turns:** `takeToken` with `NET.two` counts only token
+  holders with the same target (`tg`), up to `turns` each, so two players
+  face up to four attackers; otherwise it is the solo rule, two in all.
+  **The feed:** each tick `present()` remembers every proxy's state
+  (`was`, reset to `"free"` by `build`); a change to `"dead"` inside the
+  boss chamber, in a dungeon for two with the boss alive and `aware`,
+  gives the boss `bossHeal` of its full health, capped at full, and sends
+  `["fed", eid, t]` to every player there. Its phase does not go back. A
+  client waits for the drawn time as for `roar` and says "<boss name> feeds
+  on the fallen." ("The Ossuary Warden feeds on the fallen."), silent when
+  late or not live; its health follows from the snapshots.
 - **The wire** (`06c`). Every frame is an `ArrayBuffer` whose first byte is
   its kind: `COOP.SNAP` (1), host to client, 20 a second: host time, the
   ack (the client's highest event seq processed), the other player's record
@@ -167,7 +212,8 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   hello with no build included), `started` (the host's page has sent its
   first state, so its player has pressed Start; sent once to a friend
   already in), `shot`, `ring`, `roar`, `kill` (with whose event caused it),
-  `reset`, `peer`, `cls` (`["cls", pid, class]`, the other player has
+  `reset`, `fed` (`["fed", eid, t]`, a dungeon for two's boss fed on a
+  death in its chamber, above), `peer`, `cls` (`["cls", pid, class]`, the other player has
   changed class: `coopMateCls` changes the mate in place, keeping where it
   is and its share of health), `pshot`, `pblast`. A client checks a join's
   or a world's shape before building anything (`coopWorldOk`: an epoch `e`
@@ -414,7 +460,9 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
   the hall, where `seed` is the first trip's; `pid: 2` puts the page in as
   the friend and the scripted player in first as the host's page (pid 1,
   idle unless `mate` says otherwise), and `out.mateAsk(name, ...args)` has
-  it ask the host anything (`travel` included). Without `save` the dev run
+  it ask the host anything (`travel` included). `coopSolo({ two: true })`
+  starts the host's cave as a dungeon for two (passed to `host.start`;
+  nothing for the hall). Without `save` the dev run
   (`DEV.run`) follows the run from world to world, so nothing it does is
   saved. The fake link draws its jitter
   and loss from `cfg.rnd` (`Math.random` when unset); `coopSolo` takes
@@ -436,7 +484,10 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
     another epoch is not acknowledged), back to the hall, the gate back to
     the hall with the run's time and the room still open, a second trip,
     crossing requests in both orders, a join mid-swap, the dummy's
-    execution), and the Worker driver with a stand-in for the Worker's
+    execution; a dungeon for two: the count of players, the extras, the
+    scaled health and posture and the Warden's phase change, two attackers
+    per player, the boss's feed and where it does not happen, a wipe, the
+    hall never tuned), and the Worker driver with a stand-in for the Worker's
     global (the 0.25 s cap, the pid byte, relay notices, a closed relay,
     stop, and a gate that does not stop it; a start in the hall, as the page
     posts it, and one with a seed and a grade in a cave).
@@ -457,11 +508,12 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
   - Page tests: `tests/t27.mjs` (the client against a hand-stepped host over
     the fake link: puppets, hits, parries, executions, the checksum, a
     world that differs mid-run, a join's epoch, the other player after a
-    swap) and `tests/t28.mjs` (the other player and
+    swap, puppets and the boss bar scaled for two and a plain solo run
+    after it) and `tests/t28.mjs` (the other player and
     the party rules: the gate back to the hall, from the hall to the cave
     and back, a second trip, the friend taken along and turned away at a
-    gate, Return to base, an exit mid-fade, the player's own hall after
-    co-op, a plaque that takes no code, no new-gate line, reduced motion),
+    gate, a paused player taken along, the feed's line, Return to base, an
+    exit mid-fade, the player's own hall after co-op, a plaque that takes no code, no new-gate line, reduced motion),
     both with `smoke`; `tests/t29.mjs` (the room screen up to the network: the button,
     the code's tidying and refusal, every message, the order of the checks,
     the class fallback, a Worker host on the page that starts in the hall,
@@ -484,7 +536,8 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
     hall as what they picked, each with the other there, each changes class
     from the pause menu and the other page shows that, the friend sees the
     host walk in the hall, the host walks into E's gate and both pages are
-    in one cave (same seed and sum), an old version refused, the friend
+    in one cave (same seed and sum, built for two: 62 enemies and scaled
+    husks), an old version refused, the friend
     comes back by the invite link the host's pause screen copies (a real
     page load with `?room=`) and lands in the cave, picks a class mid-run
     and enters, a host page that stops drawing
@@ -500,6 +553,10 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
     show nothing.
 
 ## Known problems
+
+- The numbers of a dungeon for two (`COOP_TWO`) are the owner's starting
+  guesses and have not been played by hand. A friend who joins a cave built
+  for one makes it easier: the count is taken only when the cave is built.
 
 - Co-op is grade E, two players and the five base classes, and assumes
   desktop Chrome or Safari. It has not been played by hand or between two

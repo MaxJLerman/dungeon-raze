@@ -625,6 +625,54 @@ export default [
       return { pass: was && ended && e.aware && again && DF.net() === null, ended, aware: e.aware, again };
     },
   },
+  {
+    name: "puppets are built to match: a dungeon for two is scaled here, and a solo run after it is not",
+    eval: async () => {
+      const { G } = DF,
+        co = window.__co,
+        E = DF.EDEF,
+        frames = () => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+      G.manual = true;
+      let join = null;
+      const r = co.solo({
+        seed: 99,
+        two: true,
+        tamper: (ev) => {
+          if (ev[0] === "join") join = ev[1];
+          return ev;
+        },
+      });
+      DF.show("play");
+      const h = r.host,
+        hk = G.enemies.find((e) => e.type === "husk"),
+        pw = G.enemies.find((e) => e.def.boss),
+        c = {};
+      c.joined = !!DF.net() && !!join && join.n === 2 && h.S.n === 2;
+      c.count = G.enemies.length === join.enemies.length && G.enemies.length === h.G.enemies.length && G.enemies.length > 47;
+      c.husk = hk.def.hp === Math.round(E.husk.hp * 1.3) && hk.def.posture === Math.round(E.husk.posture * 1.3) && hk.hp === hk.def.hp;
+      c.warden = pw.def.hp === Math.round(E.warden.hp * 1.8) && pw.def.posture === Math.round(E.warden.posture * 1.5);
+      c.edefKept = E.husk.hp === 42 && E.warden.hp === 620;
+      // the boss bar's full width is the scaled health: the Warden at its
+      // unscaled full health fills 620 / 1116 of it
+      pw.aware = true;
+      pw.hp = E.warden.hp;
+      await frames();
+      const bar = () => parseFloat(document.getElementById("bhF").style.width),
+        part = bar();
+      c.bar = Math.abs(part - (E.warden.hp / pw.def.hp) * 100) < 0.01;
+      pw.hp = pw.def.hp;
+      await frames();
+      const full = bar();
+      c.full = full === 100;
+      pw.aware = false;
+      // out of co-op, a solo run is the plain game
+      DF.coopEnd("left");
+      DF.newRun(99);
+      const sh = G.enemies.find((e) => e.type === "husk");
+      c.solo = G.edef === null && sh.def === E.husk && sh.def.hp === E.husk.hp && sh.hp === E.husk.hp && G.enemies.length === 47;
+      return { pass: Object.values(c).every((v) => v === true), c, bar: [part, full], enemies: G.enemies.length };
+    },
+  },
   // ---- Task 7: fighting as a client ----
   {
     name: "this player's state reaches the host 30 times a second, in any screen",

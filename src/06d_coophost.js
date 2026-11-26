@@ -14,7 +14,8 @@ const COOP_HOST = COOP_HEADLESS_HERE
       // started: the host's own page (pid 1) has sent a state in this run,
       // so its player has pressed Start; it stays set.
       // epoch: raised by one with each world the host builds, from 1. kind:
-      // "hub" (the hall) or "cave". n: the players the world was built for.
+      // "hub" (the hall) or "cave". n: the players the world was built for,
+      // 2 for a cave built with two in the room (a dungeon for two), else 1.
       const S = {
         px: new Map(),
         byId: new Map(),
@@ -39,7 +40,7 @@ const COOP_HOST = COOP_HEADLESS_HERE
       const tell = (pid, ev) => send(pid, coopEventEncode(ev));
       // A proxy that has not answered the world with its at is not there:
       // events about this world's enemies are not sent to it.
-      const BOUND = ["shot", "ring", "roar", "kill", "reset"];
+      const BOUND = ["shot", "ring", "roar", "kill", "reset", "fed"];
       const hears = (px, ev) => px.here || !BOUND.includes(ev[0]);
       const others = (pid, ev) => {
         for (const [id, px] of S.px) if (id !== pid && hears(px, ev)) tell(id, ev);
@@ -78,6 +79,9 @@ const COOP_HOST = COOP_HEADLESS_HERE
       }
       // Each tick, before the enemies: who is away, and who is in the boss
       // chamber (in within its radius, out past the pad, as update does).
+      // A player whose state has just become "dead" inside the chamber feeds
+      // the boss; was is its state at the last tick, so each death counts
+      // once.
       function present() {
         const t = now(),
           bc = G.world.boss;
@@ -89,7 +93,19 @@ const COOP_HOST = COOP_HEADLESS_HERE
             if (d < bc.r) px.inBoss = true;
             else if (d > bc.r + PURSUIT.bossPad) px.inBoss = false;
           }
+          if (px.state === "dead" && px.was !== "dead" && px.inBoss) feed();
+          px.was = px.state;
         }
+      }
+      // A death in the boss's chamber in a dungeon for two, with the boss
+      // alive and awake: it regains COOP_TWO.bossHeal of its full health,
+      // never past full, and its phase stays as it is. Both players are told.
+      function feed() {
+        if (S.n !== 2) return;
+        const b = G.enemies.find((e) => e.def.boss && !e.dead);
+        if (!b || !b.aware) return;
+        b.hp = Math.min(b.def.hp, b.hp + b.def.hp * COOP_TWO.bossHeal);
+        all(["fed", b.id, now()]);
       }
       // Runs fn with G.player and G.inBoss pointed at px, and puts them back.
       function as(px, fn) {
@@ -210,11 +226,20 @@ const COOP_HOST = COOP_HEADLESS_HERE
       // health and not yet there: it is sent the world and is heard again
       // once its at for this epoch arrives. Its event numbers start again.
       // won: the run time when the exit gate caused the trip, else null.
-      function build(kind, grade, seed, from, won = null) {
+      // A cave built with two players in the room (joined, entered or not),
+      // or with two set, is a dungeon for two for as long as it lasts: the
+      // scaled definitions and the extra spawns, its enemies made again from
+      // them. The hall never is.
+      function build(kind, grade, seed, from, won = null, two = false) {
         if (kind === "hub") enterHub(from, true);
         else newRun(seed, grade);
         S.kind = kind;
-        S.n = 1;
+        S.n = kind === "cave" && (two || S.px.size >= 2) ? 2 : 1;
+        if (S.n === 2) {
+          G.edef = coopTwoDefs();
+          G.world.spawns.push(...coopExtras(G.world, seed));
+          spawnEnemies();
+        }
         S.epoch++;
         sum = coopWorldSum(G.world);
         armed = true;
@@ -245,6 +270,7 @@ const COOP_HOST = COOP_HEADLESS_HERE
             inBoss: false,
             hp: px.maxHp,
             state: "free",
+            was: "free",
             t: 0,
             move: null,
             x: ax,
@@ -264,8 +290,8 @@ const COOP_HOST = COOP_HEADLESS_HERE
         }
       }
       // A room's first world: the hall with { hub: true }, else the cave
-      // from seed and grade.
-      const start = ({ hub = false, seed, grade = "E" } = {}) => {
+      // from seed and grade (two: a dungeon for two whoever is in, for tests).
+      const start = ({ hub = false, seed, grade = "E", two = false } = {}) => {
         S.px.clear();
         S.step = 0;
         S.started = false;
@@ -287,9 +313,13 @@ const COOP_HOST = COOP_HEADLESS_HERE
           onPShot() {},
           onBlast() {},
           taken: () => false,
+          // a dungeon for two: takeToken counts each player's attackers
+          get two() {
+            return S.n === 2;
+          },
         };
         if (hub) build("hub", null, 0, null);
-        else build("cave", grade, seed, null);
+        else build("cave", grade, seed, null, null, two);
       };
       const join = (pid, cls) => {
         const id = baseCls(cls),
@@ -302,6 +332,7 @@ const COOP_HOST = COOP_HEADLESS_HERE
           inBoss: false,
           ack: 0,
           here: false, // until its at for this epoch
+          was: px.state, // its state at the last tick, for the boss's feed
           ver,
           seen: new Map(), // enemy id -> host time it last qualified for this client
         });
@@ -685,6 +716,11 @@ const COOP_HOST = COOP_HEADLESS_HERE
         send: null,
         G,
         S,
+        // for tests: the host's NET, and the definitions it never changes
+        get NET() {
+          return NET;
+        },
+        EDEF,
         worker,
         sum: coopWorldSum,
         // for tests: the hall as either kind of page builds it, and a save

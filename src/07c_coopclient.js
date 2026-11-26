@@ -333,7 +333,8 @@ function coopRefuse(why) {
     inRun = !!CC.world;
   coopEnd("refused");
   CC.why = why;
-  // the cave was built only for the run: back to the base
+  // the world a join or a world event built here (the co-op hall or a
+  // cave) was for co-op only: this page's own hall
   if (inRun) enterHub();
   if (f) f(why);
 }
@@ -366,7 +367,7 @@ function coopRecv(buf) {
 // One that fails is ignored.
 const coopNum = (v) => typeof v === "number" && Number.isFinite(v);
 const coopNums = (m, n) => m.length >= n && m.slice(1, n).every(coopNum);
-const COOP_EV_T = { shot: 8, ring: 5, roar: 2, kill: 3 };
+const COOP_EV_T = { shot: 8, ring: 5, roar: 2, kill: 3, fed: 2 };
 const COOP_TAKE = {
   // ["shot", eid, x, y, z, vx, vz, dmg, t]
   shot: (m) => coopNums(m, 9) && CC.byId.has(m[1]),
@@ -376,6 +377,8 @@ const COOP_TAKE = {
   roar: (m) => coopNums(m, 3) && CC.byId.has(m[1]),
   // ["kill", eid, pid, t]
   kill: (m) => coopNums(m, 4) && CC.byId.has(m[1]),
+  // ["fed", eid, t]: the boss has fed on a player who died in its chamber
+  fed: (m) => coopNums(m, 3) && CC.byId.has(m[1]),
 };
 // The host events applied as they arrive, with their checks.
 const COOP_NOW = {
@@ -474,6 +477,9 @@ function coopBuild(d) {
     Object.assign(G.player, { x: o.x, z: o.z, yaw: o.yaw });
     snapCam();
   }
+  // a dungeon built for two: the puppets take the host's scaled definitions
+  // (building the world cleared them, resetRun)
+  if (d.n === 2) G.edef = coopTwoDefs();
   coopPuppets(d);
   G.bossDead = !!d.bossDead;
   // built after the boss died: its gate is open, as bossFell leaves it
@@ -887,6 +893,12 @@ function coopApply(ev, rt) {
       p.kz = ((p.z - e.z) / d) * 16;
     }
     say("The Warden burns hotter", "", 2.5);
+  } else if (ev[0] === "fed") {
+    // a death in the boss's chamber healed it (a dungeon for two); its
+    // health follows from the snapshots, so only the line is said
+    const e = CC.byId.get(ev[1]);
+    if (!e || e.dead || quiet) return;
+    say(e.def.name + " feeds on the fallen.", "", 3);
   } else if (ev[0] === "kill") {
     // One already dead here stays as it is, and a death guessed here is
     // settled. Otherwise it dies, with kill's rewards when this player's

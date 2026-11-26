@@ -25,6 +25,9 @@ const G = {
   routeN: 0,
   // true while the player is inside the boss chamber
   inBoss: false,
+  // the enemy definitions of this world when they are not EDEF's own (a
+  // co-op dungeon for two, coopTwoDefs), else null
+  edef: null,
   gate: null,
   flashRed: 0,
   flashWhite: 0,
@@ -1901,7 +1904,7 @@ function setClass(id) {
   });
 }
 function makeEnemy(s) {
-  const d = EDEF[s.type];
+  const d = (G.edef || EDEF)[s.type];
   return {
     type: s.type,
     node: s.node,
@@ -2041,6 +2044,7 @@ function resetRun() {
   G.fade = 0;
   G.routeN = 0;
   G.inBoss = false;
+  G.edef = null;
 }
 function snapCam() {
   cam.yaw = G.player.yaw;
@@ -2292,11 +2296,15 @@ function explode(x, z, r, dmg, post, c) {
 }
 
 // ---- tokens ----
+// At most two regular enemies attack at once. In a co-op dungeon built for
+// two (NET.two, only ever set on the host) it is COOP_TWO.turns against each
+// player: only holders hunting the same player (tg) count.
 function takeToken(e) {
   if (e.def.boss || e.token) return true;
+  const two = !!(NET && NET.two);
   let n = 0;
-  for (const o of G.enemies) if (o.token && !o.dead) n++;
-  if (n >= 2) return false;
+  for (const o of G.enemies) if (o.token && !o.dead && (!two || o.tg === e.tg)) n++;
+  if (n >= (two ? COOP_TWO.turns : 2)) return false;
   e.token = true;
   return true;
 }

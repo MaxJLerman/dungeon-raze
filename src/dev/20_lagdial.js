@@ -2,14 +2,14 @@
 // A co-op run alone: a host copy stepped by hand on this page, joined over
 // the fake link, whose ping, jitter and loss can be changed while it runs.
 //
-// coopSolo({ hub, pid, seed, ping, jit, loss, rnd, mate, before, tamper, save })
+// coopSolo({ hub, pid, seed, two, ping, jit, loss, rnd, mate, before, tamper, save })
 // returns { host, cfg, step(sec, each), mate, mateAsk, refused, halt } once
 // the join has been applied or refused. hub true starts the host in the hall,
 // where seed is the first trip's (as coopBegin's seed); otherwise it starts in
-// cave seed. pid 2 puts this page in as the friend and the scripted player in
-// as the host's page (pid 1), joined first and idle unless mate says
-// otherwise; mateAsk(name, ...args) has it ask the host anything, a travel
-// included. before(host) runs before anyone joins. tamper(ev), if given, sees
+// cave seed, a dungeon for two when two is true. pid 2 puts this page in as
+// the friend and the scripted player in as the host's page (pid 1), joined
+// first and idle unless mate says otherwise; mateAsk(name, ...args) has it
+// ask the host anything, a travel included. before(host) runs before anyone joins. tamper(ev), if given, sees
 // every event the host sends this page and returns the event to send, a list
 // of them, or null for none. With save false (the default) the run is the
 // dev run, whatever world it is in, so nothing it does is saved. step(sec,
@@ -27,6 +27,7 @@ function coopSolo({
   hub = false,
   pid = 1,
   seed = 99,
+  two = false,
   ping = 0,
   jit = 0,
   loss = 0,
@@ -49,7 +50,7 @@ function coopSolo({
       return send(buf);
     };
   }
-  host.start(hub ? { hub: true } : { seed, grade: "E" });
+  host.start(hub ? { hub: true } : { seed, grade: "E", two });
   if (before) before(host);
   const out = {
     host,

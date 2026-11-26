@@ -212,6 +212,7 @@ const info = (p) =>
     net: !!DF.net(),
     zone: DF.G.zone,
     enemies: DF.G.enemies.length,
+    husk: (DF.G.enemies.find((e) => e.type === "husk") || { def: {} }).def.hp,
     mates: DF.net() ? DF.net().mates.length : 0,
     sum: DF.coopWorldSum(DF.G.world),
     seed: DF.G.seed,
@@ -247,10 +248,13 @@ async function intoE(h, f) {
     b = await info(f);
   assert.equal(a.seed, b.seed, "the same seed");
   assert.equal(a.sum, b.sum, "the same cave");
-  // both draw the host's enemy list (cave 99 has 47)
+  // both draw the host's enemy list: entered by two, cave 99 has 47 and
+  // the 15 extras of a dungeon for two
   assert.equal(a.enemies, b.enemies);
   assert.ok(a.enemies > 0, "enemies");
-  if (a.seed === 99) assert.equal(a.enemies, 47);
+  if (a.seed === 99) assert.equal(a.enemies, 62);
+  assert.equal(a.husk, Math.round(42 * 1.3), "a husk's health for two");
+  assert.equal(b.husk, a.husk);
   return a.seed;
 }
 // The room code on this page's pause screen, "" when it shows none.
@@ -461,7 +465,8 @@ async function main() {
     const b = await info(friend),
       a = await info(host);
     assert.equal(b.zone, "cave");
-    assert.equal(b.enemies, 47);
+    assert.equal(b.enemies, 62);
+    assert.equal(b.husk, Math.round(42 * 1.3));
     assert.ok(b.net);
     assert.equal(b.seed, a.seed);
     assert.equal(b.sum, a.sum);
@@ -534,14 +539,16 @@ async function main() {
     assert.equal((await info(friend)).zone, "hub");
     assert.equal(await intoE(host2, friend), 99);
     // the host's player kills the Warden through proposed hits, then asks for
-    // the gate
+    // the gate. Its health is scaled for two (1116) and a boss that gives up
+    // heals on its way home, so each hit is 160: about as many as 620 took at
+    // 100, and under COOP.MAX_DMG even as an Assassin's ambush (x3).
     await until(
       "the Warden dead on the host's page",
       () =>
         host2.evaluate(() => {
           const e = DF.G.enemies.find((o) => o.def.boss);
           if (!e) return false;
-          if (!e.dead && DF.net()) DF.hitEnemy(e, 100, 0, { src: "melee" });
+          if (!e.dead && DF.net()) DF.hitEnemy(e, 160, 0, { src: "melee" });
           return DF.G.bossDead;
         }),
       20000,
