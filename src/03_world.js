@@ -509,21 +509,51 @@ function marchWalls(F, minX, minZ, W, H, seg) {
     }
 }
 
-function genWorld(seed) {
-  const Rn = rng(seed);
-  const { nodes, edges, start, boss } = planGraph(Rn, {
-    GX: 4,
-    GZ: 4,
-    SP: 44,
-    jit: 20,
-    rMin: 8.5,
-    rVar: 3.5,
-    startR: 9.5,
-    bossR: 16.5,
-    diagP: 0.35,
-    loopP: 0.5,
-    loopDiagP: 0.6,
-  });
+// The cave's room graph. The big cave is the same on a 6 by 6 grid.
+const CAVE_PLAN = {
+  GX: 4,
+  GZ: 4,
+  SP: 44,
+  jit: 20,
+  rMin: 8.5,
+  rVar: 3.5,
+  startR: 9.5,
+  bossR: 16.5,
+  diagP: 0.35,
+  loopP: 0.5,
+  loopDiagP: 0.6,
+};
+// The big cave's layout for a seed, with linkGraph applied, and the stream
+// that made it, for genWorld to carry on with. Draw k plans from
+// rng(seed + k * 7919); the first whose route holds at least 10 rooms is
+// kept. Draw 8 has no diagonals, so its route is at least 11 rooms and it
+// always ends there.
+function bigCaveGraph(seed) {
+  for (let k = 0; ; k++) {
+    const Rn = rng(seed + k * 7919),
+      g = planGraph(Rn, {
+        ...CAVE_PLAN,
+        GX: 6,
+        GZ: 6,
+        diagP: k < 8 ? CAVE_PLAN.diagP : 0,
+      }),
+      path = linkGraph(g.nodes, g.edges, g.start, g.boss);
+    if (path.length >= 10 || k === 8) return { Rn, ...g, path };
+  }
+}
+
+// big builds the 36-room cave for two players; without it the stream is
+// drawn exactly as before the big cave.
+function genWorld(seed, big = false) {
+  let Rn, nodes, edges, start, boss, path;
+  if (big) ({ Rn, nodes, edges, start, boss, path } = bigCaveGraph(seed));
+  else {
+    Rn = rng(seed);
+    ({ nodes, edges, start, boss } = planGraph(Rn, CAVE_PLAN));
+    path = linkGraph(nodes, edges, start, boss);
+  }
+  // the dressing counts scale with the grid's area
+  const DR = big ? 2 : 1;
   const segs = [];
   for (const e of edges) {
     const A = nodes[e.a],
@@ -561,7 +591,6 @@ function genWorld(seed) {
       segs.push({ ax: p.x, az: p.z, bx: q.x, bz: q.z, r: (p.r + q.r) / 2 });
     }
   }
-  const path = linkGraph(nodes, edges, start, boss);
 
   // ---- walkable field on a grid ----
   let minX = 1e9,
@@ -779,7 +808,7 @@ function genWorld(seed) {
   const rx = () => minX + Rn() * W,
     rz = () => minZ + Rn() * H;
   let cnt = 0;
-  for (let t = 0; t < 9000 && cnt < 460; t++) {
+  for (let t = 0; t < 9000 * DR && cnt < 460 * DR; t++) {
     const x = rx(),
       z = rz(),
       f = fieldAt(x, z);
@@ -796,7 +825,7 @@ function genWorld(seed) {
     }
   }
   cnt = 0;
-  for (let t = 0; t < 9000 && cnt < 520; t++) {
+  for (let t = 0; t < 9000 * DR && cnt < 520 * DR; t++) {
     const x = rx(),
       z = rz(),
       f = fieldAt(x, z);
@@ -817,7 +846,7 @@ function genWorld(seed) {
   }
   const lights = [],
     halos = [];
-  for (let t = 0; t < 14000 && lights.length < 58; t++) {
+  for (let t = 0; t < 14000 * DR && lights.length < 58 * DR; t++) {
     const x = rx(),
       z = rz(),
       f = fieldAt(x, z);
@@ -860,7 +889,12 @@ function genWorld(seed) {
   // shrines (checkpoints)
   const shrines = [];
   const shrineIds = [start.id];
-  if (path.length >= 4) {
+  if (big) {
+    // every third room along the route while three short of the boss's, and
+    // the room before the boss's
+    for (let i = 3; i <= path.length - 4; i += 3) shrineIds.push(path[i]);
+    shrineIds.push(path[path.length - 2]);
+  } else if (path.length >= 4) {
     const a = path[Math.max(1, Math.round((path.length - 1) * 0.45))],
       b = path[path.length - 2];
     if (!shrineIds.includes(a)) shrineIds.push(a);
@@ -916,11 +950,28 @@ function genWorld(seed) {
     ["brute", "spit", "husk"],
     ["brute", "brute", "spit"],
   ];
+  // The big cave adds two larger packs and picks by a room's depth as a
+  // share of the deepest room that holds a pack.
+  let deepest = 0;
+  if (big) {
+    PACKS.push(
+      ["brute", "brute", "spit", "husk", "husk"],
+      ["brute", "brute", "spit", "spit", "husk", "husk"],
+    );
+    for (const n of nodes)
+      if (n.kind === "room") deepest = Math.max(deepest, n.depth);
+  }
+  const packAt = (n) =>
+    !big
+      ? n.depth - 1
+      : deepest > 1
+        ? Math.floor(((n.depth - 1) / (deepest - 1)) * 7)
+        : 0;
   const spawns = [];
   for (const n of nodes) {
     if (n.kind !== "room") continue;
     const pk =
-      PACKS[clamp(n.depth - 1 + ((Rn() * 2) | 0), 0, PACKS.length - 1)];
+      PACKS[clamp(packAt(n) + ((Rn() * 2) | 0), 0, PACKS.length - 1)];
     pk.forEach((type, i) => {
       const a = Rn() * TAU,
         d = (0.2 + Rn() * 0.4) * n.r,
@@ -993,6 +1044,7 @@ function genWorld(seed) {
     pieceGrid: null,
     pieceAt: () => -1,
     cut: 0,
+    big,
     pos: new Float32Array(P),
     col: new Uint8Array(C),
     mat: null,

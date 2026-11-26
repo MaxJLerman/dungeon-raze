@@ -8,10 +8,13 @@
 - `enterHub(fromGrade, coop = false)` builds the hall and puts the player at
   the start, or in front of that grade's portal looking toward the middle of
   the hall. With `coop` true it builds the co-op hall (`genHub(true)`) and
-  does not end co-op: that is a co-op world swap (`coop.md`). `enterCave(gradeId, seed)` calls
-  `newRun(seed, gradeId)`. `newRun(seed, grade = "E")` records `G.grade`, sets
+  does not end co-op: that is a co-op world swap (`coop.md`). `enterCave(gradeId, seed, big = false)` calls
+  `newRun(seed, gradeId, big)`; `seed` defaults to a random one.
+  `newRun(seed, grade = "E", big = false)` records `G.grade`, sets
   the air from `ENV_GRADE[grade]` (the cave's when the grade has none), builds
-  the world with `WORLD_GEN[grade]` (`genWorld` when the grade has none), turns
+  the world with `WORLD_GEN[grade]` (`genWorld` when the grade has none), and
+  hands it `big` only when `grade` is `"E"`, so `big` builds the big cave
+  (`world.md`) and any other grade ignores it; it turns
   the audio echo on for a world with `sewer: true` and starts the run. It is
   what the cave and sewer tests call.
 - `genHub()` returns every field `genWorld` returns, with empty arrays where a

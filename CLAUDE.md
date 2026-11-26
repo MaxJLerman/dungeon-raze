@@ -15,6 +15,7 @@ subagent, name the notes files it must read.
 | --- | --- | --- |
 | Renderer, shaders, materials, sprites (`02`, `07`) | `rendering.md` | t9, t11, t22 |
 | Cave generation, the field, collision, sight, routes, rock, water (`03`) | `world.md` | t5, t12, t20, t22 |
+| The big cave (`genWorld` with `big`) | `world.md` | t31, t22 |
 | The sewer: layout, water, pillars, pieces, dressing, spawns (`03c` to `03e`) | `sewer.md`, `world.md` | t22, t23, t24 |
 | Hall, portals, grades, run and reset, game state, main menu, screens (`03b`, `06`, `09`); **recipe: open a portal** | `zones.md` | t8, t9, t22, t30 |
 | Dev menu, god mode (`src/dev/10_dev.js`) | `dev-menu.md` | t26, t26-build |

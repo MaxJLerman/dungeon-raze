@@ -1574,6 +1574,7 @@ function genSewer(seed) {
     pieceGrid: cutUp.pieceGrid,
     pieceAt: cutUp.pieceAt,
     cut: sewerCut(),
+    big: false,
     crumble,
     pillars,
     pos: cutUp.pos,

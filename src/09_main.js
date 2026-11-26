@@ -718,6 +718,8 @@ window.DF = {
   startTrans,
   genHub,
   genSewer,
+  bigCaveGraph,
+  CRY,
   visiblePieces,
   SEWER,
   SEWER_LAMP,

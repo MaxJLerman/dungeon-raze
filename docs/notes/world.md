@@ -68,6 +68,55 @@ H, seg)` runs marching squares and calls `seg` for each wall segment. `genWorld`
   nowhere, so the host copy can build pieces. The sewer calls it through
   `sewerPieces` (see `sewer.md`).
 
+## The big cave (`genWorld(seed, true)`)
+
+The cave for two players: 36 rooms on a 6 by 6 grid. `world.big` is `true`
+on it and `false` on every other world (the small cave, the hall, the
+sewer). Game code does not branch on it; it is for tests and the dev build.
+In this state it is drawn whole: `pieces: null` and `cut: 0`, as the small
+cave.
+
+- **What differs.** Only these; every branch on `big` leaves the small cave
+  drawing from `Rn` exactly as before (t22's hashes of caves 1, 7 and 99).
+  The room options are `CAVE_PLAN` with `GX` and `GZ` 6, so rooms, spacing,
+  jitter and the start's and Warden's radii are the small cave's. The order
+  of the steps that draw from `Rn` is the small cave's too: layout, tunnels,
+  dressing, crystals, packs, posts.
+- **The redraw rule.** `bigCaveGraph(seed)` (on `DF`) plans draw `k` = 0, 1,
+  2 ... from `rng(seed + k * 7919)` and keeps the first whose route (the
+  `path` from `linkGraph`) holds at least 10 rooms, the start and the boss's
+  counted. Diagonal tunnels can cut a 6 by 6 route to 8 rooms. Draw 8 is
+  made with `diagP: 0`: with no diagonals a route has to cross 5 columns and
+  5 rows one room at a time, so it holds at least 11 rooms and the loop
+  always ends there. It returns `{ Rn, nodes, edges, start, boss, path }`,
+  `linkGraph` applied, and `genWorld` carries on drawing from that `Rn`.
+  A rejected draw's nodes are thrown away with it, so their `adj` and
+  `depth` never reach the kept layout. Over seeds 1 to 200: 143 seeds took
+  the first draw and the most was 6; routes of 10 rooms (136 seeds), 11
+  (60) and 12 (4).
+- **Dressing** is doubled with the area: 920 floor rocks in 18,000 tries,
+  1,040 stalactites in 18,000, at most 116 crystals in 28,000. The 12.5 m
+  spacing and the red within 40 m of the boss stay. Every one of seeds 1 to
+  200 reaches 116 crystals.
+- **Rest points.** The start; then route rooms 4, 7, 10 ... (`path[3]`,
+  `path[6]` ...) while the index is at most `path.length - 4`; then
+  `path[path.length - 2]`. No two are neighbours on the route, and a route
+  of 10 to 12 rooms has four. They are built and marked as the small cave's
+  shrines, so a rest room holds no pack.
+- **Packs.** The small cave's six, then `brute, brute, spit, husk, husk` and
+  `brute, brute, spit, spit, husk, husk`. `deepest` is the greatest `depth`
+  of a node whose `kind` is still `"room"` once the rest rooms are marked
+  (no boss room, no rest room). A room's index is
+  `floor((depth - 1) / (deepest - 1) * 7)` (0 when `deepest` is 1) plus the
+  small cave's `(Rn() * 2) | 0`, clamped to the table. So rooms at depth 1
+  hold two husks or two husks and a spitter, and the deepest rooms a
+  two-brute pack. Tunnel posts and the Warden are the small cave's. Over
+  seeds 1 to 20 one player meets 119 to 152 spawns (Warden and 19 to 32
+  tunnel posts counted), and the most common pack is in at most 42% of a
+  cave's pack rooms (seed 7).
+- `newRun(seed, grade, big)` hands `big` to the generator only for grade E
+  (`zones.md`).
+
 ## Tests
 
 - Run `tests/t20.mjs` after any change to `fieldFns` rock or the Sapper's
@@ -75,3 +124,9 @@ H, seg)` runs marching squares and calls `seg` for each wall segment. `genWorld`
   on a hand-built corridor, then cave-ins in a tunnel of cave 99.
 - Run `tests/t5.mjs` after any change to cave generation and `tests/t6.mjs`
   after any change to classes or combat rules.
+- Run `tests/t31.mjs` and `tests/t22.mjs` after any change to the big cave:
+  `SCRIPT=$PWD/tests/t31.mjs node test.mjs smoke`. t31 checks 36 rooms all
+  reachable, the route over 200 seeds, the rest rule, the packs, the tunnel
+  guards, the crystals and that `big` is for grade E only; t22's first step
+  proves the small cave did not move. Look at `shots/t31-start.png`,
+  `t31-room`, `t31-tunnel` and `t31-boss` beside `shots/t22-cave99.png`.

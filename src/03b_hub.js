@@ -404,6 +404,7 @@ function genHub(coop = false) {
     pieceGrid: null,
     pieceAt: () => -1,
     cut: 0,
+    big: false,
     pos: new Float32Array(P),
     col: new Uint8Array(C),
     mat: null,
