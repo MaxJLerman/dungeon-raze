@@ -91,6 +91,10 @@
   is data for an aftershock: where a `"slam"` lands in `enemyUpdate`, and in
   a co-op page's puppet, an enemy whose phase is at least `after.from` calls
   `waveStart(x, z, after)`; `EDEF` has none, so solo slams are as ever.
+  `EBEH.warden` also has `hpFloor` (outside its chamber before phase 4
+  its health stops at its last mark) and, in `step`, the seal's rule: while
+  `G.seal` stands and it has no live target inside the ring it stands where
+  it is and never gives up or walks home (`coop.md`, the seal).
   `fell` is the big message `kill` shows for a boss (the Warden's is
   "THE WARDEN FALLS"; a boss type needs one). `spawnEnemies` leaves out any
   `boss` type once `G.bossDead`. `tests/t25.mjs` covers these and `atkOk`.

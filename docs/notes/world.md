@@ -22,7 +22,11 @@
   each point a rock covers (its box grown by `ROCK_PAD`) holds the least of
   the base and every live rock's distance, so overlapping rocks do not open
   each other. This is how the Sapper's rubble and the crocodile's fallen
-  ceiling block movement, sight, routes, shots and the camera. **Rubble is only ever a change to the field.** Never
+  ceiling block movement, sight, routes, shots and the camera, and how the
+  Warden for two's seal closes its chamber (24 capsules of radius 1.4 m on
+  a circle of radius 12.5 m round `world.boss`, `sealRing`, `coop.md`;
+  laid on big caves 1 to 40 it lets no body of 0.4 past 12.5 m and leaves
+  room for one of 0.45 at 10 m on every heading). **Rubble is only ever a change to the field.** Never
   give a reader of the field a rubble check of its own.
   In the cave, `ceilAt` is worked out from the field, so the ceiling the
   camera collides with drops near rubble while the drawn ceiling stays put.

@@ -52,8 +52,11 @@ const G = {
   shocks: [],
   // the aftershocks of the Warden for two's slam, { x, z, t, o, hit } (waveStart)
   waves: [],
-  // chunks of the crocodile's cavern ceiling, falling and fallen (crocCeiling)
+  // chunks of the crocodile's cavern ceiling, falling and fallen (crocCeiling),
+  // and the capsules of the Warden for two's seal
   chunks: [],
+  // the Warden for two's seal while it stands, { t, ids, down, fade } (sealBegin)
+  seal: null,
 };
 const keys = {},
   taps = {},
@@ -2021,6 +2024,7 @@ function resetRun() {
   G.shocks = [];
   G.waves = [];
   G.chunks = [];
+  G.seal = null;
   G.insp = null;
   G.grabGrace = 0;
   G.bossDead = false;
@@ -2182,6 +2186,15 @@ function respawn() {
   G.shocks = [];
   G.waves = [];
   G.chunks = [];
+  // the Warden for two's seal outlives a death: its rock goes back in, and
+  // the player gets up at the door spot inside it
+  if (G.seal) {
+    sealNow();
+    const q = sealDoor(G.world);
+    p.x = q.x;
+    p.z = q.z;
+    p.yaw = cam.yaw = q.yaw;
+  }
   G.world.resolve(p, 0.6);
   G.projs = [];
   G.bombs = [];
@@ -5819,6 +5832,7 @@ function update(dt) {
   cloudsUpdate(dt);
   shocksUpdate(dt);
   wavesUpdate(dt);
+  if (G.seal) sealUpdate(dt);
   for (const q of G.pending) {
     q.t -= dt;
     if (q.t <= 0) {

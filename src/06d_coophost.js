@@ -40,7 +40,7 @@ const COOP_HOST = COOP_HEADLESS_HERE
       const tell = (pid, ev) => send(pid, coopEventEncode(ev));
       // A proxy that has not answered the world with its at is not there:
       // events about this world's enemies are not sent to it.
-      const BOUND = ["shot", "ring", "roar", "kill", "reset", "fed", "held", "freed", "crush"];
+      const BOUND = ["shot", "ring", "roar", "kill", "reset", "fed", "held", "freed", "crush", "seal"];
       const hears = (px, ev) => px.here || !BOUND.includes(ev[0]);
       const others = (pid, ev) => {
         for (const [id, px] of S.px) if (id !== pid && hears(px, ev)) tell(id, ev);
@@ -177,13 +177,30 @@ const COOP_HOST = COOP_HEADLESS_HERE
       // the count starts as a seize's wind-up ends, landed or not, and
       // again when its hold ends (letGo). The seize's act has no hit of its
       // own: the page of the player it reaches judges it (ASK.seized).
+      // Before phase 4 its health cannot fall under the last mark while it
+      // is outside its chamber (hpFloor), so the seal always begins with it
+      // inside. While the seal stands it never gives up or walks home: with
+      // no live player inside the ring to fight (one dead and the other
+      // away, say) it waits where it stands until there is one.
       EBEH.warden = {
         atkOk: (e, a) => !e.def.duo || a.kind !== "seize" || !(e.seizeT > 0),
-        step(e, dt) {
-          if (e.def.duo && e.seizeT > 0) e.seizeT = Math.max(0, e.seizeT - dt);
+        step(e, dt, c) {
+          if (!e.def.duo) return false;
+          if (e.seizeT > 0) e.seizeT = Math.max(0, e.seizeT - dt);
+          if (!G.seal) return false;
+          const B = c.w.boss,
+            S = WARDEN2.seal;
+          if (c.alive && Math.hypot(c.p.x - B.x, c.p.z - B.z) <= S.ring + S.rock + 0.5) return false;
+          e.route = null;
+          return true;
         },
         wind(e) {
           if (e.def.duo && e.atk.kind === "seize") e.seizeT = WARDEN2.seize.again;
+        },
+        hpFloor(e) {
+          const B = G.world.boss;
+          if (!e.def.duo || e.phase >= 4 || !B || Math.hypot(e.x - B.x, e.z - B.z) <= B.r) return 0;
+          return e.def.hp * e.def.marks[2];
         },
       };
       // The end of a hold, however it ended: it holds nobody and may not
@@ -236,19 +253,23 @@ const COOP_HOST = COOP_HEADLESS_HERE
         }
       }
       // Every present player (joined, there and not away) dead: the enemies
-      // are made again as a respawn makes them. Once per wipe: it fires again
-      // only after a present player has been alive.
+      // are made again as a respawn makes them, the seal lifted first. Once
+      // per wipe: it fires again only after a present player has been
+      // alive. While the seal stands an away player counts too, as its last
+      // state: a dropped connection is not a death, so it cannot reset a
+      // sealed fight (EBEH.warden's step keeps the Warden waiting).
       function wipe() {
         let n = 0,
           up = false;
         for (const px of S.px.values())
-          if (px.here && !px.away) {
+          if (px.here && (!px.away || G.seal)) {
             n++;
             if (px.state !== "dead") up = true;
           }
         if (up) armed = true;
         if (!n || up || !armed) return;
         armed = false;
+        sealEnd(false);
         spawnEnemies();
         number();
         ver++;
@@ -282,6 +303,8 @@ const COOP_HOST = COOP_HEADLESS_HERE
           enemies: list.map((e) => [e.id, e.type, r2(e.x), r2(e.z), r2(e.yaw)]),
           dead: list.filter((e) => e.dead || e.gone).map((e) => e.id),
           bossDead: G.bossDead,
+          // the Warden for two's seal stands (a page lays it at once)
+          seal: !!G.seal,
         };
       }
       // The world as join and world carry it: epoch, kind, grade (null in
@@ -471,7 +494,22 @@ const COOP_HOST = COOP_HEADLESS_HERE
         e.kSent = true;
         e.kBy = by;
         ver++;
+        // the Warden for two's death lifts the seal
+        if (e.def.duo) sealEnd(true);
         all(["kill", e.id, by, now()]);
+      }
+      // After a hit (or host.phase) took boss e from phase ph0 to a later
+      // one: both pages are told of the roar, and a Warden for two entering
+      // phase 4 begins the seal on the host and tells them. A page whose at
+      // is still to come gets it with the enemies (ver).
+      function rose(e, ph0) {
+        if (!e.def.boss || e.phase <= ph0) return;
+        all(["roar", e.id, now(), e.phase]);
+        if (e.def.duo && e.phase >= 4 && ph0 < 4 && !G.seal) {
+          sealBegin();
+          ver++;
+          all(["seal", e.id, now()]);
+        }
       }
 
       // What a client may ask. Each handler gets the proxy and the event's
@@ -533,7 +571,7 @@ const COOP_HOST = COOP_HEADLESS_HERE
           // the health it took off, never below 0 (a kill counts what was left)
           const took = Math.max(0, hp0 - Math.max(0, e.hp));
           if (d.duo) e.heed[px.pid] = (e.heed[px.pid] || 0) + took;
-          if (d.boss && e.phase > ph0) all(["roar", e.id, now(), e.phase]);
+          rose(e, ph0);
           // a hold is broken by the other player's damage, or by any
           // posture break: staggered for seize.stag, and both are told
           if (e.held && !e.dead && (e.state === "hold" || e.state === "stagger")) {
@@ -867,7 +905,7 @@ const COOP_HOST = COOP_HEADLESS_HERE
         const ph0 = e.phase;
         e.hp = e.def.hp * m + 1;
         as(ph, () => hitEnemy(e, 2, 0, { src: "", pre: true }));
-        if (e.phase > ph0) all(["roar", e.id, now(), e.phase]);
+        rose(e, ph0);
         return e;
       }
       const host = {
@@ -881,6 +919,9 @@ const COOP_HOST = COOP_HEADLESS_HERE
         phase,
         // for tests: an enemy's draw of its next attack at dist metres
         chooseAtk,
+        // for tests: the seal's table, its ring and door spot on a world,
+        // and the whole ring down at once in the host's world
+        seal: { table: WARDEN2.seal, ring: sealRing, door: sealDoor, now: sealNow },
         send: null,
         G,
         S,

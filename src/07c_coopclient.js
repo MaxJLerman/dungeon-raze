@@ -367,7 +367,7 @@ function coopRecv(buf) {
 // One that fails is ignored.
 const coopNum = (v) => typeof v === "number" && Number.isFinite(v);
 const coopNums = (m, n) => m.length >= n && m.slice(1, n).every(coopNum);
-const COOP_EV_T = { shot: 8, ring: 5, roar: 2, kill: 3, fed: 2, held: 3, freed: 3, crush: 3 };
+const COOP_EV_T = { shot: 8, ring: 5, roar: 2, kill: 3, fed: 2, held: 3, freed: 3, crush: 3, seal: 2 };
 const COOP_TAKE = {
   // ["shot", eid, x, y, z, vx, vz, dmg, t]
   shot: (m) => coopNums(m, 9) && CC.byId.has(m[1]),
@@ -385,6 +385,8 @@ const COOP_TAKE = {
   held: (m) => coopNums(m, 4) && CC.byId.has(m[1]),
   freed: (m) => coopNums(m, 4) && CC.byId.has(m[1]),
   crush: (m) => coopNums(m, 4) && CC.byId.has(m[1]),
+  // ["seal", eid, t]: the Warden for two's seal has begun
+  seal: (m) => coopNums(m, 3) && CC.byId.has(m[1]),
 };
 // The host events applied as they arrive, with their checks.
 const COOP_NOW = {
@@ -504,6 +506,14 @@ function coopBuild(d) {
   G.bossDead = !!d.bossDead;
   // built after the boss died: its gate is open, as bossFell leaves it
   if (G.bossDead && G.world.boss) openGate();
+  // built while the Warden for two's seal stands: its rock before the first
+  // frame, and this player at the door spot inside it
+  if (d.seal) {
+    sealNow();
+    const q = sealDoor(G.world);
+    Object.assign(G.player, { x: q.x, z: q.z, yaw: q.yaw });
+    snapCam();
+  }
   Object.assign(CC, {
     epoch: d.e,
     kind: d.kind,
@@ -993,6 +1003,13 @@ function coopApply(ev, rt) {
     say(e.def.name + " feeds on the fallen.", "", 3);
   } else if (ev[0] === "held" || ev[0] === "freed" || ev[0] === "crush") {
     coopHold(ev, quiet);
+  } else if (ev[0] === "seal") {
+    // the chamber closes as on the host: its rock falls from when the host
+    // began it, or is down at once when this comes late or quietly; a seal
+    // already laid from a description stands
+    if (G.seal) return;
+    if (quiet) sealNow();
+    else sealBegin(adv);
   } else if (ev[0] === "kill") {
     // One already dead here stays as it is, and a death guessed here is
     // settled. Otherwise it dies, with kill's rewards when this player's
@@ -1015,6 +1032,8 @@ function coopApply(ev, rt) {
       }
     } else coopDie(e, !quiet);
     if (e.def.boss && !G.bossDead) bossFell(e, quiet);
+    // the Warden's death lifts the seal: its rock crumbles
+    if (e.def.boss) sealEnd(true);
   }
 }
 
@@ -1324,6 +1343,10 @@ function coopReset(r) {
   coopPuppets(r);
   G.bossDead = !!r.bossDead;
   if (G.bossDead && G.world.boss && !G.gate) openGate();
+  // the seal as the host has it: lifted by a wipe, or laid at once for a
+  // page that missed its fall (this player is then kept in, sealKeep)
+  if (!r.seal) sealEnd(false);
+  else if (!G.seal) sealNow();
   CC.pend = [];
   CC.evq = [];
   CC.fin = null;

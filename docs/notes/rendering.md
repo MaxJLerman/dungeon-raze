@@ -33,6 +33,15 @@
   player's own position, its blob shadow and its camera stay on the floor
   in front. `tests/t32.mjs` takes `shots/t32-seize-wind.png` and
   `shots/t32-held.png`.
+- **The seal's heaps** (`coop.md`) are `G.chunks` entries that carry their
+  own `ends`: `drawChunks` heaps them from one end to the other (3.27 m)
+  in place of 0.95 m either side of the centre, so the 24 meet end to end
+  with no gap; the crocodile's chunks have no `ends` and are drawn as
+  before. Their warning is `drawDust`'s. `tests/t32.mjs` takes
+  `shots/t32-warn.png` and `shots/t32-ring.png`.
+- **The roar pose** (`poseEnemy`'s `"roar"`) fills the roar's own length,
+  `def.roarT[phase]` (the Warden for two's phase 4 roar is 2.2 s), and 1.2 s
+  for a definition without it.
 - **Materials.** The world mesh has one material byte per vertex, a fourth
   attribute (`aMat`, location 3). `MAT` in `03_world.js` names the values:
   0 plain, `MAT.BRICK` 1, `MAT.WATER` 2. `meshSink` takes a `mat` argument on

@@ -481,7 +481,8 @@ function poseEnemy(e) {
       break;
     }
     case "roar": {
-      const k = Math.sin(sat(e.t / 1.2) * PI);
+      // over the roar's own length (def.roarT), today's 1.2 s by default
+      const k = Math.sin(sat(e.t / ((e.def.roarT && e.def.roarT[e.phase]) || 1.2)) * PI);
       A[0] = B[0] = -0.4;
       A[2] = -1.3 * k;
       B[2] = 1.3 * k;
@@ -818,7 +819,9 @@ function drawCaveIns() {
 }
 // A chunk of the crocodile's cavern ceiling: drawn as a cave-in's rubble, a
 // round heap the size of its rock, falling from the roof over the last 0.3 s
-// of its warning (the warning itself is drawDust's)
+// of its warning (the warning itself is drawDust's). A chunk that carries its
+// own ends (a capsule of the Warden for two's seal) is heaped from one to the
+// other instead.
 const CHUNK_ROWS = [-0.95, 0, 0.95];
 function drawChunks() {
   for (const k of G.chunks) {
@@ -826,8 +829,9 @@ function drawChunks() {
     if (fall <= 0) continue;
     if (!k.node) {
       const ux = Math.cos(k.yaw) * 0.95,
-        uz = -Math.sin(k.yaw) * 0.95;
-      k.node = makeRubble({ seed: k.seed, yaw: k.yaw, ax: k.x - ux, az: k.z - uz, bx: k.x + ux, bz: k.z + uz }, CHUNK_ROWS);
+        uz = -Math.sin(k.yaw) * 0.95,
+        [ax, az, bx, bz] = k.ends || [k.x - ux, k.z - uz, k.x + ux, k.z + uz];
+      k.node = makeRubble({ seed: k.seed, yaw: k.yaw, ax, az, bx, bz }, CHUNK_ROWS);
     }
     for (const q of k.node.ch) q.p[1] = lerp(k.ceil, q.ty, fall * fall);
     R.drawNode(k.node);

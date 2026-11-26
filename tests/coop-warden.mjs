@@ -626,4 +626,267 @@ check("it does not seize again for 14 seconds", () => {
   assert.ok(s.boss.seizeT > 13.9, "seizeT " + s.boss.seizeT);
 });
 
+// The seal (WARDEN2.seal): in phase 4 a ring of rock closes the chamber
+// (docs/notes/coop.md).
+// The route out: from the chamber's centre to the room before it on the
+// route, for a player's body; null when there is none.
+function routeOut(h) {
+  const w = h.G.world,
+    B = w.boss,
+    n = w.nodes[w.path[w.path.length - 2]];
+  return w.route(B.x, B.z, n.x, n.z, 0.4);
+}
+// Ticks until the ring is down, for at most sec seconds; the seconds it
+// took, or -1.
+function untilDown(h, sec, each) {
+  let n = -1;
+  run(h, sec, (i) => {
+    if (each) each(i);
+    if (h.G.seal && h.G.seal.down) {
+      n = i;
+      return false;
+    }
+  });
+  return n < 0 ? -1 : n / 60;
+}
+// A duo sealed in: both players standing 6 m from the centre, the Warden
+// put in phase 4 and the ring down. qa and qb are where the two stand.
+function sealed(s = duo()) {
+  const { h, a, b } = s,
+    each = stand(h, [a, b]),
+    qa = inChamber(h, 6, 0),
+    qb = inChamber(h, 6, Math.PI);
+  run(h, 0.2, each);
+  assert.equal(h.phase(4), s.boss);
+  assert.ok(untilDown(h, 2.5, each) >= 0, "the ring is not down");
+  return { ...s, each, qa, qb };
+}
+// The midpoint of each capsule of the ring.
+const mids = (h) => h.seal.ring(h.G.world).map(([ax, az, bx, bz]) => ({ x: (ax + bx) / 2, z: (az + bz) / 2 }));
+
+check("the ring is closed and leaves ten metres, on 40 caves", () => {
+  const h = loadHost(),
+    S = h.seal.table,
+    st = 0.25,
+    N = Math.ceil(20 / st),
+    side = 2 * N + 1,
+    bad = [];
+  for (let seed = 1; seed <= 40; seed++) {
+    h.start({ seed, grade: "E", two: true });
+    h.seal.now();
+    const w = h.G.world,
+      B = w.boss,
+      open = (i, j) => w.fieldAt(B.x + (i - N) * st, B.z + (j - N) * st) >= 0.4,
+      seen = new Uint8Array(side * side),
+      todo = [N * side + N];
+    seen[N * side + N] = 1;
+    let far = 0;
+    while (todo.length) {
+      const k = todo.pop(),
+        i = k % side,
+        j = (k - i) / side;
+      far = Math.max(far, Math.hypot(i - N, j - N) * st);
+      for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const u = i + di,
+          v = j + dj;
+        if (u < 0 || v < 0 || u >= side || v >= side || seen[v * side + u] || !open(u, v)) continue;
+        seen[v * side + u] = 1;
+        todo.push(v * side + u);
+      }
+    }
+    if (far > S.ring) bad.push(seed + ": a body reaches " + far.toFixed(2) + " m");
+    for (let k = 0; k < 72; k++) {
+      const a = (k * Math.PI) / 36;
+      if (w.fieldAt(B.x + Math.sin(a) * 10, B.z + Math.cos(a) * 10) < 0.45)
+        bad.push(seed + ": no room at 10 m on heading " + k);
+    }
+    const q = h.seal.door(w);
+    if (w.fieldAt(q.x, q.z) < 0.6) bad.push(seed + ": the door spot is in rock");
+  }
+  assert.deepEqual(bad, []);
+});
+check("two copies lay the same rock", () => {
+  const one = loadHost(),
+    two = loadHost();
+  for (const h of [one, two]) h.start({ seed: 7, grade: "E", two: true });
+  assert.deepEqual(one.seal.ring(one.G.world), two.seal.ring(two.G.world));
+  assert.equal(one.seal.ring(one.G.world).length, 24);
+  for (const h of [one, two]) h.seal.now();
+  const B = one.G.world.boss;
+  let differ = 0;
+  for (let k = 0; k < 500; k++) {
+    const a = (k / 500) * 2 * Math.PI,
+      r = 9 + (7 * (k % 7)) / 6,
+      x = B.x + Math.sin(a) * r,
+      z = B.z + Math.cos(a) * r;
+    if (one.G.world.fieldAt(x, z) !== two.G.world.fieldAt(x, z)) differ++;
+  }
+  assert.equal(differ, 0);
+});
+check("phase 4 seals the chamber", () => {
+  const { h, a, b, boss } = duo(),
+    each = stand(h, [a, b]);
+  run(h, 0.2, each);
+  assert.ok(routeOut(h), "no route out before the seal");
+  assert.equal(h.phase(3), boss);
+  assert.equal(h.G.seal, null, "sealed at phase 3");
+  assert.equal(named(a, "seal").length, 0);
+  run(h, 1.4, each);
+  h.phase(4);
+  for (const c of [a, b]) {
+    const ev = named(c, "seal");
+    assert.equal(ev.length, 1, "client " + c.pid + " got " + ev.length);
+    assert.equal(ev[0][1], boss.id);
+    assert.equal(typeof ev[0][2], "number");
+  }
+  assert.equal(h.G.seal.down, false);
+  run(h, 2.1, each);
+  assert.equal(h.G.seal.down, true, "not down by 2.1 s");
+  assert.equal(h.G.seal.ids.length, 24);
+  assert.equal(routeOut(h), null, "a route out through the ring");
+  for (const q of mids(h)) assert.ok(h.G.world.fieldAt(q.x, q.z) < 0, "no rock at a capsule");
+  // a friend who joins now is told it stands
+  h.leave(2);
+  const c = fakeClient(h, 2, "mage");
+  assert.equal(c.join.seal, true);
+});
+check("its health holds at the quarter mark outside its chamber", () => {
+  const { h, a, b, boss } = duo(),
+    each = stand(h, [a, b]),
+    B = h.G.world.boss;
+  run(h, 0.2, each);
+  h.phase(3);
+  run(h, 1.4, each);
+  Object.assign(boss, { x: B.x + 20, z: B.z, hp: 400 });
+  strike(a, boss, 500);
+  assert.equal(boss.hp, 387.5);
+  assert.equal(boss.phase, 3);
+  assert.equal(h.G.seal, null);
+  Object.assign(boss, { x: B.x, z: B.z });
+  strike(a, boss, 10);
+  assert.equal(boss.phase, 4);
+  assert.ok(Math.abs(boss.hp - 377.5) < 1e-9, "health " + boss.hp);
+  assert.ok(h.G.seal, "not sealed");
+  // in phase 4 there is no floor, outside or in
+  boss.x = B.x + 20;
+  strike(a, boss, 400);
+  assert.equal(boss.dead, true);
+});
+check("the Warden in the rock's way is moved in", () => {
+  const { h, a, b, boss } = duo(),
+    each = stand(h, [a, b]),
+    B = h.G.world.boss;
+  run(h, 0.2, each);
+  const q = inChamber(h, 13, Math.PI / 2);
+  Object.assign(boss, { x: q.x, z: q.z });
+  h.phase(4);
+  assert.ok(untilDown(h, 2.5, each) >= 0, "the ring is not down");
+  const d = Math.hypot(boss.x - B.x, boss.z - B.z);
+  assert.ok(d <= 11, "at " + d.toFixed(2) + " m");
+  assert.ok(h.G.world.fieldAt(boss.x, boss.z) >= boss.r - 0.1, "in rock: " + h.G.world.fieldAt(boss.x, boss.z));
+});
+check("sealed with nobody to fight it stays", () => {
+  const { h, a, b, boss, qa, qb } = sealed();
+  // a on the death screen, its page still sending; b silent
+  const dead = () => a.at(qa.x, qa.z, { state: "dead", hp: 0 });
+  run(h, 3, dead);
+  assert.ok(h.S.px.get(2).away, "b is not away");
+  const hp = boss.hp,
+    x = boss.x,
+    z = boss.z;
+  run(h, 10, dead);
+  assert.notEqual(boss.state, "return");
+  assert.equal(boss.hp, hp);
+  assert.ok(Math.hypot(boss.x - x, boss.z - z) < 0.01, "moved " + Math.hypot(boss.x - x, boss.z - z));
+  assert.equal(boss.phase, 4);
+  assert.equal(warden(h), boss, "the enemies were made again");
+  assert.ok(h.G.seal && h.G.seal.down, "the seal went");
+  assert.equal(named(a, "reset").length, 0, "a wipe");
+  // the fight goes on once a player is live
+  run(h, 3, () => {
+    dead();
+    b.at(qb.x, qb.z);
+  });
+  assert.equal(boss.tg, b.pid);
+  assert.ok(Math.hypot(boss.x - x, boss.z - z) > 0.5 || boss.state !== "chase", "it did not move on b");
+});
+check("unsealed, today's walk home still resets it", () => {
+  const { h, a, b, boss } = duo(),
+    each = stand(h, [a, b]);
+  run(h, 0.2, each);
+  h.phase(2);
+  run(h, 1.4, each);
+  const q = inChamber(h, 8, Math.PI);
+  Object.assign(boss, { x: q.x, z: q.z });
+  // both gone
+  let went = false;
+  run(h, 20, () => {
+    if (boss.state === "return") went = true;
+    if (went && boss.state === "idle") return false;
+  });
+  assert.ok(went, "it never walked home");
+  assert.equal(boss.state, "idle");
+  assert.equal(boss.hp, 1550);
+  assert.equal(boss.phase, 1);
+  assert.equal(h.G.seal, null);
+});
+check("a wipe lifts the seal", () => {
+  const { h, a, b, boss, qa, qb } = sealed();
+  run(h, 0.3, () => {
+    a.at(qa.x, qa.z, { state: "dead", hp: 0 });
+    b.at(qb.x, qb.z, { state: "dead", hp: 0 });
+  });
+  const r = named(a, "reset");
+  assert.equal(r.length, 1);
+  assert.equal(r[0][1].seal, false);
+  assert.equal(h.G.seal, null);
+  assert.ok(routeOut(h), "no route out");
+  for (const q of mids(h)) assert.ok(h.G.world.fieldAt(q.x, q.z) > 0, "rock left");
+  const again = warden(h);
+  assert.notEqual(again, boss);
+  assert.equal(again.hp, 1550);
+  assert.equal(again.phase, 1);
+});
+check("its death lifts the seal", () => {
+  const { h, a, boss } = sealed();
+  assert.equal(h.G.gate, null);
+  boss.hp = 5;
+  strike(a, boss, 50);
+  assert.equal(boss.dead, true);
+  assert.equal(h.G.seal, null);
+  assert.ok(routeOut(h), "no route out");
+  for (const q of mids(h)) assert.ok(h.G.world.fieldAt(q.x, q.z) > 0, "rock left");
+  assert.ok(h.G.gate, "the exit gate is shut");
+});
+check("a friend who joins in phase 4 is told the seal stands", () => {
+  const h = loadHost();
+  h.start({ seed: 99, grade: "E", two: true });
+  const a = fakeClient(h, 1, "fighter"),
+    boss = warden(h),
+    q = inChamber(h, 6, 0),
+    each = () => a.at(q.x, q.z);
+  run(h, 0.2, each);
+  assert.equal(h.phase(4), boss);
+  run(h, 2.3, each);
+  const b = fakeClient(h, 2, "mage");
+  assert.equal(b.join.seal, true);
+  // and again after leaving
+  h.leave(2);
+  const b2 = fakeClient(h, 2, "mage");
+  assert.equal(b2.join.seal, true);
+  // a page whose at comes after the seal fell is sent the enemies with it
+  const s = duo(),
+    ea = () => s.a.at(q.x, q.z);
+  s.h.leave(2);
+  const late = fakeClient(s.h, 2, "mage", { at: false });
+  assert.equal(late.join.seal, false);
+  run(s.h, 0.2, ea);
+  s.h.phase(4);
+  assert.equal(named(late, "seal").length, 0, "told before it was there");
+  late.arrive();
+  const r = named(late, "reset");
+  assert.equal(r.length, 1);
+  assert.equal(r[0][1].seal, true);
+});
+
 done();

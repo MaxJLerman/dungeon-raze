@@ -676,6 +676,369 @@ export default [
   },
   { wait: 400, shot: "t32-held" },
   {
+    name: "the rock falls after its warning",
+    eval: () => {
+      const { G } = DF,
+        w2 = window.__w2;
+      G.manual = true;
+      DF.devGod(false);
+      Object.assign(w2, {
+        // A run for two (o for coopSolo) with this player 8 m from the
+        // chamber's centre and the Warden awake; then the host's Warden is
+        // put in phase 4, so the seal begins on the host now
+        sealSetup(o) {
+          w2.start(o);
+          const c = { stood: w2.standIn(8), awake: w2.wake() };
+          c.entered = !!w2.host().phase(4);
+          return c;
+        },
+        // steps unhurt until this page's ring is down, at most sec; the
+        // steps taken, or -1
+        untilDown(sec = 3, each) {
+          let n = 0,
+            got = false;
+          DF.devGod(true);
+          try {
+            w2.step(sec, () => {
+              if (each) each(n);
+              n++;
+              if (G.seal && G.seal.down) {
+                got = true;
+                return false;
+              }
+            });
+          } finally {
+            DF.devGod(false);
+          }
+          return got ? n : -1;
+        },
+        // the midpoint of each capsule of the ring on this page
+        mids: () => DF.sealRing(G.world).map(([ax, az, bx, bz]) => ({ x: (ax + bx) / 2, z: (az + bz) / 2 })),
+        // every capsule is rock in this page's field
+        ringIn: () => w2.mids().every((q) => G.world.fieldAt(q.x, q.z) < 0),
+        ringOut: () => w2.mids().every((q) => G.world.fieldAt(q.x, q.z) > 0),
+        heaps: () => G.chunks.filter((k) => k.seal && k.id).length,
+        // how far this player is from the door spot, and from the centre
+        fromDoor() {
+          const q = DF.sealDoor(G.world);
+          return Math.hypot(G.player.x - q.x, G.player.z - q.z);
+        },
+        fromCentre: () => Math.hypot(G.player.x - G.world.boss.x, G.player.z - G.world.boss.z),
+        // steps sec seconds unhurt, holding forward toward the room before
+        // the chamber; the furthest this player got from the centre
+        walkOut(sec) {
+          const w = G.world,
+            n = w.nodes[w.path[w.path.length - 2]],
+            p = G.player,
+            yaw = Math.atan2(n.x - p.x, n.z - p.z);
+          p.yaw = DF.cam.yaw = yaw;
+          let far = 0;
+          DF.devGod(true);
+          DF.keys[DF.BIND.fwd] = true;
+          try {
+            w2.step(sec, () => {
+              DF.cam.yaw = Math.atan2(n.x - p.x, n.z - p.z);
+              far = Math.max(far, w2.fromCentre());
+            });
+          } finally {
+            DF.keys[DF.BIND.fwd] = false;
+            DF.devGod(false);
+          }
+          return far;
+        },
+      });
+      const c = w2.sealSetup(),
+        T = DF.WARDEN2.seal;
+      DF.devGod(true);
+      try {
+        w2.step(0.5);
+      } finally {
+        DF.devGod(false);
+      }
+      const warn = G.chunks.filter((k) => k.seal && !k.id).length;
+      c.warn = warn === 24 && !!G.seal && !G.seal.down;
+      c.notYet = w2.mids().every((q) => G.world.fieldAt(q.x, q.z) > 0);
+      const n = w2.untilDown(2);
+      c.down = n >= 0 && (n + 30) / 60 <= 2.1;
+      c.rock = w2.ringIn();
+      c.heaps = w2.heaps() === 24;
+      // the page's rock is the host's
+      const hw = w2.host().G.world,
+        B = G.world.boss;
+      let differ = 0;
+      for (let k = 0; k < 200; k++) {
+        const a = (k / 200) * 2 * Math.PI,
+          r = 10 + (k % 5),
+          x = B.x + Math.sin(a) * r,
+          z = B.z + Math.cos(a) * r;
+        if (Math.abs(hw.fieldAt(x, z) - G.world.fieldAt(x, z)) > 1e-9) differ++;
+      }
+      c.same = differ === 0;
+      return { pass: Object.values(c).every((v) => v === true), c, warn, at: (n + 30) / 60, T, differ };
+    },
+  },
+  {
+    name: "a player outside is brought to the door",
+    eval: () => {
+      const { G } = DF,
+        w2 = window.__w2;
+      G.manual = true;
+      const c = w2.sealSetup(),
+        w = G.world,
+        n = w.nodes[w.path[w.path.length - 2]],
+        p = G.player;
+      // this player in the room before the chamber
+      Object.assign(p, { x: n.x, z: n.z, state: "free", vx: 0, vz: 0 });
+      w.resolve(p, p.r);
+      DF.cam.px = p.x;
+      DF.cam.pz = p.z;
+      c.outside = w2.fromCentre() > 20;
+      let down = -1,
+        at = -1;
+      DF.devGod(true);
+      try {
+        w2.step(3.5, (i) => {
+          if (down < 0 && G.seal && G.seal.down) down = i;
+          if (down >= 0 && w2.fromDoor() < 0.2) {
+            at = i;
+            return false;
+          }
+        });
+      } finally {
+        DF.devGod(false);
+      }
+      c.down = down >= 0;
+      c.door = at >= 0 && (at - down) / 60 <= 0.6;
+      c.faded = G.fade > 0;
+      c.facing = Math.abs(DF.angDiff(p.yaw, Math.atan2(w.boss.x - p.x, w.boss.z - p.z))) < 0.1;
+      // the fade is over within its own length, and hurtPlayer was never stopped
+      w2.step(DF.WARDEN2.seal.fade + 0.05);
+      c.clear = G.fade === 0;
+      return { pass: Object.values(c).every((v) => v === true), c, took: (at - down) / 60 };
+    },
+  },
+  {
+    name: "a player under the rock is pushed inward",
+    eval: () => {
+      const { G } = DF,
+        w2 = window.__w2;
+      G.manual = true;
+      const c = w2.sealSetup(),
+        w = G.world,
+        B = w.boss,
+        door = DF.sealDoor(w),
+        // 12.5 m out, across the chamber from the door
+        q = w2.inChamber(12.5, Math.atan2(B.x - door.x, B.z - door.z)),
+        p = G.player;
+      c.spot = !!q;
+      const put = () => Object.assign(p, { x: q.x, z: q.z, state: "free", vx: 0, vz: 0 });
+      put();
+      DF.cam.px = p.x;
+      DF.cam.pz = p.z;
+      // standing there until the ring is down
+      c.down = w2.untilDown(3, put) >= 0;
+      w2.step(0.2);
+      const d = w2.fromCentre();
+      c.inward = Math.abs(d - 10.5) < 0.35;
+      c.notDoor = w2.fromDoor() > 2;
+      c.room = w.fieldAt(p.x, p.z) >= p.r - 0.1;
+      return { pass: Object.values(c).every((v) => v === true), c, d: +d.toFixed(2) };
+    },
+  },
+  {
+    name: "nobody walks out",
+    eval: () => {
+      const { G } = DF,
+        w2 = window.__w2;
+      G.manual = true;
+      const c = w2.sealSetup();
+      c.down = w2.untilDown(3) >= 0;
+      const q = DF.sealDoor(G.world),
+        p = G.player;
+      Object.assign(p, { x: q.x, z: q.z, yaw: q.yaw, state: "free", vx: 0, vz: 0 });
+      const far = w2.walkOut(5);
+      c.walked = far > 10;
+      c.kept = far <= 11.2 && w2.fromCentre() <= 11.2;
+      return { pass: Object.values(c).every((v) => v === true), c, far: +far.toFixed(2) };
+    },
+  },
+  {
+    name: "a death while sealed gets up at the door",
+    eval: () => {
+      const { G } = DF,
+        w2 = window.__w2;
+      G.manual = true;
+      const c = w2.sealSetup();
+      c.down = w2.untilDown(3) >= 0;
+      const p = G.player;
+      Object.assign(p, { hp: 0, state: "dead", t: 2 });
+      DF.respawn();
+      c.door = w2.fromDoor() < 0.05;
+      c.alive = G.player.state === "free" && G.player.hp === G.player.maxHp;
+      c.rock = w2.ringIn();
+      c.heaps = w2.heaps() === 24 && G.chunks.length === 24;
+      c.sealed = !!G.seal && G.seal.down;
+      // and cannot walk out
+      const far = w2.walkOut(3);
+      c.kept = far <= 11.2;
+      return { pass: Object.values(c).every((v) => v === true), c, far: +far.toFixed(2) };
+    },
+  },
+  {
+    name: "a join in phase 4 starts sealed in",
+    eval: () => {
+      const { G } = DF,
+        w2 = window.__w2;
+      G.manual = true;
+      let join = null;
+      w2.start({
+        two: true,
+        seed: 99,
+        mate: "idle",
+        before: (h) => h.phase(4),
+        tamper: (ev) => {
+          if (ev[0] === "join") join = ev[1];
+          return ev;
+        },
+      });
+      const c = { told: !!join && join.seal === true };
+      // this page's first frame, before any step
+      c.sealed = !!G.seal && G.seal.down;
+      c.rock = w2.ringIn();
+      c.heaps = w2.heaps() === 24;
+      c.door = w2.fromDoor() < 0.05;
+      c.cam = Math.hypot(DF.cam.px - G.player.x, DF.cam.pz - G.player.z) < 0.05;
+      return { pass: Object.values(c).every((v) => v === true), c };
+    },
+  },
+  {
+    name: "a wipe opens the chamber again",
+    eval: () => {
+      const { G } = DF,
+        w2 = window.__w2;
+      G.manual = true;
+      const c = w2.sealSetup();
+      c.down = w2.untilDown(3) >= 0;
+      w2.r.mate.kill();
+      Object.assign(G.player, { hp: 0, state: "dead", t: 0 });
+      w2.step(1, () => (G.seal ? undefined : false));
+      c.open = G.seal === null && w2.ringOut() && w2.heaps() === 0;
+      c.host = w2.host().G.seal === null && w2.hostBoss().phase === 1;
+      DF.respawn();
+      c.shrine = w2.fromDoor() > 3;
+      return { pass: Object.values(c).every((v) => v === true), c };
+    },
+  },
+  {
+    name: "the Warden's death opens the chamber again",
+    eval: () => {
+      const { G } = DF,
+        w2 = window.__w2;
+      G.manual = true;
+      const c = w2.sealSetup();
+      c.down = w2.untilDown(3) >= 0;
+      const hb = w2.hostBoss();
+      hb.hp = 5;
+      w2.r.mateAsk("hit", hb.id, 50, 0, 0, "melee", null, null, hb.state, hb.an);
+      c.dead = hb.dead === true;
+      DF.devGod(true);
+      try {
+        w2.step(1, () => (G.seal ? undefined : false));
+      } finally {
+        DF.devGod(false);
+      }
+      c.open = G.seal === null && w2.ringOut() && w2.heaps() === 0;
+      c.gate = !!G.gate;
+      return { pass: Object.values(c).every((v) => v === true), c };
+    },
+  },
+  {
+    name: "no frame of the sealed chamber draws more than the limit",
+    eval: async () => {
+      const { G } = DF,
+        w2 = window.__w2;
+      G.manual = true;
+      const c = w2.sealSetup();
+      c.down = w2.untilDown(3) >= 0;
+      DF.devGod(true);
+      const p = G.player,
+        B = G.world.boss,
+        q = DF.sealDoor(G.world),
+        tris = [];
+      for (const at of [{ x: B.x, z: B.z, yaw: q.yaw + Math.PI }, q]) {
+        for (let k = 0; k < 4; k++) {
+          Object.assign(p, { x: at.x, z: at.z, state: "free" });
+          p.yaw = DF.cam.yaw = at.yaw + (k * Math.PI) / 2;
+          DF.cam.px = p.x;
+          DF.cam.pz = p.z;
+          await w2.frames();
+          tris.push(DF.R.stats.tris);
+        }
+      }
+      DF.devGod(false);
+      c.under = tris.every((t) => t > 0 && t <= 81835);
+      return { pass: Object.values(c).every((v) => v === true), c, tris };
+    },
+  },
+  {
+    name: "the rock's warning, for the screenshot",
+    eval: async () => {
+      const { G } = DF,
+        w2 = window.__w2;
+      G.manual = true;
+      const c = w2.sealSetup(),
+        p = G.player,
+        B = G.world.boss,
+        q = DF.sealDoor(G.world);
+      DF.devGod(true);
+      w2.step(0.9);
+      // the Warden out of the view, behind this player
+      const hb = w2.hostBoss(),
+        bx = B.x - q.x,
+        bz = B.z - q.z,
+        bd = Math.hypot(bx, bz);
+      Object.assign(hb, { x: B.x + (bx / bd) * 9, z: B.z + (bz / bd) * 9 });
+      w2.step(0.3);
+      // at the centre looking out at the door's side of the ring
+      Object.assign(p, { x: B.x, z: B.z, state: "free" });
+      p.yaw = DF.cam.yaw = Math.atan2(q.x - B.x, q.z - B.z);
+      DF.cam.px = p.x;
+      DF.cam.pz = p.z;
+      c.warn = G.chunks.filter((k) => k.seal && !k.id).length > 0;
+      G.msgs.length = 0;
+      await w2.frames();
+      return { pass: Object.values(c).every((v) => v === true), c };
+    },
+  },
+  { wait: 400, shot: "t32-warn" },
+  {
+    name: "the ring, for the screenshot",
+    eval: async () => {
+      const { G } = DF,
+        w2 = window.__w2;
+      G.manual = true;
+      DF.devGod(true);
+      const p = G.player,
+        B = G.world.boss,
+        q = DF.sealDoor(G.world),
+        hb = w2.hostBoss(),
+        bx = B.x - q.x,
+        bz = B.z - q.z,
+        bd = Math.hypot(bx, bz);
+      // the Warden kept still out of the view, behind this player
+      w2.step(2, () => Object.assign(hb, { x: B.x + (bx / bd) * 9, z: B.z + (bz / bd) * 9, state: "recoil", t: 0, dur: 9 }));
+      Object.assign(p, { x: B.x + (B.x - q.x) * 0.3, z: B.z + (B.z - q.z) * 0.3, state: "free" });
+      p.yaw = DF.cam.yaw = Math.atan2(q.x - B.x, q.z - B.z);
+      DF.cam.px = p.x;
+      DF.cam.pz = p.z;
+      const down = !!G.seal && G.seal.down;
+      G.msgs.length = 0;
+      await w2.frames();
+      return { pass: down, down };
+    },
+  },
+  { wait: 400, shot: "t32-ring" },
+  {
     name: "end the run",
     eval: () => {
       DF.devGod(false);

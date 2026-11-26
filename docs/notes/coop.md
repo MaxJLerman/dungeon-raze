@@ -132,8 +132,8 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   and a `gate` or `travel` crossing a swap does nothing), it is not `live()`
   (not hunted) and not counted by `wipe()`, it is sent no snapshots, and
   `all` and `others` skip it for the world-bound events `shot`, `ring`,
-  `roar`, `kill`, `reset`, `fed`, `held`, `freed` and `crush`. A counter (`ver`) is raised by every kill and
-  wipe and remembered on each proxy when its join or world is sent; an `at`
+  `roar`, `kill`, `reset`, `fed`, `held`, `freed`, `crush` and `seal`. A counter (`ver`) is raised by every kill and
+  wipe and by the seal's beginning, and remembered on each proxy when its join or world is sent; an `at`
   that finds it changed is answered with `reset` (the enemies again). An
   event that swaps the world is not acknowledged, since the new world's
   numbers start again: the host's ack is 0 and the client counts from 1
@@ -242,7 +242,7 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   health over a mark without undoing one. Everything today's second phase
   gives (speed 1.2, tempo 0.85, the volley, the glow) holds from phase 2
   on (`e.phase >= 2`, on the host and in the page's puppet). Phase 2 adds
-  the aftershock, phase 3 the grab; phase 4 adds nothing else yet. **The aftershock**
+  the aftershock, phase 3 the grab, phase 4 the seal (below). **The aftershock**
   (`WARDEN2.wave`, `{ from: 2, wait: 0.35, speed: 11, reach: 24, band: 1.2,
   dmg: 14 }`): a slam whose attack has an `after` calls `waveStart(x, z,
   after)` where it lands, when the Warden's phase is at least `after.from`:
@@ -338,9 +338,67 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   for the Warden for two and none for any other boss. **`host.phase(n)`**,
   for tests and the dev menu: puts the living Warden for two at the start
   of phase `n` (2 to 4) as a hit from nobody (`as` the placeholder) does
-  that takes it from 1 above that mark to 1 under, roar event included,
+  that takes it from 1 above that mark to 1 under, roar and seal events
+  included (both go through the host's one path, `rose(e, ph0)`, which
+  `ASK.hit` also calls),
   and returns the enemy; `null` with no such Warden or once it is in phase
-  `n` or later.
+  `n` or later. **The seal** (`WARDEN2.seal`, `{ n: 24, ring: 12.5, rock:
+  1.4, warn: 1.4, sweep: 0.6, door: 2, fade: 0.4 }`; its functions are in
+  `06b`, since the host and both pages run them). As a Warden for two enters
+  phase 4 the host's `rose` calls `sealBegin()`, raises `ver` and sends
+  `["seal", eid, t]` to all. `G.seal` is `{ t, ids, down, fade }` while it
+  stands, else `null` (`resetRun` clears it), and `update` calls
+  `sealUpdate(dt)` while it stands. `sealRing(w)` is the `n` capsules `[ax,
+  az, bx, bz]` end to end on the circle of radius `ring` round `w.boss`,
+  the first from angle 0, in order (pure, so the three copies lay the same
+  rock). Each is an entry of `G.chunks` with `seal` and its own `ends`,
+  shown by the crocodile's dust for its warning and landing `warn + sweep *
+  i / n` s after the start (the last at 1.975 s, inside the 2.2 s roar):
+  `world.addRock` with radius `rock`, its rock id in `ids`, every enemy's
+  route dropped, and any body its rock reaches moved radially in to open
+  floor (`sealIn`: to `ring - rock - r - 0.15`, `resolve`, then `crocFree`
+  if still short of room), an enemy unless dead, falling, hidden, aloft or
+  the dummy, and on a page this player unless dead or held. It hurts
+  nobody. `down` once all have landed. `sealNow()` lays the whole ring at
+  once, quietly; `sealEnd(crumble)` takes its rock out, its chunks away
+  (with `crocChunkGone`'s crumble when `crumble`), drops every route, clears
+  a fade it began and sets `G.seal` null. `sealBegin` and `sealNow` end a
+  standing seal first. **The door spot** `sealDoor(w)` is `{ x, z, yaw }`
+  on the line from the centre toward `w.nodes[w.path[w.path.length - 2]]`,
+  `ring - rock - door` (9.1 m) out, resolved for a body of 0.6, facing the
+  centre. **Kept in:** on a page (told from the host by `G.player.remote`,
+  the placeholder's flag; no `NET` read) each step while `down`, this
+  player alive and not held: one further than `ring - rock` from the
+  centre and within `ring + rock + 0.5` is moved radially to `ring - rock -
+  0.6` and resolved; one further out is put at the door spot facing the
+  centre, the camera with it, and the screen's fade (`G.fade`, from 1 to 0
+  over `fade` s, run by `sealUpdate`, not a `G.trans`, so `hurtPlayer` is
+  never stopped). **Every arrival is at the door:** `respawn` lays the ring
+  again after clearing the rock (`sealNow()`) and puts the player at the
+  door spot in place of the checkpoint; `coopBuild` of a description with
+  `seal` true lays it and puts this player there before the first frame
+  (the host's own ring may still be falling: accepted). **On the host:**
+  `roster()` carries `seal: !!G.seal` (so `join`, `world` and `reset` do);
+  `wipe()` calls `sealEnd(false)` before it makes the enemies again; the
+  Warden's death (`onKill`) calls `sealEnd(true)`. `EBEH.warden.hpFloor`:
+  in phases 1 to 3, outside `w.boss.r` of the chamber's centre, its health
+  cannot fall under `hp * marks[2]` (387.5), so the seal always begins with
+  it in the chamber (inside it but outside the ring, the rock moves it in).
+  `EBEH.warden.step`, while the seal stands and its target is not a live
+  player within `ring + rock + 0.5` of the centre, stands where it is
+  (route dropped) and skips the state machine: it never gives up or walks
+  home while sealed, so its health and phase stand until a wipe or its
+  death. **The wipe while sealed:** an away player counts as its last
+  state, so one on the death screen and the other away (a dropped
+  connection) is no wipe; without this, today's rule (away players not
+  counted) would wipe and reset the sealed fight. A player who leaves the
+  room is not counted. **On a page** the timed `seal` (`COOP_EV_T` index 2)
+  calls `sealBegin(adv)`, or `sealNow()` when quiet (late or not live), and
+  nothing when a seal already stands; the boss's `kill` calls
+  `sealEnd(true)`; a `reset` with `seal` false ends a standing seal with
+  `sealEnd(false)`, and one with `seal` true and none standing calls
+  `sealNow()` (this player is then brought in by the keep-in rule). The dark
+  that goes with it is not built yet.
 - **The wire** (`06c`). Every frame is an `ArrayBuffer` whose first byte is
   its kind: `COOP.SNAP` (1), host to client, 20 a second: host time, the
   ack (the client's highest event seq processed), the other player's record
@@ -361,10 +419,11 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   proxy becomes that class where it stands, with the same share of health,
   a hidden one as the first base class, and the other player is told with
   the host's own `cls`). The host's events carry a world description `D =
-  { e, kind, grade, seed, sum, n, enemies, dead, bossDead, t }`: the epoch,
+  { e, kind, grade, seed, sum, n, enemies, dead, bossDead, seal, t }`: the epoch,
   `"hub"` or `"cave"`, the grade (`null` in the hall), the seed (0 in the
   hall), the world's checksum, the players it was built for, the enemy
-  list, dead ids, the boss's death and host time. `join` is `["join", { v,
+  list, dead ids, the boss's death, whether the Warden for two's seal
+  stands (`reset` carries it too) and host time. `join` is `["join", { v,
   pid, started, peers, ...D }]`; `world` is `["world", { ...D, from, won
   }]`, sent to every player on each swap (`from`, the grade whose gate the
   party comes out of in the hall, else `null`; `won`, the host's run time
@@ -378,7 +437,8 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   first state, so its player has pressed Start; sent once to a friend
   already in), `shot`, `ring`, `roar` (`["roar", eid, t, phase]`, the
   phase a boss has entered), `kill` (with whose event caused it),
-  `reset`, `held`, `freed` and `crush` (`[name, eid, pid, t]`, the Warden
+  `reset`, `seal` (`["seal", eid, t]`, the Warden for two's seal has
+  begun, above), `held`, `freed` and `crush` (`[name, eid, pid, t]`, the Warden
   for two's hold, above), `fed` (`["fed", eid, t]`, a dungeon for two's boss fed on a
   death in its chamber, above), `peer`, `cls` (`["cls", pid, class]`, the other player has
   changed class: `coopMateCls` changes the mate in place, keeping where it
@@ -503,7 +563,9 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   A death is the usual screen and respawn at that player's own
   rest point, and resets no enemies; while one is dead the enemies hunt the
   other. Both dead at once (away players not counted) is a wipe: the host
-  makes the enemies again as a respawn does, once per wipe. Rest points are
+  makes the enemies again as a respawn does, once per wipe. While the
+  Warden for two's seal stands an away player counts as its last state, so
+  one dead and the other away is no wipe there (the seal, above). Rest points are
   each player's own. Kill rewards go to the player whose event killed. The
   boss's death clears E for each in their own save, with no line about a
   new gate. Either player in the exit gate takes both back to the hall in
@@ -713,7 +775,19 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
     from the other player breaking it into a 2 s stagger, the held player's
     own hits not counting, a posture break as a break, the crush at 4 s, the
     hold let go with nothing sent when the held player dies, goes away, is
-    free again, or is never seen held, and 14 s before it seizes again.
+    free again, or is never seen held, and 14 s before it seizes again; and
+    the seal: on big caves 1 to 40 a flood from the centre (0.25 m grid,
+    `fieldAt` at least 0.4) never passes 12.5 m, a body of 0.45 has room
+    10 m out on 72 headings and the door spot is clear, two hosts of seed 7
+    lay the same ring and the same field at 500 points, phase 4 sends
+    `seal` to both and closes the route out by 2.1 s (and a join is told),
+    health held at 387.5 outside the chamber until phase 4, the Warden moved
+    in from 13 m, a sealed Warden with one player dead and the other away
+    for 13 s unmoved, unhealed and unreset (then it hunts the one who comes
+    back), an unsealed one still walking home and resetting, a wipe and its
+    death lifting the seal (route out, gate), and a join, a rejoin and a
+    page whose `at` came after the fall told it stands
+    (`host.seal`, for tests: `{ table, ring, door, now }`).
   - `node tests/coop-wire.mjs`: the wire formats and the fake link, the
     phases 1 to 4 beside the other flags and `COOP_V` 4, a
     `world` event's round trip and the size of the joins of big cave 99 and
@@ -764,7 +838,21 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
     player (as pid 2) is told "Break its grip!"; look at
     `shots/t32-seize-wind.png` (both arms wide, lit red) and
     `shots/t32-held.png` (this player up against the Warden's chest, its
-    right arm raised); `tests/t29.mjs` (the room screen up to the network: the button,
+    right arm raised). The seal (`sealSetup`, `untilDown`, `walkOut`): 24
+    capsules in warning at 0.5 s and the ring down by 2.1 s with rock
+    under every capsule, the page's field the host's; this player in the
+    room before the chamber brought to the door spot (facing the centre,
+    under a fade that clears in 0.4 s); one standing 12.5 m out pushed to
+    10.5 m, not to the door; forward toward the tunnel for 5 s stays within
+    11.2 m; a respawn at the door spot with the ring and 24 heaps back and
+    no way out; a join while the host is in phase 4 (`before`) told `seal`
+    and sealed in at the door spot before any step; a wipe and the Warden's
+    death opening it (no rock, no heaps, the gate open); every frame from
+    the centre and the door within cave 99's 81,835 triangles. Look at
+    `shots/t32-warn.png` (dust and rings round the chamber) and
+    `shots/t32-ring.png` (the ring of heaps closing the chamber, no gap),
+    also as `shots/iphone-se-t32-ring.png` with `DEVICE=iphone-se`;
+    `tests/t29.mjs` (the room screen up to the network: the button,
     the code's tidying and refusal, every message, the order of the checks,
     the class fallback, a Worker host on the page that starts in the hall,
     the friend's button naming the hall or the dungeon, a `world` refused
@@ -834,6 +922,14 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
   them and the centre (bodies do not block the player). A refused seize
   holds the player for a round trip and a little more before it frees them;
   each tick of that hold hurts as a real one does.
+- The Warden for two's seal is untested by hand (`WARDEN2.seal`). A page
+  that lays it from a description (a join, a respawn, a `reset`) has the
+  whole ring at once while the host's may still be falling for up to 2 s.
+  The host's proxy of a page brought to the door stands outside the ring
+  for a state frame or so; the Warden waits while its target is outside.
+  While sealed, a player who stays away (a stalled tab that has not left the
+  room) blocks a wipe for good: the other dies and gets up at the door as
+  often as it takes, and the fight goes on.
 - Co-op executions: the first player whose `pin` reaches the host gets the
   kill (the spec said the first to finish). A lost pin's rewards are taken
   back; if the other player's kill event is applied on the very step this
