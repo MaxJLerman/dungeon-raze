@@ -173,8 +173,8 @@ target is within 5 m, and not again for 14 s after it ends. Its wind-up is
 sweep. It reaches 4.6 m in a narrow arc. It cannot be guarded or parried.
 It can be dodged.
 
-If it lands, the player is held (`p.state` `"held"`, lifted to the Warden's
-chest) and the Warden stands still in state `"hold"` for up to 4 s. The
+If it lands, the player is held (`p.state` `"held"`, drawn against the
+Warden's chest while their position stays on the floor in front of it) and the Warden stands still in state `"hold"` for up to 4 s. The
 held player takes 6 damage a second.
 
 - **Broken:** the other player deals 80 damage to the Warden while it
@@ -216,9 +216,10 @@ is moved in with the other bodies, below. *My call.*
 
 On entering phase 4 the Warden's roar lasts 2.2 s and during it:
 
-- **The rock.** A ring of rock falls round the chamber's centre: 18
+- **The rock.** A ring of rock falls round the chamber's centre: 24
   capsules of radius 1.4 m (the crocodile's rubble) end to end on a circle
-  of radius 12.5 m. Dust shows where each will land for 1.4 s, then they
+  of radius 12.5 m. Measured on big caves 1 to 200, this ring is closed to
+  a body on every one and leaves 10.6 m of floor a body can stand on. Dust shows where each will land for 1.4 s, then they
   land in a sweep round the circle over 0.6 s. About 11 m of open floor is
   left of the 16 m. The ring is the door closing: every tunnel mouth is
   behind it. The rock is only a change to the field, made by the same
@@ -262,9 +263,9 @@ players are at their rest points as today.
   with the phase), the hold starting, the hold broken, the crush, the seal
   landing and the seal ending. One new event from a page to the host: its
   player was seized.
-- The join and world descriptions say whether the seal stands and the
-  Warden's phase, so a page that arrives late builds the rock at once and
-  starts in the dark.
+- The join and world descriptions say whether the seal stands, so a page
+  that arrives late builds the rock at once and starts in the dark. The
+  Warden's phase reaches it in the first snapshot, as its health does.
 - The attention scores live on the host only.
 - The host copy runs all of this in Node and in a Worker: no drawing, no
   sound.
@@ -328,8 +329,6 @@ scripted mate lets the grab be seen alone. Dev only, under `src/dev/`.
 - Names of functions, events and table keys.
 - How the Warden's wide-armed pose and the held pose are posed.
 - How the door spot is found when rock or a wall sits on the first choice.
-- The exact arrangement of the 18 capsules, so long as the ring is closed
-  to a body of a player's radius and open floor of at least 10 m is left.
 - Whether the attention scores halve continuously or in steps.
 
 ## Risks
