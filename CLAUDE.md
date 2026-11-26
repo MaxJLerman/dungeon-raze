@@ -28,6 +28,7 @@ subagent, name the notes files it must read.
 | Behaviour hooks, rat, drowned, brood mother, bloater, eel, siren, grabber (`05b`, `06b`, `07b`) | `d-enemies.md`, `enemies.md` | t23, t24 |
 | The crocodile boss and its cavern | `crocodile.md`, `d-enemies.md`, `enemies.md` | t25 |
 | Co-op, the host copy, the wire, the room screen, `relay/` (`06c`, `06d`, `07c`, `08e`) | `coop.md`; `relay/README.md` for the relay | coop-\*, t27, t28, t29 |
+| The Warden for two (`WARDEN2`, its phases, attention, aftershock, grab, seal) | `coop.md`, `enemies.md` | coop-warden, t32 |
 | Planning: project history, per-branch record, backlog | `status.md` | |
 
 **Keeping the notes.** Put what you learn or change in the system's notes file,
@@ -50,10 +51,15 @@ notes file and a row above.
   and three hidden ones, touch, controller, dev menu, main menu and two-player
   co-op. A co-op room meets in the hall, the two travel through gate E
   together and back, and a cave entered by two is a much bigger cave (36
-  rooms, drawn in pieces) and harder. In co-op D is sealed too. C to S are
+  rooms, drawn in pieces) and harder, and its Warden is a harder fight of
+  four phases (it hunts whoever hurt it most, an aftershock follows each slam,
+  a grab only the other player can break, and a last phase that seals the
+  chamber and puts the lights out). In co-op D is sealed too. C to S are
   sealed. Grades carry no difficulty or rewards yet.
-- Next: the owner's verdict on the combat, then widening the game with several
-  agents in parallel. The detail and the backlog are in `docs/notes/status.md`.
+- Next: the owner's verdict on the combat and a playtest of co-op with two
+  people (every number of the Warden for two, `WARDEN2`, is a first guess),
+  then widening the game with several agents in parallel. The detail and the
+  backlog are in `docs/notes/status.md`.
 
 ## Rules of the build
 

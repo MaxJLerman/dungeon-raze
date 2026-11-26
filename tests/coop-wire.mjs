@@ -86,6 +86,21 @@ check("a snapshot survives the round trip", () => {
   assert.ok(d.players[0].yaw > TAU - 0.001);
 });
 
+check("phases 1 to 4 survive the round trip beside aware, dead and pin", () => {
+  assert.equal(host.v, 4);
+  for (const phase of [1, 2, 3, 4])
+    for (const aware of [false, true])
+      for (const dead of [false, true])
+        for (const pin of [0, 1, 2]) {
+          const d = W.snapDecode(W.snapEncode(0, 0, [], [enemy({ phase, aware, dead, pin })])).en[0],
+            what = JSON.stringify({ phase, aware, dead, pin });
+          assert.equal(d.phase, phase, what);
+          assert.equal(d.aware, aware, what);
+          assert.equal(d.dead, dead, what);
+          assert.equal(d.pin, pin, what);
+        }
+});
+
 check("every player and enemy state, and every move, has a name on the wire", () => {
   const ps = ["free", "guard", "attack", "dodge", "hit", "gbreak", "heal", "execute",
     "blink", "grapple", "inspect", "held", "dead"];

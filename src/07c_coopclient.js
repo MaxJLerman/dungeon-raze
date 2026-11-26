@@ -367,18 +367,26 @@ function coopRecv(buf) {
 // One that fails is ignored.
 const coopNum = (v) => typeof v === "number" && Number.isFinite(v);
 const coopNums = (m, n) => m.length >= n && m.slice(1, n).every(coopNum);
-const COOP_EV_T = { shot: 8, ring: 5, roar: 2, kill: 3, fed: 2 };
+const COOP_EV_T = { shot: 8, ring: 5, roar: 2, kill: 3, fed: 2, held: 3, freed: 3, crush: 3, seal: 2 };
 const COOP_TAKE = {
   // ["shot", eid, x, y, z, vx, vz, dmg, t]
   shot: (m) => coopNums(m, 9) && CC.byId.has(m[1]),
   // ["ring", x, z, radius, dur, t]
   ring: (m) => coopNums(m, 6) && m[3] > 0 && m[4] > 0,
-  // ["roar", eid, t]
-  roar: (m) => coopNums(m, 3) && CC.byId.has(m[1]),
+  // ["roar", eid, t, phase]: a boss has entered phase 2, 3 or 4
+  roar: (m) => coopNums(m, 4) && CC.byId.has(m[1]) && [2, 3, 4].includes(m[3]),
   // ["kill", eid, pid, t]
   kill: (m) => coopNums(m, 4) && CC.byId.has(m[1]),
   // ["fed", eid, t]: the boss has fed on a player who died in its chamber
   fed: (m) => coopNums(m, 3) && CC.byId.has(m[1]),
+  // ["held", eid, pid, t], ["freed", eid, pid, t], ["crush", eid, pid, t]:
+  // the Warden for two's hold of player pid has begun, been broken, or
+  // ended in its crush
+  held: (m) => coopNums(m, 4) && CC.byId.has(m[1]),
+  freed: (m) => coopNums(m, 4) && CC.byId.has(m[1]),
+  crush: (m) => coopNums(m, 4) && CC.byId.has(m[1]),
+  // ["seal", eid, t]: the Warden for two's seal has begun
+  seal: (m) => coopNums(m, 3) && CC.byId.has(m[1]),
 };
 // The host events applied as they arrive, with their checks.
 const COOP_NOW = {
@@ -498,6 +506,14 @@ function coopBuild(d) {
   G.bossDead = !!d.bossDead;
   // built after the boss died: its gate is open, as bossFell leaves it
   if (G.bossDead && G.world.boss) openGate();
+  // built while the Warden for two's seal stands: its rock before the first
+  // frame, and this player at the door spot inside it
+  if (d.seal) {
+    sealNow();
+    const q = sealDoor(G.world);
+    Object.assign(G.player, { x: q.x, z: q.z, yaw: q.yaw });
+    snapCam();
+  }
   Object.assign(CC, {
     epoch: d.e,
     kind: d.kind,
@@ -753,8 +769,12 @@ function coopPuppet(e, dt, rt, drt) {
   e.aware = A.aware;
   e.phase = A.phase;
   if (A.dead) return coopDie(e, NET.live);
-  // a guess stands until the host has had the event it came from, or 2 s
-  if (e.ov && (A.ack >= e.ov.seq || (e.ov.life -= dt) <= 0)) e.ov = null;
+  // a guess stands until the host has had the event it came from, or 2 s;
+  // a seize's guess over with no held for this player was refused
+  if (e.ov && (A.ack >= e.ov.seq || (e.ov.life -= dt) <= 0)) {
+    if (e.ov.seize && p.state === "held" && p.hold && p.hold.by === e && !p.hold.sure) releaseHold();
+    e.ov = null;
+  }
   if (e.ov) {
     e.t += dt;
     return;
@@ -762,7 +782,7 @@ function coopPuppet(e, dt, rt, drt) {
   // The host's state carried on from the snapshot to the drawn time: a
   // wind-up becomes its swing and a swing its recovery on the table's times.
   const keys = Object.keys(d.atks || {}),
-    tm = e.phase === 2 ? 0.85 : 1;
+    tm = e.phase >= 2 ? 0.85 : 1;
   let s = A.state,
     t = A.tt + (rt - A.t),
     a = A.atk >= 0 ? d.atks[keys[A.atk]] || null : null;
@@ -815,16 +835,18 @@ function coopPuppet(e, dt, rt, drt) {
       c: RED,
     });
     sparks(e.x, 0.3, e.z, 40, [1, 0.5, 0.2], 9, 0.6, 0.16);
+    if (a.after && e.phase >= a.after.from) waveStart(e.x, e.z, a.after);
     hit = dist < a.radius;
   } else if (s !== "act") return;
   else if (a.kind === "charge") hit = dist < e.r + p.r + 0.9;
-  else if (!a.kind)
+  else if (!a.kind || a.kind === "seize")
     hit =
       t > 0.02 &&
       dist < a.reach + p.r &&
       (dist < e.r + 0.9 || Math.abs(angDiff(e.yaw, Math.atan2(dx, dz))) < a.arc / 2);
   if (!hit) return;
   e.hitAn = A.an;
+  if (a.kind === "seize") return coopSeize(e, A.an);
   const res = hurtPlayer(a.dmg, e, a);
   CC.judged[res] = (CC.judged[res] || 0) + 1;
   // hurtPlayer has thrown this copy back; the host does the same to its own
@@ -832,6 +854,82 @@ function coopPuppet(e, dt, rt, drt) {
     const seq = coopAsk("parry", e.id, A.an, a.pp || (d.boss ? 30 : 42));
     e.ov = { seq, life: COOP_GUESS };
   }
+}
+// The Warden for two's seize (WARDEN2.seize) reached this player: held, as
+// any grab holds, dragged to seize.front before it, for a little longer
+// than the host's hold so the host's crush or freed ends it. Struggling
+// works only while this page has no other player there, alive and in the
+// chamber to break the hold. The puppet is held in "hold" as a guess until
+// the host has had the report. Only the host's held naming this player
+// makes the hold sure (coopHold): a guess that ends without it was refused
+// and lets this player go (the host may hold the other player, so the
+// puppet's own state cannot be trusted to), and so does a held naming the
+// other player. The held always comes before the snapshot that acks the
+// report, and events are applied before the puppets.
+function coopSeize(e, an) {
+  const S = WARDEN2.seize,
+    mash = () => {
+      const bc = G.world.boss;
+      return !(
+        NET &&
+        NET.mates &&
+        bc &&
+        NET.mates.some((m) => !m.away && m.state !== "dead" && Math.hypot(m.x - bc.x, m.z - bc.z) < bc.r)
+      );
+    };
+  const tx = e.x + Math.sin(e.yaw) * S.front,
+    tz = e.z + Math.cos(e.yaw) * S.front;
+  if (!grabPlayer(e, { dps: S.dps, tx, tz, speed: S.pull, max: S.hold + 1, mash })) return;
+  e.state = "hold";
+  e.t = 0;
+  e.ov = { seq: coopAsk("seized", e.id, an), life: COOP_GUESS, seize: true };
+}
+// The host's word on a hold of the Warden for two. Of the other player: its
+// line while the hold lasts, taken down when it ends, and a held lets this
+// player go if the same Warden holds it (the host refused its seize). Of
+// this player: held makes its hold sure (coopSeize); freed lets go; crush
+// takes its damage while still held (so the moment of safety the release
+// gives cannot swallow it), lets go and throws this player toward the
+// chamber's centre. Each does nothing to a player not held.
+function coopHold(ev, quiet) {
+  const [k, eid, pid] = ev,
+    e = CC.byId.get(eid),
+    S = WARDEN2.seize,
+    p = G.player;
+  if (!e) return;
+  if (pid !== CC.pid) {
+    const m = NET.mates.find((o) => o.pid === pid);
+    if (k !== "held") return coopMateLet(m);
+    if (m) m.heldBy = e;
+    if (!quiet) say(S.say, "", S.hold);
+    if (p.state === "held" && p.hold && p.hold.by === e) releaseHold();
+    return;
+  }
+  if (p.state !== "held") return;
+  if (k === "held") {
+    if (p.hold.by === e) p.hold.sure = true;
+    return;
+  }
+  if (k === "freed") return releaseHold();
+  hurtPlayer(S.crush, e, { dmg: S.crush, unb: true });
+  if (p.state !== "held") return;
+  releaseHold();
+  const bc = G.world.boss,
+    dx = bc.x - p.x,
+    dz = bc.z - p.z,
+    d = Math.hypot(dx, dz);
+  if (d < 0.1) return;
+  // the knock fades at 9 a second (playerUpdate), so it carries about toss
+  p.kx = (dx / d) * S.toss * 9;
+  p.kz = (dz / d) * S.toss * 9;
+  p.state = "hit";
+  p.t = 0;
+}
+// The other player's hold is over, by the host's word or with none (the
+// Warden died or roared, a reset): its line comes down and it is drawn free.
+function coopMateLet(m) {
+  if (m) m.heldBy = null;
+  for (const o of G.msgs) if (o.text === WARDEN2.seize.say) o.t = 0;
 }
 // A death the host decided: the look and sound of kill(), none of its
 // rewards, and those only when loud and within COOP_HEAR of this player.
@@ -903,7 +1001,8 @@ function coopApply(ev, rt) {
     const [, x, z, r, dur] = ev;
     if (adv < dur) G.rings.push({ x, z, r, t: adv, dur, kind: "warn", c: RED });
   } else if (ev[0] === "roar") {
-    // a boss's second phase, as hitEnemy shows it
+    // a boss's later phase, as hitEnemy shows it; the Warden for two says
+    // the line of the phase it entered
     const e = CC.byId.get(ev[1]);
     if (!e || e.dead || quiet) return;
     SFX.roar();
@@ -914,13 +1013,22 @@ function coopApply(ev, rt) {
       p.kx = ((p.x - e.x) / d) * 16;
       p.kz = ((p.z - e.z) / d) * 16;
     }
-    say("The Warden burns hotter", "", 2.5);
+    say(e.def.duo ? WARDEN2.lines[ev[3]] : "The Warden burns hotter", "", 2.5);
   } else if (ev[0] === "fed") {
     // a death in the boss's chamber healed it (a dungeon for two); its
     // health follows from the snapshots, so only the line is said
     const e = CC.byId.get(ev[1]);
     if (!e || e.dead || quiet) return;
     say(e.def.name + " feeds on the fallen.", "", 3);
+  } else if (ev[0] === "held" || ev[0] === "freed" || ev[0] === "crush") {
+    coopHold(ev, quiet);
+  } else if (ev[0] === "seal") {
+    // the chamber closes as on the host: its rock falls from when the host
+    // began it, or is down at once when this comes late or quietly; a seal
+    // already laid from a description stands
+    if (G.seal) return;
+    if (quiet) sealNow();
+    else sealBegin(adv);
   } else if (ev[0] === "kill") {
     // One already dead here stays as it is, and a death guessed here is
     // settled. Otherwise it dies, with kill's rewards when this player's
@@ -943,6 +1051,8 @@ function coopApply(ev, rt) {
       }
     } else coopDie(e, !quiet);
     if (e.def.boss && !G.bossDead) bossFell(e, quiet);
+    // the Warden's death lifts the seal: its rock crumbles
+    if (e.def.boss) sealEnd(true);
   }
 }
 
@@ -1209,7 +1319,10 @@ function coopMate(m, dt, rt) {
   m.z = z;
   m.yaw = B ? A.yaw + angDiff(A.yaw, B.yaw) * k : A.yaw;
   m.move = A.move && MOVES[A.move] ? A.move : null;
+  const was = m.state;
   m.state = A.state === "attack" && !m.move ? "free" : A.state;
+  // a hold that ended with no word from the host
+  if (m.heldBy && was === "held" && m.state !== "held") coopMateLet(m);
   m.t = A.tt + (rt - A.t);
   m.speed = A.speed;
   m.walk += m.speed * dt * 2.1;
@@ -1252,6 +1365,10 @@ function coopReset(r) {
   coopPuppets(r);
   G.bossDead = !!r.bossDead;
   if (G.bossDead && G.world.boss && !G.gate) openGate();
+  // the seal as the host has it: lifted by a wipe, or laid at once for a
+  // page that missed its fall (this player is then kept in, sealKeep)
+  if (!r.seal) sealEnd(false);
+  else if (!G.seal) sealNow();
   CC.pend = [];
   CC.evq = [];
   CC.fin = null;

@@ -5,6 +5,10 @@
 - State machine in `enemyUpdate`: `idle`, `alert`, `chase`, `search`, `wind`,
   `act`, `rec`, `hit`, `recoil`, `stagger`, `roar`, `return`, `dead`, and
   two more that only some enemies use: `fall` (Drop) and `hold` (a grab, below).
+  The switch has no case for `hold`: the enemy stands while its hook (D's
+  grabbers) or the co-op host (the Warden for two's seize, `coop.md`) drives
+  it. Nothing before the switch moves a boss in `hold` (it has poise 2, so
+  no knock) or takes it out of it; a hit can (a stagger, a roar, a death).
 - At most two non-boss enemies may attack at once. They claim a token with
   `takeToken`; the rest circle. In a co-op dungeon built for two (`NET.two`,
   only ever true on the host, where every enemy has a target `tg`) the limit
@@ -66,7 +70,31 @@
 - **Boss flags on `EDEF`.** `arena: true` makes a boss's chase give up only
   when the player is dead or out of the boss chamber (`!G.inBoss`), in place
   of the 38 m and 30 m limits. `ownPhases: true` skips `hitEnemy`'s
-  half-health phase change and roar, for a boss with its own phases.
+  phase change and roar, for a boss with its own phases. For any other
+  boss `hitEnemy` sets `e.phase` to 1 plus the number of `def.marks`
+  (shares of full health, `[0.5]` when it has none) its health is below;
+  when that is above its phase it enters it with the roar (state `"roar"`,
+  posture cleared, the sound, shake and shock ring), once a hit however
+  many marks the hit crossed. A phase never falls there; the boss's reset
+  on reaching home puts it back to 1. `def.roarT` maps a phase entered to
+  its roar's length in seconds (the `roar` case of `enemyUpdate`), 1.2 s
+  for one it does not list. An attack's `from` is the first phase it may
+  be chosen in (`chooseAtk`); without it `p2: true` means 2, else 1.
+  Readers of "the second phase" (the speed 1.2 and tempo 0.85 in
+  `enemyUpdate`, the glow and sprite in `07_render.js`, a co-op page's
+  tempo) read `e.phase >= 2`. Only the Warden for two (`coop.md`) has
+  `marks` or `roarT` today, and only its `seize` has `from` (3); `EDEF`
+  carries none of them. The seize (`kind: "seize"`, style `"seize"`, both
+  arms wide in the wind-up) has no hit of its own on the host; `EBEH.warden`,
+  which only the host copy registers, keeps it out of `chooseAtk` for 14 s
+  after a seize (`coop.md`). An attack's `after` (the Warden for two's slam only, `coop.md`)
+  is data for an aftershock: where a `"slam"` lands in `enemyUpdate`, and in
+  a co-op page's puppet, an enemy whose phase is at least `after.from` calls
+  `waveStart(x, z, after)`; `EDEF` has none, so solo slams are as ever.
+  `EBEH.warden` also has `hpFloor` (outside its chamber before phase 4
+  its health stops at its last mark) and, in `step`, the seal's rule: while
+  `G.seal` stands and it has no live target inside the ring it stands where
+  it is and never gives up or walks home (`coop.md`, the seal).
   `fell` is the big message `kill` shows for a boss (the Warden's is
   "THE WARDEN FALLS"; a boss type needs one). `spawnEnemies` leaves out any
   `boss` type once `G.bossDead`. `tests/t25.mjs` covers these and `atkOk`.

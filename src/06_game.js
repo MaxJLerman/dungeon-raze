@@ -50,8 +50,15 @@ const G = {
   clouds: [],
   // the pools an eel has shocked, { body, room, t, dur }
   shocks: [],
-  // chunks of the crocodile's cavern ceiling, falling and fallen (crocCeiling)
+  // the aftershocks of the Warden for two's slam, { x, z, t, o, hit } (waveStart)
+  waves: [],
+  // chunks of the crocodile's cavern ceiling, falling and fallen (crocCeiling),
+  // and the capsules of the Warden for two's seal
   chunks: [],
+  // the Warden for two's seal while it stands, { t, ids, down, fade } (sealBegin)
+  seal: null,
+  // how dark the cave is, { v, to }: both 0 to 1, v moving toward to (darkUpdate)
+  dark: { v: 0, to: 0 },
 };
 const keys = {},
   taps = {},
@@ -2017,7 +2024,10 @@ function resetRun() {
   G.holes = [];
   G.clouds = [];
   G.shocks = [];
+  G.waves = [];
   G.chunks = [];
+  G.seal = null;
+  G.dark = { v: 0, to: 0 };
   G.insp = null;
   G.grabGrace = 0;
   G.bossDead = false;
@@ -2177,7 +2187,17 @@ function respawn() {
   G.holes = [];
   G.clouds = [];
   G.shocks = [];
+  G.waves = [];
   G.chunks = [];
+  // the Warden for two's seal outlives a death: its rock goes back in, and
+  // the player gets up at the door spot inside it
+  if (G.seal) {
+    sealNow();
+    const q = sealDoor(G.world);
+    p.x = q.x;
+    p.z = q.z;
+    p.yaw = cam.yaw = q.yaw;
+  }
   G.world.resolve(p, 0.6);
   G.projs = [];
   G.bombs = [];
@@ -2619,8 +2639,15 @@ function hitEnemy(e, dmg, post, o = {}) {
     kill(e);
     return;
   }
-  if (e.def.boss && !e.def.ownPhases && e.phase === 1 && e.hp < e.def.hp * 0.5) {
-    e.phase = 2;
+  // A boss's phase is 1 plus the marks (shares of its full health, by
+  // default half) its health is below. Entering a later one roars, once a
+  // hit however many marks it crossed; a phase never falls here.
+  const ph =
+    e.def.boss && !e.def.ownPhases
+      ? 1 + (e.def.marks || [0.5]).filter((m) => e.hp < e.def.hp * m).length
+      : 0;
+  if (ph > e.phase) {
+    e.phase = ph;
     e.state = "roar";
     e.t = 0;
     e.posture = 0;
@@ -2818,8 +2845,11 @@ function hurtPlayer(dmg, e, atk) {
 // "hold"; the shared state switch has no case for it, so its hook drives it.
 // The player breaks free by pressing dodge, or when the time is up.
 const HOLD = { max: 2, mash: 0.35, safe: 0.4, grace: 1.5, tick: 0.5 };
-// o: { dps, tx, tz, speed }, damage per second and where to drag the player
-function grabPlayer(e, o) {
+// dps: damage per second; tx, tz and speed: where to drag the player and how
+// fast. mash: whether a dodge press counts toward breaking free, or a
+// function that says whether it does now; max: when the hold ends by itself
+// while it does not (while it does, at HOLD.max). D's grabs pass neither.
+function grabPlayer(e, { dps, tx, tz, speed, max = HOLD.max, mash = true }) {
   const p = G.player;
   if (
     (DEV && DEV.god) ||
@@ -2830,7 +2860,7 @@ function grabPlayer(e, o) {
   )
     return false;
   p.state = "held";
-  p.hold = { by: e, t: 0, tick: 0, jolt: 0, dps: o.dps, tx: o.tx, tz: o.tz, speed: o.speed };
+  p.hold = { by: e, t: 0, tick: 0, jolt: 0, dps, tx, tz, speed, max, mash };
   p.buf = null;
   p.lock = null;
   p.sprint = false;
@@ -2862,15 +2892,21 @@ function releaseHold() {
   taps["T:dodge"] = false;
   if (PAD_BIND.dodge) taps[PAD_BIND.dodge] = false;
 }
+// whether struggling (a dodge press) works in hold h now
+function holdMash(h) {
+  return typeof h.mash === "function" ? !!h.mash() : h.mash;
+}
 function heldUpdate(dt) {
   const p = G.player,
-    h = p.hold;
+    h = p.hold,
+    can = holdMash(h);
   p.vx = p.vz = p.kx = p.kz = 0;
   p.speed = p.dspeed = 0;
   p.walk += dt * 6;
   h.t += dt;
   h.jolt = Math.max(0, h.jolt - dt * 6);
-  if (hit("dodge")) {
+  // a press is taken either way, so it cannot dodge once the hold is over
+  if (hit("dodge") && can) {
     h.t += HOLD.mash;
     h.jolt = 1;
     SFX.whoosh(false);
@@ -2899,7 +2935,7 @@ function heldUpdate(dt) {
     if (dmg > 0) hurtPlayer(dmg, by, { dmg, dot: true });
   }
   if (p.state !== "held") return;
-  if (h.t >= HOLD.max) releaseHold();
+  if (h.t >= (can ? HOLD.max : h.max)) releaseHold();
 }
 function playerDie() {
   const p = G.player;
@@ -4305,7 +4341,8 @@ function chooseAtk(e, dist, ctx) {
   for (const k in e.def.atks) {
     const a = e.def.atks[k];
     if (a.trig === undefined) continue;
-    if (a.p2 && e.phase < 2) continue;
+    // an attack's first phase: from, else 2 for p2, else 1
+    if ((a.from || (a.p2 ? 2 : 1)) > e.phase) continue;
     if (dist < (a.minTrig || 0)) continue;
     if (b && b.atkOk && !b.atkOk(e, a, ctx)) continue;
     c.push(a);
@@ -4495,8 +4532,8 @@ function enemyUpdate(e, dt) {
   e.kz = damp(e.kz, 0, 10, dt);
   e.x += e.kx * dt;
   e.z += e.kz * dt;
-  const spdMul = e.phase === 2 ? 1.2 : 1,
-    tm = e.phase === 2 ? 0.85 : 1;
+  const spdMul = e.phase >= 2 ? 1.2 : 1,
+    tm = e.phase >= 2 ? 0.85 : 1;
   if (e.alertIn > 0) {
     e.alertIn -= dt;
     if (e.alertIn <= 0 && alive) {
@@ -4861,6 +4898,7 @@ function enemyUpdate(e, dt) {
             c: RED,
           });
           sparks(e.x, 0.3, e.z, 40, [1, 0.5, 0.2], 9, 0.6, 0.16);
+          if (a.after && e.phase >= a.after.from) waveStart(e.x, e.z, a.after);
           if (Math.hypot(p.x - e.x, p.z - e.z) < a.radius)
             hurtPlayer(a.dmg, e, a);
           e.state = "rec";
@@ -4947,8 +4985,9 @@ function enemyUpdate(e, dt) {
       }
       break;
     case "roar":
+      // def.roarT: the roar's length by the phase entered, else 1.2 s
       e.t += dt;
-      if (e.t > 1.2) {
+      if (e.t > ((d.roarT && d.roarT[e.phase]) || 1.2)) {
         e.state = "chase";
         e.cd = 0.2;
       }
@@ -5551,6 +5590,31 @@ function shocksUpdate(dt) {
   for (const s of G.shocks) s.t += dt;
   G.shocks = G.shocks.filter((s) => s.t < s.dur);
 }
+// An aftershock of a slam (an attack's after, WARDEN2.wave): a ring rolling
+// out from (x, z), o.wait seconds after the landing, at o.speed up to o.reach.
+// Each page judges it on its own player (wavesUpdate); the host's player is a
+// placeholder, so there it hurts nobody.
+function waveStart(x, z, o) {
+  G.waves.push({ x, z, t: 0, o, hit: false });
+}
+// A wave's radius now: where it is judged and where it is drawn.
+const waveR = (w) => (w.t - w.o.wait) * w.o.speed;
+// A wave hurts this player once, on the step its front edge (half a band
+// ahead of the radius) reaches them; hurtPlayer judges it, so a dodge, a
+// parry or a guard facing its centre answers it as they answer a slam.
+function wavesUpdate(dt) {
+  if (!G.waves.length) return;
+  const p = G.player;
+  for (const w of G.waves) {
+    w.t += dt;
+    const o = w.o;
+    if (!w.hit && waveR(w) >= Math.hypot(p.x - w.x, p.z - w.z) - o.band / 2) {
+      w.hit = true;
+      hurtPlayer(o.dmg, null, { dmg: o.dmg, px: w.x, pz: w.z });
+    }
+  }
+  G.waves = G.waves.filter((w) => waveR(w) <= w.o.reach);
+}
 function holesUpdate(dt) {
   for (const h of G.holes) {
     h.t += dt;
@@ -5772,6 +5836,9 @@ function update(dt) {
   holesUpdate(dt);
   cloudsUpdate(dt);
   shocksUpdate(dt);
+  wavesUpdate(dt);
+  if (G.seal) sealUpdate(dt);
+  darkUpdate(dt);
   for (const q of G.pending) {
     q.t -= dt;
     if (q.t <= 0) {

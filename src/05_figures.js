@@ -516,6 +516,19 @@ function atkPose(f, style, ph, k, hunch) {
       f.legR.r[0] = -0.7;
       f.legL.r[0] = 0.6;
     }
+  } else if (style === "seize") {
+    // both arms thrown wide and a little forward, then swept in together
+    if (ph === "wind") {
+      f.armR.r[0] = f.armL.r[0] = -0.7 * sk;
+      f.armR.r[2] = -1.35 * sk;
+      f.armL.r[2] = 1.35 * sk;
+      f.chest.r[0] = hunch - 0.25 * sk;
+    } else {
+      f.armR.r[0] = f.armL.r[0] = lerp(-0.7, -1.45, k);
+      f.armR.r[2] = lerp(-1.35, 0.25, k);
+      f.armL.r[2] = lerp(1.35, -0.25, k);
+      f.chest.r[0] = hunch + 0.3 * k;
+    }
   } else if (style === "slam") {
     if (ph === "wind") {
       f.armR.r[0] = f.armL.r[0] = lerp(-0.3, -2.9, sk);

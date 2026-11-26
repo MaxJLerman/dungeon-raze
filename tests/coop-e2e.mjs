@@ -547,9 +547,9 @@ async function main() {
     assert.equal((await info(friend)).zone, "hub");
     assert.equal(await intoE(host2, friend), 99);
     // the host's player kills the Warden through proposed hits, then asks for
-    // the gate. Its health is scaled for two (1116) and a boss that gives up
-    // heals on its way home, so each hit is 160: about as many as 620 took at
-    // 100, and under COOP.MAX_DMG even as an Assassin's ambush (x3).
+    // the gate. Its health is scaled for two (1550) and a boss that gives up
+    // heals on its way home, so each hit is 160, under COOP.MAX_DMG even as
+    // an Assassin's ambush (x3).
     await until(
       "the Warden dead on the host's page",
       () =>

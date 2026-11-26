@@ -289,6 +289,20 @@ function posePlayer(p) {
       f.hips.p[1] = o.leg - 0.12;
       f.legR.r[0] = 0.4 + sw * 0.25;
       f.legL.r[0] = 0.4 - sw * 0.25;
+      // seized by the Warden for two (a mate's holder comes from the host's
+      // held event): drawn up against its chest, though the player stays
+      // on the floor in front of it
+      const by = p.hold ? p.hold.by : p.heldBy;
+      if (by && by.state === "hold" && by.atk && by.atk.kind === "seize") {
+        const bo = by.fig.o,
+          ahead = (bo.d / 2) * bo.sc + o.d * o.sc + 0.15;
+        f.root.p[0] = by.x + Math.sin(by.yaw) * ahead;
+        f.root.p[2] = by.z + Math.cos(by.yaw) * ahead;
+        f.root.p[1] = (bo.leg + bo.th * 0.55) * bo.sc - (o.leg + o.th * 0.5) * o.sc;
+        f.root.r[1] = by.yaw + PI;
+        f.legR.r[0] = 0.15 + sw * 0.3;
+        f.legL.r[0] = 0.15 - sw * 0.3;
+      }
       break;
     }
     case "gbreak":
@@ -453,8 +467,22 @@ function poseEnemy(e) {
       tg = 0.3 + 0.15 * pu;
       break;
     }
+    case "hold": {
+      // the Warden for two's seize: the player crushed to its chest in the
+      // left arm, the right raised to strike (another hold has no pose here)
+      if (!e.atk || e.atk.kind !== "seize") break;
+      A[0] = -2.75;
+      A[2] = -0.35;
+      B[0] = -1.15;
+      B[2] = -0.45;
+      ch[0] = d.hunch - 0.2;
+      f.headN.r[0] = 0.25;
+      tr = 0.25 + 0.1 * Math.sin(G.t * 8);
+      break;
+    }
     case "roar": {
-      const k = Math.sin(sat(e.t / 1.2) * PI);
+      // over the roar's own length (def.roarT), today's 1.2 s by default
+      const k = Math.sin(sat(e.t / ((e.def.roarT && e.def.roarT[e.phase]) || 1.2)) * PI);
       A[0] = B[0] = -0.4;
       A[2] = -1.3 * k;
       B[2] = 1.3 * k;
@@ -480,7 +508,7 @@ function poseEnemy(e) {
     f.sac.em[0] += g * 1.2;
     f.sac.em[1] += g * 0.5;
   }
-  if (f.core && e.phase === 2) {
+  if (f.core && e.phase >= 2) {
     f.core.em[0] += 0.8;
     f.core.em[1] += 0.25;
     f.weapon.em[0] += 0.5;
@@ -553,7 +581,7 @@ function buildLights() {
     y: 2.5,
     z: p.z + Math.cos(p.yaw) * 0.4,
     c: [0.72, 0.86, 1],
-    i: 1.55,
+    i: 1.55 * darkK(WARDEN2.dark.lamp),
     r: 20,
   });
   for (const sh of w.shrines)
@@ -585,12 +613,13 @@ function buildLights() {
         y: 2.4 + e.y,
         z: e.z,
         c: [1, 0.3, 0.15],
-        i: e.phase === 2 ? 2.2 : 1.2,
+        i: e.phase >= 2 ? 2.2 : 1.2,
         r: 13,
       });
   const fx = p.x + Math.sin(cam.yaw) * 7,
     fz = p.z + Math.cos(cam.yaw) * 7,
-    near = [];
+    near = [],
+    dk = darkMul();
   for (const c of w.lights) {
     const d = (c.x - fx) * (c.x - fx) + (c.z - fz) * (c.z - fz);
     if (d < 2200) near.push([d, c]);
@@ -606,11 +635,11 @@ function buildLights() {
       z: c.z,
       c: c.c,
       i:
-        c.flick === undefined
+        (c.flick === undefined
           ? c.i + Math.sin(G.t * 1.7 + c.ph) * 0.2
           : c.flick
             ? c.i * lampFlicker(c.ph, G.t)
-            : c.i,
+            : c.i) * dk,
       r: c.r,
     });
   }
@@ -791,7 +820,9 @@ function drawCaveIns() {
 }
 // A chunk of the crocodile's cavern ceiling: drawn as a cave-in's rubble, a
 // round heap the size of its rock, falling from the roof over the last 0.3 s
-// of its warning (the warning itself is drawDust's)
+// of its warning (the warning itself is drawDust's). A chunk that carries its
+// own ends (a capsule of the Warden for two's seal) is heaped from one to the
+// other instead.
 const CHUNK_ROWS = [-0.95, 0, 0.95];
 function drawChunks() {
   for (const k of G.chunks) {
@@ -799,8 +830,9 @@ function drawChunks() {
     if (fall <= 0) continue;
     if (!k.node) {
       const ux = Math.cos(k.yaw) * 0.95,
-        uz = -Math.sin(k.yaw) * 0.95;
-      k.node = makeRubble({ seed: k.seed, yaw: k.yaw, ax: k.x - ux, az: k.z - uz, bx: k.x + ux, bz: k.z + uz }, CHUNK_ROWS);
+        uz = -Math.sin(k.yaw) * 0.95,
+        [ax, az, bx, bz] = k.ends || [k.x - ux, k.z - uz, k.x + ux, k.z + uz];
+      k.node = makeRubble({ seed: k.seed, yaw: k.yaw, ax, az, bx, bz }, CHUNK_ROWS);
     }
     for (const q of k.node.ch) q.p[1] = lerp(k.ceil, q.ty, fall * fall);
     R.drawNode(k.node);
@@ -927,6 +959,8 @@ function render() {
   const p = G.player,
     w = G.world;
   R.env.t = G.t;
+  R.env.glow = darkMul();
+  R.env.ambK = darkK(WARDEN2.dark.amb);
   buildLights();
   R.begin();
   R.drawWorld(visiblePieces(w, R.cam.x, R.cam.z, p.x, p.z));
@@ -1012,7 +1046,7 @@ function render() {
     }
     if (f.core) {
       const q = R.nodePos(f.core);
-      R.sprite(q[0], q[1], q[2], e.phase === 2 ? 1.5 : 0.9, 1, 0.25, 0.1, 0.7);
+      R.sprite(q[0], q[1], q[2], e.phase >= 2 ? 1.5 : 0.9, 1, 0.25, 0.1, 0.7);
     }
   }
   if (p.lock && !p.lock.dead) {
@@ -1100,7 +1134,7 @@ function render() {
       continue;
     }
     const fl = 0.85 + 0.15 * Math.sin(G.t * 2.2 + h.x);
-    R.sprite(h.x, h.y, h.z, 1.9, h.c[0], h.c[1], h.c[2], 0.5 * fl);
+    R.sprite(h.x, h.y, h.z, 1.9, h.c[0], h.c[1], h.c[2], 0.5 * fl * darkMul());
   }
   drawSewerSet(w);
   for (const sh of w.shrines) {
@@ -1391,6 +1425,12 @@ function render() {
       const rr = r.r * (0.2 + 0.8 * k);
       R.ring(r.x, 0.2, r.z, rr - 1.2, rr, c[0], c[1], c[2], 1.4 * (1 - k));
     }
+  }
+  // an aftershock, at the radius wavesUpdate judges, o.band deep
+  for (const w of G.waves) {
+    const o = w.o,
+      rr = waveR(w);
+    if (rr > 0) R.ring(w.x, 0.2, w.z, Math.max(0, rr - o.band / 2), rr + o.band / 2, RED[0], RED[1], RED[2], 1.4);
   }
   R.end();
 }

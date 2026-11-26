@@ -40,7 +40,7 @@ const COOP_HOST = COOP_HEADLESS_HERE
       const tell = (pid, ev) => send(pid, coopEventEncode(ev));
       // A proxy that has not answered the world with its at is not there:
       // events about this world's enemies are not sent to it.
-      const BOUND = ["shot", "ring", "roar", "kill", "reset", "fed"];
+      const BOUND = ["shot", "ring", "roar", "kill", "reset", "fed", "held", "freed", "crush", "seal"];
       const hears = (px, ev) => px.here || !BOUND.includes(ev[0]);
       const others = (pid, ev) => {
         for (const [id, px] of S.px) if (id !== pid && hears(px, ev)) tell(id, ev);
@@ -58,7 +58,7 @@ const COOP_HOST = COOP_HEADLESS_HERE
       // Who an enemy hunts: the nearest proxy that is there, alive and not
       // away, kept unless another is COOP.STICK nearer. 0 is nobody.
       const live = (px) => px && px.here && !px.away && px.state !== "dead";
-      function pick(e) {
+      function nearest(e) {
         const cur = S.px.get(e.tg);
         let best = null,
           bd = Infinity;
@@ -76,6 +76,38 @@ const COOP_HOST = COOP_HEADLESS_HERE
         }
         e.tg = best ? best.pid : 0;
         return best || ph;
+      }
+      // The Warden for two hunts whoever has hurt it most lately (e.heed,
+      // below). Both players live in its chamber and one with a score: it
+      // keeps its target and turns to the other only on a lead, not within
+      // heed.every of its last turn and not in a swing or a hold. Else
+      // today's rule.
+      function pick(e) {
+        if (!e.def.duo) return nearest(e);
+        const H = WARDEN2.heed,
+          cs = [];
+        for (const px of S.px.values()) if (live(px) && px.inBoss) cs.push(px);
+        const cur = S.px.get(e.tg);
+        if (cs.length === 2 && cs.includes(cur)) {
+          const o = cs[0] === cur ? cs[1] : cs[0],
+            so = e.heed[o.pid] || 0,
+            sc = e.heed[cur.pid] || 0;
+          if (so > 0 || sc > 0) {
+            if (
+              so > 0 &&
+              so >= H.lead * sc &&
+              now() - e.heedAt >= H.every &&
+              e.state !== "wind" &&
+              e.state !== "act" &&
+              e.state !== "hold"
+            ) {
+              e.tg = o.pid;
+              e.heedAt = now();
+            }
+            return S.px.get(e.tg);
+          }
+        }
+        return nearest(e);
       }
       // Each tick, before the enemies: who is away, and who is in the boss
       // chamber (in within its radius, out past the pad, as update does).
@@ -130,14 +162,90 @@ const COOP_HOST = COOP_HEADLESS_HERE
         for (const o of G.enemies) if (o !== e && o.token && !o.dead && o.tg === e.tg) n++;
         if (n >= COOP_TWO.turns) e.token = false;
       }
+      // Every score of a duo boss halves each heed.half seconds; one too
+      // small to matter is dropped, so an old hit never turns it.
+      function fade(e, dt) {
+        const k = 0.5 ** (dt / WARDEN2.heed.half);
+        for (const id of Object.keys(e.heed)) {
+          if ((e.heed[id] *= k) < 0.01) delete e.heed[id];
+        }
+      }
+      // The Warden for two's hooks (WARDEN2.seize in 06b). Only the host
+      // steps a Warden for two, so only the host copy has them, and each
+      // does nothing for a Warden without def.duo. Its seize is not chosen
+      // while e.seizeT, the seconds until it may seize again, is above 0;
+      // the count starts as a seize's wind-up ends, landed or not, and
+      // again when its hold ends (letGo). The seize's act has no hit of its
+      // own: the page of the player it reaches judges it (ASK.seized).
+      // Before phase 4 its health cannot fall under the last mark while it
+      // is outside its chamber (hpFloor), so the seal always begins with it
+      // inside. While the seal stands it never gives up or walks home: with
+      // no live player inside the ring to fight (one dead and the other
+      // away, say) it waits where it stands until there is one.
+      EBEH.warden = {
+        atkOk: (e, a) => !e.def.duo || a.kind !== "seize" || !(e.seizeT > 0),
+        step(e, dt, c) {
+          if (!e.def.duo) return false;
+          if (e.seizeT > 0) e.seizeT = Math.max(0, e.seizeT - dt);
+          if (!G.seal) return false;
+          const B = c.w.boss,
+            S = WARDEN2.seal;
+          if (c.alive && Math.hypot(c.p.x - B.x, c.p.z - B.z) <= S.ring + S.rock + 0.5) return false;
+          e.route = null;
+          return true;
+        },
+        // a new seize: the count starts, and its swing has had no report
+        wind(e) {
+          if (!e.def.duo || e.atk.kind !== "seize") return;
+          e.seizeT = WARDEN2.seize.again;
+          e.seizedAn = -1;
+        },
+        hpFloor(e) {
+          const B = G.world.boss;
+          if (!e.def.duo || e.phase >= 4 || !B || Math.hypot(e.x - B.x, e.z - B.z) <= B.r) return 0;
+          return e.def.hp * e.def.marks[2];
+        },
+      };
+      // The end of a hold, however it ended: it holds nobody and may not
+      // seize again for seize.again seconds. rec: it goes to its recovery,
+      // if it is still in "hold".
+      function letGo(e, rec) {
+        e.held = 0;
+        e.seizeT = WARDEN2.seize.again;
+        if (rec && e.state === "hold") {
+          e.state = "rec";
+          e.t = 0;
+        }
+      }
+      // A hold of the Warden for two, each tick: enemyUpdate has no case
+      // for "hold", so it stands while this times it. At seize.hold seconds
+      // it crushes. It lets go with nothing sent when anything else has
+      // taken it out of "hold" (a roar, a death; the held page then frees
+      // itself), or when the held player is dead, away, or no longer
+      // "held" once the host has seen them held or seize.unseen seconds
+      // have passed (a page's state comes a little after its seized).
+      function holding(e, dt) {
+        const px = S.px.get(e.held);
+        if (e.dead || e.state !== "hold") return letGo(e, false);
+        e.t += dt;
+        if (px && px.state === "held") e.heldSeen = true;
+        const free = px && px.state !== "held" && (e.heldSeen || e.t >= WARDEN2.seize.unseen);
+        if (!px || px.away || px.state === "dead" || free) return letGo(e, true);
+        if (e.t >= WARDEN2.seize.hold - 1e-9) {
+          all(["crush", e.id, e.held, now()]);
+          letGo(e, true);
+        }
+      }
       function enemies(dt) {
         present();
         for (const e of G.enemies) {
+          if (e.def.duo) fade(e, dt);
           const s0 = e.state,
             t0 = e.tg,
             tg = pick(e);
           retarget(e, t0);
           as(tg, () => enemyUpdate(e, dt));
+          if (e.held) holding(e, dt);
           // a new swing gets a new number, so a client can tell swings apart
           if (e.state === "wind" && s0 !== "wind") e.an = (e.an + 1) & 255;
           // the slam's warning ring, which a client cannot work out itself
@@ -148,19 +256,23 @@ const COOP_HOST = COOP_HEADLESS_HERE
         }
       }
       // Every present player (joined, there and not away) dead: the enemies
-      // are made again as a respawn makes them. Once per wipe: it fires again
-      // only after a present player has been alive.
+      // are made again as a respawn makes them, the seal lifted first. Once
+      // per wipe: it fires again only after a present player has been
+      // alive. While the seal stands an away player counts too, as its last
+      // state: a dropped connection is not a death, so it cannot reset a
+      // sealed fight (EBEH.warden's step keeps the Warden waiting).
       function wipe() {
         let n = 0,
           up = false;
         for (const px of S.px.values())
-          if (px.here && !px.away) {
+          if (px.here && (!px.away || G.seal)) {
             n++;
             if (px.state !== "dead") up = true;
           }
         if (up) armed = true;
         if (!n || up || !armed) return;
         armed = false;
+        sealEnd(false);
         spawnEnemies();
         number();
         ver++;
@@ -179,6 +291,13 @@ const COOP_HOST = COOP_HEADLESS_HERE
           e.an = 0;
           e.pin = 0;
           e.tg = 0;
+          // a duo boss's scores by pid, when it last turned, and the
+          // swing whose seize it took (none)
+          if (e.def.duo) {
+            e.heed = {};
+            e.heedAt = -Infinity;
+            e.seizedAn = -1;
+          }
           S.byId.set(i, e);
         });
       }
@@ -189,6 +308,8 @@ const COOP_HOST = COOP_HEADLESS_HERE
           enemies: list.map((e) => [e.id, e.type, r2(e.x), r2(e.z), r2(e.yaw)]),
           dead: list.filter((e) => e.dead || e.gone).map((e) => e.id),
           bossDead: G.bossDead,
+          // the Warden for two's seal stands (a page lays it at once)
+          seal: !!G.seal,
         };
       }
       // The world as join and world carry it: epoch, kind, grade (null in
@@ -378,7 +499,22 @@ const COOP_HOST = COOP_HEADLESS_HERE
         e.kSent = true;
         e.kBy = by;
         ver++;
+        // the Warden for two's death lifts the seal
+        if (e.def.duo) sealEnd(true);
         all(["kill", e.id, by, now()]);
+      }
+      // After a hit (or host.phase) took boss e from phase ph0 to a later
+      // one: both pages are told of the roar, and a Warden for two entering
+      // phase 4 begins the seal on the host and tells them. A page whose at
+      // is still to come gets it with the enemies (ver).
+      function rose(e, ph0) {
+        if (!e.def.boss || e.phase <= ph0) return;
+        all(["roar", e.id, now(), e.phase]);
+        if (e.def.duo && e.phase >= 4 && ph0 < 4 && !G.seal) {
+          sealBegin();
+          ver++;
+          all(["seal", e.id, now()]);
+        }
       }
 
       // What a client may ask. Each handler gets the proxy and the event's
@@ -403,13 +539,15 @@ const COOP_HOST = COOP_HEADLESS_HERE
           if (flinch && seenState !== "act" && e.state === "act" && e.an === seenAn)
             e.state = "chase";
           // a hit from a player it can see turns it on them, and a turn
-          // held against the other may go with that
-          if (e.tg !== px.pid && G.world.los(e.x, e.z, px.x, px.z)) {
+          // held against the other may go with that; the Warden for two
+          // goes by its scores instead (pick)
+          if (!d.duo && e.tg !== px.pid && G.world.los(e.x, e.z, px.x, px.z)) {
             const t0 = e.tg;
             e.tg = px.pid;
             retarget(e, t0);
           }
           const ph0 = e.phase,
+            hp0 = e.hp,
             // an execution that need not kill (the Warden's) comes as a hit:
             // from the player who pinned it, it recoils as in single player
             ex = src === "exec" && e.pin === px.pid;
@@ -435,13 +573,47 @@ const COOP_HOST = COOP_HEADLESS_HERE
             e.t = 0;
             e.dur = 1.0;
           }
-          if (d.boss && ph0 !== 2 && e.phase === 2) all(["roar", e.id, now()]);
+          // the health it took off, never below 0 (a kill counts what was left)
+          const took = Math.max(0, hp0 - Math.max(0, e.hp));
+          if (d.duo) e.heed[px.pid] = (e.heed[px.pid] || 0) + took;
+          rose(e, ph0);
+          // a hold is broken by the other player's damage, or by any
+          // posture break: staggered for seize.stag, and both are told
+          if (e.held && !e.dead && (e.state === "hold" || e.state === "stagger")) {
+            if (px.pid !== e.held) e.holdDmg += took;
+            if (e.state === "stagger" || e.holdDmg >= WARDEN2.seize.breakAt) {
+              const pid = e.held;
+              if (e.state !== "stagger") stagger(e);
+              e.dur = WARDEN2.seize.stag;
+              letGo(e, false);
+              all(["freed", e.id, pid, now()]);
+            }
+          }
         },
-        // as hurtPlayer's parry branch does to the enemy; one staggered or
-        // roaring on the host has nothing to be thrown out of
+        // ["seized", seq, eid, an]: this player's page judged that the
+        // Warden for two's seize of swing an landed on it. Taken when it is
+        // in that swing of its seize, in the act or no more than seize.late
+        // into its recovery, holding nobody, the swing not one it has
+        // already taken a seize of (one hold a swing, however it ended), and
+        // the player within its reach, their radius and seize.slack; then
+        // it holds them and both are told. Anything else is nothing: the
+        // page's guess runs out and it frees itself.
+        seized(px, [eid, an]) {
+          const e = live1(eid),
+            W = WARDEN2.seize;
+          if (!e || !e.def.duo || !e.atk || e.atk.kind !== "seize" || e.an !== an || e.held) return;
+          if (an === e.seizedAn) return;
+          if (!(e.state === "act" || (e.state === "rec" && e.t <= W.late))) return;
+          if (Math.hypot(px.x - e.x, px.z - e.z) > e.atk.reach + px.r + W.slack) return;
+          Object.assign(e, { state: "hold", t: 0, held: px.pid, holdDmg: 0, heldSeen: false, seizedAn: an });
+          all(["held", e.id, px.pid, now()]);
+        },
+        // as hurtPlayer's parry branch does to the enemy; one staggered,
+        // roaring or holding on the host has nothing to be thrown out of
+        // (a hold ends only by its break, its crush or its let-go)
         parry(px, [eid, , pp]) {
           const e = live1(eid);
-          if (!e || !num(pp) || pp < 0 || e.state === "stagger" || e.state === "roar") return;
+          if (!e || !num(pp) || pp < 0 || e.state === "stagger" || e.state === "roar" || e.state === "hold") return;
           e.posture += pp;
           e.postT = 0;
           if (e.posture >= e.def.posture) as(px, () => stagger(e));
@@ -729,6 +901,23 @@ const COOP_HOST = COOP_HEADLESS_HERE
           }
         };
       }
+      // For tests and the dev menu: the living Warden for two put at the
+      // start of phase n (2 to 4), as a hit from nobody that takes it from
+      // just above that mark to just under it does, roar and events
+      // included. Returns the enemy, or null when there is no such Warden,
+      // it is already in phase n or later (a phase never falls), or the
+      // phase did not rise to n (outside its chamber hpFloor holds it at
+      // phase 3).
+      function phase(n) {
+        const e = G.enemies.find((o) => o.def.duo && !o.dead),
+          m = e && e.def.marks[n - 2];
+        if (!m || e.phase >= n) return null;
+        const ph0 = e.phase;
+        e.hp = e.def.hp * m + 1;
+        as(ph, () => hitEnemy(e, 2, 0, { src: "", pre: true }));
+        rose(e, ph0);
+        return e.phase === n ? e : null;
+      }
       const host = {
         v: COOP_V,
         build: COOP_BUILD,
@@ -737,6 +926,12 @@ const COOP_HOST = COOP_HEADLESS_HERE
         leave,
         recv,
         tick,
+        phase,
+        // for tests: an enemy's draw of its next attack at dist metres
+        chooseAtk,
+        // for tests: the seal's table, its ring and door spot on a world,
+        // and the whole ring down at once in the host's world
+        seal: { table: WARDEN2.seal, ring: sealRing, door: sealDoor, now: sealNow },
         send: null,
         G,
         S,

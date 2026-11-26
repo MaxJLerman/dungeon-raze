@@ -1740,3 +1740,298 @@ function crocRollSpot(e, c) {
   }
   return { x: W.x, z: W.z };
 }
+
+// ---- the Warden for two ----
+// The Warden of a cave built for two co-op players (docs/notes/coop.md, "The
+// Warden for two") is EDEF.warden behind its own entry of coopTwoDefs, which
+// reads this table; EDEF.warden itself is never changed. Every number of
+// that fight is here.
+//   hp     its health, as a multiple of the solo Warden's
+//   marks  the shares of full health below which phases 2, 3 and 4 begin
+//          (hitEnemy); one hit across two marks roars once
+//   roar   how long the roar lasts on entering a phase, in seconds, by the
+//          phase entered; one not listed lasts today's 1.2 s
+//   lines  what a page says as the Warden enters each phase
+//   heed   whom it hunts (the host's pick): a player's score is the health
+//          they took off it, halving every half seconds; it turns to the
+//          other player when that score is at least lead times the
+//          target's, at most once every every seconds, and never in a
+//          swing ("wind", "act") or a hold
+//   wave   the aftershock its slam sends from phase from on (the slam's
+//          after): a ring rolls out from where the slam landed, wait s
+//          after it, at speed m/s to reach m, band m deep, and hurts the
+//          player it passes for dmg (waveStart, wavesUpdate in 06)
+//   seize  its grab, from phase from: an attack (the definition's seize)
+//          started within trig m, winding wind s, reaching reach m in an
+//          arc of arc rad, unblockable; not chosen again for again s after
+//          its wind-up or its hold ends. The page of the player it lands on
+//          judges it and drags that player to front m before it at pull
+//          m/s; the host takes it if it is in that swing, in its act or no
+//          more than late s into its recovery, and the player within reach
+//          + their radius + slack m. It holds for hold s at dps a second.
+//          breakAt damage from the other player in that time breaks it
+//          (staggered stag s); else it crushes for crush and throws the
+//          player toss m toward the chamber's centre. say is the other
+//          player's line while it holds. The host lets go of a player it
+//          has never seen held after unseen s (a page's state comes a little
+//          after its report) (06d, 07c)
+//   seal   the chamber closing as phase 4 begins: n capsules of rock of
+//          radius rock m end to end on a circle of radius ring m round the
+//          chamber's centre (sealRing), each shown by its dust for warn s
+//          and landing in a sweep round the circle over sweep s. The door
+//          spot (sealDoor) is door m inside the rock; a player brought
+//          there from outside sees a fade of fade s
+//   dark   the cave's light while the seal stands (G.dark): over over s the
+//          crystals' light and glow fall to floor of what they were, the
+//          cave's ambient light to amb and the player's lamp to lamp, and
+//          they come back over over s when it ends. The Warden's light,
+//          shots, rings, sparks and the exit gate's light are not dimmed
+const WARDEN2 = {
+  hp: 2.5,
+  marks: [0.75, 0.5, 0.25],
+  roar: { 4: 2.2 },
+  lines: { 2: "The Warden burns hotter", 3: "The Warden reaches for you", 4: "The way out is gone" },
+  heed: { half: 4, lead: 1.3, every: 3 },
+  wave: { from: 2, wait: 0.35, speed: 11, reach: 24, band: 1.2, dmg: 14 },
+  seize: {
+    from: 3,
+    trig: 5,
+    wind: 0.9,
+    act: 0.25,
+    rec: 0.9,
+    reach: 4.6,
+    arc: 1.2,
+    again: 14,
+    hold: 4,
+    dps: 6,
+    breakAt: 80,
+    stag: 2,
+    crush: 40,
+    toss: 6,
+    slack: 2,
+    late: 0.6,
+    say: "Break its grip!",
+    front: 1.6,
+    pull: 8,
+    unseen: 0.5,
+  },
+  seal: { n: 24, ring: 12.5, rock: 1.4, warn: 1.4, sweep: 0.6, door: 2, fade: 0.4 },
+  dark: { floor: 0.12, amb: 0.12, lamp: 0.25, over: 2 },
+};
+// ---- the seal ----
+// In phase 4 of the Warden for two a ring of rock falls round its chamber's
+// centre and stands until the Warden dies or the party is wiped. G.seal is
+// { t, ids, down, fade } while it stands, else null: t the seconds since it
+// began, ids the rock of each capsule landed so far, down once all have,
+// fade the seconds left of a fade this player was brought in under. Its
+// capsules are entries of G.chunks with seal set and their own ends, so
+// drawDust and drawChunks show them as they show the crocodile's ceiling.
+// The host and both pages run the same code from world.boss alone, so the
+// three lay the same rock. The host begins it (06d) and tells the pages.
+// The n capsules [ax, az, bx, bz] end to end on the circle of radius ring
+// round the chamber's centre, the first starting at angle 0, in order.
+function sealRing(w) {
+  const B = w.boss,
+    S = WARDEN2.seal,
+    at = (i) => [B.x + Math.sin((i / S.n) * TAU) * S.ring, B.z + Math.cos((i / S.n) * TAU) * S.ring],
+    out = [];
+  for (let i = 0; i < S.n; i++) out.push([...at(i), ...at(i + 1)]);
+  return out;
+}
+// The door spot { x, z, yaw }: on the line from the chamber's centre toward
+// the room before it on the route, door m inside the rock, resolved for a
+// body of 0.6, facing the centre. Every arrival while the seal stands is
+// here.
+function sealDoor(w) {
+  const B = w.boss,
+    S = WARDEN2.seal,
+    n = w.nodes[w.path[w.path.length - 2]],
+    a = Math.atan2(n.x - B.x, n.z - B.z),
+    d = S.ring - S.rock - S.door,
+    q = { x: B.x + Math.sin(a) * d, z: B.z + Math.cos(a) * d };
+  w.resolve(q, 0.6);
+  return { x: q.x, z: q.z, yaw: Math.atan2(B.x - q.x, B.z - q.z) };
+}
+// Capsule i of the ring as an entry of G.chunks, t seconds from landing.
+// Its warning is drawn for warn s, with the rock's radius and its ring
+// 0.2 m outside it (drawDust).
+function sealChunk(w, c, i, t) {
+  const [ax, az, bx, bz] = c,
+    x = (ax + bx) / 2,
+    z = (az + bz) / 2,
+    S = WARDEN2.seal;
+  return {
+    x,
+    z,
+    t,
+    id: 0,
+    // the heap's ridge runs from a to b
+    yaw: Math.atan2(az - bz, bx - ax),
+    seed: 7919 * (i + 1),
+    ceil: w.ceilAt(x, z),
+    ends: c,
+    seal: true,
+    warn: S.warn,
+    rockR: S.rock,
+    fallR: S.rock + 0.2,
+  };
+}
+// The seal begins, adv seconds ago: each capsule in its warning, capsule i
+// landing warn + sweep * i / n seconds after the start. A seal already
+// standing is taken away first.
+function sealBegin(adv = 0) {
+  const w = G.world,
+    S = WARDEN2.seal;
+  sealEnd(false);
+  G.dark.to = 1;
+  G.seal = { t: adv, ids: [], down: false, fade: 0 };
+  sealRing(w).forEach((c, i) => G.chunks.push(sealChunk(w, c, i, S.warn + (S.sweep * i) / S.n - adv)));
+  SFX.crumble();
+}
+// The whole ring down at once, quietly (a late join, a respawn). The cave is
+// dark from the first frame of a join; a seal already standing (a respawn)
+// keeps its dark as it was, so the lights do not flash back on.
+function sealNow() {
+  const w = G.world,
+    S = WARDEN2.seal,
+    v = G.seal ? G.dark.v : 1;
+  sealEnd(false);
+  G.dark = { v, to: 1 };
+  G.seal = { t: S.warn + S.sweep, ids: [], down: true, fade: 0 };
+  sealRing(w).forEach((c, i) => {
+    const k = sealChunk(w, c, i, 0);
+    G.chunks.push(k);
+    sealLand(w, k, true);
+  });
+}
+// The seal ends: its rock out of the field, its chunks gone (crumbling as
+// the crocodile's heaps give way when crumble), every route asked again,
+// and a fade it began cleared.
+function sealEnd(crumble) {
+  const s = G.seal,
+    w = G.world;
+  G.dark.to = 0;
+  if (!crumble) G.dark.v = 0;
+  if (!s) return;
+  if (s.fade > 0) G.fade = 0;
+  for (const k of G.chunks.filter((q) => q.seal)) {
+    if (k.id && crumble) crocChunkGone(w, k);
+    else if (k.id) w.removeRock(k.id);
+  }
+  G.chunks = G.chunks.filter((q) => !q.seal);
+  for (const o of G.enemies) o.route = null;
+  if (crumble) SFX.crumble();
+  G.seal = null;
+}
+// Each step: the dark moves toward its target at 1 / over a second.
+function darkUpdate(dt) {
+  const d = G.dark,
+    s = dt / WARDEN2.dark.over;
+  d.v = d.to > d.v ? Math.min(d.to, d.v + s) : Math.max(d.to, d.v - s);
+}
+// What a light that goes down to floor f is multiplied by: 1 when it is
+// light. darkMul is the crystals'.
+const darkK = (f) => 1 + (f - 1) * G.dark.v,
+  darkMul = () => darkK(WARDEN2.dark.floor);
+// Moves body o of radius r radially in to open floor inside the ring.
+function sealIn(w, o, r) {
+  const B = w.boss,
+    S = WARDEN2.seal,
+    dx = o.x - B.x,
+    dz = o.z - B.z,
+    d = Math.hypot(dx, dz) || 1,
+    to = S.ring - S.rock - r - 0.15;
+  if (d > to) {
+    o.x = B.x + (dx / d) * to;
+    o.z = B.z + (dz / d) * to;
+  }
+  w.resolve(o, r);
+  crocFree(o, (x, z) => w.fieldAt(x, z) >= r - 0.1 && footOk(o, x, z));
+}
+// An enemy the seal moves: not dead, falling, hidden, aloft or the dummy.
+const sealMoves = (o) => !(o.dead || o.def.dummy || o.hidden || o.aloft || o.state === "fall");
+// A capsule lands: its rock goes into the field and every route is asked
+// again. A body the rock reaches (its fieldAt fell below its radius as the
+// rock went in) is moved in to open floor: any enemy sealMoves allows, and
+// on a page this player unless dead or held. When the last lands, every
+// such enemy within the chamber's reach (w.boss.r and its own radius of
+// the centre) not on the open floor inside the ring is moved in too: one
+// standing in a tunnel mouth, past the rock's reach, would be shut out of
+// its own fight. It hurts nobody: the seal is a rule of the fight, not an
+// attack. quiet: no sparks, shake or sound.
+function sealLand(w, k, quiet) {
+  const s = G.seal,
+    p = G.player,
+    bodies = [...G.enemies, ...(p.remote ? [] : [p])].map((o) => ({ o, f: w.fieldAt(o.x, o.z) }));
+  k.t = 0;
+  k.id = w.addRock(k.ends[0], k.ends[1], k.ends[2], k.ends[3], WARDEN2.seal.rock);
+  s.ids.push(k.id);
+  for (const { o, f } of bodies) {
+    if (o !== p) o.route = null;
+    const f1 = w.fieldAt(o.x, o.z);
+    if (!(f1 < o.r && f1 < f - 1e-6)) continue;
+    if (o === p ? p.state === "dead" || p.state === "held" : !sealMoves(o)) continue;
+    sealIn(w, o, o.r);
+  }
+  if (s.ids.length === WARDEN2.seal.n) {
+    const B = w.boss,
+      S = WARDEN2.seal;
+    for (const o of G.enemies) {
+      const d = Math.hypot(o.x - B.x, o.z - B.z);
+      if (!sealMoves(o) || d > B.r + o.r) continue;
+      if (d > S.ring - S.rock - o.r || w.fieldAt(o.x, o.z) < o.r - 0.1) sealIn(w, o, o.r);
+    }
+  }
+  if (quiet) return;
+  sparks(k.x, 0.5, k.z, 30, [0.55, 0.5, 0.45], 6, 0.8, 0.22);
+  G.shake = Math.max(G.shake, 0.8);
+  if (s.ids.length === 1) SFX.rumble();
+}
+// Each step while the seal stands: the capsules land when their time comes,
+// down once all have, and on a page (G.player is a real player there, the
+// host's placeholder is remote) this player is kept in (sealKeep).
+function sealUpdate(dt) {
+  const s = G.seal,
+    w = G.world,
+    S = WARDEN2.seal,
+    p = G.player;
+  s.t += dt;
+  for (const k of G.chunks) if (k.seal && !k.id && (k.t -= dt) <= 0) sealLand(w, k, false);
+  if (!s.down && s.ids.length >= S.n) s.down = true;
+  if (s.fade > 0) {
+    s.fade = Math.max(0, s.fade - dt);
+    G.fade = s.fade / S.fade;
+  }
+  if (s.down && !p.remote) sealKeep(w, p);
+}
+// This player, alive and not held, once the ring is down: one past the
+// rock's inner edge and within half a metre of its outer edge is moved
+// radially to 0.6 m inside it; one further out (outside the ring when it
+// fell, or back from away) is put at the door spot under a fade. The fade
+// is the screen's alone: it stops nothing, so hurtPlayer stands.
+function sealKeep(w, p) {
+  if (p.state === "dead" || p.state === "held") return;
+  const B = w.boss,
+    S = WARDEN2.seal,
+    dx = p.x - B.x,
+    dz = p.z - B.z,
+    d = Math.hypot(dx, dz);
+  if (d <= S.ring - S.rock) return;
+  if (d <= S.ring + S.rock + 0.5) {
+    const k = (S.ring - S.rock - 0.6) / d;
+    p.x = B.x + dx * k;
+    p.z = B.z + dz * k;
+    w.resolve(p, p.r);
+    return;
+  }
+  const q = sealDoor(w);
+  Object.assign(p, { x: q.x, z: q.z, yaw: q.yaw, vx: 0, vz: 0, kx: 0, kz: 0 });
+  cam.yaw = q.yaw;
+  cam.px = q.x;
+  cam.pz = q.z;
+  G.seal.fade = S.fade;
+  G.fade = 1;
+}
+// The Warden for two's hooks, EBEH.warden, are put in place by the host
+// copy (06d), the only thing that steps one: a page's EBEH has no warden
+// entry, so its Warden runs with no hooks at all.

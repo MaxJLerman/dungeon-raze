@@ -122,6 +122,15 @@ const HUD = (() => {
         el.bossE = boss;
         el.bn.textContent = boss.def.name;
         el.bn.className = "tag t" + threatOf(boss);
+        // a notch at each of its phase marks, none for a boss without them
+        const bar = el.bh.parentNode;
+        for (const n of bar.querySelectorAll(".mk")) n.remove();
+        for (const m of boss.def.marks || []) {
+          const n = document.createElement("span");
+          n.className = "mk";
+          n.style.left = m * 100 + "%";
+          bar.appendChild(n);
+        }
       }
       el.bh.style.width = sat(boss.hp / boss.def.hp) * 100 + "%";
       el.bp.style.width = sat(boss.posture / boss.def.posture) * 100 + "%";
@@ -178,9 +187,12 @@ const HUD = (() => {
     const ex =
       p.state !== "dead" && p.state !== "execute" ? nearestStaggered() : null;
     let pr = "";
-    if (p.state === "held")
-      pr = "<kbd>" + (PAD.active ? actKey("dodge") : TOUCH.on ? "DODGE" : keyName(BIND.dodge)) + "</kbd> Break free";
-    else if (ex) pr = "<kbd>" + (PAD.active ? actKey("light") : TOUCH.on ? "ATTACK" : keyName(BIND.light)) + "</kbd> Execute";
+    // only while struggling works (the Warden for two's hold: not while the
+    // other player can break it)
+    if (p.state === "held") {
+      if (p.hold && holdMash(p.hold))
+        pr = "<kbd>" + (PAD.active ? actKey("dodge") : TOUCH.on ? "DODGE" : keyName(BIND.dodge)) + "</kbd> Break free";
+    } else if (ex) pr = "<kbd>" + (PAD.active ? actKey("light") : TOUCH.on ? "ATTACK" : keyName(BIND.light)) + "</kbd> Execute";
     else if (p.state === "free" && plaqueAt())
       pr = "<kbd>" + (PAD.active ? actKey("interact") : TOUCH.on ? "TAP" : keyName(BIND.interact)) + "</kbd> Inspect";
     if (el.pr !== pr) {

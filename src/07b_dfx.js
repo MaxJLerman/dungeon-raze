@@ -347,13 +347,16 @@ function drawPlate(pr) {
 // it gives way, grit kicking up off the floor, the rock's shadow darkening
 // and a ring at CROC.fallR, with a second ring closing in from it to the
 // centre as it comes, landing as the two meet. The rock itself falls over
-// the last 0.3 s (drawChunks).
+// the last 0.3 s (drawChunks). A chunk may carry its own warn, fallR and
+// rockR (a capsule of the Warden for two's seal); one without them is the
+// crocodile's.
 function drawDust() {
   const dust = [0.8, 0.7, 0.56],
     warm = [1, 0.62, 0.3];
   for (const c of G.chunks) {
     if (c.id || Math.hypot(c.x - R.cam.x, c.z - R.cam.z) > 80) continue;
-    const k = sat(1 - c.t / CROC.fallWarn),
+    const fallR = c.fallR || CROC.fallR,
+      k = sat(1 - c.t / (c.warn || CROC.fallWarn)),
       t = G.t,
       top = c.ceil,
       a = 0.5 + 0.5 * k;
@@ -362,7 +365,7 @@ function drawDust() {
       const h = Math.abs(Math.sin(i * 12.9898 + c.seed)),
         h2 = Math.abs(Math.sin(i * 78.233 + c.seed * 0.7)),
         u = (t * (0.7 + 0.6 * h) + h2) % 1,
-        rr = CROC.fallR * 0.6 * h2,
+        rr = fallR * 0.6 * h2,
         q = h * TAU;
       R.sprite(c.x + Math.sin(q) * rr, top * (1 - u * u), c.z + Math.cos(q) * rr, 0.1 + 0.16 * h, dust[0], dust[1], dust[2], 0.9 * a);
     }
@@ -380,10 +383,10 @@ function drawDust() {
         q = h * TAU * 3;
       R.sprite(c.x + Math.sin(q) * (0.3 + 0.6 * u), 0.05 + 0.35 * u * (1 - u), c.z + Math.cos(q) * (0.3 + 0.6 * u), 0.22, dust[0], dust[1], dust[2], 0.5 * a * (1 - u));
     }
-    R.blob(c.x, c.z, CROC.rockR * (0.6 + 0.5 * k), 0.45 + 0.5 * k);
+    R.blob(c.x, c.z, (c.rockR || CROC.rockR) * (0.6 + 0.5 * k), 0.45 + 0.5 * k);
     const pulse = 0.75 + 0.25 * Math.sin(t * 18),
-      r = CROC.fallR * (1 - k);
-    R.ring(c.x, 0.06, c.z, CROC.fallR - 0.1, CROC.fallR, warm[0], warm[1], warm[2], 1.2 * a * pulse);
+      r = fallR * (1 - k);
+    R.ring(c.x, 0.06, c.z, fallR - 0.1, fallR, warm[0], warm[1], warm[2], 1.2 * a * pulse);
     if (r > 0.12) R.ring(c.x, 0.06, c.z, r - 0.1, r, warm[0], warm[1], warm[2], 0.9 * a);
   }
 }
