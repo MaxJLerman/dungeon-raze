@@ -102,6 +102,30 @@
   `coop.md`. Checked by tests (Node, the page, and two Chromium pages
   through a local relay) and screenshots only, never by hand or between two
   machines.
+- Branch `feat/coop-big-cave` made the cave that a co-op room enters a much
+  bigger one. A cave entered by two is 36 rooms on a 6 by 6 grid (16 in the usual
+  cave), made by `genWorld` with `big`, and it is drawn in pieces cut and
+  chosen by the same code the sewer uses. The dev menu has a button to walk
+  it alone. The design is
+  `docs/superpowers/specs/2026-11-26-coop-big-cave-design.md`; the detail is
+  in `world.md` and `coop.md`. What was measured, on this machine:
+  - The cave is 174 to 210 pieces and about 185,000 to 200,000 triangles
+    whole.
+  - The worst view lists 57,980 triangles and the average is 28,275, over
+    22,384 views on six seeds. The worst real frame along the route on three
+    seeds draws 28,073. The limit is 81,835, the whole of small cave 99.
+  - Building it takes 679 to 708 ms in the page (headless Chromium). The host
+    copy skips working out what each piece sees and takes 60 to 116 ms in
+    Node.
+  - Enemies for two on seeds 1 to 20 and 99: 155 to 199, mean 178, and 188 for
+    seed 99. The design expected 150 to 190; seeds 5 (193), 8 (191) and 18
+    (199) run above it. Nothing was tuned.
+  - The largest join message is 6,233 bytes against the relay's 16,384. A host
+    step in the big cave costs 0.35 ms on average.
+  - Every route is 10 to 12 rooms with four rest points.
+  - Not checked by hand: nobody has played it with two players at all, the
+    length of a run for two is unknown, and the build time on a real phone is
+    unmeasured. `COOP_TWO` is unchanged.
 
 ## Backlog, roughly in the order discussed
 
@@ -131,15 +155,17 @@
    three plaque classes are built. Still to come: the joke classes, quests on
    the plaques that open portals D to S to a class, and the in-game hunt that
    leads players to the hidden list of codes.
-9. A much bigger cave for two players, drawn in pieces as the sewer is, in
-   place of the usual cave with extra enemies. The extras and the 1.3 times
-   health are the stopgap. Retune `COOP_TWO` once two people have played
-   (its numbers are guesses).
-10. More health and more phases for the Warden when two players fight it,
-    beyond the 1.8 times health and the heal on a death in its chamber.
+9. What remains of the bigger cave for two (`feat/coop-big-cave`, recorded
+   above): retune `COOP_TWO` and the pack table once two people have played
+   it. Their numbers are guesses.
+10. Next: more health and more phases for the Warden when two players fight
+    it, beyond the 1.8 times health and the heal on a death in its chamber.
 11. Two phone test failures older than the co-op lobby: `tests/t14.mjs` on
     every device and `tests/t29.mjs` on four short phones. See the known
     problems in `touch.md` and `coop.md`. Causes not investigated.
 12. A flaky host check older than the co-op lobby: "nothing on the host
     hurts or moves a proxy" in `tests/coop-host.mjs` fails about 1 run in
     200. See the known problems in `coop.md`. Cause not investigated.
+    A second flaky check, "rubble never traps it" in `tests/t25.mjs`, fails
+    now and then and passes on a rerun. See the known problems in
+    `crocodile.md`. Cause not investigated.

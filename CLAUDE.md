@@ -49,8 +49,9 @@ notes file and a row above.
   enemy types, Old Sluicejaw; opens once E's boss is dead), five base classes
   and three hidden ones, touch, controller, dev menu, main menu and two-player
   co-op. A co-op room meets in the hall, the two travel through gate E
-  together and back, and a cave entered by two is harder. In co-op D is
-  sealed too. C to S are sealed. Grades carry no difficulty or rewards yet.
+  together and back, and a cave entered by two is a much bigger cave (36
+  rooms, drawn in pieces) and harder. In co-op D is sealed too. C to S are
+  sealed. Grades carry no difficulty or rewards yet.
 - Next: the owner's verdict on the combat, then widening the game with several
   agents in parallel. The detail and the backlog are in `docs/notes/status.md`.
 
