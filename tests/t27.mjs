@@ -627,7 +627,7 @@ export default [
     },
   },
   {
-    name: "puppets are built to match: a dungeon for two is scaled here, and a solo run after it is not",
+    name: "puppets are built to match: a dungeon for two is the big cave scaled here, and a solo run after it is not",
     eval: async () => {
       const { G } = DF,
         co = window.__co,
@@ -649,7 +649,10 @@ export default [
         pw = G.enemies.find((e) => e.def.boss),
         c = {};
       c.joined = !!DF.net() && !!join && join.n === 2 && h.S.n === 2;
-      c.count = G.enemies.length === join.enemies.length && G.enemies.length === h.G.enemies.length && G.enemies.length > 47;
+      // the big cave, the same here as on the host, with its 188 enemies
+      c.big = G.world.big === true && G.world.nodes.length === 36 && h.G.world.big === true &&
+        DF.coopWorldSum(G.world) === join.sum && join.sum === h.sum(h.G.world);
+      c.count = G.enemies.length === join.enemies.length && G.enemies.length === h.G.enemies.length && G.enemies.length === 188;
       c.husk = hk.def.hp === Math.round(E.husk.hp * 1.3) && hk.def.posture === Math.round(E.husk.posture * 1.3) && hk.hp === hk.def.hp;
       c.warden = pw.def.hp === Math.round(E.warden.hp * 1.8) && pw.def.posture === Math.round(E.warden.posture * 1.5);
       c.edefKept = E.husk.hp === 42 && E.warden.hp === 620;
@@ -670,8 +673,57 @@ export default [
       DF.coopEnd("left");
       DF.newRun(99);
       const sh = G.enemies.find((e) => e.type === "husk");
-      c.solo = G.edef === null && sh.def === E.husk && sh.def.hp === E.husk.hp && sh.hp === E.husk.hp && G.enemies.length === 47;
+      c.solo = G.edef === null && sh.def === E.husk && sh.def.hp === E.husk.hp && sh.hp === E.husk.hp && G.enemies.length === 47 &&
+        G.world.big === false;
       return { pass: Object.values(c).every((v) => v === true), c, bar: [part, full], enemies: G.enemies.length };
+    },
+  },
+  {
+    // the page builds the big cave from the world's n alone: a world for two
+    // that says 1 is built small here, its sum is not the host's, and co-op ends
+    name: "a cave for two built small is refused",
+    eval: async () => {
+      const { G } = DF,
+        co = window.__co;
+      G.manual = true;
+      let sent = null;
+      const r = co.solo({
+        hub: true,
+        seed: 99,
+        mate: "idle",
+        tamper: (ev) => {
+          if (ev[0] === "world" && ev[1].kind === "cave") {
+            sent = ev[1].n;
+            ev[1].n = 1;
+          }
+          return ev;
+        },
+      });
+      DF.show("play");
+      const joined = !!DF.net() && G.zone === "hub";
+      const q = G.world.portals.find((o) => o.grade === "E"),
+        o = DF.portalFront(q, -0.75),
+        p = G.player;
+      p.x = o.x;
+      p.z = o.z;
+      co.run(4, () => (DF.net() ? undefined : false), false);
+      await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+      const msg = document.getElementById("coopMsg"),
+        out = {
+          pass: joined && sent === 2 && r.host.S.n === 2 && r.host.G.world.big === true &&
+            G.state === "title" && DF.net() === null && DF.CC.link === null && DF.CC.why === "cave" &&
+            !msg.hidden && msg.textContent === "This browser built a different cave from the host's. Co-op cannot run here.",
+          joined,
+          sent,
+          hostN: r.host.S.n,
+          state: G.state,
+          why: DF.CC.why,
+          msg: msg.textContent,
+          zone: G.zone,
+        };
+      DF.coopSay("");
+      DF.show("play");
+      return out;
     },
   },
   // ---- Task 7: fighting as a client ----

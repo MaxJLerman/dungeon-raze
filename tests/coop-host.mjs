@@ -10,6 +10,11 @@ function cave() {
   h.start({ seed: 99, grade: "E" });
   return h;
 }
+// Small cave 99's checksum, as cave() builds it.
+const SMALL99 = "91628121";
+// The generator's own spawns of a world: up to and including the Warden's,
+// which genWorld pushes last; any after it are the extras for two.
+const ownSpawns = (w) => w.spawns.slice(0, w.spawns.findIndex((s) => s.type === "warden") + 1);
 // A host that starts in the hall, as a room does.
 function hall() {
   const h = loadHost();
@@ -48,6 +53,19 @@ function husk(h, i) {
   const e = h.G.enemies[i];
   assert.equal(e.type, "husk");
   return e;
+}
+// The husk that stands alone near the start: the tunnel post (node -1)
+// nearest the world's start that the start cannot see (cave 99: 37; big
+// cave 99 for two: 134).
+function lone(h) {
+  const w = h.G.world,
+    s = w.spawn;
+  let best = null;
+  for (const e of h.G.enemies)
+    if (e.type === "husk" && w.spawns[e.id].node === -1 && !w.los(s.x, s.z, e.x, e.z))
+      if (!best || dist(e, s) < dist(best, s)) best = e;
+  assert.ok(best, "no tunnel post out of the start's sight");
+  return best;
 }
 // Keeps a client standing at a point, one state a tick.
 const hold = (c, q, extra) => () => c.at(q.x, q.z, extra);
@@ -99,7 +117,7 @@ check("joining sends the cave and every enemy", () => {
   const a = fakeClient(h, 1, "fighter");
   const j = a.join;
   assert.ok(j, "no join event");
-  assert.equal(j.v, 2);
+  assert.equal(j.v, 3);
   assert.equal(j.e, 1);
   assert.equal(j.kind, "cave");
   assert.equal(j.n, 1);
@@ -166,6 +184,12 @@ check("a hello joins a matching version and build, and refuses another or none",
   hello(2, h.v + 1, "mage", h.build);
   assert.ok(!h.S.px.has(2), "a wrong version does not join");
   assert.deepEqual(got.get(2), [["no", "version"]]);
+  // the wire is version 3 since a world for two means the big cave: a page
+  // of version 2 is refused
+  assert.equal(h.v, 3);
+  hello(8, 2, "mage", h.build);
+  assert.ok(!h.S.px.has(8), "a version 2 hello joined");
+  assert.deepEqual(got.get(8), [["no", "version"]]);
   // the same version from another build, or with no stamp: told so too
   const other = (parseInt(h.build, 16) ^ 1).toString(16).padStart(8, "0");
   hello(4, h.v, "mage", other);
@@ -1243,7 +1267,7 @@ check("a room starts in the hall", () => {
   assert.equal(h.S.byId.get(0), h.G.enemies[0]);
   const a = fakeClient(h, 1, "fighter");
   const j = a.join;
-  assert.equal(j.v, 2);
+  assert.equal(j.v, 3);
   assert.equal(j.e, 1);
   assert.equal(j.kind, "hub");
   assert.equal(j.grade, null);
@@ -1279,7 +1303,11 @@ check("the host's player travels", () => {
   const a = fakeClient(h, 1, "fighter"),
     b = fakeClient(h, 2, "mage");
   a.ev("travel", "E", 99);
-  const sum = h.sum(cave().G.world);
+  // the cave a fresh host builds for two from that seed
+  const ref = loadHost();
+  ref.start({ seed: 99, grade: "E", two: true });
+  const sum = ref.sum(ref.G.world);
+  assert.equal(ref.G.world.big, true);
   for (const c of [a, b]) {
     const w = worlds(c);
     assert.equal(w.length, 1, "client " + c.pid + " got " + w.length + " worlds");
@@ -1291,7 +1319,7 @@ check("the host's player travels", () => {
     // two in the room: a dungeon for two, with its extra enemies
     assert.equal(d.n, 2);
     assert.equal(d.enemies.length, h.G.world.spawns.length);
-    assert.ok(d.enemies.length > 47);
+    assert.ok(d.enemies.length > ownSpawns(h.G.world).length);
     assert.deepEqual(d.dead, []);
     assert.equal(d.bossDead, false);
     assert.equal(d.sum, sum);
@@ -1349,7 +1377,7 @@ check("a player is not there until it answers", () => {
   a.ev("travel", "E", 99);
   assert.equal(px.here, false, "here in a world it has not answered");
   assert.equal(h.S.px.get(1).here, true);
-  const e = husk(h, 37),
+  const e = lone(h),
     q = spot(h, e, 2),
     n = b.nsnap;
   // standing beside the husk, by its own word and on the host
@@ -1634,7 +1662,8 @@ function packs(h, spawns) {
   }
   return m;
 }
-const deepPack = (list) => list.map((s) => s.type).sort().join() === "brute,brute,spit";
+// A deep pack holds two or more brutes.
+const deepPack = (list) => list.filter((s) => s.type === "brute").length >= 2;
 // The health and posture an enemy of type has in a dungeon for two.
 function scaled(h, type) {
   const d = h.EDEF[type];
@@ -1648,7 +1677,7 @@ check("the count of players fixes the tuning", () => {
   for (const c of [a, b]) assert.equal(worlds(c).at(-1).n, 2, "client " + c.pid);
   assert.equal(h.S.n, 2);
   assert.equal(h.NET.two, true);
-  assert.ok(h.G.enemies.length > 47);
+  assert.ok(h.G.enemies.length > ownSpawns(h.G.world).length);
   // one in the hall: a cave for one, and a friend who joins it changes nothing
   const h1 = hall(),
     a1 = fakeClient(h1, 1, "fighter");
@@ -1673,15 +1702,14 @@ check("the count of players fixes the tuning", () => {
   assert.equal(h.G.world.spawns.length, 47);
 });
 check("more enemies", () => {
-  const one = cave(),
-    { h, a } = forTwo(),
-    sp1 = one.G.world.spawns,
+  const { h, a } = forTwo(),
+    sp1 = h.genWorld(99, true).spawns,
     sp = h.G.world.spawns,
     w = h.G.world;
   // the generator's own spawns come first and are unchanged
   assert.deepEqual(sp.slice(0, sp1.length), sp1);
   const extras = sp.slice(sp1.length),
-    g1 = packs(one, sp1),
+    g1 = packs(h, sp1),
     g2 = packs(h, sp);
   assert.equal(g2.size, g1.size);
   let deep = 0,
@@ -1692,7 +1720,7 @@ check("more enemies", () => {
     want += k;
     assert.equal(g2.get(node).length, list.length + k, "room " + node);
   }
-  assert.ok(deep > 0, "cave 99 has no brute, brute, spit room");
+  assert.ok(deep > 0, "cave 99 has no room with two brutes");
   assert.equal(extras.length, want);
   for (const x of extras) {
     assert.notEqual(x.node, -1, "an extra on a tunnel post");
@@ -1714,7 +1742,7 @@ check("more enemies", () => {
 check("tougher", () => {
   const { h, a } = forTwo(),
     E = h.EDEF,
-    hk = husk(h, 37),
+    hk = lone(h),
     w = warden(h);
   assert.equal(hk.def.hp, Math.round(E.husk.hp * 1.3));
   assert.equal(hk.def.posture, Math.round(E.husk.posture * 1.3));
@@ -2007,8 +2035,9 @@ check("a wipe keeps the tuning", () => {
     b.at(s.x + 1, s.z, d ? { state: "dead", hp: 0 } : {});
   };
   run(h, 0.5, both);
-  hit(a, husk(h, 37), 100);
-  assert.equal(husk(h, 37).dead, true);
+  const e = lone(h);
+  hit(a, e, 100);
+  assert.equal(e.dead, true);
   d = true;
   run(h, 1 / 60, both);
   const r = named(a, "reset");
@@ -2046,6 +2075,189 @@ check("the hall is never tuned", () => {
   a.ev("travel", "hub");
   plain("the hall after a cave for two");
   assert.equal(worlds(b).at(-1).n, 1);
+});
+// ---- the big cave: a cave built for two ----
+check("a cave built for two is the big cave", () => {
+  const { h, a, b } = forTwo();
+  for (const c of [a, b]) {
+    const d = worlds(c).at(-1);
+    assert.equal(d.n, 2, "client " + c.pid);
+    assert.equal(d.sum, h.sum(h.G.world));
+  }
+  assert.equal(h.S.n, 2);
+  assert.equal(h.G.world.big, true);
+  assert.equal(h.G.world.nodes.length, 36);
+  assert.notEqual(h.sum(h.G.world), SMALL99);
+  // started alone: the small cave
+  const one = cave();
+  assert.equal(one.S.n, 1);
+  assert.equal(one.G.world.big, false);
+  assert.equal(one.G.enemies.length, 47);
+  assert.equal(one.sum(one.G.world), SMALL99);
+  assert.equal(lone(one).id, 37);
+  // big is for grade E only: a sewer for two is the sewer, with n 2
+  const sw = loadHost();
+  sw.start({ seed: 5, grade: "D", two: true });
+  assert.ok(sw.G.world.sewer, "not the sewer");
+  assert.equal(sw.G.world.big, false);
+  assert.equal(sw.S.n, 2);
+});
+check("a friend who joins a cave for one gets the small cave", () => {
+  const h = hall(),
+    a = fakeClient(h, 1, "fighter");
+  a.ev("travel", "E", 99);
+  assert.equal(worlds(a).at(-1).n, 1);
+  const b = fakeClient(h, 2, "mage");
+  assert.equal(b.join.n, 1);
+  assert.equal(b.join.sum, SMALL99);
+  assert.equal(b.join.enemies.length, 47);
+  assert.equal(h.G.world.big, false);
+  assert.equal(h.S.n, 1);
+});
+check("it stays big", () => {
+  const { h, a, b } = forTwo(),
+    w0 = h.G.world,
+    sum = h.sum(w0),
+    n = h.G.enemies.length,
+    s = w0.spawn;
+  let d = false;
+  const both = () => {
+    a.at(s.x, s.z, d ? { state: "dead", hp: 0 } : {});
+    b.at(s.x + 1, s.z, d ? { state: "dead", hp: 0 } : {});
+  };
+  run(h, 0.5, both);
+  // both dead: a wipe makes the enemies again in the same world
+  d = true;
+  run(h, 1 / 60, both);
+  assert.equal(named(a, "reset").length, 1, "no wipe");
+  assert.equal(h.G.world, w0);
+  assert.equal(h.sum(h.G.world), sum);
+  assert.equal(h.G.world.big, true);
+  assert.equal(h.G.enemies.length, n);
+  assert.equal(h.S.n, 2);
+  // the friend leaves: still the big cave, and a lone wipe keeps it
+  d = false;
+  run(h, 0.2, both);
+  h.leave(2);
+  run(h, 0.5, () => a.at(s.x, s.z));
+  assert.equal(h.G.world, w0);
+  assert.equal(h.sum(h.G.world), sum);
+  assert.equal(h.G.world.big, true);
+  run(h, 1 / 60, () => a.at(s.x, s.z, { state: "dead", hp: 0 }));
+  assert.equal(named(a, "reset").length, 2, "no lone wipe");
+  assert.equal(h.G.world, w0);
+  assert.equal(h.G.world.big, true);
+  assert.equal(h.G.enemies.length, n);
+  assert.equal(h.S.n, 2);
+});
+check("a friend who joins the big cave under way", () => {
+  const { h, a } = forTwo(),
+    sum = h.sum(h.G.world),
+    n = h.G.enemies.length,
+    s = h.G.world.spawn;
+  assert.equal(h.G.world.big, true);
+  run(h, 0.2, () => a.at(s.x, s.z));
+  h.leave(2);
+  // joining again: the big cave and its whole list
+  const b = fakeClient(h, 2, "mage");
+  assert.equal(b.join.n, 2);
+  assert.equal(b.join.sum, sum);
+  assert.equal(b.join.enemies.length, n);
+  b.join.enemies.forEach(([id, type], i) => {
+    assert.equal(id, i);
+    assert.equal(type, h.G.enemies[i].type);
+  });
+  // again, and an enemy killed and a wipe before its at
+  h.leave(2);
+  const c = fakeClient(h, 2, "mage", { at: false });
+  assert.equal(c.join.n, 2);
+  assert.equal(c.join.sum, sum);
+  const e = h.G.enemies.find((q) => q.type === "husk");
+  hit(a, e, 100);
+  assert.equal(e.dead, true, "the husk did not die");
+  run(h, 1 / 60, () => a.at(s.x, s.z, { state: "dead", hp: 0 }));
+  assert.equal(named(a, "reset").length, 1, "a lone dead player is a wipe");
+  assert.equal(named(c, "reset").length, 0, "a reset to a player not there");
+  c.arrive();
+  const r = named(c, "reset");
+  assert.equal(r.length, 1, "no reset on arrival");
+  assert.equal(r[0][1].enemies.length, n);
+  assert.deepEqual(r[0][1].dead, []);
+  assert.ok(h.G.enemies.every((q) => !q.dead), "an enemy still dead");
+});
+check("extras in the big cave", () => {
+  const { h } = forTwo(),
+    w = h.G.world,
+    own = ownSpawns(w),
+    extras = w.spawns.slice(own.length),
+    g = packs(h, own),
+    per = new Map();
+  assert.equal(w.big, true);
+  assert.equal(own.at(-1).type, "warden");
+  assert.ok(extras.length > 0, "no extras");
+  for (const x of extras) {
+    assert.notEqual(x.node, -1, "an extra on a tunnel post");
+    assert.ok(!h.EDEF[x.type].boss, "an extra boss");
+    const pack = g.get(x.node);
+    assert.ok(pack, "an extra in no pack room");
+    assert.ok(pack.some((s) => s.type === x.type), "an extra of a type not in its pack");
+    per.set(x.node, (per.get(x.node) || 0) + 1);
+  }
+  let deep = 0;
+  for (const [node, list] of g) {
+    const k = list.filter((s) => s.type === "brute").length >= 2 ? 2 : 1;
+    if (k === 2) deep++;
+    assert.equal(per.get(node) || 0, k, "room " + node + ": " + list.map((s) => s.type).join());
+  }
+  assert.ok(deep > 0, "no room with two brutes");
+  // a pack larger than brute, brute, spit is deep too
+  assert.ok(
+    [...g.values()].some((l) => l.length > 3 && l.filter((s) => s.type === "brute").length >= 2),
+    "no larger two-brute pack in cave 99",
+  );
+});
+check("the enemy count for two", () => {
+  const h = loadHost(),
+    counts = [];
+  for (const seed of [...Array.from({ length: 20 }, (_, i) => i + 1), 99]) {
+    h.start({ seed, grade: "E", two: true });
+    assert.equal(h.G.world.big, true, "seed " + seed);
+    const k = h.G.enemies.length;
+    assert.ok(k >= 140 && k <= 215, "seed " + seed + ": " + k);
+    counts.push(k);
+  }
+  const mean = counts.reduce((x, y) => x + y, 0) / counts.length;
+  console.log(
+    "     enemies for two, seeds 1 to 20 and 99: least " + Math.min(...counts) + ", mean " +
+      mean.toFixed(1) + ", most " + Math.max(...counts) + "; seed 99 " + counts.at(-1),
+  );
+});
+check("the host builds the big cave quickly", () => {
+  const h = loadHost();
+  const t0 = performance.now();
+  h.start({ seed: 11, grade: "E", two: true });
+  const ms = performance.now() - t0;
+  assert.equal(h.G.world.big, true);
+  assert.ok(ms < 1000, ms.toFixed(0) + " ms");
+  console.log("     a host build of big cave 11: " + ms.toFixed(0) + " ms");
+});
+check("a minute in the big cave", () => {
+  const { h, a, b } = forTwo(),
+    w = h.G.world,
+    s = w.spawn,
+    r = w.nodes[w.path[5]];
+  assert.equal(w.big, true);
+  let steps = 0;
+  const t0 = performance.now();
+  run(h, 60, () => {
+    a.at(s.x, s.z);
+    b.at(r.x, r.z);
+    steps++;
+  });
+  const ms = (performance.now() - t0) / steps;
+  assert.equal(steps, 3600);
+  assert.ok(ms < 4, "a step costs " + ms.toFixed(2) + " ms");
+  console.log("     a host step in big cave 99 with two players: " + ms.toFixed(3) + " ms");
 });
 // ---- the Worker driver, with a stand-in for the Worker's global ----
 // sc.advance(sec) moves the clock on and fires the interval once, as a

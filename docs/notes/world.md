@@ -76,6 +76,14 @@ on it and `false` on every other world (the small cave, the hall, the
 sewer). Game code does not branch on it; it is for tests and the dev build.
 Unlike the small cave it is drawn in pieces (below).
 
+- **When it is built.** Only when a caller passes `big`; nothing reads
+  `NET` to decide. A co-op cave built for two is the big cave: the host's
+  `build` settles `S.n` first and calls `newRun(seed, grade, S.n === 2)`,
+  and a page's `coopBuild` calls `enterCave(grade, seed, d.n === 2)` from
+  the world description (`coop.md`, "A dungeon for two"). Tests build it
+  with `DF.newRun(seed, "E", true)`. The single-player game never passes
+  it.
+
 - **What differs.** Only these; every branch on `big` leaves the small cave
   drawing from `Rn` exactly as before (t22's hashes of caves 1, 7 and 99).
   The room options are `CAVE_PLAN` with `GX` and `GZ` 6, so rooms, spacing,

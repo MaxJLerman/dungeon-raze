@@ -233,20 +233,20 @@ const COOP_HOST = COOP_HEADLESS_HERE
 
       // Builds a world and takes every proxy there: the hall with
       // enterHub(from, true), in front of from's gate when from is a grade,
-      // or a cave with newRun(seed, grade). Each proxy arrives where the
+      // or a cave with newRun(seed, grade, big). Each proxy arrives where the
       // world put its player (the cave's start, or before the gate), at full
       // health and not yet there: it is sent the world and is heard again
       // once its at for this epoch arrives. Its event numbers start again.
       // won: the run time when the exit gate caused the trip, else null.
       // A cave built with two players in the room (joined, entered or not),
       // or with two set, is a dungeon for two for as long as it lasts: the
-      // scaled definitions and the extra spawns, its enemies made again from
-      // them. The hall never is.
+      // big cave (for grade E), the scaled definitions and the extra spawns,
+      // its enemies made again from them. The hall never is.
       function build(kind, grade, seed, from, won = null, two = false) {
-        if (kind === "hub") enterHub(from, true);
-        else newRun(seed, grade);
-        S.kind = kind;
         S.n = kind === "cave" && (two || S.px.size >= 2) ? 2 : 1;
+        if (kind === "hub") enterHub(from, true);
+        else newRun(seed, grade, S.n === 2);
+        S.kind = kind;
         if (S.n === 2) {
           G.edef = coopTwoDefs();
           G.world.spawns.push(...coopExtras(G.world, seed));
@@ -747,8 +747,10 @@ const COOP_HOST = COOP_HEADLESS_HERE
         EDEF,
         worker,
         sum: coopWorldSum,
-        // for tests: the hall as either kind of page builds it, and a save
+        // for tests: the hall or a cave's own world as either kind of page
+        // builds it, and a save
         genHub,
+        genWorld,
         clearGrade,
         wire: {
           type: coopType,

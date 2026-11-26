@@ -159,17 +159,38 @@ check("a world event with a full description survives the round trip", () => {
   assert.deepEqual(W.eventDecode(W.eventEncode(back)), back);
 });
 
-check("a join of cave 99 built for two fits in one relay frame", () => {
+check("a join of the big cave built for two fits in one relay frame", () => {
+  // the largest joins: a dungeon for two is the big cave with its extra
+  // enemies; cave 99 and the seed of 1 to 20 with the most enemies
+  const join = (seed) => {
+    const h = loadHost();
+    h.start({ seed, grade: "E", two: true });
+    const c = fakeClient(h, 1, "fighter");
+    fakeClient(h, 2, "mage");
+    assert.equal(c.join.n, 2);
+    assert.equal(h.G.world.big, true);
+    assert.equal(c.join.enemies.length, h.G.enemies.length);
+    return { n: c.join.enemies.length, bytes: W.eventEncode(["join", c.join]).byteLength };
+  };
   const h = loadHost();
-  // the largest: a dungeon for two, with its extra enemies
-  h.start({ seed: 99, grade: "E", two: true });
-  const c = fakeClient(h, 1, "fighter");
-  fakeClient(h, 2, "mage");
-  assert.equal(c.join.n, 2);
-  assert.equal(c.join.enemies.length, 62);
-  const b = W.eventEncode(["join", c.join]);
+  let most = 0,
+    seed = 0;
+  for (let s = 1; s <= 20; s++) {
+    h.start({ seed: s, grade: "E", two: true });
+    if (h.G.enemies.length > most) [most, seed] = [h.G.enemies.length, s];
+  }
+  const j99 = join(99),
+    jm = join(seed);
+  assert.equal(j99.n, 188);
+  assert.equal(jm.n, most);
   // the relay closes a socket on a frame over 16,384 bytes; it adds the pid byte
-  assert.ok(b.byteLength + 1 < 16384, "a join of " + b.byteLength + " bytes");
+  for (const [s, j] of [[99, j99], [seed, jm]])
+    assert.ok(j.bytes + 1 < 16384, "a join of seed " + s + ": " + j.bytes + " bytes");
+  console.log(
+    "     the larger join: seed " + (jm.bytes > j99.bytes ? seed : 99) + ", " +
+      Math.max(jm.bytes, j99.bytes) + " bytes (" + Math.max(jm.n, j99.n) + " enemies); seed 99 " +
+      j99.bytes + " bytes",
+  );
 });
 
 check("the fake link delays, keeps order and never drops", () => {

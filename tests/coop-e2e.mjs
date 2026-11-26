@@ -216,6 +216,7 @@ const info = (p) =>
     mates: DF.net() ? DF.net().mates.length : 0,
     sum: DF.coopWorldSum(DF.G.world),
     seed: DF.G.seed,
+    big: DF.G.world.big === true,
   }));
 // Walks this page's player through points d metres in front of E's gate in
 // the hall, steering by the camera, and lets go once there, once the world
@@ -248,11 +249,14 @@ async function intoE(h, f) {
     b = await info(f);
   assert.equal(a.seed, b.seed, "the same seed");
   assert.equal(a.sum, b.sum, "the same cave");
-  // both draw the host's enemy list: entered by two, cave 99 has 47 and
-  // the 15 extras of a dungeon for two
+  // entered by two: the big cave on both pages
+  assert.equal(a.big, true, "the host's page is not in the big cave");
+  assert.equal(b.big, true, "the friend's page is not in the big cave");
+  // both draw the host's enemy list: entered by two, big cave 99 has 188
+  // with the extras of a dungeon for two
   assert.equal(a.enemies, b.enemies);
   assert.ok(a.enemies > 0, "enemies");
-  if (a.seed === 99) assert.equal(a.enemies, 62);
+  if (a.seed === 99) assert.equal(a.enemies, 188);
   // (a cave of another seed may have no husk: then there is no health to read)
   if (a.husk !== undefined) assert.equal(a.husk, Math.round(42 * 1.3), "a husk's health for two");
   assert.equal(b.husk, a.husk);
@@ -466,7 +470,10 @@ async function main() {
     const b = await info(friend),
       a = await info(host);
     assert.equal(b.zone, "cave");
-    assert.equal(b.enemies, 62);
+    assert.equal(b.big, true);
+    assert.equal(a.big, true);
+    assert.equal(b.enemies, 188);
+    assert.equal(a.enemies, 188);
     assert.equal(b.husk, Math.round(42 * 1.3));
     assert.ok(b.net);
     assert.equal(b.seed, a.seed);
