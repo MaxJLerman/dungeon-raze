@@ -404,8 +404,18 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   nothing when a seal already stands; the boss's `kill` calls
   `sealEnd(true)`; a `reset` with `seal` false ends a standing seal with
   `sealEnd(false)`, and one with `seal` true and none standing calls
-  `sealNow()` (this player is then brought in by the keep-in rule). The dark
-  that goes with it is not built yet.
+  `sealNow()` (this player is then brought in by the keep-in rule).
+  **The dark** (`WARDEN2.dark`, `{ floor: 0.12, over: 2 }`) is `G.dark = { v,
+  to }`, both 0 to 1, in `06_game.js` (so the host copy holds it, as plain
+  numbers; nothing there draws). `sealBegin` and `sealNow` set `to` to 1,
+  `sealEnd` sets it to 0, and `sealEnd(false)` (a wipe, a world, any reset)
+  also sets `v` to 0 at once; `sealEnd(true)` (the Warden's death) leaves
+  `v` to fall over `over` s. `darkUpdate(dt)`, called by `update` every step,
+  moves `v` toward `to` at `1 / over` a second. `sealNow` keeps `v` when a
+  seal already stands (a respawn: the lights do not flash back on and the
+  dark does not start over) and sets it to 1 when none did (a join in phase
+  4 starts in the dark). `resetRun` clears both. What it dims, and what it
+  does not, is in `rendering.md`.
 - **The wire** (`06c`). Every frame is an `ArrayBuffer` whose first byte is
   its kind: `COOP.SNAP` (1), host to client, 20 a second: host time, the
   ack (the client's highest event seq processed), the other player's record

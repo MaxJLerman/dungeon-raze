@@ -618,7 +618,8 @@ function buildLights() {
       });
   const fx = p.x + Math.sin(cam.yaw) * 7,
     fz = p.z + Math.cos(cam.yaw) * 7,
-    near = [];
+    near = [],
+    dk = darkMul();
   for (const c of w.lights) {
     const d = (c.x - fx) * (c.x - fx) + (c.z - fz) * (c.z - fz);
     if (d < 2200) near.push([d, c]);
@@ -634,11 +635,11 @@ function buildLights() {
       z: c.z,
       c: c.c,
       i:
-        c.flick === undefined
+        (c.flick === undefined
           ? c.i + Math.sin(G.t * 1.7 + c.ph) * 0.2
           : c.flick
             ? c.i * lampFlicker(c.ph, G.t)
-            : c.i,
+            : c.i) * dk,
       r: c.r,
     });
   }
@@ -958,6 +959,7 @@ function render() {
   const p = G.player,
     w = G.world;
   R.env.t = G.t;
+  R.env.glow = darkMul();
   buildLights();
   R.begin();
   R.drawWorld(visiblePieces(w, R.cam.x, R.cam.z, p.x, p.z));
@@ -1131,7 +1133,7 @@ function render() {
       continue;
     }
     const fl = 0.85 + 0.15 * Math.sin(G.t * 2.2 + h.x);
-    R.sprite(h.x, h.y, h.z, 1.9, h.c[0], h.c[1], h.c[2], 0.5 * fl);
+    R.sprite(h.x, h.y, h.z, 1.9, h.c[0], h.c[1], h.c[2], 0.5 * fl * darkMul());
   }
   drawSewerSet(w);
   for (const sh of w.shrines) {

@@ -57,6 +57,8 @@ const G = {
   chunks: [],
   // the Warden for two's seal while it stands, { t, ids, down, fade } (sealBegin)
   seal: null,
+  // how dark the cave is, { v, to }: both 0 to 1, v moving toward to (darkUpdate)
+  dark: { v: 0, to: 0 },
 };
 const keys = {},
   taps = {},
@@ -2025,6 +2027,7 @@ function resetRun() {
   G.waves = [];
   G.chunks = [];
   G.seal = null;
+  G.dark = { v: 0, to: 0 };
   G.insp = null;
   G.grabGrace = 0;
   G.bossDead = false;
@@ -5833,6 +5836,7 @@ function update(dt) {
   shocksUpdate(dt);
   wavesUpdate(dt);
   if (G.seal) sealUpdate(dt);
+  darkUpdate(dt);
   for (const q of G.pending) {
     q.t -= dt;
     if (q.t <= 0) {

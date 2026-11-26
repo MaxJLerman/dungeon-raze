@@ -1039,6 +1039,285 @@ export default [
   },
   { wait: 400, shot: "t32-ring" },
   {
+    name: "the cave dims while sealed and not before",
+    eval: () => {
+      const { G } = DF,
+        w2 = window.__w2,
+        T = DF.WARDEN2.dark;
+      G.manual = true;
+      Object.assign(w2, {
+        // The brightness of the next frame drawn, read from the canvas in
+        // the same task as the draw (the drawing buffer is not kept): the
+        // mean of its luminance and the mean of its brightest tenth.
+        shade: () =>
+          new Promise((res) => {
+            const R = DF.R,
+              end = R.end;
+            R.end = function () {
+              end.apply(this, arguments);
+              R.end = end;
+              const W = 192,
+                H = 108,
+                cv = document.createElement("canvas");
+              cv.width = W;
+              cv.height = H;
+              const x = cv.getContext("2d", { willReadFrequently: true });
+              x.drawImage(document.getElementById("c"), 0, 0, W, H);
+              const d = x.getImageData(0, 0, W, H).data,
+                l = [];
+              for (let i = 0; i < d.length; i += 4) l.push(0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]);
+              // the upper half of the frame, the chamber's walls
+              const up = l.slice(0, (W * H) / 2).reduce((a, b) => a + b, 0) / ((W * H) / 2);
+              l.sort((a, b) => a - b);
+              const top = l.slice(Math.floor(l.length * 0.9));
+              res({
+                up,
+                mean: l.reduce((a, b) => a + b, 0) / l.length,
+                top: top.reduce((a, b) => a + b, 0) / top.length,
+              });
+            };
+          }),
+        // steps sec seconds unhurt with the host's Warden put by each(hb)
+        hold(sec, each) {
+          DF.devGod(true);
+          try {
+            w2.step(sec, () => each(w2.hostBoss()));
+          } finally {
+            DF.devGod(false);
+          }
+        },
+        // this player at the door spot looking at the chamber's centre, or
+        // at the nearest crystal when crystal is true
+        atDoor(crystal) {
+          const p = G.player,
+            q = DF.sealDoor(G.world);
+          let B = G.world.boss;
+          if (crystal) B = G.world.lights.reduce((a, c) => (Math.hypot(c.x - q.x, c.z - q.z) < Math.hypot(a.x - q.x, a.z - q.z) ? c : a));
+          Object.assign(p, { x: q.x, z: q.z, state: "free", vx: 0, vz: 0 });
+          p.yaw = DF.cam.yaw = Math.atan2(B.x - q.x, B.z - q.z);
+          DF.cam.px = q.x;
+          DF.cam.pz = q.z;
+          return q;
+        },
+        // a frame's shade with the Warden far out of view (away) or in the
+        // middle of its slam's wind-up facing this player (wind)
+        async look(mode, crystal) {
+          const B = G.world.boss,
+            q = w2.atDoor(crystal);
+          let far = { x: B.x, z: B.z },
+            d = 0;
+          for (const n of G.world.nodes) {
+            const m = Math.hypot(n.x - q.x, n.z - q.z);
+            if (m > d) {
+              d = m;
+              far = n;
+            }
+          }
+          w2.hold(0.5, (hb) => {
+            if (mode === "away") Object.assign(hb, { x: far.x, z: far.z, state: "recoil", t: 0, dur: 9 });
+            else
+              Object.assign(hb, {
+                x: B.x,
+                z: B.z,
+                state: "wind",
+                atk: hb.def.atks.slam,
+                t: hb.def.atks.slam.wind * 0.5,
+                tx: q.x,
+                tz: q.z,
+                yaw: Math.atan2(q.x - B.x, q.z - B.z),
+              });
+          });
+          w2.atDoor(crystal);
+          DF.cam.cd = 5.6;
+          // the strength of the crystals' lights (radius 15) this frame sends
+          const R = DF.R,
+            set = R.setLights;
+          let cry = 0;
+          R.setLights = function (L) {
+            cry = L.filter((l) => l.r === 15).reduce((a, l) => a + l.i, 0);
+            return set.call(R, L);
+          };
+          try {
+            await w2.frames();
+            return { ...(await w2.shade()), cry };
+          } finally {
+            R.setLights = set;
+          }
+        },
+      });
+      const c = {};
+      w2.start();
+      c.stood = w2.standIn(8);
+      c.awake = w2.wake();
+      c.light = G.dark.v === 0 && G.dark.to === 0;
+      DF.devGod(true);
+      try {
+        c.entered3 = !!w2.host().phase(3);
+        w2.step(3, () => (w2.hostBoss().state === "roar" ? undefined : false));
+        c.light3 = G.dark.v === 0 && G.dark.to === 0 && !G.seal;
+        c.entered4 = !!w2.host().phase(4);
+        w2.step(0.5);
+        c.dimming = G.dark.to === 1 && G.dark.v > 0 && G.dark.v < 0.5;
+        w2.step(2.5);
+      } finally {
+        DF.devGod(false);
+      }
+      c.dark = G.dark.v > 0.95 && !!G.seal;
+      return { pass: Object.values(c).every((v) => v === true), c, v: G.dark.v, T };
+    },
+  },
+  {
+    name: "the sealed chamber is darker on screen and the Warden still shows",
+    eval: async () => {
+      const { G } = DF,
+        w2 = window.__w2,
+        T = DF.WARDEN2.dark,
+        floor = T.floor;
+      G.manual = true;
+      w2.start();
+      const c = { stood: w2.standIn(8), awake: w2.wake() };
+      DF.devGod(true);
+      try {
+        c.entered3 = !!w2.host().phase(3);
+        w2.step(3, () => (w2.hostBoss().state === "roar" ? undefined : false));
+      } finally {
+        DF.devGod(false);
+      }
+      c.lit = G.dark.v === 0;
+      // The Warden away from the view, before the seal: the glow is whole;
+      // then the Warden as it was, so that its roar into phase 4 is its own
+      const hb = w2.hostBoss(),
+        was = { x: hb.x, z: hb.z, y: hb.y, state: hb.state, t: hb.t, dur: hb.dur, atk: hb.atk, tx: hb.tx, tz: hb.tz };
+      await w2.look("away");
+      c.glowLit = DF.R.env.glow === 1;
+      Object.assign(hb, was);
+      c.entered4 = !!w2.host().phase(4);
+      DF.devGod(true);
+      try {
+        w2.step(2.5);
+      } finally {
+        DF.devGod(false);
+      }
+      c.sealed = !!G.seal && G.seal.down && G.dark.v > 0.95;
+      // Each look: the centre with the Warden away, the Warden in its
+      // wind-up, and the nearest crystal with the Warden away. The sealed
+      // chamber twice, its crystals at the floor and then at full (the table
+      // changed for the second, which also keeps the heaps of rock, which
+      // light up under the player's lamp, out of the comparison).
+      const looks = async () => [await w2.look("away"), await w2.look("wind"), await w2.look("away", true)];
+      const dark = await looks();
+      c.glowDark = Math.abs(DF.R.env.glow - (1 + (T.floor - 1) * G.dark.v)) < 1e-6 && DF.R.env.glow < 0.2;
+      c.wind = w2.boss().state === "recoil" && dark[1].up > dark[0].up * 1.1;
+      T.floor = 1;
+      let lit;
+      try {
+        lit = await looks();
+      } finally {
+        T.floor = floor;
+      }
+      c.glowFull = lit[0].cry > 0;
+      // The crystals' lights are at the floor. The frame is darker, but by
+      // little: the player's lamp and the cave's ambient light, which stay,
+      // carry most of it (rendering.md), so the check is that it is darker.
+      const k = dark[0].cry / lit[0].cry;
+      c.lights = k > floor * 0.8 && k < floor * 1.4;
+      c.darker = dark[0].mean < lit[0].mean && dark[2].mean < lit[2].mean;
+      // the Warden shows: the brightest tenth of its wind-up frame is no
+      // dimmer than 70% of the same frame with the crystals at full
+      c.shows = dark[1].top >= lit[1].top * 0.7;
+      const r = (o) => ({ mean: +o.mean.toFixed(1), up: +o.up.toFixed(1), top: +o.top.toFixed(1), cry: +o.cry.toFixed(2) });
+      return {
+        pass: Object.values(c).every((v) => v === true),
+        c,
+        lit: lit.map(r),
+        dark: dark.map(r),
+        ratio: +(dark[0].mean / lit[0].mean).toFixed(3),
+        crystalRatio: +(dark[2].mean / lit[2].mean).toFixed(3),
+        topRatio: +(dark[1].top / lit[1].top).toFixed(3),
+        lightRatio: +k.toFixed(3),
+        v: +G.dark.v.toFixed(3),
+        seal: G.seal && { t: +G.seal.t.toFixed(2), down: G.seal.down },
+        phase: w2.hostBoss().phase,
+        hostState: w2.hostBoss().state,
+      };
+    },
+  },
+  {
+    name: "the Warden mid wind-up in the dark, for the screenshot",
+    eval: async () => {
+      const { G } = DF,
+        w2 = window.__w2;
+      G.manual = true;
+      DF.devGod(true);
+      const c = { sealed: !!G.seal && G.dark.v > 0.95 };
+      await w2.look("wind");
+      G.msgs.length = 0;
+      await w2.frames();
+      return { pass: Object.values(c).every((v) => v === true), c };
+    },
+  },
+  { wait: 400, shot: "t32-dark" },
+  {
+    name: "the lights come back, and a respawn does not flash them",
+    eval: async () => {
+      const { G } = DF,
+        w2 = window.__w2;
+      G.manual = true;
+      // a death while sealed: the dark is as it was
+      let c = w2.sealSetup();
+      c.down = w2.untilDown(3) >= 0;
+      w2.hold(1, () => undefined);
+      const before = G.dark.v;
+      c.deep = before > 0.95;
+      Object.assign(G.player, { hp: 0, state: "dead", t: 2 });
+      DF.respawn();
+      c.kept = G.dark.v === before && G.dark.to === 1 && !!G.seal;
+      w2.step(0.2);
+      c.stays = G.dark.v >= before - 1e-9;
+      // a wipe: the lights are on at once
+      w2.r.mate.kill();
+      Object.assign(G.player, { hp: 0, state: "dead", t: 0 });
+      w2.step(1, () => (G.seal ? undefined : false));
+      c.open = G.seal === null;
+      c.wipe = G.dark.v === 0 && G.dark.to === 0;
+      c.glow = (await w2.look("away"), DF.R.env.glow === 1);
+      // the Warden's death: the lights come back over the fade
+      c = { ...c, ...w2.sealSetup() };
+      c.down2 = w2.untilDown(3) >= 0;
+      w2.hold(1, () => undefined);
+      const hb = w2.hostBoss();
+      hb.hp = 5;
+      w2.r.mateAsk("hit", hb.id, 50, 0, 0, "melee", null, null, hb.state, hb.an);
+      c.dead = hb.dead === true;
+      DF.devGod(true);
+      try {
+        w2.step(0.5);
+        c.fading = G.seal === null && G.dark.to === 0 && G.dark.v > 0.2 && G.dark.v < 1;
+        w2.step(1.7);
+      } finally {
+        DF.devGod(false);
+      }
+      c.back = G.dark.v === 0;
+      return { pass: Object.values(c).every((v) => v === true), c, v: G.dark.v };
+    },
+  },
+  {
+    name: "the chamber after the Warden's death, for the screenshot",
+    eval: async () => {
+      const { G } = DF,
+        w2 = window.__w2;
+      G.manual = true;
+      DF.devGod(true);
+      const c = { lit: G.dark.v === 0, free: G.seal === null };
+      w2.atDoor();
+      DF.cam.cd = 5.6;
+      G.msgs.length = 0;
+      await w2.frames();
+      return { pass: Object.values(c).every((v) => v === true), c };
+    },
+  },
+  { wait: 400, shot: "t32-lit" },
+  {
     name: "end the run",
     eval: () => {
       DF.devGod(false);

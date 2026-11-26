@@ -1779,6 +1779,9 @@ function crocRollSpot(e, c) {
 //          and landing in a sweep round the circle over sweep s. The door
 //          spot (sealDoor) is door m inside the rock; a player brought
 //          there from outside sees a fade of fade s
+//   dark   the cave's crystals while the seal stands (G.dark): their light
+//          and glow fall to floor of what they were over over s, and come
+//          back over over s when it ends
 const WARDEN2 = {
   hp: 2.5,
   marks: [0.75, 0.5, 0.25],
@@ -1808,6 +1811,7 @@ const WARDEN2 = {
     pull: 8,
   },
   seal: { n: 24, ring: 12.5, rock: 1.4, warn: 1.4, sweep: 0.6, door: 2, fade: 0.4 },
+  dark: { floor: 0.12, over: 2 },
 };
 // ---- the seal ----
 // In phase 4 of the Warden for two a ring of rock falls round its chamber's
@@ -1868,15 +1872,20 @@ function sealBegin(adv = 0) {
   const w = G.world,
     S = WARDEN2.seal;
   sealEnd(false);
+  G.dark.to = 1;
   G.seal = { t: adv, ids: [], down: false, fade: 0 };
   sealRing(w).forEach((c, i) => G.chunks.push(sealChunk(w, c, i, S.warn + (S.sweep * i) / S.n - adv)));
   SFX.crumble();
 }
-// The whole ring down at once, quietly (a late join, a respawn).
+// The whole ring down at once, quietly (a late join, a respawn). The cave is
+// dark from the first frame of a join; a seal already standing (a respawn)
+// keeps its dark as it was, so the lights do not flash back on.
 function sealNow() {
   const w = G.world,
-    S = WARDEN2.seal;
+    S = WARDEN2.seal,
+    v = G.seal ? G.dark.v : 1;
   sealEnd(false);
+  G.dark = { v, to: 1 };
   G.seal = { t: S.warn + S.sweep, ids: [], down: true, fade: 0 };
   sealRing(w).forEach((c, i) => {
     const k = sealChunk(w, c, i, 0);
@@ -1890,6 +1899,8 @@ function sealNow() {
 function sealEnd(crumble) {
   const s = G.seal,
     w = G.world;
+  G.dark.to = 0;
+  if (!crumble) G.dark.v = 0;
   if (!s) return;
   if (s.fade > 0) G.fade = 0;
   for (const k of G.chunks.filter((q) => q.seal)) {
@@ -1901,6 +1912,14 @@ function sealEnd(crumble) {
   if (crumble) SFX.crumble();
   G.seal = null;
 }
+// Each step: the dark moves toward its target at 1 / over a second.
+function darkUpdate(dt) {
+  const d = G.dark,
+    s = dt / WARDEN2.dark.over;
+  d.v = d.to > d.v ? Math.min(d.to, d.v + s) : Math.max(d.to, d.v - s);
+}
+// What the cave's crystals are multiplied by: 1 when it is light.
+const darkMul = () => 1 + (WARDEN2.dark.floor - 1) * G.dark.v;
 // Moves body o of radius r radially in to open floor inside the ring.
 function sealIn(w, o, r) {
   const B = w.boss,

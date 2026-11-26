@@ -63,6 +63,8 @@ const R = (() => {
     fog: [0.02, 0.027, 0.04],
     fogD: 0.03,
     t: 0,
+    // what the world's own glow (its vertex colours' alpha) is multiplied by
+    glow: 1,
   };
   const stats = { draws: 0, tris: 0 };
 
@@ -76,7 +78,7 @@ const R = (() => {
   const FS_LIT = `#version 300 es
   precision highp float;
   in vec3 vW,vR; in vec4 vC; flat in float vMat;
-  uniform vec3 uCam,uAmb,uFog,uEmis,uRim; uniform float uFogD,uToon,uTime;
+  uniform vec3 uCam,uAmb,uFog,uEmis,uRim; uniform float uFogD,uToon,uTime,uGlow;
   uniform vec3 uLP[8]; uniform vec3 uLC[8]; uniform float uLR[8];
   out vec4 o;
   float hash(vec2 p){ vec3 q=fract(vec3(p.xyx)*.1031); q+=dot(q,q.yzx+33.33); return fract((q.x+q.y)*q.z); }
@@ -124,7 +126,7 @@ const R = (() => {
     vec3 n=normalize(cross(dFdx(vW),dFdy(vW)));
     vec3 vv=uCam-vW; float fd=length(vv); vec3 v=vv/max(fd,1e-4);
     if(dot(n,v)<0.) n=-n;
-    vec3 base=vC.rgb; float glow=vC.a, wet=0.;
+    vec3 base=vC.rgb; float glow=vC.a*uGlow, wet=0.;
     if(vMat>1.5){
       vec3 wa=water(vW.xz,uTime);
       n=normalize(vec3(-wa.x,1.,-wa.y));
@@ -400,6 +402,7 @@ const R = (() => {
     gl.uniform3fv(u.uFog, fg);
     gl.uniform1f(u.uFogD, env.fogD);
     gl.uniform1f(u.uTime, env.t);
+    gl.uniform1f(u.uGlow, env.glow);
     gl.uniform3fv(u.uLP, LP);
     gl.uniform3fv(u.uLC, LC);
     gl.uniform1fv(u.uLR, LR);
