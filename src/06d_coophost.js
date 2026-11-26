@@ -435,7 +435,7 @@ const COOP_HOST = COOP_HEADLESS_HERE
             e.t = 0;
             e.dur = 1.0;
           }
-          if (d.boss && ph0 !== 2 && e.phase === 2) all(["roar", e.id, now()]);
+          if (d.boss && e.phase > ph0) all(["roar", e.id, now(), e.phase]);
         },
         // as hurtPlayer's parry branch does to the enemy; one staggered or
         // roaring on the host has nothing to be thrown out of
@@ -729,6 +729,21 @@ const COOP_HOST = COOP_HEADLESS_HERE
           }
         };
       }
+      // For tests and the dev menu: the living Warden for two put at the
+      // start of phase n (2 to 4), as a hit from nobody that takes it from
+      // just above that mark to just under it does, roar and events
+      // included. Returns the enemy, or null when there is no such Warden or
+      // it is already in phase n or later (a phase never falls).
+      function phase(n) {
+        const e = G.enemies.find((o) => o.def.duo && !o.dead),
+          m = e && e.def.marks[n - 2];
+        if (!m || e.phase >= n) return null;
+        const ph0 = e.phase;
+        e.hp = e.def.hp * m + 1;
+        as(ph, () => hitEnemy(e, 2, 0, { src: "", pre: true }));
+        if (e.phase > ph0) all(["roar", e.id, now(), e.phase]);
+        return e;
+      }
       const host = {
         v: COOP_V,
         build: COOP_BUILD,
@@ -737,6 +752,7 @@ const COOP_HOST = COOP_HEADLESS_HERE
         leave,
         recv,
         tick,
+        phase,
         send: null,
         G,
         S,

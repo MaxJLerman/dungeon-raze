@@ -5,7 +5,7 @@
 // changes. Pages on different builds are told apart by COOP_BUILD, which
 // build.mjs declares before the sources (a hash of them), so neither needs
 // remembering when MOVES or EDEF are tuned.
-const COOP_V = 3;
+const COOP_V = 4;
 const COOP = {
   SNAP: 1, // message kinds
   STATE: 2,
@@ -33,13 +33,17 @@ const COOP = {
 // A cave entered by two players is harder (docs/notes/coop.md, "A dungeon for
 // two"). extra: enemies added to each room pack, extraDeep to a deep pack,
 // one holding two or more brutes; hp and post: health and
-// posture of regular enemies, bossHp and bossPost the boss's; turns: attack
-// turns held against each player at once; bossHeal: the share of its full
-// health the boss regains when a player dies in its chamber.
-const COOP_TWO = { extra: 1, extraDeep: 2, hp: 1.3, post: 1.3, bossHp: 1.8, bossPost: 1.5, turns: 2, bossHeal: 0.25 };
+// posture of regular enemies, bossHp and bossPost the boss's (the Warden's
+// health is WARDEN2.hp's); turns: attack turns held against each player at
+// once; bossHeal: the share of its full health the boss regains when a
+// player dies in its chamber.
+const COOP_TWO = { extra: 1, extraDeep: 2, hp: 1.3, post: 1.3, bossHp: 2.5, bossPost: 1.5, turns: 2, bossHeal: 0.25 };
 // The enemy definitions of a dungeon for two, by type: each type's own
 // entry behind an object with its health and posture scaled, the dummy's
-// left as it is. EDEF itself is never changed.
+// left as it is. EDEF itself is never changed. The Warden's is the Warden
+// for two (WARDEN2 in 06b): duo, its marks and roar lengths, and an atks
+// object of its own holding the solo Warden's attacks, the same objects in
+// the same order, since a snapshot finds an attack by its index there.
 function coopTwoDefs() {
   const out = {};
   for (const [k, d] of Object.entries(EDEF)) {
@@ -50,6 +54,14 @@ function coopTwoDefs() {
     const o = Object.create(d);
     o.hp = Math.round(d.hp * (d.boss ? COOP_TWO.bossHp : COOP_TWO.hp));
     o.posture = Math.round(d.posture * (d.boss ? COOP_TWO.bossPost : COOP_TWO.post));
+    if (k === "warden")
+      Object.assign(o, {
+        hp: Math.round(d.hp * WARDEN2.hp),
+        duo: true,
+        marks: WARDEN2.marks,
+        roarT: WARDEN2.roar,
+        atks: { ...d.atks },
+      });
     out[k] = o;
   }
   return out;
@@ -145,8 +157,8 @@ function coopType(buf) {
 //   enemy 19 bytes: 0 id u16, 2 x i16, 4 z i16, 6 y u8 (1/8 m), 7 yaw u16,
 //     9 state u8, 10 time in state u16 ms, 12 atk u8 (0 none, else index in
 //     Object.keys(def.atks) + 1), 13 an u8, 14 hp u16 (1/8), 16 posture u8
-//     (of 255 of def.posture), 17 flags u8 (1 aware, 2 phase 2, 4 dead,
-//     8 and 16 pin, the pid executing it), 18 dur u8 (1/32 s)
+//     (of 255 of def.posture), 17 flags u8 (1 aware, 4 dead, 8 and 16 pin,
+//     the pid executing it, 32 and 64 the phase less one), 18 dur u8 (1/32 s)
 const COOP_SNAP_HEAD = 10,
   COOP_SNAP_PL = 15,
   COOP_SNAP_EN = 19;
@@ -191,7 +203,10 @@ function coopSnapEncode(t, ack, players, enemies) {
     v.setUint8(o + 16, coopU8(post * 255));
     v.setUint8(
       o + 17,
-      (e.aware ? 1 : 0) | (e.phase === 2 ? 2 : 0) | (e.dead ? 4 : 0) | ((e.pin & 3) << 3),
+      (e.aware ? 1 : 0) |
+        (e.dead ? 4 : 0) |
+        ((e.pin & 3) << 3) |
+        ((clamp(e.phase, 1, 4) - 1) << 5),
     );
     v.setUint8(o + 18, coopU8((e.dur || 0) * 32));
     o += COOP_SNAP_EN;
@@ -243,7 +258,7 @@ function coopSnapDecode(buf) {
       hp: v.getUint16(o + 14) / 8,
       post: v.getUint8(o + 16) / 255,
       aware: !!(f & 1),
-      phase: f & 2 ? 2 : 1,
+      phase: ((f >> 5) & 3) + 1,
       dead: !!(f & 4),
       dur: v.getUint8(o + 18) / 32,
       pin: (f >> 3) & 3,

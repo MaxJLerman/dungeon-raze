@@ -480,7 +480,7 @@ function poseEnemy(e) {
     f.sac.em[0] += g * 1.2;
     f.sac.em[1] += g * 0.5;
   }
-  if (f.core && e.phase === 2) {
+  if (f.core && e.phase >= 2) {
     f.core.em[0] += 0.8;
     f.core.em[1] += 0.25;
     f.weapon.em[0] += 0.5;
@@ -585,7 +585,7 @@ function buildLights() {
         y: 2.4 + e.y,
         z: e.z,
         c: [1, 0.3, 0.15],
-        i: e.phase === 2 ? 2.2 : 1.2,
+        i: e.phase >= 2 ? 2.2 : 1.2,
         r: 13,
       });
   const fx = p.x + Math.sin(cam.yaw) * 7,
@@ -1012,7 +1012,7 @@ function render() {
     }
     if (f.core) {
       const q = R.nodePos(f.core);
-      R.sprite(q[0], q[1], q[2], e.phase === 2 ? 1.5 : 0.9, 1, 0.25, 0.1, 0.7);
+      R.sprite(q[0], q[1], q[2], e.phase >= 2 ? 1.5 : 0.9, 1, 0.25, 0.1, 0.7);
     }
   }
   if (p.lock && !p.lock.dead) {

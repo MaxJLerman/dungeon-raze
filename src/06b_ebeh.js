@@ -1740,3 +1740,21 @@ function crocRollSpot(e, c) {
   }
   return { x: W.x, z: W.z };
 }
+
+// ---- the Warden for two ----
+// The Warden of a cave built for two co-op players (docs/notes/coop.md, "The
+// Warden for two") is EDEF.warden behind its own entry of coopTwoDefs, which
+// reads this table; EDEF.warden itself is never changed. Every number of
+// that fight is here.
+//   hp     its health, as a multiple of the solo Warden's
+//   marks  the shares of full health below which phases 2, 3 and 4 begin
+//          (hitEnemy); one hit across two marks roars once
+//   roar   how long the roar lasts on entering a phase, in seconds, by the
+//          phase entered; one not listed lasts today's 1.2 s
+//   lines  what a page says as the Warden enters each phase
+const WARDEN2 = {
+  hp: 2.5,
+  marks: [0.75, 0.5, 0.25],
+  roar: { 4: 2.2 },
+  lines: { 2: "The Warden burns hotter", 3: "The Warden reaches for you", 4: "The way out is gone" },
+};

@@ -373,8 +373,8 @@ const COOP_TAKE = {
   shot: (m) => coopNums(m, 9) && CC.byId.has(m[1]),
   // ["ring", x, z, radius, dur, t]
   ring: (m) => coopNums(m, 6) && m[3] > 0 && m[4] > 0,
-  // ["roar", eid, t]
-  roar: (m) => coopNums(m, 3) && CC.byId.has(m[1]),
+  // ["roar", eid, t, phase]: a boss has entered phase 2, 3 or 4
+  roar: (m) => coopNums(m, 4) && CC.byId.has(m[1]) && [2, 3, 4].includes(m[3]),
   // ["kill", eid, pid, t]
   kill: (m) => coopNums(m, 4) && CC.byId.has(m[1]),
   // ["fed", eid, t]: the boss has fed on a player who died in its chamber
@@ -762,7 +762,7 @@ function coopPuppet(e, dt, rt, drt) {
   // The host's state carried on from the snapshot to the drawn time: a
   // wind-up becomes its swing and a swing its recovery on the table's times.
   const keys = Object.keys(d.atks || {}),
-    tm = e.phase === 2 ? 0.85 : 1;
+    tm = e.phase >= 2 ? 0.85 : 1;
   let s = A.state,
     t = A.tt + (rt - A.t),
     a = A.atk >= 0 ? d.atks[keys[A.atk]] || null : null;
@@ -903,7 +903,8 @@ function coopApply(ev, rt) {
     const [, x, z, r, dur] = ev;
     if (adv < dur) G.rings.push({ x, z, r, t: adv, dur, kind: "warn", c: RED });
   } else if (ev[0] === "roar") {
-    // a boss's second phase, as hitEnemy shows it
+    // a boss's later phase, as hitEnemy shows it; the Warden for two says
+    // the line of the phase it entered
     const e = CC.byId.get(ev[1]);
     if (!e || e.dead || quiet) return;
     SFX.roar();
@@ -914,7 +915,7 @@ function coopApply(ev, rt) {
       p.kx = ((p.x - e.x) / d) * 16;
       p.kz = ((p.z - e.z) / d) * 16;
     }
-    say("The Warden burns hotter", "", 2.5);
+    say(e.def.duo ? WARDEN2.lines[ev[3]] : "The Warden burns hotter", "", 2.5);
   } else if (ev[0] === "fed") {
     // a death in the boss's chamber healed it (a dungeon for two); its
     // health follows from the snapshots, so only the line is said

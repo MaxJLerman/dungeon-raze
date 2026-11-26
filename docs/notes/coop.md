@@ -165,19 +165,20 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   a host build takes about 60 to 120 ms in Node (the first in a fresh copy the
   slowest), against about 700 ms on a page; `pos` is the same either way,
   so `coopWorldSum` agrees (t27, t28, `coop-caves`, `coop-e2e`). **The table** is `COOP_TWO` in `06c`: `{ extra: 1, extraDeep:
-  2, hp: 1.3, post: 1.3, bossHp: 1.8, bossPost: 1.5, turns: 2, bossHeal:
-  0.25 }`. **Tougher:** `coopTwoDefs()` is a table with every key of
+  2, hp: 1.3, post: 1.3, bossHp: 2.5, bossPost: 1.5, turns: 2, bossHeal:
+  0.25 }` (the Warden's health is `WARDEN2.hp`'s, below; `bossHp` was 1.8
+  before the Warden for two). **Tougher:** `coopTwoDefs()` is a table with every key of
   `EDEF`: the dummy's own entry, and for every other type
   `Object.create(EDEF[type])` with its own `hp` and `posture` multiplied by
   `hp` and `post` (`bossHp` and `bossPost` for a boss), rounded. `EDEF`
   itself is never changed. `G.edef` holds it for the world (`null` means
   `EDEF`'s own), `makeEnemy` reads `(G.edef || EDEF)[type]` and
   `resetRun()` clears it, so every reader of `e.def` (bars, the Warden's
-  half-health phase change, the snapshot's posture fraction, a wipe's
-  enemies) sees the scaled values. On the host `build` sets it after
+  phase changes, the snapshot's posture fraction, a wipe's enemies) sees
+  the scaled values. On the host `build` sets it after
   `newRun`; a client's `coopBuild` sets it when `d.n === 2`, before the
   puppets are made (cave 99: a husk 55 health and 65 posture, the Warden
-  1116 and 210). **More enemies:** `coopExtras(world, seed)` groups the
+  1550 and 210). The Warden's entry is the Warden for two (below). **More enemies:** `coopExtras(world, seed)` groups the
   spawns by `node` (rooms only: no tunnel post, node -1, and no boss); a
   deep pack, one holding two or more brutes, gets `extraDeep`, any other
   `extra` (in the small cave only `brute, brute, spit` is deep; in the big
@@ -212,6 +213,42 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   client waits for the drawn time as for `roar` and says "<boss name> feeds
   on the fallen." ("The Ossuary Warden feeds on the fallen."), silent when
   late or not live; its health follows from the snapshots.
+- **The Warden for two** (`06b`, `06c`, `06d`, `07c`; the design is
+  `docs/superpowers/specs/2026-11-26-coop-warden-for-two-design.md`). The
+  Warden of a world for two is a harder fight; every other Warden, the
+  solo one and that of a co-op cave for one, is today's. **The table** is
+  `WARDEN2` at the end of `06b`, the one place for the fight's numbers:
+  `hp` 2.5 (times the solo 620), `marks` `[0.75, 0.5, 0.25]`, `roar` `{ 4:
+  2.2 }` (seconds by the phase entered) and `lines` (what a page says on
+  entering phases 2, 3 and 4: "The Warden burns hotter", "The Warden
+  reaches for you", "The way out is gone"). **The definition:** the
+  Warden's entry of `coopTwoDefs()` is `Object.create(EDEF.warden)` with
+  its own `hp` 1550, `posture` 210, `duo: true`, `marks` and `roarT` (from
+  `WARDEN2`), and an `atks` object of its own that holds the solo Warden's
+  attack objects in the same key order: the snapshot sends an attack as its
+  index in `Object.keys(def.atks)` and finds it by identity, so a later
+  attack goes after them. `EDEF.warden` has none of these keys.
+  `def.duo` is how code tells this Warden from today's. **Four phases:**
+  `hitEnemy` gives a boss without `ownPhases` phase 1 plus the number of
+  its `marks` its health is below (`enemies.md`), so this Warden enters
+  phase 2 below 1,162.5, 3 below 775 and 4 below 387.5, roaring once a hit
+  whatever the marks it crossed; the phase 4 roar lasts 2.2 s. A phase
+  never falls but on its reset (home, or a wipe), and the feed can lift its
+  health over a mark without undoing one. Everything today's second phase
+  gives (speed 1.2, tempo 0.85, the volley, the glow) holds from phase 2
+  on (`e.phase >= 2`, on the host and in the page's puppet). Phases 3 and 4
+  add nothing yet. **The roar** is `["roar", eid, t, phase]`, sent to both
+  by `ASK.hit` whenever a boss's phase rises (a solo-tuned Warden's too,
+  phase 2); the page waits for the drawn time and says `WARDEN2.lines[phase]`
+  for a `duo` definition, today's line otherwise; `COOP_TAKE` refuses a
+  roar whose phase is not 2, 3 or 4. **The boss bar** draws a notch at each
+  of a definition's `marks` (`08_hud.js`, `.mk` in `#boss .bhp`), so three
+  for the Warden for two and none for any other boss. **`host.phase(n)`**,
+  for tests and the dev menu: puts the living Warden for two at the start
+  of phase `n` (2 to 4) as a hit from nobody (`as` the placeholder) does
+  that takes it from 1 above that mark to 1 under, roar event included,
+  and returns the enemy; `null` with no such Warden or once it is in phase
+  `n` or later.
 - **The wire** (`06c`). Every frame is an `ArrayBuffer` whose first byte is
   its kind: `COOP.SNAP` (1), host to client, 20 a second: host time, the
   ack (the client's highest event seq processed), the other player's record
@@ -246,7 +283,8 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   version is not `COOP_V` or whose build is not the host's `COOP_BUILD`, a
   hello with no build included), `started` (the host's page has sent its
   first state, so its player has pressed Start; sent once to a friend
-  already in), `shot`, `ring`, `roar`, `kill` (with whose event caused it),
+  already in), `shot`, `ring`, `roar` (`["roar", eid, t, phase]`, the
+  phase a boss has entered), `kill` (with whose event caused it),
   `reset`, `fed` (`["fed", eid, t]`, a dungeon for two's boss fed on a
   death in its chamber, above), `peer`, `cls` (`["cls", pid, class]`, the other player has
   changed class: `coopMateCls` changes the mate in place, keeping where it
@@ -260,8 +298,11 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   refused); it then builds the world (`coopBuild`) and refuses it
   if `coopWorldSum` (FNV-1a over the mesh positions) differs; it never reads
   its own spawn list, only the host's. All numbers are in `COOP`. `COOP_V`
-  is 3 (1 before `world`, `travel` and `at`; 2 until a world for two
-  meant the big cave). The page follows every
+  is 4 (1 before `world`, `travel` and `at`; 2 until a world for two
+  meant the big cave; 3 until the Warden for two's four phases). An
+  enemy's record carries its flags in byte 17: 1 aware, 4 dead, 8 and 16
+  the pin, and the phase less one in 32 and 64 (bit 2 is no longer set), so
+  `coopSnapDecode` gives `phase` 1 to 4. The page follows every
   `world` (see the client between worlds). A join of cave 99 is about 1.5 kB; a join
   of big cave 99 built for two (188 enemies) is 5,901 bytes, and the largest
   of seeds 1 to 20 (seed 18, 199 enemies) 6,233 bytes, under the relay's
@@ -561,7 +602,15 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
     again after each world, and `c.world` is the latest description. A test
     that joins a player some other way (`host.join`, a hello) must send that
     player's `at` itself, or the host ignores it.
-  - `node tests/coop-wire.mjs`: the wire formats and the fake link, a
+  - `node tests/coop-warden.mjs`: the Warden for two on the host copy in
+    Node with two scripted players: its health, posture and marks, the
+    solo definition untouched and a cave for one's Warden as today, a roar
+    at each mark with its phase to both players, one roar for a hit across
+    two marks, a phase that does not fall, the phase 4 roar's 2.2 s and
+    `host.phase`. Its helpers (`duo`, `inChamber`, `stand`, `strike`,
+    `strikeTo`) are for the checks later parts of this fight add.
+  - `node tests/coop-wire.mjs`: the wire formats and the fake link, the
+    phases 1 to 4 beside the other flags and `COOP_V` 4, a
     `world` event's round trip and the size of the joins of big cave 99 and
     of the seed of 1 to 20 with the most enemies, built for two, against
     the relay's cap (the larger printed).
@@ -586,7 +635,11 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
     keeps its rewards, a `reset` with the boss dead that opens its gate, a
     class picked while a world is on its way reaching the host after it,
     the friend arriving beside the host's arrival point),
-    both with `smoke`; `tests/t29.mjs` (the room screen up to the network: the button,
+    both with `smoke`; `tests/t32.mjs` (the Warden for two on the page,
+    `smoke`: the boss bar's three notches for two and none alone; look at
+    `shots/t32-bar.png`, three notches at a quarter, half and three
+    quarters of the bar; its `window.__w2` helpers start a run for two,
+    stand this player in the chamber and wake the Warden); `tests/t29.mjs` (the room screen up to the network: the button,
     the code's tidying and refusal, every message, the order of the checks,
     the class fallback, a Worker host on the page that starts in the hall,
     the friend's button naming the hall or the dungeon, a `world` refused

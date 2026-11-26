@@ -122,6 +122,15 @@ const HUD = (() => {
         el.bossE = boss;
         el.bn.textContent = boss.def.name;
         el.bn.className = "tag t" + threatOf(boss);
+        // a notch at each of its phase marks, none for a boss without them
+        const bar = el.bh.parentNode;
+        for (const n of bar.querySelectorAll(".mk")) n.remove();
+        for (const m of boss.def.marks || []) {
+          const n = document.createElement("span");
+          n.className = "mk";
+          n.style.left = m * 100 + "%";
+          bar.appendChild(n);
+        }
       }
       el.bh.style.width = sat(boss.hp / boss.def.hp) * 100 + "%";
       el.bp.style.width = sat(boss.posture / boss.def.posture) * 100 + "%";

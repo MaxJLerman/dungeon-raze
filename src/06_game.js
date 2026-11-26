@@ -2619,8 +2619,15 @@ function hitEnemy(e, dmg, post, o = {}) {
     kill(e);
     return;
   }
-  if (e.def.boss && !e.def.ownPhases && e.phase === 1 && e.hp < e.def.hp * 0.5) {
-    e.phase = 2;
+  // A boss's phase is 1 plus the marks (shares of its full health, by
+  // default half) its health is below. Entering a later one roars, once a
+  // hit however many marks it crossed; a phase never falls here.
+  const ph =
+    e.def.boss && !e.def.ownPhases
+      ? 1 + (e.def.marks || [0.5]).filter((m) => e.hp < e.def.hp * m).length
+      : 0;
+  if (ph > e.phase) {
+    e.phase = ph;
     e.state = "roar";
     e.t = 0;
     e.posture = 0;
@@ -4305,7 +4312,8 @@ function chooseAtk(e, dist, ctx) {
   for (const k in e.def.atks) {
     const a = e.def.atks[k];
     if (a.trig === undefined) continue;
-    if (a.p2 && e.phase < 2) continue;
+    // an attack's first phase: from, else 2 for p2, else 1
+    if ((a.from || (a.p2 ? 2 : 1)) > e.phase) continue;
     if (dist < (a.minTrig || 0)) continue;
     if (b && b.atkOk && !b.atkOk(e, a, ctx)) continue;
     c.push(a);
@@ -4495,8 +4503,8 @@ function enemyUpdate(e, dt) {
   e.kz = damp(e.kz, 0, 10, dt);
   e.x += e.kx * dt;
   e.z += e.kz * dt;
-  const spdMul = e.phase === 2 ? 1.2 : 1,
-    tm = e.phase === 2 ? 0.85 : 1;
+  const spdMul = e.phase >= 2 ? 1.2 : 1,
+    tm = e.phase >= 2 ? 0.85 : 1;
   if (e.alertIn > 0) {
     e.alertIn -= dt;
     if (e.alertIn <= 0 && alive) {
@@ -4947,8 +4955,9 @@ function enemyUpdate(e, dt) {
       }
       break;
     case "roar":
+      // def.roarT: the roar's length by the phase entered, else 1.2 s
       e.t += dt;
-      if (e.t > 1.2) {
+      if (e.t > ((d.roarT && d.roarT[e.phase]) || 1.2)) {
         e.state = "chase";
         e.cd = 0.2;
       }

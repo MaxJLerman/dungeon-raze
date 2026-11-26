@@ -121,7 +121,7 @@ check("joining sends the cave and every enemy", () => {
   const a = fakeClient(h, 1, "fighter");
   const j = a.join;
   assert.ok(j, "no join event");
-  assert.equal(j.v, 3);
+  assert.equal(j.v, 4);
   assert.equal(j.e, 1);
   assert.equal(j.kind, "cave");
   assert.equal(j.n, 1);
@@ -188,11 +188,11 @@ check("a hello joins a matching version and build, and refuses another or none",
   hello(2, h.v + 1, "mage", h.build);
   assert.ok(!h.S.px.has(2), "a wrong version does not join");
   assert.deepEqual(got.get(2), [["no", "version"]]);
-  // the wire is version 3 since a world for two means the big cave: a page
-  // of version 2 is refused
-  assert.equal(h.v, 3);
-  hello(8, 2, "mage", h.build);
-  assert.ok(!h.S.px.has(8), "a version 2 hello joined");
+  // the wire is version 4 since the Warden for two's four phases: a page
+  // of version 3 is refused
+  assert.equal(h.v, 4);
+  hello(8, 3, "mage", h.build);
+  assert.ok(!h.S.px.has(8), "a version 3 hello joined");
   assert.deepEqual(got.get(8), [["no", "version"]]);
   // the same version from another build, or with no stamp: told so too
   const other = (parseInt(h.build, 16) ^ 1).toString(16).padStart(8, "0");
@@ -1271,7 +1271,7 @@ check("a room starts in the hall", () => {
   assert.equal(h.S.byId.get(0), h.G.enemies[0]);
   const a = fakeClient(h, 1, "fighter");
   const j = a.join;
-  assert.equal(j.v, 3);
+  assert.equal(j.v, 4);
   assert.equal(j.e, 1);
   assert.equal(j.kind, "hub");
   assert.equal(j.grade, null);
@@ -1673,7 +1673,7 @@ function scaled(h, type) {
   const d = h.EDEF[type];
   if (d.dummy) return { hp: d.hp, posture: d.posture };
   return d.boss
-    ? { hp: Math.round(d.hp * 1.8), posture: Math.round(d.posture * 1.5) }
+    ? { hp: Math.round(d.hp * 2.5), posture: Math.round(d.posture * 1.5) }
     : { hp: Math.round(d.hp * 1.3), posture: Math.round(d.posture * 1.3) };
 }
 check("the count of players fixes the tuning", () => {
@@ -1750,7 +1750,7 @@ check("tougher", () => {
     w = warden(h);
   assert.equal(hk.def.hp, Math.round(E.husk.hp * 1.3));
   assert.equal(hk.def.posture, Math.round(E.husk.posture * 1.3));
-  assert.equal(w.def.hp, Math.round(620 * 1.8));
+  assert.equal(w.def.hp, Math.round(620 * 2.5));
   assert.equal(w.def.posture, 210);
   for (const e of h.G.enemies) {
     const s = scaled(h, e.type);
@@ -1758,8 +1758,10 @@ check("tougher", () => {
     assert.equal(e.def.posture, s.posture, e.type);
     assert.equal(e.hp, e.def.hp, "health at spawn");
     assert.notEqual(e.def, E[e.type]);
-    // the rest of the definition is the type's own
-    assert.equal(e.def.atks, E[e.type].atks);
+    // the rest of the definition is the type's own; the Warden for two's
+    // attacks are its own object, holding the solo Warden's in order
+    if (e === w) assert.deepEqual(Object.entries(e.def.atks), Object.entries(E.warden.atks));
+    else assert.equal(e.def.atks, E[e.type].atks);
     assert.equal(e.def.name, E[e.type].name);
   }
   assert.equal(E.husk.hp, 42, "EDEF changed");
@@ -1769,16 +1771,16 @@ check("tougher", () => {
   hk.posture = hk.def.posture / 2;
   const r = h.wire.snapDecode(h.wire.snapEncode(0, 0, [], [hk])).en[0];
   assert.ok(Math.abs(r.post - 0.5) <= 1 / 255, "posture " + r.post);
-  // the Warden's second phase: at half its scaled health and not before
+  // the Warden's second phase: at its first mark, 75% of its scaled
+  // health, and not before
   const s = h.G.world.spawn;
   run(h, 0.2, () => a.at(s.x, s.z));
-  const half = w.def.hp / 2;
-  hit(a, w, 400);
-  hit(a, w, w.hp - Math.ceil(half) - 1);
-  assert.ok(w.hp > half, "health " + w.hp);
+  const mark = w.def.hp * 0.75;
+  hit(a, w, w.hp - Math.ceil(mark) - 1);
+  assert.ok(w.hp > mark, "health " + w.hp);
   assert.equal(w.phase, 1, "phase 2 at " + w.hp);
   hit(a, w, 2);
-  assert.ok(w.hp < half && w.hp > 620 / 2, "health " + w.hp);
+  assert.ok(w.hp < mark && w.hp > 620, "health " + w.hp);
   assert.equal(w.phase, 2);
 });
 // Six husks awake, three beside each of two players standing d metres apart
@@ -1964,15 +1966,16 @@ check("a death at the boss feeds it", () => {
   run(h, 1 / 60, both);
   assert.equal(w.hp, w.def.hp);
   assert.equal(fed(b).length, 2);
-  // in its second phase, fed above half: still the second phase
+  // in its second phase, fed above its first mark (75%): still the second
+  // phase
   dead(false);
   run(h, 0.2, both);
   hit(a, w, 400);
-  hit(a, w, w.hp - w.def.hp * 0.4);
+  hit(a, w, w.hp - w.def.hp * 0.6);
   assert.equal(w.phase, 2);
   dead(true);
   run(h, 1 / 60, both);
-  assert.ok(w.hp > w.def.hp / 2, "health " + w.hp);
+  assert.ok(w.hp > w.def.hp * 0.75, "health " + w.hp);
   assert.equal(w.phase, 2);
   assert.equal(fed(a).length, 3);
 });

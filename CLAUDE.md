@@ -28,6 +28,7 @@ subagent, name the notes files it must read.
 | Behaviour hooks, rat, drowned, brood mother, bloater, eel, siren, grabber (`05b`, `06b`, `07b`) | `d-enemies.md`, `enemies.md` | t23, t24 |
 | The crocodile boss and its cavern | `crocodile.md`, `d-enemies.md`, `enemies.md` | t25 |
 | Co-op, the host copy, the wire, the room screen, `relay/` (`06c`, `06d`, `07c`, `08e`) | `coop.md`; `relay/README.md` for the relay | coop-\*, t27, t28, t29 |
+| The Warden for two (`WARDEN2`, its phases, attention, aftershock, grab, seal) | `coop.md`, `enemies.md` | coop-warden, t32 |
 | Planning: project history, per-branch record, backlog | `status.md` | |
 
 **Keeping the notes.** Put what you learn or change in the system's notes file,
