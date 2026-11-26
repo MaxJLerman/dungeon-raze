@@ -769,8 +769,12 @@ function coopPuppet(e, dt, rt, drt) {
   e.aware = A.aware;
   e.phase = A.phase;
   if (A.dead) return coopDie(e, NET.live);
-  // a guess stands until the host has had the event it came from, or 2 s
-  if (e.ov && (A.ack >= e.ov.seq || (e.ov.life -= dt) <= 0)) e.ov = null;
+  // a guess stands until the host has had the event it came from, or 2 s;
+  // a seize's guess over with no held for this player was refused
+  if (e.ov && (A.ack >= e.ov.seq || (e.ov.life -= dt) <= 0)) {
+    if (e.ov.seize && p.state === "held" && p.hold && p.hold.by === e && !p.hold.sure) releaseHold();
+    e.ov = null;
+  }
   if (e.ov) {
     e.t += dt;
     return;
@@ -856,8 +860,12 @@ function coopPuppet(e, dt, rt, drt) {
 // than the host's hold so the host's crush or freed ends it. Struggling
 // works only while this page has no other player there, alive and in the
 // chamber to break the hold. The puppet is held in "hold" as a guess until
-// the host has had the report; refused, the guess runs out, the puppet
-// takes the host's state again and the hold frees this player by itself.
+// the host has had the report. Only the host's held naming this player
+// makes the hold sure (coopHold): a guess that ends without it was refused
+// and lets this player go (the host may hold the other player, so the
+// puppet's own state cannot be trusted to), and so does a held naming the
+// other player. The held always comes before the snapshot that acks the
+// report, and events are applied before the puppets.
 function coopSeize(e, an) {
   const S = WARDEN2.seize,
     mash = () => {
@@ -874,14 +882,15 @@ function coopSeize(e, an) {
   if (!grabPlayer(e, { dps: S.dps, tx, tz, speed: S.pull, max: S.hold + 1, mash })) return;
   e.state = "hold";
   e.t = 0;
-  e.ov = { seq: coopAsk("seized", e.id, an), life: COOP_GUESS };
+  e.ov = { seq: coopAsk("seized", e.id, an), life: COOP_GUESS, seize: true };
 }
 // The host's word on a hold of the Warden for two. Of the other player: its
-// line while the hold lasts, taken down when it ends. Of this player:
-// freed lets go; crush takes its damage while still held (so the moment
-// of safety the release gives cannot swallow it), lets go and throws this
-// player toward the chamber's centre. Either does nothing to a player not
-// held.
+// line while the hold lasts, taken down when it ends, and a held lets this
+// player go if the same Warden holds it (the host refused its seize). Of
+// this player: held makes its hold sure (coopSeize); freed lets go; crush
+// takes its damage while still held (so the moment of safety the release
+// gives cannot swallow it), lets go and throws this player toward the
+// chamber's centre. Each does nothing to a player not held.
 function coopHold(ev, quiet) {
   const [k, eid, pid] = ev,
     e = CC.byId.get(eid),
@@ -889,14 +898,18 @@ function coopHold(ev, quiet) {
     p = G.player;
   if (!e) return;
   if (pid !== CC.pid) {
-    if (k === "held") {
-      const m = NET.mates.find((o) => o.pid === pid);
-      if (m) m.heldBy = e;
-      if (!quiet) say(S.say, "", S.hold);
-    } else for (const o of G.msgs) if (o.text === S.say) o.t = 0;
+    const m = NET.mates.find((o) => o.pid === pid);
+    if (k !== "held") return coopMateLet(m);
+    if (m) m.heldBy = e;
+    if (!quiet) say(S.say, "", S.hold);
+    if (p.state === "held" && p.hold && p.hold.by === e) releaseHold();
     return;
   }
-  if (k === "held" || p.state !== "held") return;
+  if (p.state !== "held") return;
+  if (k === "held") {
+    if (p.hold.by === e) p.hold.sure = true;
+    return;
+  }
   if (k === "freed") return releaseHold();
   hurtPlayer(S.crush, e, { dmg: S.crush, unb: true });
   if (p.state !== "held") return;
@@ -911,6 +924,12 @@ function coopHold(ev, quiet) {
   p.kz = (dz / d) * S.toss * 9;
   p.state = "hit";
   p.t = 0;
+}
+// The other player's hold is over, by the host's word or with none (the
+// Warden died or roared, a reset): its line comes down and it is drawn free.
+function coopMateLet(m) {
+  if (m) m.heldBy = null;
+  for (const o of G.msgs) if (o.text === WARDEN2.seize.say) o.t = 0;
 }
 // A death the host decided: the look and sound of kill(), none of its
 // rewards, and those only when loud and within COOP_HEAR of this player.
@@ -1300,7 +1319,10 @@ function coopMate(m, dt, rt) {
   m.z = z;
   m.yaw = B ? A.yaw + angDiff(A.yaw, B.yaw) * k : A.yaw;
   m.move = A.move && MOVES[A.move] ? A.move : null;
+  const was = m.state;
   m.state = A.state === "attack" && !m.move ? "free" : A.state;
+  // a hold that ended with no word from the host
+  if (m.heldBy && was === "held" && m.state !== "held") coopMateLet(m);
   m.t = A.tt + (rt - A.t);
   m.speed = A.speed;
   m.walk += m.speed * dt * 2.1;

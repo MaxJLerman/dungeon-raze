@@ -1429,7 +1429,7 @@ function render() {
   // an aftershock, at the radius wavesUpdate judges, o.band deep
   for (const w of G.waves) {
     const o = w.o,
-      rr = (w.t - o.wait) * o.speed;
+      rr = waveR(w);
     if (rr > 0) R.ring(w.x, 0.2, w.z, Math.max(0, rr - o.band / 2), rr + o.band / 2, RED[0], RED[1], RED[2], 1.4);
   }
   R.end();

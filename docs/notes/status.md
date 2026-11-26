@@ -156,7 +156,8 @@
       0.25 s, `rec` 0.9 s, `reach` 4.6 m, `arc` 1.2, `again` 14 s, `hold`
       4 s, `dps` 6, `breakAt` 80 damage from the other player, `stag` 2 s,
       `crush` 40, `toss` 6 m, `slack` 2 m, `late` 0.6 s, `front` 1.6 m,
-      `pull` 8 m/s, and the line "Break its grip!".
+      `pull` 8 m/s, `unseen` 0.5 s (the host lets go of a player it has
+      never seen held), and the line "Break its grip!".
     - `seal`: `n` 24 capsules, `ring` 12.5 m, `rock` 1.4 m, `warn` 1.4 s,
       `sweep` 0.6 s, `door` 2 m, `fade` 0.4 s.
     - `dark`: `floor` 0.12 (the crystals), `amb` 0.12 (the cave's ambient

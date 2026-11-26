@@ -249,7 +249,8 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   on the host in `enemyUpdate`'s slam landing, on a page in `coopPuppet`'s
   (once a slam, as the ring and the sound are). `G.waves` is a list of `{ x,
   z, t, o, hit }`; `wavesUpdate(dt)`, beside `shocksUpdate` in `update`,
-  ages them. The ring's radius is `(t - o.wait) * o.speed`. Each page judges
+  ages them. The ring's radius is `waveR(w)`, `(t - o.wait) * o.speed`, the
+  one helper `wavesUpdate` and the drawing both read. Each page judges
   it on its own player only: on the step the radius plus half of `o.band`
   reaches the player's distance from `(x, z)` it calls `hurtPlayer(o.dmg,
   null, { dmg: o.dmg, px: x, pz: z })` once and sets `hit`, so a dodge in
@@ -281,7 +282,7 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   roar whose phase is not 2, 3 or 4. **The grab** (`WARDEN2.seize`, `{ from:
   3, trig: 5, wind: 0.9, act: 0.25, rec: 0.9, reach: 4.6, arc: 1.2, again:
   14, hold: 4, dps: 6, breakAt: 80, stag: 2, crush: 40, toss: 6, slack: 2,
-  late: 0.6, say: "Break its grip!", front: 1.6, pull: 8 }`). The
+  late: 0.6, say: "Break its grip!", front: 1.6, pull: 8, unseen: 0.5 }`). The
   definition's `seize` is `{ style: "seize", kind: "seize", unb: true, from,
   trig, wind, act, rec, reach, arc, dmg: 0 }`, chosen as its other attacks
   are from phase 3. `EBEH.warden` (each hook returns at once without
@@ -289,7 +290,8 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   steps a Warden for two: a page's `EBEH` has no warden entry, and
   `tests/t23.mjs` checks that. `atkOk` leaves the seize out while
   `e.seizeT > 0`, `step` counts `e.seizeT` down, and `wind` sets it to
-  `again` as the seize's wind-up ends. Its act has no hit on the host.
+  `again` as the seize's wind-up ends and clears `e.seizedAn` (below). Its
+  act has no hit on the host.
   **Who judges what:** the page of the player it reaches judges it, in
   `coopPuppet`'s hit test with the melee test (`reach`, `arc`): on a hit
   (`coopSeize`) it calls `grabPlayer(e, { dps, tx, tz, speed: pull, max:
@@ -297,32 +299,49 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   true only while `NET.mates` has nobody there (not away), alive and within
   `G.world.boss.r` of the chamber's centre. A dodge's iframes make
   `grabPlayer` refuse, and a guard does nothing (unblockable). If it holds,
-  the puppet is put in `"hold"` under a guess (`e.ov`, `COOP_GUESS`) and the
-  page sends `["seized", seq, eid, an]`. The host (`ASK.seized`) takes it
-  when the enemy is a living `duo` boss whose `atk` is the seize, `e.an ===
-  an`, it is in `"act"` or no more than `late` s into `"rec"`, it holds
-  nobody, and the player is within `reach + px.r + slack`: `e.state =
-  "hold"`, `e.t = 0`, `e.held` the pid, `e.holdDmg = 0`, and all are sent
-  `["held", eid, pid, t]`. Anything else is nothing: the page's guess ends
-  (the ack, or its life), the puppet takes the host's state, and
-  `heldUpdate` frees the player because its holder is not in `"hold"`.
+  the puppet is put in `"hold"` under a guess (`e.ov`, `COOP_GUESS`, with
+  `seize` set) and the page sends `["seized", seq, eid, an]`. The host
+  (`ASK.seized`) takes it when the enemy is a living `duo` boss whose `atk`
+  is the seize, `e.an === an`, `an` is not `e.seizedAn`, it is in `"act"`
+  or no more than `late` s into `"rec"`, it holds nobody, and the player is
+  within `reach + px.r + slack`: `e.state = "hold"`, `e.t = 0`, `e.held`
+  the pid, `e.holdDmg = 0`, `e.seizedAn = an`, and all are sent `["held",
+  eid, pid, t]`. So a swing holds once, however its hold ends: a late or
+  repeated report of the same swing is refused. `e.seizedAn` is -1 when the
+  enemies are numbered (`number()`) and again as each seize's wind-up ends,
+  so the 256-swing wrap of `an` never refuses a real seize. Anything else is
+  nothing. **Only the host's word makes a page's hold sure**: its `held`
+  naming this player sets `p.hold.sure`. The page lets this player go
+  (`releaseHold()`, nothing more than the hold's ticks so far, no crush)
+  when a `held` names the other player for the enemy that is `p.hold.by`
+  (both players were in the arc and the other's report reached the host
+  first), and when the seize's guess ends (the ack, or its life) without
+  its own `held` having come. This is sound because the host sends `held`
+  before the snapshot that acks the report, the link keeps their order, and
+  a page applies events before it moves the puppets. `heldUpdate` still
+  frees a held player whose holder is not in `"hold"`.
   **The hold on the host** (`holding`, each tick after `enemyUpdate`, which
   has no case for `"hold"`, so it stands): `e.t` counts up; at `hold` s
   it sends `["crush", eid, pid, t]` and goes to `"rec"`. It lets go with
   nothing sent, to `"rec"`, when the held player is dead, away, or no longer
-  `"held"` once the host has seen them `"held"` (`e.heldSeen`) or 0.5 s has
-  passed (a page's state arrives a little after its `seized`), and with no
+  `"held"` once the host has seen them `"held"` (`e.heldSeen`) or `unseen`
+  s have passed (a page's state arrives a little after its `seized`), and with no
   state change when something else took it out of `"hold"` (a roar, a
   death). `ASK.hit` adds the health a hit from the other player took off
   (the number the attention score uses) to `e.holdDmg`; at `breakAt`, or
   when any hit leaves it in `"stagger"` (a posture break), it is staggered
-  with `e.dur` `stag` and all are sent `["freed", eid, pid, t]`. Every way
+  with `e.dur` `stag` and all are sent `["freed", eid, pid, t]`. A `parry`
+  ask while it holds is refused, as one while it staggers or roars is: only
+  a break, a crush or a let-go ends a hold. Every way
   out sets `e.held = 0` and `e.seizeT = again` (`letGo`). `pick` keeps its
   target while it holds. **On the page** `held`, `freed` and `crush` wait
   for the drawn time (`COOP_EV_T`, index 3) and go to `coopHold`. `held`
-  naming the other player says `say` for `hold` s (taken down by that
-  player's `freed` or `crush`) and sets the mate's `heldBy` for drawing.
-  Naming this player: `freed` calls `releaseHold()`; `crush` takes `crush`
+  naming the other player says `say` for `hold` s and sets the mate's
+  `heldBy` for drawing; both go (`coopMateLet`) with that player's `freed`
+  or `crush`, or when the mate's drawn state leaves `"held"` (`coopMate`),
+  so a hold that ends with no event (the Warden dies or roars, a reset)
+  takes them down too. Naming this player: `held` makes the hold sure
+  (above); `freed` calls `releaseHold()`; `crush` takes `crush`
   through `hurtPlayer` with `unb` while still held (a hit on a held player
   is soft, so no knock and no state change, and the release's `HOLD.safe`
   cannot swallow it), then `releaseHold()`, then a knock of `toss * 9`
@@ -341,8 +360,9 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   that takes it from 1 above that mark to 1 under, roar and seal events
   included (both go through the host's one path, `rose(e, ph0)`, which
   `ASK.hit` also calls),
-  and returns the enemy; `null` with no such Warden or once it is in phase
-  `n` or later. **The seal** (`WARDEN2.seal`, `{ n: 24, ring: 12.5, rock:
+  and returns the enemy; `null` with no such Warden, once it is in phase
+  `n` or later, or when the phase did not rise to `n` (outside its chamber
+  `hpFloor` holds it at phase 3, so `phase(4)` there is `null`). **The seal** (`WARDEN2.seal`, `{ n: 24, ring: 12.5, rock:
   1.4, warn: 1.4, sweep: 0.6, door: 2, fade: 0.4 }`; its functions are in
   `06b`, since the host and both pages run them). As a Warden for two enters
   phase 4 the host's `rose` calls `sealBegin()`, raises `ver` and sends
@@ -351,8 +371,10 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   `sealUpdate(dt)` while it stands. `sealRing(w)` is the `n` capsules `[ax,
   az, bx, bz]` end to end on the circle of radius `ring` round `w.boss`,
   the first from angle 0, in order (pure, so the three copies lay the same
-  rock). Each is an entry of `G.chunks` with `seal` and its own `ends`,
-  shown by the crocodile's dust for its warning and landing `warn + sweep *
+  rock). Each is an entry of `G.chunks` with `seal`, its own `ends` and its
+  own `warn`, `rockR` (`rock`) and `fallR` (`rock + 0.2`), which `drawDust`
+  reads in place of `CROC`'s (a crocodile's chunk has none, so its look is
+  `CROC`'s), shown by that dust for its warning and landing `warn + sweep *
   i / n` s after the start (the last at 1.975 s, inside the 2.2 s roar):
   `world.addRock` with radius `rock`, its rock id in `ids`, every enemy's
   route dropped, and any body its rock reaches moved radially in to open
@@ -780,7 +802,7 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
     solo definition untouched and a cave for one's Warden as today, a roar
     at each mark with its phase to both players, one roar for a hit across
     two marks, a phase that does not fall, the phase 4 roar's 2.2 s and
-    `host.phase`. Its helpers (`duo`, `inChamber`, `stand`, `strike`,
+    `host.phase` (and its `null` when `hpFloor` keeps the phase). Its helpers (`duo`, `inChamber`, `stand`, `strike`,
     `strikeTo`, and for the grab `seizeOn`, `seized`, `untilFree`) are for
     the checks later parts of this fight add. It also
     checks that the slam for two carries the aftershock, the solo slam does
@@ -792,7 +814,10 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
     from the other player breaking it into a 2 s stagger, the held player's
     own hits not counting, a posture break as a break, the crush at 4 s, the
     hold let go with nothing sent when the held player dies, goes away, is
-    free again, or is never seen held, and 14 s before it seizes again; and
+    free again, or is never seen held, 14 s before it seizes again, a
+    second report of the same swing after its hold ended refused (from
+    either player) while a new swing is taken, and a `parry` during a hold
+    refused; and
     the seal: on big caves 1 to 40 a flood from the centre (0.25 m grid,
     `fieldAt` at least 0.4) never passes 12.5 m, a body of 0.45 has room
     10 m out on 72 headings and the door spot is clear, two hosts of seed 7
@@ -802,8 +827,8 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
     in from 13 m and from tunnel mouths 15.6 to 16.45 m out past the rock's
     reach (three points each on caves 7, 3, 11 and 99, found on a second
     copy of the cave with the ring laid), a sealed Warden with one player dead and the other away
-    for 13 s unmoved, unhealed and unreset (then it hunts the one who comes
-    back), an unsealed one still walking home and resetting, a wipe and its
+    for 13 s unmoved, unhealed and unreset (then it comes for the one who
+    comes back, across the chamber), an unsealed one still walking home and resetting, a wipe and its
     death lifting the seal (route out, gate), and a join, a rejoin and a
     page whose `at` came after the fall told it stands
     (`host.seal`, for tests: `{ table, ring, door, now }`).
@@ -853,15 +878,20 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
     crush lands at about 4 s for 40 and throws this player toward the
     centre, with the mate dead struggling frees the player, a refused seize
     (the host's swing number moved on, its `held` dropped by `tamper`) frees
-    the player well inside the guess's life with no crush, and the free
-    player (as pid 2) is told "Break its grip!"; look at
+    the player well inside the guess's life with no crush, both players in
+    the arc with the mate's report first (80 ms of ping) frees this player
+    within 0.5 s, hurt by a tick at most, able to attack, the host never
+    holding it and no crush, and the free player (as pid 2) is told "Break
+    its grip!", the line coming down and the mate drawn free when the hold
+    ends with no event; look at
     `shots/t32-seize-wind.png` (both arms wide, lit red) and
     `shots/t32-held.png` (this player up against the Warden's chest, its
     right arm raised). The seal (`sealSetup`, `untilDown`, `walkOut`): 24
-    capsules in warning at 0.5 s and the ring down by 2.1 s with rock
-    under every capsule, the page's field the host's; this player in the
+    capsules in warning at 0.5 s and the ring down by 2.3 s with rock
+    under every capsule (the host's is down at 1.975 s and the page draws
+    about 100 ms behind it), the page's field the host's; this player in the
     room before the chamber brought to the door spot (facing the centre,
-    under a fade that clears in 0.4 s); one standing 12.5 m out pushed to
+    under a fade that clears in 0.4 s, and a hit still lands under it: no `G.trans`); one standing 12.5 m out pushed to
     10.5 m, not to the door; forward toward the tunnel for 5 s stays within
     11.2 m; a respawn at the door spot with the ring and 24 heaps back and
     no way out; a join while the host is in phase 4 (`before`) told `seal`
@@ -938,9 +968,15 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
 - The Warden for two's grab is untested by hand: its numbers (`WARDEN2.seize`)
   are first guesses, and so is the throw toward the chamber's centre, which
   can carry the player through the Warden itself when it stands between
-  them and the centre (bodies do not block the player). A refused seize
-  holds the player for a round trip and a little more before it frees them;
-  each tick of that hold hurts as a real one does.
+  them and the centre (bodies do not block the player). A seize the host refuses holds
+  the player on their page until the page learns of it, and each tick of
+  that hold hurts as a real one does (3 every 0.5 s): when the other
+  player's report reached the host first, until that player's `held` is
+  drawn, about a one-way trip and the drawn delay (0.15 s at 80 ms of ping
+  in t32); for any other refusal (too late, too far, a swing the host is
+  not in, a swing already held once), until the snapshot that acks the
+  report is drawn, a round trip and the drawn delay, or the guess's 2 s if
+  no ack comes.
 - The Warden for two's seal is untested by hand (`WARDEN2.seal`). A page
   that lays it from a description (a join, a respawn, a `reset`) has the
   whole ring at once while the host's may still be falling for up to 2 s.

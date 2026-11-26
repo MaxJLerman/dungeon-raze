@@ -625,6 +625,39 @@ check("it does not seize again for 14 seconds", () => {
   assert.equal(s.boss.state, "act");
   assert.ok(s.boss.seizeT > 13.9, "seizeT " + s.boss.seizeT);
 });
+check("a second report of the same swing after the hold ends is refused", () => {
+  const { h, a, b, boss, keep, qa } = seizeOn();
+  seized(a, boss);
+  assert.equal(boss.state, "hold");
+  // seen held, then free again: it lets go into its recovery, still inside
+  // the time a late report is taken
+  run(h, 0.3, () => keep());
+  run(h, 0.1, () => keep({}));
+  assert.equal(boss.state, "rec");
+  assert.ok(boss.t <= 0.6, "t " + boss.t);
+  seized(a, boss);
+  assert.notEqual(boss.state, "hold", "the same player again");
+  b.at(qa.x, qa.z);
+  seized(b, boss);
+  assert.notEqual(boss.state, "hold", "the other player");
+  assert.equal(boss.held, 0);
+  assert.equal(named(b, "held").length, 1);
+  // a new swing of the seize is taken again
+  Object.assign(boss, { state: "act", t: 0, an: (boss.an + 1) & 255 });
+  seized(a, boss);
+  assert.equal(boss.state, "hold", "a new swing");
+});
+check("a parry ask during the hold is refused", () => {
+  const { h, a, b, boss, keep } = seizeOn();
+  seized(a, boss);
+  run(h, 0.3, () => keep());
+  const post = boss.posture;
+  b.ev("parry", boss.id, boss.an, 30);
+  run(h, 0.1, () => keep());
+  assert.equal(boss.state, "hold");
+  assert.equal(boss.held, a.pid);
+  assert.equal(boss.posture, post);
+});
 
 // The seal (WARDEN2.seal): in phase 4 a ring of rock closes the chamber
 // (docs/notes/coop.md).
@@ -762,6 +795,10 @@ check("its health holds at the quarter mark outside its chamber", () => {
   assert.equal(boss.hp, 387.5);
   assert.equal(boss.phase, 3);
   assert.equal(h.G.seal, null);
+  // host.phase cannot raise it here either, and says so
+  assert.equal(h.phase(4), null);
+  assert.equal(boss.phase, 3);
+  assert.equal(boss.hp, 387.5);
   Object.assign(boss, { x: B.x, z: B.z });
   strike(a, boss, 10);
   assert.equal(boss.phase, 4);
@@ -850,13 +887,19 @@ check("sealed with nobody to fight it stays", () => {
   assert.equal(warden(h), boss, "the enemies were made again");
   assert.ok(h.G.seal && h.G.seal.down, "the seal went");
   assert.equal(named(a, "reset").length, 0, "a wipe");
-  // the fight goes on once a player is live
+  // the fight goes on once a player is live: b comes back across the
+  // chamber from where it waits (it stood on b's old spot, since nothing on
+  // the host pushes it off a proxy), and it comes for b
+  const B = h.G.world.boss,
+    qc = inChamber(h, 6, Math.atan2(x - B.x, z - B.z) + Math.PI),
+    d0 = Math.hypot(x - qc.x, z - qc.z);
   run(h, 3, () => {
     dead();
-    b.at(qb.x, qb.z);
+    b.at(qc.x, qc.z);
   });
+  const d1 = Math.hypot(boss.x - qc.x, boss.z - qc.z);
   assert.equal(boss.tg, b.pid);
-  assert.ok(Math.hypot(boss.x - x, boss.z - z) > 0.5 || boss.state !== "chase", "it did not move on b");
+  assert.ok(d1 < d0 - 1, "from " + d0.toFixed(2) + " m to " + d1.toFixed(2) + " m of b");
 });
 check("unsealed, today's walk home still resets it", () => {
   const { h, a, b, boss } = duo(),

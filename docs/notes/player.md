@@ -21,7 +21,10 @@
   struggling does not work; while it does, it ends at `HOLD.max`, so a hold
   whose struggle starts working after 2 s ends at once. The Warden for
   two's seize passes `max: 5` and a `mash` that is true only while no other
-  player is there, alive and in the chamber (`coop.md`). The HUD's "Break
+  player is there, alive and in the chamber (`coop.md`); its page sets
+  `p.hold.sure` once the host has said it holds this player, and lets go
+  of a hold that is not sure when the host turns out to hold the other
+  player or has refused the report. The HUD's "Break
   free" prompt shows only while struggling works. Every `tick` (0.5 s) it
   deals `dps * tick` through `hurtPlayer` with
   `atk.dot`. It ends when the time is up or the holder dies or leaves

@@ -60,7 +60,9 @@
   `coopSolo` made is replaced. A Phase button calls `host.phase(n)` on the
   run and returns to play (a roar, and at 4 the seal and the dark, as a real
   hit does it); it does nothing with no live run, or once the Warden is in
-  that phase or later. `devWardenRun()` is the run while the page is still in
+  that phase or later, and stays on the dev screen when the phase did not
+  rise to it (`host.phase` returns `null`: outside its chamber `hpFloor`
+  holds it at phase 3). `devWardenRun()` is the run while the page is still in
   it, else `null`. Nothing is saved (`DEV.run` follows the run, as with the
   lag dial). The pause menu's Exit and `enterHub` end the room, so `NET` is
   `null`, the link closed and `G.seal` `null` afterwards; Return to base in a

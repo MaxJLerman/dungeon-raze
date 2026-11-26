@@ -1772,7 +1772,9 @@ function crocRollSpot(e, c) {
 //          breakAt damage from the other player in that time breaks it
 //          (staggered stag s); else it crushes for crush and throws the
 //          player toss m toward the chamber's centre. say is the other
-//          player's line while it holds (06d, 07c)
+//          player's line while it holds. The host lets go of a player it
+//          has never seen held after unseen s (a page's state comes a little
+//          after its report) (06d, 07c)
 //   seal   the chamber closing as phase 4 begins: n capsules of rock of
 //          radius rock m end to end on a circle of radius ring m round the
 //          chamber's centre (sealRing), each shown by its dust for warn s
@@ -1811,6 +1813,7 @@ const WARDEN2 = {
     say: "Break its grip!",
     front: 1.6,
     pull: 8,
+    unseen: 0.5,
   },
   seal: { n: 24, ring: 12.5, rock: 1.4, warn: 1.4, sweep: 0.6, door: 2, fade: 0.4 },
   dark: { floor: 0.12, amb: 0.12, lamp: 0.25, over: 2 },
@@ -1850,10 +1853,13 @@ function sealDoor(w) {
   return { x: q.x, z: q.z, yaw: Math.atan2(B.x - q.x, B.z - q.z) };
 }
 // Capsule i of the ring as an entry of G.chunks, t seconds from landing.
+// Its warning is drawn for warn s, with the rock's radius and its ring
+// 0.2 m outside it (drawDust).
 function sealChunk(w, c, i, t) {
   const [ax, az, bx, bz] = c,
     x = (ax + bx) / 2,
-    z = (az + bz) / 2;
+    z = (az + bz) / 2,
+    S = WARDEN2.seal;
   return {
     x,
     z,
@@ -1865,6 +1871,9 @@ function sealChunk(w, c, i, t) {
     ceil: w.ceilAt(x, z),
     ends: c,
     seal: true,
+    warn: S.warn,
+    rockR: S.rock,
+    fallR: S.rock + 0.2,
   };
 }
 // The seal begins, adv seconds ago: each capsule in its warning, capsule i

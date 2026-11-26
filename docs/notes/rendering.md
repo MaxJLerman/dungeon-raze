@@ -18,8 +18,9 @@
 - **Aftershock rings** (`G.waves`, the Warden for two's slam, `coop.md`) are
   drawn straight from the list, not from `G.rings`: in the effects pass after
   the rings, `R.ring` from `rr - band / 2` to `rr + band / 2` at height 0.2 in
-  `RED`, where `rr` is the radius `wavesUpdate` judges
-  (`(t - o.wait) * o.speed`), so what is drawn is where it hurts. Nothing is
+  `RED`, where `rr` is `waveR(w)` (`06_game.js`, `(t - o.wait) *
+  o.speed`), the radius `wavesUpdate` judges, so what is drawn is where it
+  hurts. Nothing is
   drawn before `o.wait`. `tests/t32.mjs` takes `shots/t32-wave.png`.
 - **The Warden for two's seize** (`coop.md`). `atkPose` style `"seize"`:
   the wind-up throws both arms wide (Z out to 1.35 rad, a little forward),
@@ -37,7 +38,12 @@
   own `ends`: `drawChunks` heaps them from one end to the other (3.27 m)
   in place of 0.95 m either side of the centre, so the 24 meet end to end
   with no gap; the crocodile's chunks have no `ends` and are drawn as
-  before. Their warning is `drawDust`'s. `tests/t32.mjs` takes
+  before. Their warning is `drawDust`'s, which reads a chunk's own `warn`,
+  `rockR` and `fallR` when it has them and `CROC`'s otherwise: a seal
+  capsule carries `WARDEN2.seal`'s `warn` and `rock`, and a ring 0.2 m
+  outside the rock (`sealChunk`), so tuning the seal moves its warning and
+  tuning the crocodile does not (today both come to 1.4 s, 1.4 m and 1.6 m,
+  so the look is unchanged). `tests/t32.mjs` takes
   `shots/t32-warn.png` and `shots/t32-ring.png`.
 - **The dark of the Warden for two's last phase** (`coop.md`).
   `darkK(f)` (`06b`) is `1 + (f - 1) * G.dark.v`, which is 1 whenever

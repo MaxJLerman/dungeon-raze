@@ -603,13 +603,63 @@ export default [
     },
   },
   {
+    name: "seized with the mate, the one the host holds second is freed",
+    eval: () => {
+      const { G } = DF,
+        w2 = window.__w2;
+      G.manual = true;
+      // both players in the seize's arc; this page's report is on the wire
+      // (80 ms of ping) when the mate's reaches the host, so the host holds
+      // the mate and refuses this page's
+      const c = w2.seizeSetup({ two: true, seed: 99, mate: "idle", ping: 80 }),
+        hb = w2.seize(),
+        m = w2.r.mate,
+        me = w2.me();
+      let hostMe = false;
+      c.held = w2.seizeRun(2, () => {
+        if (hb.held === me) hostMe = true;
+      }) > 0;
+      const p = G.player;
+      m.p.state = "held";
+      m.ask("seized", hb.id, hb.an);
+      c.mateHeld = hb.state === "hold" && hb.held === m.pid;
+      const hp0 = p.hp;
+      let n = 0;
+      w2.step(3, () => {
+        if (hb.held === me) hostMe = true;
+        if (p.state !== "held") return false;
+        n++;
+      });
+      // free within a round trip and the drawn delay, hurt by a tick at most
+      const lost = hp0 - p.hp;
+      c.free = p.state !== "held" && n / 60 <= 0.5;
+      c.lost = lost <= 3 + 1e-9;
+      c.never = !hostMe;
+      c.told = G.msgs.some((o) => o.text === "Break its grip!" && o.t > 0);
+      // it can act: a light attack starts
+      DF.taps[DF.BIND.light] = true;
+      let acted = false;
+      w2.step(0.2, () => {
+        if (p.state === "attack") {
+          acted = true;
+          return false;
+        }
+      });
+      c.acted = acted;
+      c.noCrush = w2.noCrush(4.5);
+      return { pass: Object.values(c).every((v) => v === true), c, took: n / 60, lost: +lost.toFixed(2) };
+    },
+  },
+  {
     name: "the free player is told",
     eval: () => {
       const { G } = DF,
         w2 = window.__w2;
       G.manual = true;
-      // this page is the friend; the scripted host player is seized
-      w2.start({ two: true, seed: 99, mate: "idle", pid: 2 });
+      // this page is the friend; the scripted host player is seized. The
+      // names of the events the host sends this page, in order
+      const sent = [];
+      w2.start({ two: true, seed: 99, mate: "idle", pid: 2, tamper: (ev) => (sent.push(ev[0]), ev) });
       const c = { stood: w2.standIn(8), awake: w2.wake(), entered: !!w2.host().phase(3) };
       DF.devGod(true);
       try {
@@ -633,7 +683,24 @@ export default [
           return false;
         }
       });
-      return { pass: Object.values(c).every((v) => v === true), c, msgs: G.msgs.map((o) => o.text) };
+      // the hold ends with no word from the host (the held page is free
+      // again, so the host lets go silently): the line comes down and the
+      // mate is no longer drawn held, long before the line's 4 s
+      const mt = DF.net().mates[0],
+        up = () => G.msgs.some((o) => o.text === "Break its grip!" && o.t > 0);
+      w2.step(0.3);
+      c.drawnHeld = mt.state === "held" && mt.heldBy === w2.boss();
+      m.p.state = "free";
+      let k = -1;
+      w2.step(1.5, (i) => {
+        if (!up() && !mt.heldBy) {
+          k = i;
+          return false;
+        }
+      });
+      c.down = k >= 0;
+      c.silent = hb.state !== "hold" && !sent.includes("freed") && !sent.includes("crush");
+      return { pass: Object.values(c).every((v) => v === true), c, took: k / 60, msgs: G.msgs.map((o) => o.text) };
     },
   },
   {
@@ -758,8 +825,11 @@ export default [
       const warn = G.chunks.filter((k) => k.seal && !k.id).length;
       c.warn = warn === 24 && !!G.seal && !G.seal.down;
       c.notYet = w2.mids().every((q) => G.world.fieldAt(q.x, q.z) > 0);
+      // the host's last capsule lands at 1.975 s; this page draws about
+      // 100 ms behind the host, so its ring is down near 2.1 s, and 2.3 s
+      // leaves room for the clock's catching up
       const n = w2.untilDown(2);
-      c.down = n >= 0 && (n + 30) / 60 <= 2.1;
+      c.down = n >= 0 && (n + 30) / 60 <= 2.3;
       c.rock = w2.ringIn();
       c.heaps = w2.heaps() === 24;
       // the page's rock is the host's
@@ -811,7 +881,10 @@ export default [
       c.door = at >= 0 && (at - down) / 60 <= 0.6;
       c.faded = G.fade > 0;
       c.facing = Math.abs(DF.angDiff(p.yaw, Math.atan2(w.boss.x - p.x, w.boss.z - p.z))) < 0.1;
-      // the fade is over within its own length, and hurtPlayer was never stopped
+      // the fade is not a transition, so a hit still lands under it
+      c.noTrans = !G.trans;
+      c.hurts = DF.hurtPlayer(1, null, { dmg: 1, px: w.boss.x, pz: w.boss.z }) !== "none";
+      // the fade is over within its own length
       w2.step(DF.WARDEN2.seal.fade + 0.05);
       c.clear = G.fade === 0;
       return { pass: Object.values(c).every((v) => v === true), c, took: (at - down) / 60 };
@@ -1049,13 +1122,19 @@ export default [
         // The brightness of the next frame drawn, read from the canvas in
         // the same task as the draw (the drawing buffer is not kept): the
         // mean of its luminance and the mean of its brightest tenth.
+        // A frame that is never drawn fails the step after 15 s.
         shade: () =>
-          new Promise((res) => {
+          new Promise((res, rej) => {
             const R = DF.R,
-              end = R.end;
+              end = R.end,
+              late = setTimeout(() => {
+                R.end = end;
+                rej(new Error("no frame drawn in 15 s"));
+              }, 15000);
             R.end = function () {
               end.apply(this, arguments);
               R.end = end;
+              clearTimeout(late);
               const W = 192,
                 H = 108,
                 cv = document.createElement("canvas");

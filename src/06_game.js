@@ -5597,6 +5597,8 @@ function shocksUpdate(dt) {
 function waveStart(x, z, o) {
   G.waves.push({ x, z, t: 0, o, hit: false });
 }
+// A wave's radius now: where it is judged and where it is drawn.
+const waveR = (w) => (w.t - w.o.wait) * w.o.speed;
 // A wave hurts this player once, on the step its front edge (half a band
 // ahead of the radius) reaches them; hurtPlayer judges it, so a dodge, a
 // parry or a guard facing its centre answers it as they answer a slam.
@@ -5606,12 +5608,12 @@ function wavesUpdate(dt) {
   for (const w of G.waves) {
     w.t += dt;
     const o = w.o;
-    if (!w.hit && (w.t - o.wait) * o.speed >= Math.hypot(p.x - w.x, p.z - w.z) - o.band / 2) {
+    if (!w.hit && waveR(w) >= Math.hypot(p.x - w.x, p.z - w.z) - o.band / 2) {
       w.hit = true;
       hurtPlayer(o.dmg, null, { dmg: o.dmg, px: w.x, pz: w.z });
     }
   }
-  G.waves = G.waves.filter((w) => (w.t - w.o.wait) * w.o.speed <= w.o.reach);
+  G.waves = G.waves.filter((w) => waveR(w) <= w.o.reach);
 }
 function holesUpdate(dt) {
   for (const h of G.holes) {

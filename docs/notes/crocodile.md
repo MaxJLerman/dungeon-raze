@@ -202,7 +202,9 @@ rockR` from it and `2 * rockR` from every other chunk; none tried
   and drops the chunks still in the air; a reset takes them all away.
   `drawDust` (`07b_dfx.js`) draws the warning: grit pouring from the
   roof through a haze, the rock's shadow growing on the floor and a ring
-  at `fallR` with a second closing in to land as they meet;
+  at `fallR` with a second closing in to land as they meet (a chunk
+  that carries its own `warn`, `rockR` and `fallR`, a capsule of the
+  Warden for two's seal, is drawn with those; the crocodile's carry none);
   `drawChunks` (`07_render.js`) draws the rock falling over the last
   0.3 s and the heap, built by the cave-in's `makeRubble` with wider
   rows (`CHUNK_ROWS`).

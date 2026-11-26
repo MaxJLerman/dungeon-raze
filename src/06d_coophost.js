@@ -194,8 +194,11 @@ const COOP_HOST = COOP_HEADLESS_HERE
           e.route = null;
           return true;
         },
+        // a new seize: the count starts, and its swing has had no report
         wind(e) {
-          if (e.def.duo && e.atk.kind === "seize") e.seizeT = WARDEN2.seize.again;
+          if (!e.def.duo || e.atk.kind !== "seize") return;
+          e.seizeT = WARDEN2.seize.again;
+          e.seizedAn = -1;
         },
         hpFloor(e) {
           const B = G.world.boss;
@@ -219,15 +222,15 @@ const COOP_HOST = COOP_HEADLESS_HERE
       // it crushes. It lets go with nothing sent when anything else has
       // taken it out of "hold" (a roar, a death; the held page then frees
       // itself), or when the held player is dead, away, or no longer
-      // "held" once the host has seen them held or half a second has passed
-      // (a page's state comes a little after its seized).
+      // "held" once the host has seen them held or seize.unseen seconds
+      // have passed (a page's state comes a little after its seized).
       function holding(e, dt) {
         const px = S.px.get(e.held);
         if (e.dead || e.state !== "hold") return letGo(e, false);
         e.t += dt;
         if (px && px.state === "held") e.heldSeen = true;
-        if (!px || px.away || px.state === "dead" || (px.state !== "held" && (e.heldSeen || e.t >= 0.5)))
-          return letGo(e, true);
+        const free = px && px.state !== "held" && (e.heldSeen || e.t >= WARDEN2.seize.unseen);
+        if (!px || px.away || px.state === "dead" || free) return letGo(e, true);
         if (e.t >= WARDEN2.seize.hold - 1e-9) {
           all(["crush", e.id, e.held, now()]);
           letGo(e, true);
@@ -288,10 +291,12 @@ const COOP_HOST = COOP_HEADLESS_HERE
           e.an = 0;
           e.pin = 0;
           e.tg = 0;
-          // a duo boss's scores by pid, and when it last turned
+          // a duo boss's scores by pid, when it last turned, and the
+          // swing whose seize it took (none)
           if (e.def.duo) {
             e.heed = {};
             e.heedAt = -Infinity;
+            e.seizedAn = -1;
           }
           S.byId.set(i, e);
         });
@@ -588,24 +593,27 @@ const COOP_HOST = COOP_HEADLESS_HERE
         // ["seized", seq, eid, an]: this player's page judged that the
         // Warden for two's seize of swing an landed on it. Taken when it is
         // in that swing of its seize, in the act or no more than seize.late
-        // into its recovery, holding nobody, and the player within its
-        // reach, their radius and seize.slack; then it holds them and both
-        // are told. Anything else is nothing: the page's guess runs out
-        // and it frees itself.
+        // into its recovery, holding nobody, the swing not one it has
+        // already taken a seize of (one hold a swing, however it ended), and
+        // the player within its reach, their radius and seize.slack; then
+        // it holds them and both are told. Anything else is nothing: the
+        // page's guess runs out and it frees itself.
         seized(px, [eid, an]) {
           const e = live1(eid),
             W = WARDEN2.seize;
           if (!e || !e.def.duo || !e.atk || e.atk.kind !== "seize" || e.an !== an || e.held) return;
+          if (an === e.seizedAn) return;
           if (!(e.state === "act" || (e.state === "rec" && e.t <= W.late))) return;
           if (Math.hypot(px.x - e.x, px.z - e.z) > e.atk.reach + px.r + W.slack) return;
-          Object.assign(e, { state: "hold", t: 0, held: px.pid, holdDmg: 0, heldSeen: false });
+          Object.assign(e, { state: "hold", t: 0, held: px.pid, holdDmg: 0, heldSeen: false, seizedAn: an });
           all(["held", e.id, px.pid, now()]);
         },
-        // as hurtPlayer's parry branch does to the enemy; one staggered or
-        // roaring on the host has nothing to be thrown out of
+        // as hurtPlayer's parry branch does to the enemy; one staggered,
+        // roaring or holding on the host has nothing to be thrown out of
+        // (a hold ends only by its break, its crush or its let-go)
         parry(px, [eid, , pp]) {
           const e = live1(eid);
-          if (!e || !num(pp) || pp < 0 || e.state === "stagger" || e.state === "roar") return;
+          if (!e || !num(pp) || pp < 0 || e.state === "stagger" || e.state === "roar" || e.state === "hold") return;
           e.posture += pp;
           e.postT = 0;
           if (e.posture >= e.def.posture) as(px, () => stagger(e));
@@ -896,8 +904,10 @@ const COOP_HOST = COOP_HEADLESS_HERE
       // For tests and the dev menu: the living Warden for two put at the
       // start of phase n (2 to 4), as a hit from nobody that takes it from
       // just above that mark to just under it does, roar and events
-      // included. Returns the enemy, or null when there is no such Warden or
-      // it is already in phase n or later (a phase never falls).
+      // included. Returns the enemy, or null when there is no such Warden,
+      // it is already in phase n or later (a phase never falls), or the
+      // phase did not rise to n (outside its chamber hpFloor holds it at
+      // phase 3).
       function phase(n) {
         const e = G.enemies.find((o) => o.def.duo && !o.dead),
           m = e && e.def.marks[n - 2];
@@ -906,7 +916,7 @@ const COOP_HOST = COOP_HEADLESS_HERE
         e.hp = e.def.hp * m + 1;
         as(ph, () => hitEnemy(e, 2, 0, { src: "", pre: true }));
         rose(e, ph0);
-        return e;
+        return e.phase === n ? e : null;
       }
       const host = {
         v: COOP_V,
