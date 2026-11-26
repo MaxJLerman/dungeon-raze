@@ -414,6 +414,10 @@ export default [
   return { pass: out.miss === 0 && out.views > 4000, ...out };`),
   sewer("the camera outside every piece still draws the player's pieces", `const ids = DF.visiblePieces(w, w.minX - 50, w.minZ - 50, w.spawn.x, w.spawn.z); return { pass: Array.isArray(ids) && ids.length > 0 };`),
   step("the cave and hall still draw whole", `DF.newRun(99); return { pass: G.world.pieces === null && DF.visiblePieces(G.world, 0, 0, 0, 0) === null && DF.genHub().pieces === null };`),
+  step("a world carries its own cut distance", `const w = DF.genSewer(5), full = DF.visiblePieces(w, w.spawn.x, w.spawn.z, w.spawn.x, w.spawn.z, false).length, cuts = { sewer: w.cut === DF.SEWER.piece.fog / DF.ENV_SEWER.fogD };
+  DF.newRun(99); cuts.cave = G.world.cut === 0; cuts.hall = DF.genHub().cut === 0;
+  w.cut = 1; const near = DF.visiblePieces(w, w.spawn.x, w.spawn.z, w.spawn.x, w.spawn.z, false).length;
+  return { pass: cuts.sewer && cuts.cave && cuts.hall && near < full, ...cuts, full, near };`),
   // 20 points along the way to the boss in three seeds, two frames drawn at
   // each: the most world triangles drawn in a frame stays within E cave 99's
   // whole count

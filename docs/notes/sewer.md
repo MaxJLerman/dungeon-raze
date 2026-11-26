@@ -5,8 +5,15 @@ in `world.md`.
 
 ## Layout, water, pillars and pieces (`03c_sewer.js`, `03d_sewerdress.js`, `03e_sewerview.js`)
 
-- **Pieces** (`sewerPieces` and `visiblePieces` in `03e_sewerview.js`). The
-  sewer's mesh is cut at build time into `world.pieces`, one
+- **Pieces** (`sewerPieces`, `cutPieces` and `visiblePieces` in
+  `03e_sewerview.js`). `cutPieces` is the cutter every world shares (its
+  arguments are in `world.md`); `sewerPieces` is the sewer's call of it and
+  hands it: each room's box and `roomField` (the boss cavern's circle),
+  `[nodes[e.a], ...e.bends, nodes[e.b]]` as a tunnel's line, `SEWER.piece.runs`,
+  `SEWER.tunR + 1` as the reach, `SEWER.piece.pad`, `.sample` and `.edge`, and
+  `sewerCut()` (`SEWER.piece.fog / ENV_SEWER.fogD`) as the cut distance, which
+  `genSewer` also returns as `world.cut`. The sewer's
+  mesh is cut at build time into `world.pieces`, one
   per room and one per stretch of `SEWER.piece.runs` tunnel runs. A piece is
   `{ first, count, box, sees, ... }`: a range of vertices, a bounding box and
   the ids of the pieces visible from anywhere in it. `sees` is worked out with
@@ -18,7 +25,7 @@ in `world.md`.
   are drawn whole.
 - `visiblePieces(w, cx, cz, px, pz, frustum = true)` returns the ids to draw:
   what the camera's piece and the player's piece see, within the fog distance
-  (`SEWER.piece.fog / ENV_SEWER.fogD`) and, with `frustum`, inside the view
+  (`w.cut`, the sewer's `SEWER.piece.fog / ENV_SEWER.fogD`) and, with `frustum`, inside the view
   (`R.boxVisible`). With the camera outside every piece it falls back to the
   player's piece and drops the view test (the camera can sit in rock).
   It returns `null` for a world without pieces. `07_render.js` calls
@@ -166,7 +173,8 @@ in `world.md`.
   and water materials, lamps, drips, the minimap, that every walkable point
   in sight of the camera (placed and pulled in as `camUpdate` does, on the
   way to the boss, in rooms and in tunnels, at several headings) within the
-  fog is in a listed piece, and the triangle budget. It also writes
+  fog is in a listed piece, that each world carries its own `cut`, and the
+  triangle budget. It also writes
   screenshots (`shots/t22-*.png`) of the cave, hall, sewer rooms, tunnels,
   bends, the boss cavern and wading, which are the only check on whether the
   sewer reads as brick and not as a brown cave: look at them.

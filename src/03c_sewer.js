@@ -1573,6 +1573,7 @@ function genSewer(seed) {
     pieces: cutUp.pieces,
     pieceGrid: cutUp.pieceGrid,
     pieceAt: cutUp.pieceAt,
+    cut: sewerCut(),
     crumble,
     pillars,
     pos: cutUp.pos,

@@ -51,6 +51,22 @@ H, seg)` runs marching squares and calls `seg` for each wall segment. `genWorld`
   (`{ x, z, yaw, kind }`, `kind` being `"grate"` or `"drain"`, for the drain grabber), `world.wallTunnels` the boss
   cavern's high wall outlets, and `world.shafts` its light shafts. All three
   are arrays on every world, empty in the cave and hall.
+- **Pieces and `cut`.** Every world has `pieces`, `pieceGrid`, `pieceAt` and
+  `cut`, a number of metres: how far a piece can see, which `visiblePieces`
+  (`03e_sewerview.js`) reads from the world. The cave and the hall have no
+  pieces (`pieces: null`) and `cut: 0`; the sewer's is
+  `SEWER.piece.fog / ENV_SEWER.fogD`. `cutPieces(o)` in `03e` is the one
+  routine that cuts a mesh into pieces. It takes
+  `{ nodes, edges, F, W, H, minX, minZ, P, C, M, los }` and what makes it fit a
+  world: `roomBox(n)` (`[x0, z0, x1, z1]` holding room `n`), `inRoom(n, x, z)`
+  (above 0 where the point is in room `n`), `line(e)` (a tunnel's polyline of
+  `{ x, z }`), `runs` (polyline segments to a piece), `reach` (how far from its
+  polyline a tunnel's cells are looked for), `pad`, `sample`, `edge`, `cut`
+  and `sees` (default true). It returns `{ pieces, pieceGrid, pieceAt, pos,
+  col, mat }`. `M` may be `null`, and then `mat` is `null`. With `sees: false`
+  no sight line is cast and every piece's `sees` is `[]`. It touches `R`
+  nowhere, so the host copy can build pieces. The sewer calls it through
+  `sewerPieces` (see `sewer.md`).
 
 ## Tests
 
