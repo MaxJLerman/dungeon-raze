@@ -289,6 +289,20 @@ function posePlayer(p) {
       f.hips.p[1] = o.leg - 0.12;
       f.legR.r[0] = 0.4 + sw * 0.25;
       f.legL.r[0] = 0.4 - sw * 0.25;
+      // seized by the Warden for two (a mate's holder comes from the host's
+      // held event): drawn up against its chest, though the player stays
+      // on the floor in front of it
+      const by = p.hold ? p.hold.by : p.heldBy;
+      if (by && by.state === "hold" && by.atk && by.atk.kind === "seize") {
+        const bo = by.fig.o,
+          ahead = (bo.d / 2) * bo.sc + o.d * o.sc + 0.15;
+        f.root.p[0] = by.x + Math.sin(by.yaw) * ahead;
+        f.root.p[2] = by.z + Math.cos(by.yaw) * ahead;
+        f.root.p[1] = (bo.leg + bo.th * 0.55) * bo.sc - (o.leg + o.th * 0.5) * o.sc;
+        f.root.r[1] = by.yaw + PI;
+        f.legR.r[0] = 0.15 + sw * 0.3;
+        f.legL.r[0] = 0.15 - sw * 0.3;
+      }
       break;
     }
     case "gbreak":
@@ -451,6 +465,19 @@ function poseEnemy(e) {
       const pu = 0.5 + 0.5 * Math.sin(G.t * 10);
       tr = 0.5 + 0.3 * pu;
       tg = 0.3 + 0.15 * pu;
+      break;
+    }
+    case "hold": {
+      // the Warden for two's seize: the player crushed to its chest in the
+      // left arm, the right raised to strike (another hold has no pose here)
+      if (!e.atk || e.atk.kind !== "seize") break;
+      A[0] = -2.75;
+      A[2] = -0.35;
+      B[0] = -1.15;
+      B[2] = -0.45;
+      ch[0] = d.hunch - 0.2;
+      f.headN.r[0] = 0.25;
+      tr = 0.25 + 0.1 * Math.sin(G.t * 8);
       break;
     }
     case "roar": {

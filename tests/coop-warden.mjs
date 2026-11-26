@@ -381,4 +381,249 @@ check("a husk still turns on whoever hit it", () => {
   assert.equal(e.heed, undefined);
 });
 
+// The grab (WARDEN2.seize): from phase 3 the Warden seizes one player and
+// only the other can break the hold (docs/notes/coop.md).
+// A duo at phase 3 with its roar over, both players in the chamber. The
+// Warden is put in the act of its seize, facing a, which stands d metres in
+// front of it; b stands 6 m from the centre on the other side. keep(extra)
+// sends a's state (extra over it, "held" by default) and b's, as pages do:
+// pass it to run so neither goes away.
+function seizeOn(d = 3, s = duo()) {
+  const { h, a, b } = s,
+    boss = warden(h),
+    each = stand(h, [a, b]);
+  run(h, 0.2, each);
+  assert.equal(h.phase(3), boss);
+  run(h, 1.4, each);
+  assert.notEqual(boss.state, "roar");
+  const qa = { x: boss.x + Math.sin(boss.yaw) * d, z: boss.z + Math.cos(boss.yaw) * d },
+    qb = inChamber(h, 6, Math.atan2(boss.x - qa.x, boss.z - qa.z));
+  // extra null: a's page sends nothing
+  const keep = (extra = { state: "held" }) => {
+    if (extra) a.at(qa.x, qa.z, extra);
+    b.at(qb.x, qb.z);
+  };
+  keep({});
+  Object.assign(boss, { state: "act", atk: boss.def.atks.seize, t: 0, an: (boss.an + 1) & 255, hitDone: false });
+  return { ...s, boss, keep, qa, qb };
+}
+// a's page reports that the seize landed on it
+const seized = (c, boss, an = boss.an) => c.ev("seized", boss.id, an);
+// Ticks until the Warden leaves "hold", for at most sec seconds; returns
+// the seconds it took, or -1.
+function untilFree(h, boss, sec, each) {
+  let n = -1;
+  run(h, sec, (i) => {
+    if (each) each(i);
+    if (boss.state !== "hold") {
+      n = i;
+      return false;
+    }
+  });
+  return n < 0 ? -1 : n / 60;
+}
+
+check("the seize is the definition's last attack, and the solo Warden has none", () => {
+  const { h, boss } = duo(),
+    a = boss.def.atks.seize,
+    keys = Object.keys(boss.def.atks);
+  assert.equal(keys[keys.length - 1], "seize");
+  assert.deepEqual(a, {
+    style: "seize", kind: "seize", unb: true, from: 3, trig: 5, wind: 0.9, act: 0.25,
+    rec: 0.9, reach: 4.6, arc: 1.2, dmg: 0,
+  });
+  assert.equal(h.EDEF.warden.atks.seize, undefined);
+});
+check("it does not seize before phase 3", () => {
+  const { h, boss } = duo(),
+    draw = () => {
+      let n = 0;
+      for (let i = 0; i < 300; i++) if (h.chooseAtk(boss, 3, null) === boss.def.atks.seize) n++;
+      return n;
+    };
+  assert.equal(draw(), 0, "phase 1");
+  h.phase(2);
+  assert.equal(draw(), 0, "phase 2");
+  h.phase(3);
+  assert.ok(draw() > 0, "never at phase 3");
+});
+check("a seize the page reports is accepted", () => {
+  const { a, b, boss } = seizeOn();
+  seized(a, boss);
+  assert.equal(boss.state, "hold");
+  assert.equal(boss.held, a.pid);
+  assert.equal(boss.t, 0);
+  assert.equal(boss.holdDmg, 0);
+  for (const c of [a, b]) {
+    const ev = named(c, "held");
+    assert.equal(ev.length, 1, "client " + c.pid + " got " + ev.length);
+    assert.equal(ev[0][1], boss.id);
+    assert.equal(ev[0][2], a.pid);
+    assert.equal(typeof ev[0][3], "number");
+  }
+  // in the first 0.6 s of its recovery too
+  const late = seizeOn();
+  late.boss.state = "rec";
+  late.boss.t = 0.55;
+  seized(late.a, late.boss);
+  assert.equal(late.boss.state, "hold");
+});
+check("a seize is refused", () => {
+  const no = (s, why) => {
+    assert.notEqual(s.boss.state, "hold", why);
+    assert.equal(named(s.a, "held").length, 0, why);
+  };
+  const far = seizeOn(9);
+  seized(far.a, far.boss);
+  no(far, "from 9 m");
+  const an = seizeOn();
+  seized(an.a, an.boss, (an.boss.an + 1) & 255);
+  no(an, "another swing");
+  const sweep = seizeOn();
+  sweep.boss.atk = sweep.boss.def.atks.c1;
+  seized(sweep.a, sweep.boss);
+  no(sweep, "a sweep");
+  const late = seizeOn();
+  late.boss.state = "rec";
+  late.boss.t = 0.7;
+  seized(late.a, late.boss);
+  no(late, "0.7 s into its recovery");
+  // a cave for one's Warden, in the act of a seize it does not have
+  const one = solo(),
+    sb = one.boss,
+    each = stand(one.h, [one.a]);
+  run(one.h, 0.2, each);
+  one.a.at(sb.x + Math.sin(sb.yaw) * 3, sb.z + Math.cos(sb.yaw) * 3);
+  Object.assign(sb, { state: "act", atk: duo().boss.def.atks.seize, t: 0, an: (sb.an + 1) & 255 });
+  seized(one.a, sb);
+  no({ ...one, boss: sb }, "a cave for one");
+  // one that already holds
+  const two = seizeOn();
+  seized(two.a, two.boss);
+  two.b.at(two.qa.x, two.qa.z);
+  seized(two.b, two.boss);
+  assert.equal(two.boss.held, two.a.pid);
+  assert.equal(named(two.b, "held").length, 1);
+});
+check("80 damage from the other player breaks it", () => {
+  const { h, a, b, boss, keep } = seizeOn();
+  seized(a, boss);
+  run(h, 0.5, () => keep());
+  strike(b, boss, 40);
+  strike(b, boss, 39);
+  assert.equal(boss.state, "hold");
+  assert.equal(boss.holdDmg, 79);
+  assert.equal(named(a, "freed").length, 0);
+  strike(b, boss, 1);
+  assert.equal(boss.state, "stagger");
+  assert.equal(boss.dur, 2);
+  assert.equal(boss.held, 0);
+  for (const c of [a, b]) {
+    const ev = named(c, "freed");
+    assert.equal(ev.length, 1, "client " + c.pid + " got " + ev.length);
+    assert.equal(ev[0][1], boss.id);
+    assert.equal(ev[0][2], a.pid);
+    assert.equal(typeof ev[0][3], "number");
+  }
+  run(h, 1.9, () => keep({}));
+  assert.equal(boss.state, "stagger", "over before 2 s");
+  run(h, 0.2, () => keep({}));
+  assert.notEqual(boss.state, "stagger", "still staggered at 2.1 s");
+  assert.equal(named(a, "crush").length, 0);
+});
+check("the held player's own hits do not count", () => {
+  const { h, a, boss, keep } = seizeOn();
+  seized(a, boss);
+  run(h, 0.2, () => keep());
+  strike(a, boss, 100);
+  assert.equal(boss.state, "hold");
+  assert.equal(boss.holdDmg, 0);
+});
+check("a posture break while it holds counts as broken", () => {
+  const { h, a, b, boss, keep } = seizeOn();
+  seized(a, boss);
+  run(h, 0.2, () => keep());
+  b.ev("hit", boss.id, 5, 250, 0, "melee", null, null, boss.state, boss.an);
+  assert.equal(boss.state, "stagger");
+  assert.equal(boss.dur, 2);
+  assert.equal(named(a, "freed").length, 1);
+  assert.equal(named(b, "freed").length, 1);
+});
+check("unbroken, it crushes at four seconds", () => {
+  const { h, a, b, boss, keep } = seizeOn();
+  seized(a, boss);
+  let at = -1;
+  run(h, 4.5, (i) => {
+    if (named(a, "crush").length) {
+      at = i / 60;
+      return false;
+    }
+    keep();
+  });
+  assert.ok(at >= 3.9 && at <= 4.1, "crushed at " + at);
+  assert.equal(boss.state, "rec");
+  for (const c of [a, b]) {
+    const ev = named(c, "crush");
+    assert.equal(ev.length, 1, "client " + c.pid + " got " + ev.length);
+    assert.equal(ev[0][1], boss.id);
+    assert.equal(ev[0][2], a.pid);
+    assert.equal(typeof ev[0][3], "number");
+  }
+  assert.equal(boss.held, 0);
+  assert.equal(named(a, "freed").length, 0);
+});
+check("it lets go when the held player dies, goes away, or is no longer held", () => {
+  for (const how of ["dead", "away", "free", "never"]) {
+    const { h, a, boss, keep } = seizeOn();
+    seized(a, boss);
+    let n = 0;
+    // held for 0.3 s, then dead, quiet (away 2 s later), free again; or
+    // never seen held at all
+    const after = { dead: { state: "dead", hp: 0 }, away: null, free: {} }[how];
+    const each = () => {
+      const t = n++ / 60;
+      keep(how === "never" ? {} : t < 0.3 ? { state: "held" } : after);
+    };
+    if (how === "never") {
+      // not yet seen held, it holds for half a second
+      run(h, 0.4, each);
+      assert.equal(boss.state, "hold", "let go before 0.5 s");
+    }
+    const took = untilFree(h, boss, 3.8, each);
+    assert.ok(took >= 0, how + ": still holding");
+    assert.equal(boss.held, 0, how);
+    assert.equal(named(a, "crush").length, 0, how + ": crushed");
+    assert.equal(named(a, "freed").length, 0, how + ": freed");
+    assert.ok(boss.seizeT > 13.5, how + ": seizeT " + boss.seizeT);
+  }
+});
+check("it does not seize again for 14 seconds", () => {
+  const { h, a, boss, keep } = seizeOn();
+  seized(a, boss);
+  run(h, 4.5, () => {
+    keep();
+    if (named(a, "crush").length) return false;
+  });
+  assert.ok(boss.seizeT > 13.9 && boss.seizeT <= 14, "seizeT " + boss.seizeT);
+  for (let i = 0; i < 300; i++) assert.notEqual(h.chooseAtk(boss, 3, null), boss.def.atks.seize);
+  let wound = 0;
+  run(h, 13.8, () => {
+    keep({});
+    if (boss.state === "wind" && boss.atk && boss.atk.kind === "seize") wound++;
+  });
+  assert.equal(wound, 0, "seized again");
+  assert.ok(boss.seizeT > 0, "seizeT " + boss.seizeT);
+  run(h, 0.3, () => keep({}));
+  assert.equal(boss.seizeT, 0);
+  // the wind-up's end starts the count too, landed or not
+  const s = seizeOn();
+  Object.assign(s.boss, { state: "wind", t: 0 });
+  run(s.h, 1, () => {
+    s.keep({});
+    if (s.boss.state !== "wind") return false;
+  });
+  assert.equal(s.boss.state, "act");
+  assert.ok(s.boss.seizeT > 13.9, "seizeT " + s.boss.seizeT);
+});
+
 done();

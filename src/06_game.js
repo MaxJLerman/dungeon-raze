@@ -2829,8 +2829,11 @@ function hurtPlayer(dmg, e, atk) {
 // "hold"; the shared state switch has no case for it, so its hook drives it.
 // The player breaks free by pressing dodge, or when the time is up.
 const HOLD = { max: 2, mash: 0.35, safe: 0.4, grace: 1.5, tick: 0.5 };
-// o: { dps, tx, tz, speed }, damage per second and where to drag the player
-function grabPlayer(e, o) {
+// dps: damage per second; tx, tz and speed: where to drag the player and how
+// fast. mash: whether a dodge press counts toward breaking free, or a
+// function that says whether it does now; max: when the hold ends by itself
+// while it does not (while it does, at HOLD.max). D's grabs pass neither.
+function grabPlayer(e, { dps, tx, tz, speed, max = HOLD.max, mash = true }) {
   const p = G.player;
   if (
     (DEV && DEV.god) ||
@@ -2841,7 +2844,7 @@ function grabPlayer(e, o) {
   )
     return false;
   p.state = "held";
-  p.hold = { by: e, t: 0, tick: 0, jolt: 0, dps: o.dps, tx: o.tx, tz: o.tz, speed: o.speed };
+  p.hold = { by: e, t: 0, tick: 0, jolt: 0, dps, tx, tz, speed, max, mash };
   p.buf = null;
   p.lock = null;
   p.sprint = false;
@@ -2873,15 +2876,21 @@ function releaseHold() {
   taps["T:dodge"] = false;
   if (PAD_BIND.dodge) taps[PAD_BIND.dodge] = false;
 }
+// whether struggling (a dodge press) works in hold h now
+function holdMash(h) {
+  return typeof h.mash === "function" ? !!h.mash() : h.mash;
+}
 function heldUpdate(dt) {
   const p = G.player,
-    h = p.hold;
+    h = p.hold,
+    can = holdMash(h);
   p.vx = p.vz = p.kx = p.kz = 0;
   p.speed = p.dspeed = 0;
   p.walk += dt * 6;
   h.t += dt;
   h.jolt = Math.max(0, h.jolt - dt * 6);
-  if (hit("dodge")) {
+  // a press is taken either way, so it cannot dodge once the hold is over
+  if (hit("dodge") && can) {
     h.t += HOLD.mash;
     h.jolt = 1;
     SFX.whoosh(false);
@@ -2910,7 +2919,7 @@ function heldUpdate(dt) {
     if (dmg > 0) hurtPlayer(dmg, by, { dmg, dot: true });
   }
   if (p.state !== "held") return;
-  if (h.t >= HOLD.max) releaseHold();
+  if (h.t >= (can ? HOLD.max : h.max)) releaseHold();
 }
 function playerDie() {
   const p = G.player;

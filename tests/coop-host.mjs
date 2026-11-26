@@ -1760,10 +1760,10 @@ check("tougher", () => {
     assert.notEqual(e.def, E[e.type]);
     // the rest of the definition is the type's own; the Warden for two's
     // attacks are its own object, holding the solo Warden's in order but
-    // for its slam, a copy with the aftershock
+    // for its slam, a copy with the aftershock, and then its seize
     if (e === w) {
       const strip = (o) => Object.entries(o).map(([k, a]) => [k, k === "slam" ? { ...a, after: undefined } : a]);
-      assert.deepEqual(strip(e.def.atks), strip(E.warden.atks));
+      assert.deepEqual(strip(e.def.atks), [...strip(E.warden.atks), ["seize", e.def.atks.seize]]);
     } else assert.equal(e.def.atks, E[e.type].atks);
     assert.equal(e.def.name, E[e.type].name);
   }

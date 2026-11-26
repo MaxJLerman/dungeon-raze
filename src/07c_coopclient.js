@@ -367,7 +367,7 @@ function coopRecv(buf) {
 // One that fails is ignored.
 const coopNum = (v) => typeof v === "number" && Number.isFinite(v);
 const coopNums = (m, n) => m.length >= n && m.slice(1, n).every(coopNum);
-const COOP_EV_T = { shot: 8, ring: 5, roar: 2, kill: 3, fed: 2 };
+const COOP_EV_T = { shot: 8, ring: 5, roar: 2, kill: 3, fed: 2, held: 3, freed: 3, crush: 3 };
 const COOP_TAKE = {
   // ["shot", eid, x, y, z, vx, vz, dmg, t]
   shot: (m) => coopNums(m, 9) && CC.byId.has(m[1]),
@@ -379,6 +379,12 @@ const COOP_TAKE = {
   kill: (m) => coopNums(m, 4) && CC.byId.has(m[1]),
   // ["fed", eid, t]: the boss has fed on a player who died in its chamber
   fed: (m) => coopNums(m, 3) && CC.byId.has(m[1]),
+  // ["held", eid, pid, t], ["freed", eid, pid, t], ["crush", eid, pid, t]:
+  // the Warden for two's hold of player pid has begun, been broken, or
+  // ended in its crush
+  held: (m) => coopNums(m, 4) && CC.byId.has(m[1]),
+  freed: (m) => coopNums(m, 4) && CC.byId.has(m[1]),
+  crush: (m) => coopNums(m, 4) && CC.byId.has(m[1]),
 };
 // The host events applied as they arrive, with their checks.
 const COOP_NOW = {
@@ -819,13 +825,14 @@ function coopPuppet(e, dt, rt, drt) {
     hit = dist < a.radius;
   } else if (s !== "act") return;
   else if (a.kind === "charge") hit = dist < e.r + p.r + 0.9;
-  else if (!a.kind)
+  else if (!a.kind || a.kind === "seize")
     hit =
       t > 0.02 &&
       dist < a.reach + p.r &&
       (dist < e.r + 0.9 || Math.abs(angDiff(e.yaw, Math.atan2(dx, dz))) < a.arc / 2);
   if (!hit) return;
   e.hitAn = A.an;
+  if (a.kind === "seize") return coopSeize(e, A.an);
   const res = hurtPlayer(a.dmg, e, a);
   CC.judged[res] = (CC.judged[res] || 0) + 1;
   // hurtPlayer has thrown this copy back; the host does the same to its own
@@ -833,6 +840,67 @@ function coopPuppet(e, dt, rt, drt) {
     const seq = coopAsk("parry", e.id, A.an, a.pp || (d.boss ? 30 : 42));
     e.ov = { seq, life: COOP_GUESS };
   }
+}
+// The Warden for two's seize (WARDEN2.seize) reached this player: held, as
+// any grab holds, dragged to seize.front before it, for a little longer
+// than the host's hold so the host's crush or freed ends it. Struggling
+// works only while this page has no other player there, alive and in the
+// chamber to break the hold. The puppet is held in "hold" as a guess until
+// the host has had the report; refused, the guess runs out, the puppet
+// takes the host's state again and the hold frees this player by itself.
+function coopSeize(e, an) {
+  const S = WARDEN2.seize,
+    mash = () => {
+      const bc = G.world.boss;
+      return !(
+        NET &&
+        NET.mates &&
+        bc &&
+        NET.mates.some((m) => !m.away && m.state !== "dead" && Math.hypot(m.x - bc.x, m.z - bc.z) < bc.r)
+      );
+    };
+  const tx = e.x + Math.sin(e.yaw) * S.front,
+    tz = e.z + Math.cos(e.yaw) * S.front;
+  if (!grabPlayer(e, { dps: S.dps, tx, tz, speed: S.pull, max: S.hold + 1, mash })) return;
+  e.state = "hold";
+  e.t = 0;
+  e.ov = { seq: coopAsk("seized", e.id, an), life: COOP_GUESS };
+}
+// The host's word on a hold of the Warden for two. Of the other player: its
+// line while the hold lasts, taken down when it ends. Of this player:
+// freed lets go; crush takes its damage while still held (so the moment
+// of safety the release gives cannot swallow it), lets go and throws this
+// player toward the chamber's centre. Either does nothing to a player not
+// held.
+function coopHold(ev, quiet) {
+  const [k, eid, pid] = ev,
+    e = CC.byId.get(eid),
+    S = WARDEN2.seize,
+    p = G.player;
+  if (!e) return;
+  if (pid !== CC.pid) {
+    if (k === "held") {
+      const m = NET.mates.find((o) => o.pid === pid);
+      if (m) m.heldBy = e;
+      if (!quiet) say(S.say, "", S.hold);
+    } else for (const o of G.msgs) if (o.text === S.say) o.t = 0;
+    return;
+  }
+  if (k === "held" || p.state !== "held") return;
+  if (k === "freed") return releaseHold();
+  hurtPlayer(S.crush, e, { dmg: S.crush, unb: true });
+  if (p.state !== "held") return;
+  releaseHold();
+  const bc = G.world.boss,
+    dx = bc.x - p.x,
+    dz = bc.z - p.z,
+    d = Math.hypot(dx, dz);
+  if (d < 0.1) return;
+  // the knock fades at 9 a second (playerUpdate), so it carries about toss
+  p.kx = (dx / d) * S.toss * 9;
+  p.kz = (dz / d) * S.toss * 9;
+  p.state = "hit";
+  p.t = 0;
 }
 // A death the host decided: the look and sound of kill(), none of its
 // rewards, and those only when loud and within COOP_HEAR of this player.
@@ -923,6 +991,8 @@ function coopApply(ev, rt) {
     const e = CC.byId.get(ev[1]);
     if (!e || e.dead || quiet) return;
     say(e.def.name + " feeds on the fallen.", "", 3);
+  } else if (ev[0] === "held" || ev[0] === "freed" || ev[0] === "crush") {
+    coopHold(ev, quiet);
   } else if (ev[0] === "kill") {
     // One already dead here stays as it is, and a death guessed here is
     // settled. Otherwise it dies, with kill's rewards when this player's

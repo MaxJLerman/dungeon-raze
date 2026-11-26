@@ -1761,6 +1761,18 @@ function crocRollSpot(e, c) {
 //          after): a ring rolls out from where the slam landed, wait s
 //          after it, at speed m/s to reach m, band m deep, and hurts the
 //          player it passes for dmg (waveStart, wavesUpdate in 06)
+//   seize  its grab, from phase from: an attack (the definition's seize)
+//          started within trig m, winding wind s, reaching reach m in an
+//          arc of arc rad, unblockable; not chosen again for again s after
+//          its wind-up or its hold ends. The page of the player it lands on
+//          judges it and drags that player to front m before it at pull
+//          m/s; the host takes it if it is in that swing, in its act or no
+//          more than late s into its recovery, and the player within reach
+//          + their radius + slack m. It holds for hold s at dps a second.
+//          breakAt damage from the other player in that time breaks it
+//          (staggered stag s); else it crushes for crush and throws the
+//          player toss m toward the chamber's centre. say is the other
+//          player's line while it holds (06d, 07c)
 const WARDEN2 = {
   hp: 2.5,
   marks: [0.75, 0.5, 0.25],
@@ -1768,4 +1780,28 @@ const WARDEN2 = {
   lines: { 2: "The Warden burns hotter", 3: "The Warden reaches for you", 4: "The way out is gone" },
   heed: { half: 4, lead: 1.3, every: 3 },
   wave: { from: 2, wait: 0.35, speed: 11, reach: 24, band: 1.2, dmg: 14 },
+  seize: {
+    from: 3,
+    trig: 5,
+    wind: 0.9,
+    act: 0.25,
+    rec: 0.9,
+    reach: 4.6,
+    arc: 1.2,
+    again: 14,
+    hold: 4,
+    dps: 6,
+    breakAt: 80,
+    stag: 2,
+    crush: 40,
+    toss: 6,
+    slack: 2,
+    late: 0.6,
+    say: "Break its grip!",
+    front: 1.6,
+    pull: 8,
+  },
 };
+// The Warden for two's hooks, EBEH.warden, are put in place by the host
+// copy (06d), the only thing that steps one: a page's EBEH has no warden
+// entry, so its Warden runs with no hooks at all.

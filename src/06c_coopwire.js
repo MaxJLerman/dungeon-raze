@@ -44,8 +44,10 @@ const COOP_TWO = { extra: 1, extraDeep: 2, hp: 1.3, post: 1.3, bossHp: 2.5, boss
 // for two (WARDEN2 in 06b): duo, its marks and roar lengths, and an atks
 // object of its own holding the solo Warden's attacks, the same objects in
 // the same order, since a snapshot finds an attack by its index there; its
-// slam is a copy with the aftershock, at the same place in that order.
+// slam is a copy with the aftershock, at the same place in that order, and
+// its seize (WARDEN2.seize) comes after them all.
 function coopTwoDefs() {
+  const S = WARDEN2.seize;
   const out = {};
   for (const [k, d] of Object.entries(EDEF)) {
     if (d.dummy) {
@@ -61,7 +63,23 @@ function coopTwoDefs() {
         duo: true,
         marks: WARDEN2.marks,
         roarT: WARDEN2.roar,
-        atks: { ...d.atks, slam: { ...d.atks.slam, after: WARDEN2.wave } },
+        atks: {
+          ...d.atks,
+          slam: { ...d.atks.slam, after: WARDEN2.wave },
+          seize: {
+            style: "seize",
+            kind: "seize",
+            unb: true,
+            from: S.from,
+            trig: S.trig,
+            wind: S.wind,
+            act: S.act,
+            rec: S.rec,
+            reach: S.reach,
+            arc: S.arc,
+            dmg: 0,
+          },
+        },
       });
     out[k] = o;
   }

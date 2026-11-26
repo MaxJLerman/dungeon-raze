@@ -132,7 +132,7 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   and a `gate` or `travel` crossing a swap does nothing), it is not `live()`
   (not hunted) and not counted by `wipe()`, it is sent no snapshots, and
   `all` and `others` skip it for the world-bound events `shot`, `ring`,
-  `roar`, `kill`, `reset` and `fed`. A counter (`ver`) is raised by every kill and
+  `roar`, `kill`, `reset`, `fed`, `held`, `freed` and `crush`. A counter (`ver`) is raised by every kill and
   wipe and remembered on each proxy when its join or world is sent; an `at`
   that finds it changed is answered with `reset` (the enemies again). An
   event that swaps the world is not acknowledged, since the new world's
@@ -231,8 +231,8 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   attack goes after them. Its `slam` is a copy of the solo one with
   `after: WARDEN2.wave`, at the same key position (each side calls
   `coopTwoDefs()` once per world and uses its own result, so both hold the
-  same copy). `EDEF.warden` has none of these keys, and its slam has no
-  `after`.
+  same copy). Its `seize` (below) comes after them all, the last key.
+  `EDEF.warden` has none of these keys, and its slam has no `after`.
   `def.duo` is how code tells this Warden from today's. **Four phases:**
   `hitEnemy` gives a boss without `ownPhases` phase 1 plus the number of
   its `marks` its health is below (`enemies.md`), so this Warden enters
@@ -242,7 +242,7 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   health over a mark without undoing one. Everything today's second phase
   gives (speed 1.2, tempo 0.85, the volley, the glow) holds from phase 2
   on (`e.phase >= 2`, on the host and in the page's puppet). Phase 2 adds
-  the aftershock; phases 3 and 4 add nothing else yet. **The aftershock**
+  the aftershock, phase 3 the grab; phase 4 adds nothing else yet. **The aftershock**
   (`WARDEN2.wave`, `{ from: 2, wait: 0.35, speed: 11, reach: 24, band: 1.2,
   dmg: 14 }`): a slam whose attack has an `after` calls `waveStart(x, z,
   after)` where it lands, when the Warden's phase is at least `after.from`:
@@ -278,7 +278,62 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   by `ASK.hit` whenever a boss's phase rises (a solo-tuned Warden's too,
   phase 2); the page waits for the drawn time and says `WARDEN2.lines[phase]`
   for a `duo` definition, today's line otherwise; `COOP_TAKE` refuses a
-  roar whose phase is not 2, 3 or 4. **The boss bar** draws a notch at each
+  roar whose phase is not 2, 3 or 4. **The grab** (`WARDEN2.seize`, `{ from:
+  3, trig: 5, wind: 0.9, act: 0.25, rec: 0.9, reach: 4.6, arc: 1.2, again:
+  14, hold: 4, dps: 6, breakAt: 80, stag: 2, crush: 40, toss: 6, slack: 2,
+  late: 0.6, say: "Break its grip!", front: 1.6, pull: 8 }`). The
+  definition's `seize` is `{ style: "seize", kind: "seize", unb: true, from,
+  trig, wind, act, rec, reach, arc, dmg: 0 }`, chosen as its other attacks
+  are from phase 3. `EBEH.warden` (each hook returns at once without
+  `def.duo`) is registered by the host copy only (06d), since only the host
+  steps a Warden for two: a page's `EBEH` has no warden entry, and
+  `tests/t23.mjs` checks that. `atkOk` leaves the seize out while
+  `e.seizeT > 0`, `step` counts `e.seizeT` down, and `wind` sets it to
+  `again` as the seize's wind-up ends. Its act has no hit on the host.
+  **Who judges what:** the page of the player it reaches judges it, in
+  `coopPuppet`'s hit test with the melee test (`reach`, `arc`): on a hit
+  (`coopSeize`) it calls `grabPlayer(e, { dps, tx, tz, speed: pull, max:
+  hold + 1, mash })`, `(tx, tz)` `front` metres before the Warden, `mash`
+  true only while `NET.mates` has nobody there (not away), alive and within
+  `G.world.boss.r` of the chamber's centre. A dodge's iframes make
+  `grabPlayer` refuse, and a guard does nothing (unblockable). If it holds,
+  the puppet is put in `"hold"` under a guess (`e.ov`, `COOP_GUESS`) and the
+  page sends `["seized", seq, eid, an]`. The host (`ASK.seized`) takes it
+  when the enemy is a living `duo` boss whose `atk` is the seize, `e.an ===
+  an`, it is in `"act"` or no more than `late` s into `"rec"`, it holds
+  nobody, and the player is within `reach + px.r + slack`: `e.state =
+  "hold"`, `e.t = 0`, `e.held` the pid, `e.holdDmg = 0`, and all are sent
+  `["held", eid, pid, t]`. Anything else is nothing: the page's guess ends
+  (the ack, or its life), the puppet takes the host's state, and
+  `heldUpdate` frees the player because its holder is not in `"hold"`.
+  **The hold on the host** (`holding`, each tick after `enemyUpdate`, which
+  has no case for `"hold"`, so it stands): `e.t` counts up; at `hold` s
+  it sends `["crush", eid, pid, t]` and goes to `"rec"`. It lets go with
+  nothing sent, to `"rec"`, when the held player is dead, away, or no longer
+  `"held"` once the host has seen them `"held"` (`e.heldSeen`) or 0.5 s has
+  passed (a page's state arrives a little after its `seized`), and with no
+  state change when something else took it out of `"hold"` (a roar, a
+  death). `ASK.hit` adds the health a hit from the other player took off
+  (the number the attention score uses) to `e.holdDmg`; at `breakAt`, or
+  when any hit leaves it in `"stagger"` (a posture break), it is staggered
+  with `e.dur` `stag` and all are sent `["freed", eid, pid, t]`. Every way
+  out sets `e.held = 0` and `e.seizeT = again` (`letGo`). `pick` keeps its
+  target while it holds. **On the page** `held`, `freed` and `crush` wait
+  for the drawn time (`COOP_EV_T`, index 3) and go to `coopHold`. `held`
+  naming the other player says `say` for `hold` s (taken down by that
+  player's `freed` or `crush`) and sets the mate's `heldBy` for drawing.
+  Naming this player: `freed` calls `releaseHold()`; `crush` takes `crush`
+  through `hurtPlayer` with `unb` while still held (a hit on a held player
+  is soft, so no knock and no state change, and the release's `HOLD.safe`
+  cannot swallow it), then `releaseHold()`, then a knock of `toss * 9`
+  toward the chamber's centre (it fades at 9 a second, so it carries about
+  `toss` m) and state `"hit"`. Either does nothing to a player not held. The
+  hold's `max` of `hold + 1` only ends it if the host's word never comes.
+  **Drawn:** the wind-up throws both arms wide (`atkPose` style
+  `"seize"`), the holder stands with its right arm raised and its left at
+  its chest (`poseEnemy`'s `"hold"`, only for a seize), and the held
+  player, this one or the mate, is drawn against its chest
+  (`rendering.md`). **The boss bar** draws a notch at each
   of a definition's `marks` (`08_hud.js`, `.mk` in `#boss .bhp`), so three
   for the Warden for two and none for any other boss. **`host.phase(n)`**,
   for tests and the dev menu: puts the living Warden for two at the start
@@ -300,7 +355,8 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   send it for every `world`), `travel` (`["travel", seq, to, seed]`, `to`
   `"hub"` or a grade in `COOP.GRADES`, `seed` ignored for `"hub"`; pid 1
   only), `hit`, `parry`, `pin`,
-  `exec`, `gate`, `pshot`, `pblast`, `cls` (`["cls", seq, class]`, a class
+  `exec`, `gate`, `pshot`, `pblast`, `seized` (`["seized", seq, eid, an]`,
+  the Warden for two's seize landed on this player, above), `cls` (`["cls", seq, class]`, a class
   picked on the room screen or changed from the pause menu mid-run: the
   proxy becomes that class where it stands, with the same share of health,
   a hidden one as the first base class, and the other player is told with
@@ -322,7 +378,8 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   first state, so its player has pressed Start; sent once to a friend
   already in), `shot`, `ring`, `roar` (`["roar", eid, t, phase]`, the
   phase a boss has entered), `kill` (with whose event caused it),
-  `reset`, `fed` (`["fed", eid, t]`, a dungeon for two's boss fed on a
+  `reset`, `held`, `freed` and `crush` (`[name, eid, pid, t]`, the Warden
+  for two's hold, above), `fed` (`["fed", eid, t]`, a dungeon for two's boss fed on a
   death in its chamber, above), `peer`, `cls` (`["cls", pid, class]`, the other player has
   changed class: `coopMateCls` changes the mate in place, keeping where it
   is and its share of health), `pshot`, `pblast`. A client checks a join's
@@ -645,9 +702,18 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
     at each mark with its phase to both players, one roar for a hit across
     two marks, a phase that does not fall, the phase 4 roar's 2.2 s and
     `host.phase`. Its helpers (`duo`, `inChamber`, `stand`, `strike`,
-    `strikeTo`) are for the checks later parts of this fight add. It also
+    `strikeTo`, and for the grab `seizeOn`, `seized`, `untilFree`) are for
+    the checks later parts of this fight add. It also
     checks that the slam for two carries the aftershock, the solo slam does
-    not, and the key order is unchanged.
+    not, and the key order is unchanged; and the grab: the seize last in
+    the definition, none before phase 3 (300 draws of `host.chooseAtk`,
+    exposed for tests), a report accepted (in the act, or 0.55 s into the
+    recovery) and refused (9 m away, another swing, a sweep, 0.7 s into the
+    recovery, a cave for one's Warden, one that already holds), 80 damage
+    from the other player breaking it into a 2 s stagger, the held player's
+    own hits not counting, a posture break as a break, the crush at 4 s, the
+    hold let go with nothing sent when the held player dies, goes away, is
+    free again, or is never seen held, and 14 s before it seizes again.
   - `node tests/coop-wire.mjs`: the wire formats and the fake link, the
     phases 1 to 4 beside the other flags and `COOP_V` 4, a
     `world` event's round trip and the size of the joins of big cave 99 and
@@ -685,7 +751,20 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
     it takes nothing, a guard facing it blocks (stamina and chip read), a
     phase 1 slam sends none, and a respawn and a new world clear it; look at
     `shots/t32-wave.png`, a red ring half way out between the Warden and
-    this player, on the floor; `tests/t29.mjs` (the room screen up to the network: the button,
+    this player, on the floor. The grab, with `seizeSetup` (the Warden at
+    phase 3, still, 7 m from the centre facing it, this player 3.5 m in
+    front, the mate beside) and `seize` (the host's Warden put in the
+    seize's wind-up): a seize that lands holds this player (dragged before
+    it, 6 a second, a dodge press doing nothing), a dodge through it is not
+    held, the mate's 80 damage frees this player within 0.3 s, unbroken the
+    crush lands at about 4 s for 40 and throws this player toward the
+    centre, with the mate dead struggling frees the player, a refused seize
+    (the host's swing number moved on, its `held` dropped by `tamper`) frees
+    the player well inside the guess's life with no crush, and the free
+    player (as pid 2) is told "Break its grip!"; look at
+    `shots/t32-seize-wind.png` (both arms wide, lit red) and
+    `shots/t32-held.png` (this player up against the Warden's chest, its
+    right arm raised); `tests/t29.mjs` (the room screen up to the network: the button,
     the code's tidying and refusal, every message, the order of the checks,
     the class fallback, a Worker host on the page that starts in the hall,
     the friend's button naming the hall or the dungeon, a `world` refused
@@ -746,8 +825,15 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
   target switch keeps the old target's last-seen spot.
 - D's grabs and the siren's song are not safe on a co-op host: their callers
   treat `hurtPlayer`'s `"remote"` as a hit that landed and would
-  `grabPlayer` a proxy. Co-op is E only, where nothing grabs. Fix this
-  before hosting D.
+  `grabPlayer` a proxy. Co-op is E only, where nothing grabs but the Warden
+  for two, whose seize does not go through that path (a page judges it and
+  the host times the hold). Fix this before hosting D.
+- The Warden for two's grab is untested by hand: its numbers (`WARDEN2.seize`)
+  are first guesses, and so is the throw toward the chamber's centre, which
+  can carry the player through the Warden itself when it stands between
+  them and the centre (bodies do not block the player). A refused seize
+  holds the player for a round trip and a little more before it frees them;
+  each tick of that hold hurts as a real one does.
 - Co-op executions: the first player whose `pin` reaches the host gets the
   kill (the spec said the first to finish). A lost pin's rewards are taken
   back; if the other player's kill event is applied on the very step this

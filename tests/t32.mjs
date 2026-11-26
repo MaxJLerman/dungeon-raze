@@ -330,6 +330,352 @@ export default [
   },
   { wait: 400, shot: "t32-wave" },
   {
+    name: "a seize that lands holds this player",
+    eval: () => {
+      const { G } = DF,
+        w2 = window.__w2;
+      G.manual = true;
+      Object.assign(w2, {
+        // A run for two (o for coopSolo) with the Warden at phase 3 and its
+        // roar over, kept still 7 m from the chamber's centre facing it,
+        // this player 3.5 m in front of it (toward the centre) facing it,
+        // and the scripted mate, alive unless dead says otherwise, 2 m to
+        // this player's side. Then seize() puts the host's Warden in the
+        // wind-up of its seize at this player.
+        seizeSetup(o, dead = false) {
+          w2.start(o);
+          const c = { stood: w2.standIn(8), awake: w2.wake() };
+          c.entered = !!w2.host().phase(3);
+          DF.devGod(true);
+          try {
+            w2.step(3, () => (w2.hostBoss().state === "roar" ? undefined : false));
+          } finally {
+            DF.devGod(false);
+          }
+          const hb = w2.hostBoss(),
+            bc = G.world.boss,
+            q = w2.inChamber(7),
+            yaw = Math.atan2(bc.x - q.x, bc.z - q.z),
+            fx = Math.sin(yaw),
+            fz = Math.cos(yaw),
+            m = w2.r.mate.p;
+          c.spot = !!q;
+          const put = () => {
+            Object.assign(hb, { x: q.x, z: q.z, yaw, state: "recoil", t: 0, dur: 9, kx: 0, kz: 0, plan: null });
+            const p = G.player;
+            Object.assign(p, { x: q.x + fx * 3.5, z: q.z + fz * 3.5, state: "free", vx: 0, vz: 0, kx: 0, kz: 0 });
+            p.yaw = DF.cam.yaw = yaw + Math.PI;
+            DF.cam.px = p.x;
+            DF.cam.pz = p.z;
+            // beside this player, to its right
+            m.x = p.x - Math.cos(p.yaw) * 2;
+            m.z = p.z + Math.sin(p.yaw) * 2;
+          };
+          if (dead) w2.r.mate.kill();
+          DF.devGod(true);
+          try {
+            w2.step(0.6, put);
+          } finally {
+            DF.devGod(false);
+          }
+          G.player.hp = G.player.maxHp;
+          c.near = Math.hypot(w2.boss().x - q.x, w2.boss().z - q.z) < 0.2;
+          c.mate = w2.mateState() === (dead ? "dead" : "free");
+          return c;
+        },
+        // the mate's state on this page, and this page's pid
+        mateState: () => DF.net().mates[0].state,
+        me: () => 3 - DF.net().mates[0].pid,
+        seize() {
+          const hb = w2.hostBoss();
+          Object.assign(hb, {
+            state: "wind",
+            atk: hb.def.atks.seize,
+            t: 0,
+            an: (hb.an + 1) & 255,
+            tg: w2.me(),
+          });
+          return hb;
+        },
+        // steps sec seconds; true when this player lost no 35 or more at once
+        noCrush(sec) {
+          const p = G.player;
+          let last = p.hp,
+            most = 0;
+          w2.step(sec, () => {
+            most = Math.max(most, last - p.hp);
+            last = p.hp;
+          });
+          return most < 35;
+        },
+        // steps until this player is held (or sec runs out); the steps taken
+        seizeRun(sec = 2, each) {
+          let n = 0,
+            got = false;
+          w2.step(sec, () => {
+            n++;
+            if (each) each(n);
+            if (G.player.state === "held") {
+              got = true;
+              return false;
+            }
+          });
+          return got ? n : -1;
+        },
+      });
+      const c = w2.seizeSetup(),
+        hb = w2.seize(),
+        p0 = G.player,
+        got = w2.seizeRun(2);
+      const p = G.player,
+        pup = w2.boss();
+      c.held = got > 0 && p.state === "held";
+      c.hostHold = hb.state === "hold" || hb.state === "act";
+      // dragged to 1.6 m in front of it
+      w2.step(1);
+      const ahead = Math.hypot(p.x - (pup.x + Math.sin(pup.yaw) * 1.6), p.z - (pup.z + Math.cos(pup.yaw) * 1.6));
+      c.dragged = ahead < 0.3;
+      c.puppet = pup.state === "hold";
+      c.host = hb.state === "hold" && hb.held === w2.me();
+      // six a second, in ticks
+      const hp0 = p.hp;
+      w2.step(2);
+      const fell = hp0 - p.hp;
+      c.ticks = Math.abs(fell - 12) <= 3;
+      c.still = p.state === "held";
+      // a dodge press does nothing while the mate can break it
+      const t0 = p.hold.t;
+      DF.taps[DF.BIND.dodge] = true;
+      w2.step(1 / 60);
+      c.press = p.state === "held" && p.hold.jolt === 0 && Math.abs(p.hold.t - t0 - 1 / 60) < 1e-6;
+      c.same = p === p0;
+      c.mateUp = w2.mateState() === "free";
+      return { pass: Object.values(c).every((v) => v === true), c, got, fell: +fell.toFixed(2), ahead: +ahead.toFixed(2) };
+    },
+  },
+  {
+    name: "a dodge through the seize is not held",
+    eval: () => {
+      const { G } = DF,
+        w2 = window.__w2;
+      G.manual = true;
+      const c = w2.seizeSetup(),
+        hb = w2.seize(),
+        p = G.player,
+        pup = w2.boss(),
+        wd = hb.atk.wind * 0.85;
+      let dodged = false,
+        held = false,
+        hostHold = false;
+      w2.step(2, () => {
+        if (!dodged && pup.state === "wind" && pup.t >= wd - 0.1) {
+          dodged = true;
+          Object.assign(p, { state: "dodge", t: 0, ddur: 0.4, ddx: 0, ddz: 0, ddist: 0, iframe: 0.35, pdUsed: false });
+        }
+        if (p.state === "held") held = true;
+        if (hb.state === "hold") hostHold = true;
+      });
+      c.dodged = dodged;
+      c.free = !held && !hostHold;
+      c.swung = pup.hitAn === hb.an;
+      return { pass: Object.values(c).every((v) => v === true), c };
+    },
+  },
+  {
+    name: "the mate breaks the hold",
+    eval: () => {
+      const { G } = DF,
+        w2 = window.__w2;
+      G.manual = true;
+      const c = w2.seizeSetup(),
+        hb = w2.seize();
+      c.held = w2.seizeRun(2) > 0;
+      w2.step(0.5);
+      const p = G.player;
+      w2.r.mateAsk("hit", hb.id, 80, 0, 0, "melee", null, null, hb.state, hb.an);
+      c.stagger = hb.state === "stagger" && hb.dur === 2;
+      let n = 0;
+      w2.step(1, () => {
+        if (p.state !== "held") return false;
+        n++;
+      });
+      c.soon = p.state !== "held" && n / 60 <= 0.3;
+      c.safe = p.iframe > 0;
+      // no crush: no loss of 35 or more at once (the Warden's own swings
+      // are 17 to 28) until well past when it would have come
+      c.noCrush = w2.noCrush(4);
+      return { pass: Object.values(c).every((v) => v === true), c, took: n / 60 };
+    },
+  },
+  {
+    name: "unbroken, the crush lands",
+    eval: () => {
+      const { G } = DF,
+        w2 = window.__w2;
+      G.manual = true;
+      const c = w2.seizeSetup(),
+        hb = w2.seize(),
+        bc = G.world.boss;
+      c.held = w2.seizeRun(2) > 0;
+      const p = G.player;
+      let n = 0,
+        last = p.hp,
+        crush = null;
+      const drops = [];
+      w2.step(5, () => {
+        n++;
+        if (p.hp < last - 1e-9) {
+          drops.push(+(last - p.hp).toFixed(3));
+          if (last - p.hp > 30 && !crush) crush = { at: n / 60, by: last - p.hp, d: Math.hypot(p.x - bc.x, p.z - bc.z), n };
+        }
+        last = p.hp;
+        if (crush && n - crush.n >= 36) return false;
+      });
+      c.crushed = !!crush;
+      if (crush) {
+        // 40, or 43 if a tick of the hold fell in the same step
+        c.by = Math.abs(crush.by - 40) < 1e-6 || Math.abs(crush.by - 43) < 1e-6;
+        c.when = crush.at >= 3.9 && crush.at <= 4.5;
+        c.thrown = crush.d - Math.hypot(p.x - bc.x, p.z - bc.z) > 3;
+      }
+      c.free = p.state !== "held";
+      return { pass: Object.values(c).every((v) => v === true), c, crush, drops };
+    },
+  },
+  {
+    name: "with the mate dead, struggling frees the player",
+    eval: () => {
+      const { G } = DF,
+        w2 = window.__w2;
+      G.manual = true;
+      const c = w2.seizeSetup(undefined, true),
+        hb = w2.seize();
+      c.held = w2.seizeRun(2) > 0;
+      const p = G.player;
+      c.can = !!p.hold && p.hold.mash() === true;
+      let n = 0;
+      w2.step(3, () => {
+        if (p.state !== "held") return false;
+        if (n % 15 === 0) DF.taps[DF.BIND.dodge] = true;
+        n++;
+      });
+      c.free = p.state !== "held" && n / 60 < 1.5;
+      // the host lets go once it sees this player free
+      w2.step(0.5);
+      c.hostLet = hb.state !== "hold" && !hb.held;
+      return { pass: Object.values(c).every((v) => v === true), c, took: n / 60 };
+    },
+  },
+  {
+    name: "a refused seize frees the player",
+    eval: () => {
+      const { G } = DF,
+        w2 = window.__w2;
+      G.manual = true;
+      // the host's held events never reach this page
+      const c = w2.seizeSetup({ two: true, seed: 99, mate: "idle", tamper: (ev) => (ev[0] === "held" ? null : ev) }),
+        hb = w2.seize(),
+        pup = w2.boss(),
+        wd = hb.atk.wind * 0.85;
+      // the host's swing number moves on just before this page judges the
+      // swing it saw, so the report names a swing the host is not in
+      let moved = false,
+        hostHold = false;
+      c.held = w2.seizeRun(2, () => {
+        if (hb.state === "hold") hostHold = true;
+        if (!moved && pup.state === "wind" && pup.t >= wd - 0.05) {
+          moved = true;
+          hb.an = (hb.an + 7) & 255;
+        }
+      }) > 0;
+      c.moved = moved;
+      const p = G.player;
+      let n = 0;
+      w2.step(3, () => {
+        if (hb.state === "hold") hostHold = true;
+        if (p.state !== "held") return false;
+        n++;
+      });
+      c.free = p.state !== "held" && n / 60 < 2;
+      c.never = !hostHold;
+      c.noCrush = w2.noCrush(4.5);
+      return { pass: Object.values(c).every((v) => v === true), c, took: n / 60 };
+    },
+  },
+  {
+    name: "the free player is told",
+    eval: () => {
+      const { G } = DF,
+        w2 = window.__w2;
+      G.manual = true;
+      // this page is the friend; the scripted host player is seized
+      w2.start({ two: true, seed: 99, mate: "idle", pid: 2 });
+      const c = { stood: w2.standIn(8), awake: w2.wake(), entered: !!w2.host().phase(3) };
+      DF.devGod(true);
+      try {
+        w2.step(3, () => (w2.hostBoss().state === "roar" ? undefined : false));
+      } finally {
+        DF.devGod(false);
+      }
+      const hb = w2.hostBoss(),
+        m = w2.r.mate;
+      Object.assign(m.p, { x: hb.x + Math.sin(hb.yaw) * 3, z: hb.z + Math.cos(hb.yaw) * 3 });
+      w2.step(0.1);
+      m.p.state = "held";
+      Object.assign(hb, { state: "act", atk: hb.def.atks.seize, t: 0, an: (hb.an + 1) & 255 });
+      m.ask("seized", hb.id, hb.an);
+      c.hold = hb.state === "hold" && hb.held === 1;
+      const told = () => G.msgs.some((o) => o.text === "Break its grip!");
+      c.told = false;
+      w2.step(1, () => {
+        if (told()) {
+          c.told = true;
+          return false;
+        }
+      });
+      return { pass: Object.values(c).every((v) => v === true), c, msgs: G.msgs.map((o) => o.text) };
+    },
+  },
+  {
+    name: "the seize's wind-up, for the screenshot",
+    eval: async () => {
+      const { G } = DF,
+        w2 = window.__w2;
+      G.manual = true;
+      const c = w2.seizeSetup(),
+        hb = w2.seize(),
+        pup = w2.boss(),
+        wd = hb.atk.wind * 0.85;
+      w2.step(2, () => (pup.state === "wind" && pup.t >= wd * 0.75 ? false : undefined));
+      c.wind = pup.state === "wind" && pup.atk.kind === "seize";
+      DF.devGod(true);
+      G.msgs.length = 0;
+      await w2.frames();
+      return { pass: Object.values(c).every((v) => v === true), c };
+    },
+  },
+  { wait: 400, shot: "t32-seize-wind" },
+  {
+    name: "the hold, for the screenshot",
+    eval: async () => {
+      const { G } = DF,
+        w2 = window.__w2;
+      G.manual = true;
+      DF.devGod(false);
+      const c = { held: w2.seizeRun(2) > 0 };
+      DF.devGod(true);
+      w2.step(0.8);
+      const p = G.player;
+      c.still = p.state === "held";
+      // from the side away from the mate
+      DF.cam.yaw = p.yaw - 1.2;
+      G.msgs.length = 0;
+      await w2.frames();
+      return { pass: Object.values(c).every((v) => v === true), c };
+    },
+  },
+  { wait: 400, shot: "t32-held" },
+  {
     name: "end the run",
     eval: () => {
       DF.devGod(false);

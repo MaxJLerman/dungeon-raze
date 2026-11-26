@@ -13,14 +13,26 @@
   of `playerUpdate`) drags them to `(tx, tz)` at `speed` and turns them to the
   holder. The numbers are in `HOLD`: the hold lasts `max` (2 s); each press of
   dodge counts `mash` (0.35 s) towards that, so mashing dodge breaks free
-  early; every `tick` (0.5 s) it deals `dps * tick` through `hurtPlayer` with
+  early. Two more options, whose defaults are that behaviour (D's grabs pass
+  neither): `mash` (default `true`) says whether struggling works, or is a
+  function asked each step whether it works now (`holdMash(h)` reads it);
+  a dodge press is used up either way but counts only while it works.
+  `max` (default `HOLD.max`) is when the hold ends by itself while
+  struggling does not work; while it does, it ends at `HOLD.max`, so a hold
+  whose struggle starts working after 2 s ends at once. The Warden for
+  two's seize passes `max: 5` and a `mash` that is true only while no other
+  player is there, alive and in the chamber (`coop.md`). The HUD's "Break
+  free" prompt shows only while struggling works. Every `tick` (0.5 s) it
+  deals `dps * tick` through `hurtPlayer` with
   `atk.dot`. It ends when the time is up or the holder dies or leaves
   `hold` (that is checked before the tick, so a holder that is gone deals
   nothing more): `releaseHold()` gives `HOLD.safe`
   of invulnerability and starts `G.grabGrace` (`HOLD.grace`, 1.5 s, in which
   nothing may grab again) and swallows the press that broke free so it does
   not also dodge. `endHold()` (death) clears it and puts every holder back
-  to `rec`. A hold shows the "Break free" prompt and its own pose. `riftBodies`
+  to `rec`. A hold shows its own pose; held by a holder in `"hold"` whose
+  attack is a `seize`, the figure is drawn up against the holder's chest
+  (`posePlayer`), its position still on the floor in front. `riftBodies`
   skips a held player, and pausing does not end a hold. `resetRun` and
   `respawn` clear `G.grabGrace`.
 - **`atk.dot`.** An attack with `dot: true` is damage over time. In

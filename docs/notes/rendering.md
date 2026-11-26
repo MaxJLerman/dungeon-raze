@@ -21,6 +21,18 @@
   `RED`, where `rr` is the radius `wavesUpdate` judges
   (`(t - o.wait) * o.speed`), so what is drawn is where it hurts. Nothing is
   drawn before `o.wait`. `tests/t32.mjs` takes `shots/t32-wave.png`.
+- **The Warden for two's seize** (`coop.md`). `atkPose` style `"seize"`:
+  the wind-up throws both arms wide (Z out to 1.35 rad, a little forward),
+  the act sweeps them in together. `poseEnemy`'s `"hold"` case, only for a
+  holder whose `atk.kind` is `"seize"` (D's holders keep their own poses):
+  right arm raised, left arm across its chest. A player held by such a
+  holder (this player through `p.hold.by`, a mate through `m.heldBy`, set
+  by the host's `held` event) is drawn in `posePlayer` with its root moved
+  to just in front of the holder's chest (half its depth plus the player's
+  depth and 0.15 m) and raised so the two chests meet, facing it; the
+  player's own position, its blob shadow and its camera stay on the floor
+  in front. `tests/t32.mjs` takes `shots/t32-seize-wind.png` and
+  `shots/t32-held.png`.
 - **Materials.** The world mesh has one material byte per vertex, a fourth
   attribute (`aMat`, location 3). `MAT` in `03_world.js` names the values:
   0 plain, `MAT.BRICK` 1, `MAT.WATER` 2. `meshSink` takes a `mat` argument on
