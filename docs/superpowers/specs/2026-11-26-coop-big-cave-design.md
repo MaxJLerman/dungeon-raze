@@ -186,7 +186,9 @@ The owner left both choices to me (*my call* on each).
   document). The builder measures the spread over 20 seeds as soon as the
   generator exists and writes it in the notes. Outside 150 to 190 it is
   reported to the owner in the final summary and not tuned silently; it
-  does not stop the work.
+  does not stop the work. (A trial made while the plan was written gave
+  155 to 204 over 21 seeds, mean 178, and the owner was told with the
+  plan.)
 
 ### Pieces and drawing
 
@@ -287,14 +289,19 @@ The owner left both choices to me (*my call* on each).
   `CLAUDE.md`'s table and the README's): the small cave's hashes
   unchanged; the big cave's hashes; 36 rooms; the route at least 10 rooms
   over 200 seeds; the rest-point rule; every room reachable; the pack
-  table by depth (the first rooms hold a two-husk pack, the deepest a
-  two-brute pack, and no single pack is in more than a third of the
-  rooms); crystals in proportion; the sight test and the triangle budget
+  table by depth (the first rooms hold one of the two smallest packs, the
+  deepest a two-brute pack, and no single pack is in more than half of
+  the rooms; a trial over 200 seeds found the most common pack in up to
+  42% of a cave's rooms, so "a third", written here first, would fail on
+  8 seeds in 200); crystals in proportion; the sight test and the triangle budget
   above; the small cave and hall still drawn whole; screenshots of the
   big cave's start, a room, a tunnel, the boss chamber and the minimap.
 - **coop-host:** a cave built for two is big and one built for one is
   not (grade E; a sewer for two is still the sewer); a wipe keeps it
-  big; a friend joining a cave for one gets the small one; the enemy count for two in range; the build-time ceiling; a
+  big; a friend joining a cave for one gets the small one; the enemy
+  count for two in range; the build-time ceiling (the plan has the host
+  skip `sees`, so the full build's ceiling is checked in the page script
+  and the host's own, much shorter, here); a
   simulated minute in the big cave with two players standing apart keeps
   the average step under a stated cost.
 - **coop-wire:** the join of the big cave for two fits one relay frame.
