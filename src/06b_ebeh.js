@@ -1779,9 +1779,11 @@ function crocRollSpot(e, c) {
 //          and landing in a sweep round the circle over sweep s. The door
 //          spot (sealDoor) is door m inside the rock; a player brought
 //          there from outside sees a fade of fade s
-//   dark   the cave's crystals while the seal stands (G.dark): their light
-//          and glow fall to floor of what they were over over s, and come
-//          back over over s when it ends
+//   dark   the cave's light while the seal stands (G.dark): over over s the
+//          crystals' light and glow fall to floor of what they were, the
+//          cave's ambient light to amb and the player's lamp to lamp, and
+//          they come back over over s when it ends. The Warden's light,
+//          shots, rings, sparks and the exit gate's light are not dimmed
 const WARDEN2 = {
   hp: 2.5,
   marks: [0.75, 0.5, 0.25],
@@ -1811,7 +1813,7 @@ const WARDEN2 = {
     pull: 8,
   },
   seal: { n: 24, ring: 12.5, rock: 1.4, warn: 1.4, sweep: 0.6, door: 2, fade: 0.4 },
-  dark: { floor: 0.12, over: 2 },
+  dark: { floor: 0.12, amb: 0.12, lamp: 0.25, over: 2 },
 };
 // ---- the seal ----
 // In phase 4 of the Warden for two a ring of rock falls round its chamber's
@@ -1918,8 +1920,10 @@ function darkUpdate(dt) {
     s = dt / WARDEN2.dark.over;
   d.v = d.to > d.v ? Math.min(d.to, d.v + s) : Math.max(d.to, d.v - s);
 }
-// What the cave's crystals are multiplied by: 1 when it is light.
-const darkMul = () => 1 + (WARDEN2.dark.floor - 1) * G.dark.v;
+// What a light that goes down to floor f is multiplied by: 1 when it is
+// light. darkMul is the crystals'.
+const darkK = (f) => 1 + (f - 1) * G.dark.v,
+  darkMul = () => darkK(WARDEN2.dark.floor);
 // Moves body o of radius r radially in to open floor inside the ring.
 function sealIn(w, o, r) {
   const B = w.boss,

@@ -1132,14 +1132,16 @@ export default [
           // the strength of the crystals' lights (radius 15) this frame sends
           const R = DF.R,
             set = R.setLights;
-          let cry = 0;
+          let cry = 0,
+            lamp = 0;
           R.setLights = function (L) {
             cry = L.filter((l) => l.r === 15).reduce((a, l) => a + l.i, 0);
+            lamp = L[0].i;
             return set.call(R, L);
           };
           try {
             await w2.frames();
-            return { ...(await w2.shade()), cry };
+            return { ...(await w2.shade()), cry, lamp };
           } finally {
             R.setLights = set;
           }
@@ -1171,8 +1173,7 @@ export default [
     eval: async () => {
       const { G } = DF,
         w2 = window.__w2,
-        T = DF.WARDEN2.dark,
-        floor = T.floor;
+        T = DF.WARDEN2.dark;
       G.manual = true;
       w2.start();
       const c = { stood: w2.standIn(8), awake: w2.wake() };
@@ -1184,12 +1185,13 @@ export default [
         DF.devGod(false);
       }
       c.lit = G.dark.v === 0;
-      // The Warden away from the view, before the seal: the glow is whole;
-      // then the Warden as it was, so that its roar into phase 4 is its own
+      // Before the seal, the Warden out of the view and then in its wind-up
+      // (then as it was, so that its roar into phase 4 is its own)
       const hb = w2.hostBoss(),
-        was = { x: hb.x, z: hb.z, y: hb.y, state: hb.state, t: hb.t, dur: hb.dur, atk: hb.atk, tx: hb.tx, tz: hb.tz };
-      await w2.look("away");
-      c.glowLit = DF.R.env.glow === 1;
+        was = { x: hb.x, z: hb.z, y: hb.y, state: hb.state, t: hb.t, dur: hb.dur, atk: hb.atk, tx: hb.tx, tz: hb.tz },
+        looks = async () => [await w2.look("away"), await w2.look("wind"), await w2.look("away", true)],
+        lit = await looks();
+      c.full = DF.R.env.glow === 1 && DF.R.env.ambK === 1;
       Object.assign(hb, was);
       c.entered4 = !!w2.host().phase(4);
       DF.devGod(true);
@@ -1199,31 +1201,24 @@ export default [
         DF.devGod(false);
       }
       c.sealed = !!G.seal && G.seal.down && G.dark.v > 0.95;
-      // Each look: the centre with the Warden away, the Warden in its
-      // wind-up, and the nearest crystal with the Warden away. The sealed
-      // chamber twice, its crystals at the floor and then at full (the table
-      // changed for the second, which also keeps the heaps of rock, which
-      // light up under the player's lamp, out of the comparison).
-      const looks = async () => [await w2.look("away"), await w2.look("wind"), await w2.look("away", true)];
-      const dark = await looks();
-      c.glowDark = Math.abs(DF.R.env.glow - (1 + (T.floor - 1) * G.dark.v)) < 1e-6 && DF.R.env.glow < 0.2;
+      // the same three looks sealed, from the door spot: the centre with the
+      // Warden away, the Warden in its wind-up, and the nearest crystal
+      const dark = await looks(),
+        mul = (f) => 1 + (f - 1) * G.dark.v;
+      c.dimmed =
+        Math.abs(DF.R.env.glow - mul(T.floor)) < 1e-6 &&
+        Math.abs(DF.R.env.ambK - mul(T.amb)) < 1e-6 &&
+        DF.R.env.glow < 0.2 &&
+        DF.R.env.ambK < 0.3;
       c.wind = w2.boss().state === "recoil" && dark[1].up > dark[0].up * 1.1;
-      T.floor = 1;
-      let lit;
-      try {
-        lit = await looks();
-      } finally {
-        T.floor = floor;
-      }
-      c.glowFull = lit[0].cry > 0;
-      // The crystals' lights are at the floor. The frame is darker, but by
-      // little: the player's lamp and the cave's ambient light, which stay,
-      // carry most of it (rendering.md), so the check is that it is darker.
+      // the crystals' lights are at their floor, the player's lamp at its own
       const k = dark[0].cry / lit[0].cry;
-      c.lights = k > floor * 0.8 && k < floor * 1.4;
-      c.darker = dark[0].mean < lit[0].mean && dark[2].mean < lit[2].mean;
+      c.lights = k > T.floor * 0.8 && k < T.floor * 1.4;
+      c.lamp = Math.abs(dark[0].lamp / lit[0].lamp - T.lamp) < 0.01;
+      // the room is dark: under 60% of the frame before the seal
+      c.darker = dark[0].mean < lit[0].mean * 0.6 && dark[2].mean < lit[2].mean * 0.75;
       // the Warden shows: the brightest tenth of its wind-up frame is no
-      // dimmer than 70% of the same frame with the crystals at full
+      // dimmer than 70% of the same before the seal
       c.shows = dark[1].top >= lit[1].top * 0.7;
       const r = (o) => ({ mean: +o.mean.toFixed(1), up: +o.up.toFixed(1), top: +o.top.toFixed(1), cry: +o.cry.toFixed(2) });
       return {

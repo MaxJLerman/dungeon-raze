@@ -236,9 +236,12 @@ On entering phase 4 the Warden's roar lasts 2.2 s and during it:
   joining or rejoining, and a player who was away when the rock fell and
   is still outside when they come back.
 - **The lights.** The cave's crystals dim to 12% over 2 s on both pages
-  and stay there while the seal stands. The Warden's own glow, shots,
-  rings and sparks light as usual. The floor of 12% is *my call* and the
-  builder may raise it from the screenshots.
+  and stay there while the seal stands. The crystals turned out not to be
+  what lights the cave (the player's lamp and the ambient light are), so
+  the ambient light dims to 12% and the player's lamp to 25% with them,
+  floors set from screenshots (the sealed frame is 57% of the frame before
+  the seal; the Warden's wind-ups read by its own glow). The Warden's own
+  glow, the exit gate's light, shots, rings and sparks light as usual.
 
 While the seal stands a player who dies sees the usual death screen and
 gets up at the door spot with what a respawn gives today. The Warden's

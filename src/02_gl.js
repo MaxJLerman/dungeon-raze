@@ -65,6 +65,8 @@ const R = (() => {
     t: 0,
     // what the world's own glow (its vertex colours' alpha) is multiplied by
     glow: 1,
+    // what the ambient light is multiplied by
+    ambK: 1,
   };
   const stats = { draws: 0, tris: 0 };
 
@@ -398,7 +400,7 @@ const R = (() => {
     const u = lit.u;
     gl.uniformMatrix4fv(u.uVP, false, VP);
     gl.uniform3f(u.uCam, cam.x, cam.y, cam.z);
-    gl.uniform3fv(u.uAmb, env.amb);
+    gl.uniform3f(u.uAmb, env.amb[0] * env.ambK, env.amb[1] * env.ambK, env.amb[2] * env.ambK);
     gl.uniform3fv(u.uFog, fg);
     gl.uniform1f(u.uFogD, env.fogD);
     gl.uniform1f(u.uTime, env.t);

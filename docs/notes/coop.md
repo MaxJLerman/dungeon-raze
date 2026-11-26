@@ -405,7 +405,7 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   `sealEnd(true)`; a `reset` with `seal` false ends a standing seal with
   `sealEnd(false)`, and one with `seal` true and none standing calls
   `sealNow()` (this player is then brought in by the keep-in rule).
-  **The dark** (`WARDEN2.dark`, `{ floor: 0.12, over: 2 }`) is `G.dark = { v,
+  **The dark** (`WARDEN2.dark`, `{ floor: 0.12, amb: 0.12, lamp: 0.25, over: 2 }`: the floors of the crystals, the cave's ambient light and the player's lamp) is `G.dark = { v,
   to }`, both 0 to 1, in `06_game.js` (so the host copy holds it, as plain
   numbers; nothing there draws). `sealBegin` and `sealNow` set `to` to 1,
   `sealEnd` sets it to 0, and `sealEnd(false)` (a wipe, a world, any reset)

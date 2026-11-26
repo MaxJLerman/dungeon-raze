@@ -39,30 +39,46 @@
   with no gap; the crocodile's chunks have no `ends` and are drawn as
   before. Their warning is `drawDust`'s. `tests/t32.mjs` takes
   `shots/t32-warn.png` and `shots/t32-ring.png`.
-- **The dark of the Warden for two's last phase** (`coop.md`). `darkMul()`
-  (`06b`) is `1 + (floor - 1) * G.dark.v`, which is 1 whenever `G.dark.v` is
-  0, so the hall, the sewer and a solo cave draw as they always did. It
-  multiplies the strength of every light from `world.lights` in
-  `buildLights` (the player's lamp, the shrines, the exit gate, a flash and
-  the boss's light are not), the alpha of the non-lamp halo sprites drawn
-  for the crystals, and, through `R.env.glow` (set each frame in `render`,
-  uniform `uGlow`), the glow a world vertex carries in its alpha byte
-  (`glow=vC.a*uGlow`, before the water's own glow is added). Figures draw
-  with glow 0, so the uniform does not touch them. `tests/t32.mjs` reads
-  the canvas in the same task as the draw (it wraps `R.end` and copies the
-  canvas to a 2D one; the drawing buffer is not kept) and takes
-  `shots/t32-dark` and `shots/t32-lit`. **What it measured.** With the
-  floor at 0.12 the crystals' lights are at 12 to 14% of what they were, but
-  the frame is only 2 to 4% darker on average (the same sealed frame with
-  the floor at 1 against 0.12, the Warden away). The player's own lamp
-  (1.55, radius 20) lights the floor and the heaps of the seal, the cave's
-  ambient light is lifted by the gamma, and the red crystals weigh little
-  in luminance, so what the dark changes most is the colour: the red wash
-  on the walls goes grey. Even a floor of 0 takes the frame to about 94%.
-  A room that reads as dark needs the ambient light or the lamp dimmed
-  too, which `WARDEN2.dark` does not do. The Warden's wind-up stays easy to
-  read (the brightest tenth of its frame is not dimmer than the lit one), so
-  `floor` stays at the spec's 0.12.
+- **The dark of the Warden for two's last phase** (`coop.md`).
+  `darkK(f)` (`06b`) is `1 + (f - 1) * G.dark.v`, which is 1 whenever
+  `G.dark.v` is 0, so the hall, the sewer and a solo cave draw as they
+  always did. `WARDEN2.dark` has three floors, each applied in `07_render.js`
+  by `darkK`: `floor` 0.12 for the cave's crystals (`darkMul()`: the strength
+  of every light from `world.lights` in `buildLights`, the alpha of the
+  non-lamp halo sprites, and, through `R.env.glow` and uniform `uGlow`, the
+  glow a world vertex carries in its alpha byte, `glow=vC.a*uGlow`, before
+  the water's own glow is added); `amb` 0.12 for the cave's ambient light
+  (`R.env.ambK`, which `R.begin` multiplies into `uAmb`); and `lamp` 0.25
+  for the player's own lamp, the first light of `buildLights`. Not dimmed:
+  the Warden's light, the exit gate's, shrines and flashes, shots, rings,
+  sparks, the aftershock ring, the dust warnings, the HUD, and the fog
+  colour (already near black). Figures draw with glow 0, so `uGlow` does not
+  touch them, but they are lit by the ambient light and the lamp and so
+  darken with them.
+  **Why three.** The first build dimmed only the crystals, as the spec said,
+  and the sealed frame came out only 2 to 4% darker: the cave's red
+  crystals weigh little in luminance, and what lights the cave is the
+  player's lamp (1.55, radius 20) and the ambient light, which the gamma
+  lifts. Even a crystal floor of 0 left 94%. So the room only reads as dark
+  when those two go down too.
+  **How the values were found** (screenshots from the door spot, 9 m from
+  the Warden, and a mean over the canvas with the Warden out of view). With
+  the sealed frame at full light as the baseline, `amb` and `lamp` of 0.4
+  and 0.4 gave 67% of it, 0.25 and 0.3 gave 60%, 0.15 and 0.2 gave 51%. The
+  chosen 0.12 and 0.25 give 57% of the frame before the seal (the heaps of
+  rock add a little light, so that baseline is lower), with the brightest
+  tenth of the Warden's wind-up frame at 82% of the lit one. Looked at: the
+  Warden's raised arms in the slam wind-up and the wide arms of the seize
+  read clearly at 8 to 9 m by its own red glow; the player's figure shows
+  against the lamp-lit floor, which is lit a few metres round it; the rubble
+  wall can be made out from 3 m. The player's own body is dark teal and
+  reads mostly by its rim and the lamp, so do not go much lower on `lamp`.
+  `tests/t32.mjs` reads the
+  canvas in the same task as the draw (it wraps `R.end` and copies the
+  canvas to a 2D one; the drawing buffer is not kept), checks the sealed
+  frame is under 60% of the frame before the seal and the Warden's
+  wind-up frame's brightest tenth at least 70%, and takes `shots/t32-dark`
+  and `shots/t32-lit`.
 - **The roar pose** (`poseEnemy`'s `"roar"`) fills the roar's own length,
   `def.roarT[phase]` (the Warden for two's phase 4 roar is 2.2 s), and 1.2 s
   for a definition without it.

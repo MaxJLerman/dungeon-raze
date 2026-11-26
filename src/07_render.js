@@ -581,7 +581,7 @@ function buildLights() {
     y: 2.5,
     z: p.z + Math.cos(p.yaw) * 0.4,
     c: [0.72, 0.86, 1],
-    i: 1.55,
+    i: 1.55 * darkK(WARDEN2.dark.lamp),
     r: 20,
   });
   for (const sh of w.shrines)
@@ -960,6 +960,7 @@ function render() {
     w = G.world;
   R.env.t = G.t;
   R.env.glow = darkMul();
+  R.env.ambK = darkK(WARDEN2.dark.amb);
   buildLights();
   R.begin();
   R.drawWorld(visiblePieces(w, R.cam.x, R.cam.z, p.x, p.z));
