@@ -112,3 +112,10 @@
   phone or on Safari.
 - A swipe to switch lock target picks the next target without regard to the
   direction of the swipe.
+- `tests/t14.mjs` fails two steps on every device (`node tests/touch-all.mjs
+  tests/t14.mjs`, 12 of 12): "controls screen shows touch settings" (keys
+  `label` and `note` false: the notch label and note text it expects) and
+  "the rotate screen takes a tap" (key `line` false: the line under the
+  rotate message). Seen on 239d320, before the main menu and the co-op
+  lobby, and unchanged by `feat/coop-lobby`. The cause is not
+  investigated; the page text may have changed and not the test.

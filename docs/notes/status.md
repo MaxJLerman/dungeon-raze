@@ -137,3 +137,6 @@
    (its numbers are guesses).
 10. More health and more phases for the Warden when two players fight it,
     beyond the 1.8 times health and the heal on a death in its chamber.
+11. Two phone test failures older than the co-op lobby: `tests/t14.mjs` on
+    every device and `tests/t29.mjs` on four short phones. See the known
+    problems in `touch.md` and `coop.md`. Causes not investigated.

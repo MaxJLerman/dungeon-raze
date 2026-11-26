@@ -173,6 +173,8 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   or the other is `COOP.STICK` nearer), so the host's `enemies()` makes a
   non-boss holder that changes from one player to another give its turn up
   (`e.token = false`) when the new target already has `turns` other holders.
+  A swing already under way is not cut off, so a third attacker may begin
+  one against that target while it finishes.
   **The feed:** each tick `present()` remembers every proxy's state
   (`was`, reset to `"free"` by `build`); a change to `"dead"` inside the
   boss chamber, in a dungeon for two with the boss alive and `aware`,
@@ -531,7 +533,9 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
     answers, a Start that `play()` refuses, a Worker that fails) with
     `title`, on
     the desktop page and on a phone:
-    `DEVICE=oneplus-13 SCRIPT=$PWD/tests/t29.mjs node test.mjs title`. Look
+    `DEVICE=oneplus-13 SCRIPT=$PWD/tests/t29.mjs node test.mjs title`, or on
+    every phone with `node tests/touch-all.mjs tests/t29.mjs title` (the
+    `title` is needed: the default mode is `smoke`). Look
     at `shots/t29-room.png`, `shots/t29-room-class.png` (the cards and
     the copy buttons) and the two `shots/oneplus-13-t29-*.png`.
   - `node tests/coop-e2e.mjs`: end to end. It serves `dist/` on port 8123,
@@ -653,3 +657,11 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
   there is no share sheet (`navigator.share`) on phones.
 - The dev lag dial's panel swallows a mouse release over it in the
   no-pointer-lock fallback.
+- `tests/t29.mjs` fails one step on the short phones pixel-9, pixel-5,
+  fold-7-cover and moto-g4 (`node tests/touch-all.mjs tests/t29.mjs title`,
+  4 of 12; the other eight pass): "the host chooses a class in the room, and
+  the code and the invite link are copied", key `startInView`. That key
+  checks that the bottom of Start and Back (`#coopEnter`) is inside the
+  viewport and above the class cards, so on a viewport 308 px or less high
+  the room screen's Start is probably out of view. Seen on 239d320, before
+  the co-op lobby, and unchanged by it. The cause is not investigated.
