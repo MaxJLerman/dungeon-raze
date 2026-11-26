@@ -484,6 +484,54 @@ export default [
     },
   },
   {
+    name: "after a swap the other player is not drawn where it stood in the last world",
+    eval: () => {
+      const { G } = DF,
+        co = window.__co;
+      G.manual = true;
+      const r = co.solo({ hub: true, seed: 99, ping: 50, mate: "idle" });
+      DF.show("play");
+      // the other player is heard in the hall, standing by the start
+      co.run(1, null, false);
+      const m = DF.net().mates[0],
+        hall = { x: m.x, z: m.z, away: m.away };
+      // the host's page steps into E's gate; at the first step in the new
+      // world the other player has had no snapshot of it yet
+      const q = G.world.portals.find((o) => o.grade === "E"),
+        o = DF.portalFront(q, -0.75),
+        p = G.player;
+      p.x = o.x;
+      p.z = o.z;
+      let first = null;
+      co.run(4, () => {
+        if (!first && DF.CC.epoch === 2) {
+          const P = G.player,
+            mm = DF.net().mates[0];
+          first = {
+            same: mm === m,
+            away: mm.away,
+            d: Math.hypot(mm.x - P.x, mm.z - P.z),
+            fromHall: Math.hypot(mm.x - hall.x, mm.z - hall.z),
+            snaps: mm.nb.length,
+            state: mm.state,
+          };
+        }
+        if (first && G.zone === "cave" && !G.trans && !DF.net().mates[0].away) return false;
+      }, false);
+      const mm = DF.net().mates[0],
+        px = r.host.S.px.get(2),
+        c = {
+          heard: hall.away === false,
+          built: !!first && G.zone === "cave" && G.seed === 99,
+          first: !!first && first.same && first.away === true && first.d < 0.05 && first.fromHall > 5 && first.state === "free",
+          // a snapshot of the new world moves it and it is there again
+          later: !mm.away && Math.hypot(mm.x - px.x, mm.z - px.z) < 0.5,
+        };
+      DF.coopEnd("test");
+      return { pass: Object.values(c).every((v) => v === true), c, first };
+    },
+  },
+  {
     name: "a join this page cannot read is refused before anything is built",
     eval: () => {
       const { G } = DF,
@@ -503,6 +551,10 @@ export default [
         dead: (j) => (j.dead = 5),
         deadId: (j) => (j.dead = ["a"]),
         peers: (j) => (j.peers = "x"),
+        epochZero: (j) => (j.e = 0),
+        epochFraction: (j) => (j.e = 1.5),
+        epochString: (j) => (j.e = "1"),
+        epochMissing: (j) => delete j.e,
         notObject: (j) => Object.keys(j).forEach((k) => delete j[k]),
       };
       const out = {};

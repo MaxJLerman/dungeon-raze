@@ -39,8 +39,8 @@ const COOP_SAY = {
 //   busy   the room is being made (POST /new in flight)
 //   try    counts attempts, so an answer that comes after Back is dropped
 //   loc    a stand-in for location, for tests (DF.coopLoc)
-//   seed   the seed the next hosted run uses, and its first trip through a
-//          hall gate, for tests; null is random
+//   seed   the seed of a hosted room's first trip through a hall gate, for
+//          tests; null is random
 //   html   what #coopSlots last showed
 //   relay  the hosted room's relay socket is open, as its Worker last said
 const CR = { role: null, link: null, code: "", busy: false, try: 0, loc: null, seed: null, html: "", relay: false };
@@ -193,9 +193,9 @@ async function coopHostRoom() {
   }
   Object.assign(CR, { busy: false, code, link: w.link });
   w.link.onrelay = coopRelayNews;
-  const seed = CR.seed !== null ? CR.seed : (Math.random() * 1e9) | 0 || 7;
-  w.worker.postMessage({ start: { seed, grade: "E", relay: coopRelayBase(), code } });
-  // the first trip through a hall gate takes CR.seed too (random when null)
+  // a room starts in the hall; the first trip through a gate takes CR.seed
+  // (random when null)
+  w.worker.postMessage({ start: { hub: true, relay: coopRelayBase(), code } });
   coopBegin(w.link, { cls: coopMyCls(), seed: CR.seed, onRefuse: coopRoomRefused });
   coopRoomRender();
 }
@@ -311,7 +311,15 @@ function coopRoomRender() {
   if ($("coopShow").textContent !== CR.code) $("coopShow").textContent = CR.code;
   enter.hidden = !live;
   enter.disabled = !ready;
-  const label = host ? "Start" : ready ? "Enter the cave" : "Waiting for the host to start";
+  // the friend's button names where it leads: the host's hall, or the
+  // dungeon the host has already gone into
+  const label = host
+    ? "Start"
+    : ready
+      ? CC.kind === "hub"
+        ? "Enter the hall"
+        : "Enter the dungeon"
+      : "Waiting for the host to start";
   if (enter.textContent !== label) enter.textContent = label;
   const me = coopMyCls(),
     slot = (cls, who, mine) =>

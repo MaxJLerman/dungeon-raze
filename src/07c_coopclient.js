@@ -396,16 +396,18 @@ const COOP_NOW = {
   pblast: (m) => coopNums(m, 8) && m[4] > 0,
 };
 
-// A world this page can build, as join and world describe it: the hall, or
-// a cave of a grade co-op plays from a finite seed, and every list of its
-// shape. Checked before anything is built, so a bad one leaves nothing half
-// made.
+// A world this page can build, as join and world describe it: an epoch
+// that is a whole number from 1, the hall or a cave of a grade co-op plays
+// from a finite seed, and every list of its shape. Checked before anything
+// is built, so a bad one leaves nothing half made.
 function coopWorldOk(d) {
   const id = (v) => Number.isInteger(v) && v >= 0,
     enemy = (q) =>
       Array.isArray(q) && q.length >= 5 && id(q[0]) && typeof q[1] === "string" && Object.hasOwn(EDEF, q[1]) &&
       coopNum(q[2]) && coopNum(q[3]) && coopNum(q[4]);
   return (
+    Number.isInteger(d.e) &&
+    d.e > 0 &&
     (d.kind === "hub" || (d.kind === "cave" && COOP.GRADES.includes(d.grade) && coopNum(d.seed))) &&
     typeof d.sum === "string" &&
     Array.isArray(d.enemies) &&
@@ -455,7 +457,9 @@ function coopJoin(j) {
 // become the puppets, the gate over a dead boss opens, and everything that
 // belonged to the last world goes: event numbers, guesses, queued events,
 // an execution under way, a gate or trip asked for, the other player's
-// snapshots. Then the host is told this page is there (at).
+// snapshots. The other player is not drawn where it stood in the last world:
+// it waits, away, where this player arrived until a snapshot of this world
+// moves it. Then the host is told this page is there (at).
 function coopBuild(d) {
   if (d.kind === "hub") enterHub(typeof d.from === "string" ? d.from : null, true);
   else enterCave(d.grade, d.seed);
@@ -488,7 +492,24 @@ function coopBuild(d) {
     trip: false,
     heard: CC.now,
   });
-  if (NET) for (const m of NET.mates) m.nb = [];
+  if (NET)
+    for (const m of NET.mates)
+      Object.assign(m, {
+        nb: [],
+        x: G.player.x,
+        z: G.player.z,
+        yaw: G.player.yaw,
+        away: true,
+        state: "free",
+        move: null,
+        t: 0,
+        speed: 0,
+        sprint: false,
+        guardT: 0,
+        swing: null,
+        flash: 0,
+        hp: m.maxHp,
+      });
   // this page is in the host's world: until it says so the host ignores it
   coopAsk("at", d.e);
   return true;
@@ -1244,16 +1265,19 @@ function coopBase() {
 // player dead, paused or in a menu is taken along all the same and arrives
 // alive; one on the death screen lands on the play screen. A world this page
 // cannot read ends co-op ("bad"), and so does one it builds differently
-// ("cave"). From the exit gate (won, the host's run time) it says "OUT
-// ALIVE" and the time on arrival, in place of the win screen.
+// ("cave"); before this page has entered (a friend still on the room screen)
+// either is refused as a bad join is, so the room screen stays, says why and
+// is ready to try again. From the exit gate (won, the host's run time) it
+// says "OUT ALIVE" and the time on arrival, in place of the win screen.
 function coopTravel(d) {
-  if (!coopWorldOk(d)) return coopEnd("bad");
+  const fail = (why) => (NET && NET.live ? coopEnd(why) : coopRefuse(why));
+  if (!coopWorldOk(d)) return fail("bad");
   const link = CC.link;
   const swap = () => {
     // co-op ended, or another run began, while the fade ran: nothing to do
     if (!NET || CC.link !== link) return;
     if (!coopBuild(d)) {
-      coopEnd("cave");
+      fail("cave");
       return false;
     }
     if (G.state === "dead") show("play");

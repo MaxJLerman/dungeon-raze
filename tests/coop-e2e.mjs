@@ -1,6 +1,8 @@
 // Co-op end to end: the built page served from dist/ on localhost:8123, the
 // relay under wrangler dev on localhost:8787, and several Chromium pages
-// hosting, joining by code and by invite link, and picking classes. Every HTTP request but to localhost is
+// hosting, joining by code and by invite link, and picking classes. A room
+// starts in the host's hall; the host walking into E's gate takes both pages
+// into one cave, and the exit gate brings both back. Every HTTP request but to localhost is
 // aborted. Playwright's routing does not see WebSockets: the only socket
 // address the pages are given is the local relay (DF.coopRelay).
 // Run with: node build.mjs && node tests/coop-e2e.mjs
@@ -208,10 +210,59 @@ const info = (p) =>
   p.evaluate(() => ({
     state: DF.G.state,
     net: !!DF.net(),
+    zone: DF.G.zone,
     enemies: DF.G.enemies.length,
+    mates: DF.net() ? DF.net().mates.length : 0,
     sum: DF.coopWorldSum(DF.G.world),
     seed: DF.G.seed,
   }));
+// Walks this page's player through points d metres in front of E's gate in
+// the hall, steering by the camera, and lets go once there, once the world
+// changes or once a fade begins.
+const walkE = (p, ds) =>
+  p.evaluate((ds) => {
+    const { G } = DF,
+      q = G.world.portals.find((o) => o.grade === "E"),
+      way = ds.map((d) => DF.portalFront(q, d)),
+      w0 = G.world;
+    clearInterval(window.__steer);
+    window.__steer = setInterval(() => {
+      const pl = G.player;
+      while (way.length && Math.hypot(way[0].x - pl.x, way[0].z - pl.z) < 0.5) way.shift();
+      if (!way.length || G.world !== w0 || G.trans) {
+        DF.keys[DF.BIND.fwd] = false;
+        clearInterval(window.__steer);
+        return;
+      }
+      DF.cam.yaw = Math.atan2(way[0].x - pl.x, way[0].z - pl.z);
+      DF.keys[DF.BIND.fwd] = true;
+    }, 50);
+  }, ds);
+// The host walks into E's opening: both pages end up in one cave, fade over.
+async function intoE(h, f) {
+  await walkE(h, [2.5, -0.75]);
+  const inCave = (p) => p.evaluate(() => DF.G.zone === "cave" && !DF.G.trans && DF.G.state === "play" && !!DF.net() && DF.net().live);
+  await until("both pages in the cave", async () => (await inCave(h)) && (await inCave(f)), 30000);
+  const a = await info(h),
+    b = await info(f);
+  assert.equal(a.seed, b.seed, "the same seed");
+  assert.equal(a.sum, b.sum, "the same cave");
+  // both draw the host's enemy list (cave 99 has 47)
+  assert.equal(a.enemies, b.enemies);
+  assert.ok(a.enemies > 0, "enemies");
+  if (a.seed === 99) assert.equal(a.enemies, 47);
+  return a.seed;
+}
+// The room code on this page's pause screen, "" when it shows none.
+const shownCode = (p) =>
+  p.evaluate(async () => {
+    DF.show("pause");
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const el = document.getElementById("pauseCode"),
+      t = el && !el.hidden && el.getClientRects().length ? el.textContent.replace(/\s+/g, " ").trim() : "";
+    DF.show("play");
+    return t;
+  });
 
 async function main() {
   await serve();
@@ -252,26 +303,32 @@ async function main() {
   });
 
   await check("each picks a class in the room and the other page shows it", async () => {
+    // the slots are redrawn on the page's next frame: a page's own slot is
+    // waited for as the other page's is
+    const cls = (p) => p.evaluate(() => [DF.OPT.cls, DF.G.player.clsId]);
+    const slotsAre = (p, want) => until(p.__name + "'s slots to read " + want, async () => (await slotCls(p)).join() === want.join());
     await pickCls(friend, "tanker");
+    assert.deepEqual(await cls(friend), ["tanker", "tanker"]);
     await until("the host to show the friend's class", async () => (await slotCls(host))[1] === "tanker");
-    assert.equal((await slotCls(friend))[0], "tanker");
+    await until("the friend's own slot to read tanker", async () => (await slotCls(friend))[0] === "tanker");
     await pickCls(host, "mage");
+    assert.deepEqual(await cls(host), ["mage", "mage"]);
     await until("the friend to show the host's class", async () => (await slotCls(friend))[1] === "mage");
-    assert.deepEqual(await slotCls(host), ["mage", "tanker"]);
+    await slotsAre(host, ["mage", "tanker"]);
     // a second thought, before entering
     await pickCls(friend, "ranger");
     await until("the host to show the change", async () => (await slotCls(host))[1] === "ranger");
-    assert.deepEqual(await slotCls(friend), ["ranger", "mage"]);
+    await slotsAre(friend, ["ranger", "mage"]);
     // still waiting on the host, and nothing was said
     assert.equal(await msg(friend), "");
     assert.equal(await msg(host), "");
   });
 
-  await check("both enter: in play, 47 enemies each and the same cave", async () => {
+  await check("both enter the host's hall, each with the other player there", async () => {
     await enter(host);
     // the host's Start lets the friend in
-    await until("the friend's button to read Enter the cave", () =>
-      friend.evaluate(() => { const b = document.getElementById("coopEnter"); return !b.disabled && b.textContent.trim() === "Enter the cave"; }),
+    await until("the friend's button to read Enter the hall", () =>
+      friend.evaluate(() => { const b = document.getElementById("coopEnter"); return !b.disabled && b.textContent.trim() === "Enter the hall"; }),
     );
     await enter(friend);
     const a = await info(host),
@@ -279,9 +336,13 @@ async function main() {
     assert.equal(a.state, "play");
     assert.equal(b.state, "play");
     assert.ok(a.net && b.net, "NET on both");
-    assert.equal(a.enemies, 47);
-    assert.equal(b.enemies, 47);
-    assert.equal(a.seed, 99);
+    assert.equal(a.zone, "hub");
+    assert.equal(b.zone, "hub");
+    // the dummy, the only enemy in the hall
+    assert.equal(a.enemies, 1);
+    assert.equal(b.enemies, 1);
+    assert.equal(a.mates, 1);
+    assert.equal(b.mates, 1);
     assert.equal(a.sum, b.sum);
     // each plays what it picked, and is drawn as that on the other page
     const who = (p) => p.evaluate(() => [DF.G.player.clsId, DF.net().mates.map((m) => m.clsId).join()]);
@@ -308,40 +369,19 @@ async function main() {
     // both are still in the same run
     assert.equal(await state(host), "play");
     assert.equal(await state(friend), "play");
-    assert.equal((await info(friend)).enemies, 47);
+    assert.equal((await info(friend)).zone, "hub");
   });
 
   await check("the host's pause screen shows the room code while the relay is up; the friend's does not", async () => {
-    const shownCode = (p) =>
-      p.evaluate(async () => {
-        DF.show("pause");
-        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-        const el = document.getElementById("pauseCode"),
-          t = el && !el.hidden && el.getClientRects().length ? el.textContent.replace(/\s+/g, " ").trim() : "";
-        DF.show("play");
-        return t;
-      });
     assert.equal(await until("the host's code on its pause screen", async () => (await shownCode(host)) || ""), "Room code " + code);
     assert.equal(await shownCode(friend), "");
   });
 
-  await check("the host walks and the friend sees them move more than 2 m", async () => {
+  await check("the host walks in the hall and the friend sees them move more than 2 m", async () => {
     await until("the friend hears the host", () => friend.evaluate(() => DF.net() && DF.net().mates.length === 1 && !DF.net().mates[0].away), 10000);
     const m0 = await friend.evaluate(() => ({ x: DF.net().mates[0].x, z: DF.net().mates[0].z }));
-    // walk toward the next chamber on the way to the boss, steering by a route
-    await host.evaluate(() => {
-      const { G } = DF,
-        w = G.world,
-        p = G.player,
-        goal = w.nodes[w.path[Math.min(2, w.path.length - 1)]];
-      let way = w.route(p.x, p.z, goal.x, goal.z, p.r) || [];
-      window.__steer = setInterval(() => {
-        way = way.filter((q) => Math.hypot(q.x - p.x, q.z - p.z) > 1);
-        const q = way[0] || goal;
-        DF.cam.yaw = Math.atan2(q.x - p.x, q.z - p.z);
-        DF.keys[DF.BIND.fwd] = true;
-      }, 50);
-    });
+    // from the hall's start toward E's gate
+    await walkE(host, [2.5]);
     await sleep(3000);
     const moved = await until(
       "the friend to see the host 2 m away",
@@ -358,6 +398,13 @@ async function main() {
       DF.keys[DF.BIND.fwd] = false;
     });
     assert.ok(moved > 2, "moved " + moved);
+  });
+
+  await check("the host walks into E's gate: both pages are in the same cave", async () => {
+    const seed = await intoE(host, friend);
+    // the first trip takes the room's seed (DF.coopSeed)
+    assert.equal(seed, 99);
+    assert.equal((await info(friend)).mates, 1);
   });
 
   await check("a page whose hello is from another version is told so", async () => {
@@ -399,6 +446,11 @@ async function main() {
     assert.equal(await friend.evaluate(() => window.__socks.length + window.__workers.length), 0);
     assert.equal(await friend.evaluate(() => document.activeElement && document.activeElement.id), "coopJoin");
     await friend.click("#coopJoin");
+    // the host is in the cave: the join lands there, and the button says so
+    await until("the friend's button to read Enter the dungeon", () =>
+      friend.evaluate(() => { const b = document.getElementById("coopEnter"); return !b.disabled && b.textContent.trim() === "Enter the dungeon"; }),
+    );
+    assert.equal(await friend.evaluate(() => DF.G.zone), "cave");
     // the run is under way: the class can still be picked before entering
     await pickCls(friend, "fighter");
     await until("the host to see the friend's new class", () =>
@@ -406,10 +458,13 @@ async function main() {
     );
     await enter(friend);
     assert.equal(await friend.evaluate(() => DF.G.player.clsId), "fighter");
-    const b = await info(friend);
+    const b = await info(friend),
+      a = await info(host);
+    assert.equal(b.zone, "cave");
     assert.equal(b.enemies, 47);
     assert.ok(b.net);
-    assert.equal(b.sum, (await info(host)).sum);
+    assert.equal(b.seed, a.seed);
+    assert.equal(b.sum, a.sum);
     await until("each sees the other", async () =>
       (await host.evaluate(() => DF.net() && DF.net().mates.length === 1)) &&
       (await friend.evaluate(() => DF.net() && DF.net().mates.length === 1 && !DF.net().mates[0].away)),
@@ -466,7 +521,7 @@ async function main() {
     console.log("     told after " + ((Date.now() - t0) / 1000).toFixed(1) + " s");
   });
 
-  await check("after the gate: both in the hall, the room still open, and the friend still sees the host", async () => {
+  await check("a second room: through E together, back through the gate with the room open, and a second trip is a new cave", async () => {
     const host2 = await openPage("host2");
     const code2 = await hostRoom(host2);
     assert.notEqual(code2, code);
@@ -475,6 +530,9 @@ async function main() {
     assert.equal(await msg(friend), "");
     await enter(host2);
     await enter(friend);
+    assert.equal((await info(host2)).zone, "hub");
+    assert.equal((await info(friend)).zone, "hub");
+    assert.equal(await intoE(host2, friend), 99);
     // the host's player kills the Warden through proposed hits, then asks for
     // the gate
     await until(
@@ -515,25 +573,12 @@ async function main() {
     const a = await info(host2),
       b = await info(friend);
     assert.equal(a.sum, b.sum);
-    // the friend still sees the host, who walks into the hall
+    // the room is still open: the host's pause screen still shows its code
+    assert.equal(await shownCode(host2), "Room code " + code2);
+    // the friend still hears the host, who walks back into E: a new cave
     await until("the friend hears the host in the hall", () => friend.evaluate(() => DF.net().mates.length === 1 && !DF.net().mates[0].away), 10000);
-    const m0 = await friend.evaluate(() => ({ x: DF.net().mates[0].x, z: DF.net().mates[0].z }));
-    await host2.evaluate(() => {
-      DF.cam.yaw = DF.G.player.yaw;
-      DF.keys[DF.BIND.fwd] = true;
-    });
-    const moved = await until(
-      "the friend to see the host 1.5 m away",
-      () =>
-        friend.evaluate((m0) => {
-          const m = DF.net().mates[0];
-          const d = Math.hypot(m.x - m0.x, m.z - m0.z);
-          return d > 1.5 ? d : 0;
-        }, m0),
-      15000,
-    );
-    await host2.evaluate(() => (DF.keys[DF.BIND.fwd] = false));
-    assert.ok(moved > 1.5, "moved " + moved);
+    const seed2 = await intoE(host2, friend);
+    assert.notEqual(seed2, 99, "the second trip's seed");
     // both leave: the friend first, then the host, whose exit closes the room
     for (const p of [friend, host2])
       await p.evaluate(() => {
@@ -606,7 +651,7 @@ async function main() {
 }
 
 // Whatever goes wrong, the servers and the browser go with it.
-const WATCHDOG_MS = 420000;
+const WATCHDOG_MS = 600000;
 async function bail(why, code) {
   console.log("FAIL harness\n     " + why);
   killRelayNow();

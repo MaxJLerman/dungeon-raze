@@ -559,9 +559,10 @@ const COOP_HOST = COOP_HEADLESS_HERE
       // The Worker driver: the host as it runs in a Worker in the host's page.
       // scope is the Worker's global (or a stand-in in a test); only this
       // reads WebSocket, setInterval and performance, from scope or else the
-      // global. The page posts { start: { seed, grade, relay, code } } once,
-      // then this player's frames as ArrayBuffers (pid 1), and { stop: true }
-      // when co-op ends there. Frames for pid 1 go back by postMessage; pid
+      // global. The page posts { start: { hub: true, relay, code } } once (a
+      // room starts in the hall; { seed, grade } in place of hub starts in
+      // that cave), then this player's frames as ArrayBuffers (pid 1), and
+      // { stop: true } when co-op ends there. Frames for pid 1 go back by postMessage; pid
       // 2 is the friend, through the relay socket opened as the room's host:
       // its frames arrive with its pid byte in front and go out with it. The
       // relay's own frames (first byte 0) are read here and never reach recv.
@@ -661,7 +662,7 @@ const COOP_HOST = COOP_HEADLESS_HERE
           if (d instanceof ArrayBuffer) recv(1, d);
           else if (d && d.start && timer === null) {
             const o = d.start;
-            start({ seed: o.seed, grade: o.grade || "E" });
+            start(o.hub ? { hub: true } : { seed: o.seed, grade: o.grade || "E" });
             last = perf.now();
             timer = every(step, 1000 / 60);
             if (o.relay && o.code) open(String(o.relay).replace(/\/+$/, "") + "/room/" + o.code);

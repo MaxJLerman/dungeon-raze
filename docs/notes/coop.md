@@ -1,7 +1,12 @@
 # Co-op (`06c_coopwire.js`, `06d_coophost.js`, `07c_coopclient.js`, `08e_coopui.js`, `relay/`)
 
-Two players through grade E's cave over the internet. The design is
-`docs/superpowers/specs/2026-11-24-coop-cave-slice-design.md`.
+Two players over the internet: a room starts in the host's hall, and the
+host stepping into E's gate takes both into the same cave; the exit gate or
+the host's Return to base brings both back, and the room stays open for
+another trip. The designs are
+`docs/superpowers/specs/2026-11-24-coop-cave-slice-design.md` and
+`docs/superpowers/specs/2026-11-25-coop-lobby-design.md` (the hall as a
+lobby).
 
 - **The pieces.** The host's page runs the normal client and, in a Web
   Worker, a second copy of the simulation, the host. The friend's page runs
@@ -96,9 +101,9 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   Known problems.
 - **Worlds and travel** (the host, `06d`). A room's world is the hall
   (`S.kind` `"hub"`) or a grade's cave from a seed (`"cave"`).
-  `host.start({ hub: true })` starts in the hall; `host.start({ seed,
-  grade })` still starts in a cave (the lag dial, t27, t28, the Node tests
-  and, until the room screen changes, the Worker). Every world comes from
+  `host.start({ hub: true })` starts in the hall, as every room the page
+  hosts does; `host.start({ seed, grade })` still starts in a cave (the lag
+  dial, t27, t28 and the Node tests). Every world comes from
   one internal `build(kind, grade, seed, from, won)`: `enterHub(from, true)`
   or `newRun(seed, grade)`, the placeholder re-pointed, `number()`, and
   `S.epoch` raised by one (the first world is epoch 1). Every proxy is
@@ -165,16 +170,17 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   `reset`, `peer`, `cls` (`["cls", pid, class]`, the other player has
   changed class: `coopMateCls` changes the mate in place, keeping where it
   is and its share of health), `pshot`, `pblast`. A client checks a join's
-  or a world's shape before building anything (`coopWorldOk`: kind `"hub"`,
+  or a world's shape before building anything (`coopWorldOk`: an epoch `e`
+  that is a whole number from 1; kind `"hub"`,
   or `"cave"` with a grade in `COOP.GRADES` and a finite seed; a string sum;
   enemy and dead lists of the right shape with known types; for a join, pid
   1 or 2) and refuses a join it cannot read as `"bad"` (a world as
-  `coopEnd("bad")`); it then builds the world (`coopBuild`) and refuses it
+  `coopEnd("bad")`, or, before this page has entered, as a join is
+  refused); it then builds the world (`coopBuild`) and refuses it
   if `coopWorldSum` (FNV-1a over the mesh positions) differs; it never reads
   its own spawn list, only the host's. All numbers are in `COOP`. `COOP_V`
   is 2 (it was 1 before `world`, `travel` and `at`). The page follows every
-  `world` (see the client between worlds); the room screen's real rooms
-  still start in a cave. A join of cave 99 is about 1.5 kB, well under the
+  `world` (see the client between worlds). A join of cave 99 is about 1.5 kB, well under the
   relay's 16,384-byte frame.
 - **The clock.** The client draws the host's world `COOP.DELAY` (100 ms)
   behind its estimate of the host's time, `CC.est`: its own real-time clock
@@ -224,7 +230,10 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   the puppets, opens the gate over a dead boss, and clears what belonged to
   the last world: `CC.seq` (the `at` is 1 again), `pend`, `ackR`, `evq`,
   `snap`, `fin`, `exE`, `gate`, `trip` and every mate's snapshots; it sets
-  `CC.world`, `CC.epoch`, `CC.kind` and `CC.heard`, then sends `at`.
+  `CC.world`, `CC.epoch`, `CC.kind` and `CC.heard`, then sends `at`. The
+  other player (a mate) is not drawn where it stood in the last world: each
+  mate is marked away and put where this player arrived (full health, state
+  `"free"`) until a snapshot of the new world moves it.
   `coopJoin` is `coopWorldOk`, then `coopBuild`, then `NET`. A `world` goes
   to `coopTravel(d)`: a run not yet live (a friend on the room screen) or
   reduced motion (`RM`) builds at once; otherwise it fades out as a solo gate
@@ -232,7 +241,11 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   swap does nothing if `CC.link` is no longer the link it was made for (co-op
   ended or another run began under the fade), and a second `world` before
   the first was built replaces it. A build that fails mid-run is
-  `coopEnd("cave")`. After a build a player on the death screen is shown the
+  `coopEnd("cave")`. Before this page has entered (`!NET.live`, a friend on
+  the room screen) a `world` that fails `coopWorldOk` or whose sum differs
+  goes through `coopRefuse` with the same reason (`"bad"`, `"cave"`), as a
+  bad join does: the room screen stays up, shows that line and is ready to
+  try again. After a build a player on the death screen is shown the
   play screen; a dead, paused or menu player is taken along all the same,
   alive (the world made a new player). A `world` with `won` a number says
   "OUT ALIVE" (big, 4 s) and "Time m:ss" (the host's clock, as the win
@@ -271,8 +284,9 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   `"host"` on any other. The friend leaving lets the host play on.
 - **The Worker driver** (`COOP_HOST.worker(scope)`). It reads `WebSocket`,
   `setInterval` and `performance` from `scope` or the global, inside that
-  function only. The page posts `{ start: { seed, grade, relay, code } }`,
-  then its frames, then `{ stop: true }`. It ticks the host from
+  function only. The page posts `{ start: { hub: true, relay, code } }` (the
+  driver passes `hub` to `start`, and still takes `{ seed, grade }` in its
+  place for a cave), then its frames, then `{ stop: true }`. It ticks the host from
   `setInterval` at 60 a second with real elapsed time, never more than
   `COOP.TICK_MAX` (0.25 s) a call, so a stalled Worker drops time rather
   than send a backlog. Frames for pid 1 go to the page by `postMessage`
@@ -321,13 +335,13 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
   class in the room.", or, while the saved class is a hidden one, "The
   Enforcer cannot play online yet, so you play the Assassin unless you
   choose another in the room." with the two names. `#coopHost` posts to
-  `/new`, starts the Worker with a random seed and joins it (`CR.seed`,
-  which `DF.coopSeed` sets, is also handed to `coopBegin` as the first
-  trip's seed); it shows the
+  `/new`, starts the Worker in the hall and joins it (`CR.seed`, which
+  `DF.coopSeed` sets, is handed to `coopBegin` as the first trip's seed,
+  random when null); it shows the
   code (`#coopShow`, large and selectable), `#coopCopy` ("Copy code") and
   `#coopCopyLink` ("Copy invite link"), the two slots (`#coopSlots`, each
   `.slot` with `data-cls` once known, `.me` for this player) and
-  `#coopEnter` ("Start", which enters at once, alone if need be).
+  `#coopEnter` ("Start", which enters the hall at once, alone if need be).
   **The class is chosen in the room, not before it.** `#coopCls` (a
   `.picker`, with its line `#coopClsLbl`) is shown only while this page is
   joined, so to the host once its Worker has answered and to the friend
@@ -359,13 +373,15 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
   code on screen is selected; the button reads "Copied" for 1.5 s. `#coopJoin` tidies `#coopCode` (upper case, no spaces or dashes) and
   opens the socket; `#coopEnter` reads "Waiting for the host to start",
   disabled, until the join has arrived and the host has started, then
-  "Enter the cave". Entering is
+  names where it leads: "Enter the hall" (`CC.kind` `"hub"`) or "Enter the
+  dungeon" (the host is already in a cave, so the join or a `world` built
+  it there). Entering is
   `coopEnter()` then `play()`, from the click. A second click while one is
   under way does nothing. `play()` refuses on an upright touch device; the
   run is live all the same, and a later click (once the device is turned)
   calls `play()` again. Back, Esc, the pad's back button or the touch Back
   gesture on this screen (all through `menuGoBack`) ends a room not yet in
-  play (`coopLeaveRoom`), its Worker and the cave the join built, live or
+  play (`coopLeaveRoom`), its Worker and the world the join built, live or
   not. While a hosted room is open and the relay link is up, the pause
   screen shows "Room code" and the code (`#pauseCode`, `#pauseCodeV`,
   selectable) and the same two copy buttons (`#pauseInvite`, which is laid
@@ -422,7 +438,8 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
     crossing requests in both orders, a join mid-swap, the dummy's
     execution), and the Worker driver with a stand-in for the Worker's
     global (the 0.25 s cap, the pid byte, relay notices, a closed relay,
-    stop, and a gate that does not stop it).
+    stop, and a gate that does not stop it; a start in the hall, as the page
+    posts it, and one with a seed and a grade in a cave).
     `fakeClient(host, pid, cls, { at = true })` in `tests/lib/coop.mjs`
     answers every join and world with `at` at once, as a page does; with
     `at` false the test sends it with `c.arrive()`. Its event numbers start
@@ -431,22 +448,25 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
     player's `at` itself, or the host ignores it.
   - `node tests/coop-wire.mjs`: the wire formats and the fake link, a
     `world` event's round trip and a join's size against the relay's cap.
-  - `node tests/coop-caves.mjs`: caves built from seeds 1 to 40 in Node,
-    Chromium, Firefox and WebKit compared by checksum (run it after any
-    change to cave generation).
+  - `node tests/coop-caves.mjs`: caves built from seeds 1 to 40 and the
+    co-op hall in Node, Chromium, Firefox and WebKit compared by checksum
+    (run it after any change to cave or hall generation).
   - `node tests/coop-relay.mjs`: the relay under `wrangler dev` on port 8787
     (started and always stopped by `tests/lib/relay.mjs`, metrics off, no
     login, no deploy).
   - Page tests: `tests/t27.mjs` (the client against a hand-stepped host over
     the fake link: puppets, hits, parries, executions, the checksum, a
-    world that differs mid-run) and `tests/t28.mjs` (the other player and
+    world that differs mid-run, a join's epoch, the other player after a
+    swap) and `tests/t28.mjs` (the other player and
     the party rules: the gate back to the hall, from the hall to the cave
     and back, a second trip, the friend taken along and turned away at a
     gate, Return to base, an exit mid-fade, the player's own hall after
     co-op, a plaque that takes no code, no new-gate line, reduced motion),
     both with `smoke`; `tests/t29.mjs` (the room screen up to the network: the button,
     the code's tidying and refusal, every message, the order of the checks,
-    the class fallback, a Worker host on the page, the class cards for the
+    the class fallback, a Worker host on the page that starts in the hall,
+    the friend's button naming the hall or the dungeon, a `world` refused
+    before the friend enters, the class cards for the
     host and the friend, the `cls` request from the room and from the pause
     menu mid-run, the copy buttons with a
     stand-in clipboard, an invite address through `DF.coopInvite`, a world
@@ -460,15 +480,18 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
     the copy buttons) and the two `shots/oneplus-13-t29-*.png`.
   - `node tests/coop-e2e.mjs`: end to end. It serves `dist/` on port 8123,
     starts the relay on 8787, and drives Chromium pages: host and join by
-    code, each picks a class and the other page shows it, both enter as
-    what they picked, each changes class from the pause menu and the other
-    page shows that, the friend sees the host move, an old version
-    refused, the friend comes back by the invite link the host's pause
-    screen copies (a real page load with `?room=`), picks a class mid-run
+    code, each picks a class and the other page shows it, both enter the
+    hall as what they picked, each with the other there, each changes class
+    from the pause menu and the other page shows that, the friend sees the
+    host walk in the hall, the host walks into E's gate and both pages are
+    in one cave (same seed and sum), an old version refused, the friend
+    comes back by the invite link the host's pause screen copies (a real
+    page load with `?room=`) and lands in the cave, picks a class mid-run
     and enters, a host page that stops drawing
     (marked away after 2 s while the dungeon runs on), a full room, the host
-    leaving, the gate bringing both pages to the hall with the room open and
-    the friend still seeing the host, and then on two fresh
+    leaving, a second room through E together, the gate bringing both
+    pages to the hall with the host's pause screen still showing the code,
+    a second trip into a cave of another seed, and then on two fresh
     pages the friend exiting to the main menu (the host plays on), the host
     exiting (the friend is told) and a second room with no reload. The host
     page's address has no `?coop=1` and the friend's has it. Every HTTP request but

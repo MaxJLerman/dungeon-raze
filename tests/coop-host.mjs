@@ -1588,12 +1588,13 @@ function scope() {
   sc.live = () => sc.timers.some(Boolean);
   return sc;
 }
-// a Worker host on cave 99 with the page joined (pid 1) and in the cave
-function workerHost() {
+// a Worker host with the page joined (pid 1) and there: started in the hall
+// as the page starts a room, or with start ({ seed, grade }) in that cave
+function workerHost(start = { hub: true }) {
   const h = loadHost(),
     sc = scope();
   h.worker(sc);
-  sc.msg({ start: { seed: 99, grade: "E", relay: "ws://relay.test/", code: "ABCDEF" } });
+  sc.msg({ start: { ...start, relay: "ws://relay.test/", code: "ABCDEF" } });
   sc.msg(h.wire.eventEncode(["hello", 0, h.v, "fighter", h.build]));
   sc.msg(h.wire.eventEncode(["at", 1, h.S.epoch]));
   return { h, sc, so: sc.socks[0] };
@@ -1602,23 +1603,46 @@ const evs = (h, list) =>
   list.filter((b) => b instanceof ArrayBuffer && h.wire.type(b) === 3).map((b) => h.wire.eventDecode(b));
 const snaps = (h, list) => list.filter((b) => b instanceof ArrayBuffer && h.wire.type(b) === 1).length;
 
-check("the Worker driver starts the run, opens the room as its host and joins the page", () => {
+check("the Worker driver starts the room in the hall, opens the room as its host and joins the page", () => {
   const { h, sc, so } = workerHost();
-  assert.equal(h.G.enemies.length, 47);
-  assert.equal(h.G.seed, 99);
+  assert.equal(h.S.kind, "hub");
+  assert.equal(h.G.zone, "hub");
+  assert.equal(h.S.epoch, 1);
+  assert.equal(h.G.enemies.length, 1);
+  assert.equal(h.G.enemies[0].type, "dummy");
   assert.equal(sc.socks.length, 1);
   assert.equal(so.url, "ws://relay.test/room/ABCDEF");
   assert.equal(so.binaryType, "arraybuffer");
   const j = evs(h, sc.posted).find((e) => e[0] === "join");
   assert.ok(j, "the page's join was posted to it");
   assert.equal(j[1].pid, 1);
+  assert.equal(j[1].kind, "hub");
+  assert.equal(j[1].e, 1);
   assert.ok(sc.live(), "a timer runs");
   so.open();
   assert.deepEqual(sc.posted.filter((m) => !(m instanceof ArrayBuffer)), [{ relay: "open" }]);
   // a second start is ignored
   sc.msg({ start: { seed: 5, grade: "E", relay: "ws://relay.test", code: "ZZZZZZ" } });
-  assert.equal(h.G.seed, 99);
+  assert.equal(h.S.kind, "hub");
+  assert.equal(h.S.epoch, 1);
   assert.equal(sc.socks.length, 1);
+  // the page's player steps into E: the Worker takes the room to the cave
+  sc.msg(h.wire.eventEncode(["travel", 2, "E", 99]));
+  const w = evs(h, sc.posted).at(-1);
+  assert.equal(w[0], "world");
+  assert.equal(w[1].kind, "cave");
+  assert.equal(h.G.seed, 99);
+  assert.equal(h.G.enemies.length, 47);
+});
+
+check("a Worker started with a seed and a grade still starts in that cave", () => {
+  const { h, sc } = workerHost({ seed: 99, grade: "E" });
+  assert.equal(h.S.kind, "cave");
+  assert.equal(h.G.seed, 99);
+  assert.equal(h.G.enemies.length, 47);
+  const j = evs(h, sc.posted).find((e) => e[0] === "join");
+  assert.equal(j[1].kind, "cave");
+  assert.equal(j[1].seed, 99);
 });
 
 check("the Worker hands the host at most 0.25 s a call, so a stall drops time", () => {
@@ -1724,7 +1748,7 @@ check("stop closes the socket, stops the timer and hears nothing more; the gate 
   assert.equal(sc.posted.length, n);
   // the gate once the boss is dead takes the party to the hall, and the
   // Worker runs on
-  const b = workerHost();
+  const b = workerHost({ seed: 99, grade: "E" });
   b.so.open();
   b.h.G.bossDead = true;
   b.sc.msg(b.h.wire.eventEncode(["gate", 2]));
