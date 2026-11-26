@@ -92,7 +92,7 @@
   steps into gate E to take both into the cave; they come back to the hall
   together, in front of that gate, when the cave is left. In co-op only E is
   open: D and C to S are sealed whatever the save says. A cave entered by
-  two is harder: 1.3 times the health and posture for every enemy, 1.8 and
+  two is harder: 1.3 times the health and posture for every enemy, 2.5 and
   1.5 times for the boss, one extra enemy in each room pack (two in the deep
   one), two attack turns against each player instead of two in all, and a
   death in the boss chamber heals the boss a quarter of its health. The
