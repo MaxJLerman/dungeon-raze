@@ -10,8 +10,26 @@ function cave() {
   h.start({ seed: 99, grade: "E" });
   return h;
 }
+// A host that starts in the hall, as a room does.
+function hall() {
+  const h = loadHost();
+  h.start({ hub: true });
+  return h;
+}
 const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 const named = (c, name) => c.events.filter((ev) => ev[0] === name);
+const front = (q, d) => ({ x: q.x + Math.sin(q.yaw) * d, z: q.z + Math.cos(q.yaw) * d });
+// Where pid arrives in the host's world whose arrival point is at: pid 1 on
+// it, the friend (pid 2) 1.2 m to its right, out of the rock. The
+// placeholder keeps the arrival's facing.
+function arrival(h, pid, at) {
+  if (pid !== 2) return at;
+  const yaw = h.G.player.yaw,
+    q = { x: at.x - Math.cos(yaw) * 1.2, z: at.z + Math.sin(yaw) * 1.2 };
+  h.G.world.resolve(q, 0.45);
+  return q;
+}
+const worlds = (c) => named(c, "world").map((ev) => ev[1]);
 // A walkable point d metres from enemy e, in its line of sight, searching
 // round from angle a0.
 function spot(h, e, d, a0 = 0) {
@@ -81,7 +99,10 @@ check("joining sends the cave and every enemy", () => {
   const a = fakeClient(h, 1, "fighter");
   const j = a.join;
   assert.ok(j, "no join event");
-  assert.equal(j.v, 1);
+  assert.equal(j.v, 2);
+  assert.equal(j.e, 1);
+  assert.equal(j.kind, "cave");
+  assert.equal(j.n, 1);
   assert.equal(j.pid, 1);
   assert.equal(j.seed, 99);
   assert.equal(j.grade, "E");
@@ -203,7 +224,7 @@ check("a class change, in the room or mid-run, changes the proxy in place and te
   const px = h.S.px.get(2);
   // on the room screen, before its first state
   const mageHp = px.maxHp;
-  b.ev("cls", "tanker");
+  const s1 = b.ev("cls", "tanker");
   assert.equal(h.S.px.get(2), px, "the same proxy");
   assert.equal(px.clsId, "tanker");
   assert.equal(px.maxHp, px.cls.hp);
@@ -216,7 +237,7 @@ check("a class change, in the room or mid-run, changes the proxy in place and te
   assert.equal(named(b, "cls").length, 0, "the one who picked is not told");
   assert.equal(named(a, "peer").length, 1, "no second peer: it has not joined again");
   // the event is acknowledged like any other
-  assert.equal(px.ack, 1);
+  assert.equal(px.ack, s1);
   // a class co-op does not offer plays as the first base class
   const base = "assassin";
   b.ev("cls", "enforcer");
@@ -435,7 +456,7 @@ check("snapshots: 20 a second, the other player in each, enemies by range", () =
   assert.ok(Math.abs(pl.x - qb.x) < 0.05 && Math.abs(pl.z - qb.z) < 0.05);
   assert.equal(pl.away, false);
   assert.ok(Math.abs(a.snap.t - h.S.step / 60) < 1e-3);
-  assert.equal(a.snap.ack, 0);
+  assert.equal(a.snap.ack, 1, "its at");
   // both stayed asleep, so only range decides
   for (const e of [near, far]) {
     assert.equal(e.state, "idle");
@@ -1064,7 +1085,7 @@ check("an away player does not hold up the wipe", () => {
   run(h2, 1);
   assert.equal(named(c, "reset").length, 1, "a wipe with nobody present");
 });
-check("the gate ends the run only once the boss is dead", () => {
+check("the gate takes both back to the hall, only once the boss is dead, and the room stays open", () => {
   const h = cave(),
     s = h.G.world.spawn;
   const a = fakeClient(h, 1, "fighter"),
@@ -1074,30 +1095,45 @@ check("the gate ends the run only once the boss is dead", () => {
     b.at(s.x + 1, s.z);
   };
   run(h, 1, both);
+  const e0 = h.S.epoch;
   b.ev("gate");
-  assert.equal(named(a, "end").length, 0);
+  assert.equal(h.S.epoch, e0, "a gate with the boss alive swapped the world");
+  assert.equal(worlds(a).length, 0);
   run(h, 0.5, both);
   assert.equal(h.S.step, 90);
   killWarden(a, warden(h));
   run(h, 0.5, both);
-  const seq = b.ev("gate");
-  for (const c of [a, b]) {
-    const e = named(c, "end");
-    assert.equal(e.length, 1);
-    assert.deepEqual(e[0], ["end", h.G.runT]);
-  }
-  assert.ok(Math.abs(h.G.runT - 2) < 0.05, "runT " + h.G.runT);
-  const step = h.S.step,
-    na = a.nsnap,
-    ne = a.events.length;
-  run(h, 1, both);
+  const runT = h.G.runT;
+  assert.ok(Math.abs(runT - 2) < 0.05, "runT " + runT);
   b.ev("gate");
-  hit(a, husk(h, 37), 10);
-  assert.equal(h.S.step, step);
-  assert.equal(a.nsnap, na);
-  assert.equal(a.events.length, ne);
-  assert.equal(husk(h, 37).hp, 42);
-  assert.ok(seq > 0);
+  assert.equal(h.S.kind, "hub");
+  assert.equal(h.S.epoch, e0 + 1);
+  const f = front(h.G.world.portals.find((q) => q.grade === "E"), 3.5);
+  for (const c of [a, b]) {
+    const d = worlds(c).at(-1);
+    assert.equal(worlds(c).length, 1);
+    assert.equal(d.kind, "hub");
+    assert.equal(d.e, e0 + 1);
+    assert.equal(d.from, "E");
+    assert.equal(d.won, runT);
+    assert.equal(named(c, "end").length, 0);
+  }
+  for (const px of h.S.px.values()) assert.ok(dist(px, arrival(h, px.pid, f)) < 0.01, "pid " + px.pid + " is not in front of E's gate");
+  // the room stays open: the host steps and snapshots on, and the party can
+  // set out again
+  const step = h.S.step,
+    na = a.nsnap;
+  run(h, 1, () => {
+    a.at(f.x, f.z);
+    b.at(f.x + 1, f.z);
+  });
+  assert.equal(h.S.step, step + 60);
+  assert.ok(a.nsnap > na);
+  b.ev("gate");
+  assert.equal(h.S.epoch, e0 + 1, "a gate in the hall swapped the world");
+  a.ev("travel", "E", 7);
+  assert.equal(h.S.kind, "cave");
+  assert.equal(h.G.seed, 7);
 });
 check("a player's shots and blasts go to the other player only", () => {
   const h = cave(),
@@ -1105,14 +1141,14 @@ check("a player's shots and blasts go to the other player only", () => {
   const a = fakeClient(h, 1, "fighter"),
     b = fakeClient(h, 2, "fighter");
   a.ev("pshot", 1, 1.25, 2, 10, -3, 0.2, 0.5, 1);
-  a.ev("pblast", 4, 5, 3.5, 1, 0.4, 0.1);
+  const sb = a.ev("pblast", 4, 5, 3.5, 1, 0.4, 0.1);
   assert.deepEqual(named(b, "pshot"), [["pshot", 1, 1, 1.25, 2, 10, -3, 0.2, 0.5, 1]]);
   assert.deepEqual(named(b, "pblast"), [["pblast", 1, 4, 5, 3.5, 1, 0.4, 0.1]]);
   assert.equal(named(a, "pshot").length + named(a, "pblast").length, 0);
   b.ev("pblast", 1, 2, 3, 0, 0, 0);
   assert.deepEqual(named(a, "pblast"), [["pblast", 2, 1, 2, 3, 0, 0, 0]]);
   run(h, 3 / 60, () => a.at(s.x, s.z));
-  assert.equal(a.snap.ack, 2);
+  assert.equal(a.snap.ack, sb);
 });
 // Task 7: event numbers, and the Warden's execution.
 check("a seq that is not an integer from 1 to 65535 is refused and not acknowledged", () => {
@@ -1196,6 +1232,821 @@ check("a Warden execution is a hit: it survives, the pin clears and it recoils f
   assert.equal(w.dead, true);
   assert.deepEqual(named(b, "kill").map((k) => k.slice(0, 3)), [["kill", w.id, 1]]);
 });
+// The lobby: a room that starts in the hall and travels between worlds.
+// The point d metres in front of a portal (portalFront).
+check("a room starts in the hall", () => {
+  const h = hall();
+  assert.equal(h.S.kind, "hub");
+  assert.equal(h.S.epoch, 1);
+  assert.equal(h.S.n, 1);
+  assert.deepEqual(h.G.enemies.map((e) => e.type), ["dummy"]);
+  assert.equal(h.S.byId.get(0), h.G.enemies[0]);
+  const a = fakeClient(h, 1, "fighter");
+  const j = a.join;
+  assert.equal(j.v, 2);
+  assert.equal(j.e, 1);
+  assert.equal(j.kind, "hub");
+  assert.equal(j.grade, null);
+  assert.equal(j.seed, 0);
+  assert.equal(j.n, 1);
+  assert.equal(j.sum, h.sum(h.G.world));
+  assert.deepEqual(j.enemies.map((q) => q[1]), ["dummy"]);
+  assert.deepEqual(
+    h.G.world.portals.map((q) => [q.grade, q.open]),
+    [["E", true], ["D", false], ["C", false], ["B", false], ["A", false], ["S", false]],
+  );
+  // the proxy stands at the hall's start and is there once it answered
+  const px = h.S.px.get(1);
+  assert.ok(dist(px, h.G.world.spawn) < 1e-9);
+  assert.equal(px.here, true);
+  // the placeholder: dead and far outside the hall
+  assert.equal(h.G.player.state, "dead");
+  assert.ok(h.G.world.fieldAt(h.G.player.x, h.G.player.z) < -2);
+});
+check("the co-op hall is the same with any save", () => {
+  const h = hall();
+  const a = fakeClient(h, 1, "fighter");
+  // with E cleared the solo hall opens D; the co-op hall does not
+  h.clearGrade("E", "fighter");
+  assert.equal(h.sum(h.genHub(true)), a.join.sum);
+  assert.notEqual(h.sum(h.genHub()), a.join.sum);
+  h.start({ hub: true });
+  assert.equal(h.sum(h.G.world), a.join.sum);
+  assert.equal(h.G.world.portals.find((q) => q.grade === "D").open, false);
+});
+check("the host's player travels", () => {
+  const h = hall();
+  const a = fakeClient(h, 1, "fighter"),
+    b = fakeClient(h, 2, "mage");
+  a.ev("travel", "E", 99);
+  const sum = h.sum(cave().G.world);
+  for (const c of [a, b]) {
+    const w = worlds(c);
+    assert.equal(w.length, 1, "client " + c.pid + " got " + w.length + " worlds");
+    const d = w[0];
+    assert.equal(d.e, 2);
+    assert.equal(d.kind, "cave");
+    assert.equal(d.grade, "E");
+    assert.equal(d.seed, 99);
+    // two in the room: a dungeon for two, with its extra enemies
+    assert.equal(d.n, 2);
+    assert.equal(d.enemies.length, h.G.world.spawns.length);
+    assert.ok(d.enemies.length > 47);
+    assert.deepEqual(d.dead, []);
+    assert.equal(d.bossDead, false);
+    assert.equal(d.sum, sum);
+    assert.equal(d.from, null);
+    assert.equal(d.won, null);
+    assert.equal(typeof d.t, "number");
+  }
+  assert.equal(h.S.kind, "cave");
+  assert.equal(h.S.epoch, 2);
+  assert.equal(h.G.enemies.length, h.G.world.spawns.length);
+  // both stand at the cave's start at full health, the friend beside it
+  for (const px of h.S.px.values()) {
+    assert.ok(dist(px, arrival(h, px.pid, h.G.world.spawn)) < 1e-9);
+    assert.equal(px.hp, px.maxHp);
+    assert.equal(px.state, "free");
+  }
+});
+check("the friend cannot travel, nor can anyone travel where it may not", () => {
+  const h = hall();
+  const a = fakeClient(h, 1, "fighter"),
+    b = fakeClient(h, 2, "mage");
+  const same = (why) => {
+    assert.equal(h.S.epoch, 1, why);
+    assert.equal(h.S.kind, "hub", why);
+    assert.equal(worlds(a).length + worlds(b).length, 0, why);
+  };
+  b.ev("travel", "E", 99);
+  same("the friend travelled");
+  a.ev("travel", "D", 99);
+  same("a sealed grade");
+  a.ev("travel", "hub");
+  same("to the hall from the hall");
+  for (const seed of [null, "99", undefined, NaN, Infinity, [99]]) {
+    a.ev("travel", "E", seed);
+    same("seed " + String(seed));
+  }
+  a.ev("travel", "Z", 99);
+  a.ev("travel");
+  same("an unknown place");
+  a.ev("travel", "E", 99);
+  assert.equal(h.S.epoch, 2);
+  b.ev("travel", "hub");
+  a.ev("travel", "E", 7);
+  assert.equal(h.S.epoch, 2, "to a cave from a cave");
+  assert.equal(h.G.seed, 99);
+});
+check("a player is not there until it answers", () => {
+  const h = hall();
+  const a = fakeClient(h, 1, "fighter"),
+    b = fakeClient(h, 2, "fighter", { at: false });
+  const px = h.S.px.get(2);
+  assert.equal(px.here, false, "here before its at");
+  b.arrive();
+  assert.equal(px.here, true);
+  a.ev("travel", "E", 99);
+  assert.equal(px.here, false, "here in a world it has not answered");
+  assert.equal(h.S.px.get(1).here, true);
+  const e = husk(h, 37),
+    q = spot(h, e, 2),
+    n = b.nsnap;
+  // standing beside the husk, by its own word and on the host
+  run(h, 1, () => {
+    a.at(h.G.world.spawn.x, h.G.world.spawn.z);
+    b.at(q.x, q.z);
+  });
+  assert.equal(b.nsnap, n, "a snapshot before its at");
+  assert.ok(dist(px, arrival(h, 2, h.G.world.spawn)) < 1e-9, "a state moved it");
+  hit(b, e, 10);
+  assert.equal(e.hp, e.def.hp, "a hit landed");
+  assert.equal(px.ack, 0, "a hit was acknowledged");
+  Object.assign(px, { x: q.x, z: q.z, heard: h.S.step / 60 });
+  run(h, 1, () => a.at(h.G.world.spawn.x, h.G.world.spawn.z));
+  assert.equal(e.aware, false, "it woke for a player not there");
+  assert.notEqual(e.tg, 2, "it hunts a player not there");
+  // the answer: all four work
+  b.arrive();
+  assert.equal(px.here, true);
+  run(h, 1, () => {
+    a.at(h.G.world.spawn.x, h.G.world.spawn.z);
+    b.at(q.x, q.z);
+  });
+  assert.ok(b.nsnap > n, "no snapshot after its at");
+  assert.ok(dist(px, q) < 0.05, "its state did not move it");
+  assert.equal(e.aware, true, "the husk did not wake");
+  assert.equal(e.tg, 2);
+  const seq = hit(b, e, 10);
+  assert.ok(e.hp < e.def.hp, "the hit did not land");
+  assert.equal(px.ack, seq);
+});
+check("a wrong epoch is not an arrival", () => {
+  const h = hall();
+  const a = fakeClient(h, 1, "fighter"),
+    b = fakeClient(h, 2, "fighter", { at: false });
+  b.arrive();
+  a.ev("travel", "E", 99);
+  const px = h.S.px.get(2),
+    ack = px.ack;
+  for (const e of [h.S.epoch - 1, h.S.epoch + 1, String(h.S.epoch), null]) {
+    b.ev("at", e);
+    assert.equal(px.here, false, "at " + String(e));
+    assert.equal(px.ack, ack, "an at for another epoch was acknowledged: " + String(e));
+  }
+  const seq = b.ev("at", h.S.epoch);
+  assert.equal(px.here, true);
+  assert.equal(px.ack, seq);
+});
+check("event numbers start again at every swap", () => {
+  const h = hall();
+  const a = fakeClient(h, 1, "fighter", { at: false }),
+    b = fakeClient(h, 2, "fighter", { at: false });
+  a.arrive();
+  b.arrive();
+  for (let i = 0; i < 5; i++) b.ev("cls", i % 2 ? "mage" : "fighter");
+  assert.equal(h.S.px.get(2).ack, 6);
+  const t = a.ev("travel", "E", 99);
+  assert.equal(t, 2);
+  for (const pid of [1, 2]) assert.equal(h.S.px.get(pid).ack, 0, "pid " + pid);
+  // the client counts from 1 again: its at is 1
+  assert.equal(b.arrive(), 1);
+  assert.equal(h.S.px.get(2).ack, 1);
+  assert.equal(a.arrive(), 1);
+  assert.equal(h.S.px.get(1).ack, 1);
+  run(h, 3 / 60, () => a.at(h.G.world.spawn.x, h.G.world.spawn.z));
+  assert.equal(a.snap.ack, 1);
+});
+check("an arrival after a wipe gets the enemies again", () => {
+  const h = cave(),
+    s = h.G.world.spawn;
+  const a = fakeClient(h, 1, "fighter"),
+    b = fakeClient(h, 2, "fighter", { at: false });
+  run(h, 0.5, () => a.at(s.x, s.z));
+  hit(a, husk(h, 37), 42);
+  assert.equal(husk(h, 37).dead, true);
+  assert.equal(named(a, "kill").length, 1);
+  assert.equal(named(b, "kill").length, 0, "a kill sent to a player not there");
+  b.arrive();
+  const r = named(b, "reset");
+  assert.equal(r.length, 1);
+  assert.ok(r[0][1].dead.includes(37));
+  assert.equal(r[0][1].enemies.length, 47);
+  assert.equal(named(a, "reset").length, 0);
+  // nothing changed since: no list again
+  const c = fakeClient(h, 3, "fighter", { at: false });
+  c.arrive();
+  assert.equal(named(c, "reset").length, 0);
+  // a wipe while one is away in the swap: no reset for it, the list on arrival
+  const h2 = hall(),
+    a2 = fakeClient(h2, 1, "fighter"),
+    b2 = fakeClient(h2, 2, "fighter", { at: false });
+  b2.arrive();
+  a2.ev("travel", "E", 99);
+  const s2 = h2.G.world.spawn;
+  run(h2, 0.2, () => a2.at(s2.x, s2.z, { state: "dead", hp: 0 }));
+  assert.equal(named(a2, "reset").length, 1, "a lone dead player is a wipe");
+  assert.equal(named(b2, "reset").length, 0);
+  b2.arrive();
+  assert.equal(named(b2, "reset").length, 1);
+});
+check("back to the hall", () => {
+  const h = hall();
+  const a = fakeClient(h, 1, "fighter"),
+    b = fakeClient(h, 2, "mage");
+  a.ev("travel", "E", 99);
+  const s = h.G.world.spawn;
+  run(h, 0.5, () => {
+    a.at(s.x, s.z, { hp: 0.5 });
+    b.at(s.x + 1, s.z, { state: "dead", hp: 0 });
+  });
+  a.ev("travel", "hub");
+  assert.equal(h.S.kind, "hub");
+  assert.equal(h.S.epoch, 3);
+  for (const c of [a, b]) {
+    const d = worlds(c).at(-1);
+    assert.equal(d.kind, "hub");
+    assert.equal(d.e, 3);
+    assert.equal(d.grade, null);
+    assert.equal(d.seed, 0);
+    assert.equal(d.from, "E");
+    assert.equal(d.won, null);
+    assert.deepEqual(d.enemies.map((q) => q[1]), ["dummy"]);
+  }
+  const f = front(h.G.world.portals.find((q) => q.grade === "E"), 3.5);
+  for (const px of h.S.px.values()) {
+    assert.ok(dist(px, arrival(h, px.pid, f)) < 0.01, "pid " + px.pid + " is not in front of E's gate");
+    assert.equal(px.hp, px.maxHp);
+    assert.equal(px.state, "free");
+  }
+});
+check("a second trip is a fresh cave", () => {
+  const h = hall();
+  const a = fakeClient(h, 1, "fighter");
+  a.ev("travel", "E", 99);
+  assert.equal(h.S.epoch, 2);
+  const first = worlds(a).at(-1).sum;
+  run(h, 0.2, () => a.at(h.G.world.spawn.x, h.G.world.spawn.z));
+  killWarden(a, warden(h));
+  hit(a, husk(h, 37), 42);
+  assert.equal(h.G.bossDead, true);
+  a.ev("travel", "hub");
+  assert.equal(h.S.epoch, 3);
+  assert.equal(h.G.bossDead, false);
+  a.ev("travel", "E", 7);
+  assert.equal(h.S.epoch, 4);
+  const d = worlds(a).at(-1);
+  assert.equal(d.seed, 7);
+  assert.notEqual(d.sum, first);
+  assert.equal(d.bossDead, false);
+  assert.deepEqual(d.dead, []);
+  assert.equal(h.G.bossDead, false);
+  assert.ok(h.G.enemies.length > 0);
+  assert.ok(h.G.enemies.every((e) => !e.dead));
+  assert.ok(h.G.enemies.some((e) => e.def.boss));
+  h.G.enemies.forEach((e, i) => assert.equal(h.S.byId.get(i), e));
+});
+check("crossing requests swap once", () => {
+  const h = hall();
+  const a = fakeClient(h, 1, "fighter"),
+    b = fakeClient(h, 2, "fighter", { at: false });
+  b.arrive();
+  a.ev("travel", "E", 99);
+  b.arrive();
+  run(h, 0.2, () => a.at(h.G.world.spawn.x, h.G.world.spawn.z));
+  killWarden(a, warden(h));
+  const e0 = h.S.epoch;
+  // Return to base and the friend's step into the gate, before the next tick
+  a.ev("travel", "hub");
+  b.ev("gate");
+  assert.equal(h.S.epoch, e0 + 1);
+  assert.equal(h.S.kind, "hub");
+  run(h, 1 / 60);
+  assert.equal(h.S.epoch, e0 + 1);
+  // the other order: the friend's step into the gate, then Return to base
+  b.arrive();
+  a.ev("travel", "E", 7);
+  b.arrive();
+  assert.equal(h.S.px.get(2).here, true);
+  run(h, 0.2, () => a.at(h.G.world.spawn.x, h.G.world.spawn.z));
+  killWarden(a, warden(h));
+  const e1 = h.S.epoch;
+  b.ev("gate");
+  a.ev("travel", "hub");
+  assert.equal(h.S.epoch, e1 + 1);
+  assert.equal(h.S.kind, "hub");
+  run(h, 1 / 60);
+  assert.equal(h.S.epoch, e1 + 1);
+});
+check("a join mid-swap", () => {
+  const h = hall();
+  const a = fakeClient(h, 1, "fighter", { at: false });
+  a.arrive();
+  a.ev("travel", "E", 99);
+  assert.equal(h.S.px.get(1).here, false);
+  const b = fakeClient(h, 2, "mage");
+  assert.equal(b.join.kind, "cave");
+  assert.equal(b.join.seed, 99);
+  assert.equal(b.join.e, h.S.epoch);
+  assert.equal(b.join.sum, h.sum(h.G.world));
+  assert.equal(h.S.px.get(2).here, true);
+});
+// Every world puts the friend's proxy beside the host's, never inside it,
+// until the friend's page is heard; the host's on the arrival point.
+check("the friend's proxy arrives beside the host's", () => {
+  const h = hall();
+  const a = fakeClient(h, 1, "fighter"),
+    b = fakeClient(h, 2, "mage");
+  const beside = (why, at) => {
+    const p1 = h.S.px.get(1),
+      p2 = h.S.px.get(2),
+      d = dist(p1, p2);
+    assert.ok(dist(p1, at) < 1e-6, why + ": pid 1 is off the arrival point");
+    assert.ok(d >= 0.8 && d <= 1.6, why + ": " + d.toFixed(3) + " m apart");
+    assert.ok(h.G.world.fieldAt(p2.x, p2.z) > 0, why + ": pid 2 in the rock");
+  };
+  beside("the join", h.G.world.spawn);
+  a.ev("travel", "E", 99);
+  beside("the cave", h.G.world.spawn);
+  a.ev("travel", "hub");
+  beside("back in the hall", front(h.G.world.portals.find((q) => q.grade === "E"), 3.5));
+  assert.equal(b.world.kind, "hub");
+});
+// A class picked as the host travels: dropped while that player is not
+// there, and taken from the cls a page sends after its at.
+check("a cls across a swap: dropped before the at, heard after it", () => {
+  const h = hall();
+  const a = fakeClient(h, 1, "fighter"),
+    b = fakeClient(h, 2, "mage", { at: false });
+  b.arrive();
+  a.ev("travel", "E", 99);
+  assert.equal(h.S.px.get(2).here, false);
+  b.ev("cls", "tanker");
+  assert.equal(h.S.px.get(2).clsId, "mage");
+  assert.equal(named(a, "cls").length, 0);
+  b.arrive();
+  b.ev("cls", "tanker");
+  assert.equal(h.S.px.get(2).clsId, "tanker");
+  assert.deepEqual(named(a, "cls"), [["cls", 2, "tanker"]]);
+  // the same class again changes nothing and tells nobody
+  b.ev("cls", "tanker");
+  assert.equal(named(a, "cls").length, 1);
+});
+check("the dummy stands back up", () => {
+  const h = hall();
+  const a = fakeClient(h, 1, "fighter");
+  const d = h.G.enemies[0];
+  assert.equal(d.type, "dummy");
+  run(h, 0.2, () => a.at(d.x, d.z - 2));
+  a.ev("parry", d.id, d.an, d.def.posture);
+  assert.equal(d.state, "stagger");
+  a.ev("pin", d.id);
+  assert.equal(d.pin, 1);
+  a.ev("exec", d.id);
+  assert.equal(d.dead, false);
+  assert.equal(d.hp, d.def.hp);
+  assert.equal(d.posture, 0);
+  assert.equal(d.pin, 0);
+  assert.equal(d.state, "idle");
+  assert.equal(named(a, "kill").length, 0);
+  run(h, 0.5, () => a.at(d.x, d.z - 2));
+  assert.equal(h.G.enemies[0], d);
+  assert.equal(d.dead, false);
+});
+// ---- a dungeon tuned for two ----
+// A room whose hall has pids 1 and 2 in it, and the host's player travels
+// to cave seed: a dungeon for two.
+function forTwo(seed = 99) {
+  const h = hall();
+  const a = fakeClient(h, 1, "fighter"),
+    b = fakeClient(h, 2, "mage");
+  a.ev("travel", "E", seed);
+  return { h, a, b };
+}
+// The room packs of a spawn list by node: tunnel posts (node -1) and the
+// boss are none.
+function packs(h, spawns) {
+  const m = new Map();
+  for (const s of spawns) {
+    if (s.node < 0 || h.EDEF[s.type].boss) continue;
+    if (!m.has(s.node)) m.set(s.node, []);
+    m.get(s.node).push(s);
+  }
+  return m;
+}
+const deepPack = (list) => list.map((s) => s.type).sort().join() === "brute,brute,spit";
+// The health and posture an enemy of type has in a dungeon for two.
+function scaled(h, type) {
+  const d = h.EDEF[type];
+  if (d.dummy) return { hp: d.hp, posture: d.posture };
+  return d.boss
+    ? { hp: Math.round(d.hp * 1.8), posture: Math.round(d.posture * 1.5) }
+    : { hp: Math.round(d.hp * 1.3), posture: Math.round(d.posture * 1.3) };
+}
+check("the count of players fixes the tuning", () => {
+  const { h, a, b } = forTwo();
+  for (const c of [a, b]) assert.equal(worlds(c).at(-1).n, 2, "client " + c.pid);
+  assert.equal(h.S.n, 2);
+  assert.equal(h.NET.two, true);
+  assert.ok(h.G.enemies.length > 47);
+  // one in the hall: a cave for one, and a friend who joins it changes nothing
+  const h1 = hall(),
+    a1 = fakeClient(h1, 1, "fighter");
+  a1.ev("travel", "E", 99);
+  assert.equal(worlds(a1).at(-1).n, 1);
+  assert.equal(h1.S.n, 1);
+  assert.equal(h1.NET.two, false);
+  const b1 = fakeClient(h1, 2, "mage");
+  assert.equal(b1.join.n, 1);
+  assert.equal(b1.join.enemies.length, 47);
+  assert.equal(h1.G.enemies.length, 47);
+  assert.equal(h1.S.n, 1);
+  assert.equal(h1.NET.two, false);
+  // two, then the friend leaves: back to the hall and out again is for one
+  h.leave(2);
+  a.ev("travel", "hub");
+  a.ev("travel", "E", 99);
+  assert.equal(worlds(a).at(-1).n, 1);
+  assert.equal(h.S.n, 1);
+  assert.equal(h.NET.two, false);
+  assert.equal(h.G.enemies.length, 47);
+  assert.equal(h.G.world.spawns.length, 47);
+});
+check("more enemies", () => {
+  const one = cave(),
+    { h, a } = forTwo(),
+    sp1 = one.G.world.spawns,
+    sp = h.G.world.spawns,
+    w = h.G.world;
+  // the generator's own spawns come first and are unchanged
+  assert.deepEqual(sp.slice(0, sp1.length), sp1);
+  const extras = sp.slice(sp1.length),
+    g1 = packs(one, sp1),
+    g2 = packs(h, sp);
+  assert.equal(g2.size, g1.size);
+  let deep = 0,
+    want = 0;
+  for (const [node, list] of g1) {
+    const k = deepPack(list) ? 2 : 1;
+    if (k === 2) deep++;
+    want += k;
+    assert.equal(g2.get(node).length, list.length + k, "room " + node);
+  }
+  assert.ok(deep > 0, "cave 99 has no brute, brute, spit room");
+  assert.equal(extras.length, want);
+  for (const x of extras) {
+    assert.notEqual(x.node, -1, "an extra on a tunnel post");
+    assert.ok(!h.EDEF[x.type].boss, "an extra boss");
+    assert.ok(w.fieldAt(x.x, x.z) > 0, "an extra in the rock");
+    const pack = g1.get(x.node);
+    assert.ok(pack, "an extra in no room");
+    assert.ok(pack.some((s) => s.type === x.type), "an extra of a type not in its pack");
+    assert.ok(pack.some((s) => dist(s, x) < 3), "an extra far from its pack");
+    assert.ok(Number.isFinite(x.yaw));
+  }
+  // every spawn is an enemy, on the host and in the world event
+  assert.equal(h.G.enemies.length, sp.length);
+  assert.equal(worlds(a).at(-1).enemies.length, sp.length);
+  h.G.enemies.forEach((e, i) => assert.equal(h.S.byId.get(i), e));
+  // the same seed gives the same extras
+  assert.deepEqual(forTwo().h.G.world.spawns, sp);
+});
+check("tougher", () => {
+  const { h, a } = forTwo(),
+    E = h.EDEF,
+    hk = husk(h, 37),
+    w = warden(h);
+  assert.equal(hk.def.hp, Math.round(E.husk.hp * 1.3));
+  assert.equal(hk.def.posture, Math.round(E.husk.posture * 1.3));
+  assert.equal(w.def.hp, Math.round(620 * 1.8));
+  assert.equal(w.def.posture, 210);
+  for (const e of h.G.enemies) {
+    const s = scaled(h, e.type);
+    assert.equal(e.def.hp, s.hp, e.type);
+    assert.equal(e.def.posture, s.posture, e.type);
+    assert.equal(e.hp, e.def.hp, "health at spawn");
+    assert.notEqual(e.def, E[e.type]);
+    // the rest of the definition is the type's own
+    assert.equal(e.def.atks, E[e.type].atks);
+    assert.equal(e.def.name, E[e.type].name);
+  }
+  assert.equal(E.husk.hp, 42, "EDEF changed");
+  assert.equal(E.husk.posture, 50, "EDEF changed");
+  assert.equal(E.warden.hp, 620, "EDEF changed");
+  // a snapshot's posture fraction reads the scaled posture
+  hk.posture = hk.def.posture / 2;
+  const r = h.wire.snapDecode(h.wire.snapEncode(0, 0, [], [hk])).en[0];
+  assert.ok(Math.abs(r.post - 0.5) <= 1 / 255, "posture " + r.post);
+  // the Warden's second phase: at half its scaled health and not before
+  const s = h.G.world.spawn;
+  run(h, 0.2, () => a.at(s.x, s.z));
+  const half = w.def.hp / 2;
+  hit(a, w, 400);
+  hit(a, w, w.hp - Math.ceil(half) - 1);
+  assert.ok(w.hp > half, "health " + w.hp);
+  assert.equal(w.phase, 1, "phase 2 at " + w.hp);
+  hit(a, w, 2);
+  assert.ok(w.hp < half && w.hp > 620 / 2, "health " + w.hp);
+  assert.equal(w.phase, 2);
+});
+// Six husks awake, three beside each of two players standing d metres apart
+// and in sight of their own three, away from the boss chamber. Returns, over
+// sec seconds, the most tokens held against one player and in all.
+// opts.b(step) may give b's state fields for that step; opts.each(step, per)
+// sees the holders of each target after the step; opts.keep leaves the
+// targets at the end unchecked.
+function crowd(h, a, b, sec = 10, d = 30, opts = {}) {
+  const w = h.G.world,
+    bc = w.boss,
+    ok = (q) => w.fieldAt(q.x, q.z) > 2.5 && Math.hypot(q.x - bc.x, q.z - bc.z) > bc.r + 12;
+  let pair = null;
+  for (const n of w.nodes) {
+    if (pair || !ok(n)) continue;
+    for (let i = 0; i < 72 && !pair; i++) {
+      const an = (i * Math.PI) / 36,
+        q = { x: n.x + Math.sin(an) * d, z: n.z + Math.cos(an) * d };
+      if (ok(q)) pair = [{ x: n.x, z: n.z }, q];
+    }
+  }
+  assert.ok(pair, "no two spots " + d + " m apart");
+  const husks = h.G.enemies.filter((e) => e.type === "husk").slice(0, 6);
+  assert.equal(husks.length, 6);
+  husks.forEach((e, i) => {
+    const q = pair[i % 2];
+    let put = false;
+    for (let k = 0; k < 72 && !put; k++) {
+      const an = (Math.floor(i / 2) * 2 * Math.PI) / 3 + (k * Math.PI) / 36,
+        x = q.x + Math.sin(an) * 2.5,
+        z = q.z + Math.cos(an) * 2.5;
+      if (w.fieldAt(x, z) > 0.8 && w.los(x, z, q.x, q.z)) {
+        Object.assign(e, { x, z, hx: x, hz: z, yaw: Math.atan2(q.x - x, q.z - z) });
+        put = true;
+      }
+    }
+    assert.ok(put, "no room for husk " + i);
+  });
+  let most = 0,
+    total = 0;
+  const per = new Map();
+  let step = 0;
+  run(h, sec, () => {
+    a.at(pair[0].x, pair[0].z);
+    b.at(pair[1].x, pair[1].z, opts.b ? opts.b(step) : {});
+    per.clear();
+    let n = 0;
+    for (const e of h.G.enemies)
+      if (e.token && !e.dead && !e.def.boss) {
+        n++;
+        per.set(e.tg, (per.get(e.tg) || 0) + 1);
+      }
+    for (const v of per.values()) most = Math.max(most, v);
+    total = Math.max(total, n);
+    if (opts.each) opts.each(step, per);
+    step++;
+  });
+  if (!opts.keep) {
+    assert.ok(husks.every((e) => e.aware), "a husk did not wake");
+    assert.equal(husks[0].tg, 1);
+    assert.equal(husks[1].tg, 2);
+  }
+  return { most, total };
+}
+check("two attackers per player", () => {
+  const { h, a, b } = forTwo(),
+    r = crowd(h, a, b);
+  assert.ok(r.most <= 2, "against one player: " + r.most);
+  assert.equal(r.total, 4, "in all: " + r.total);
+  // a cave built for one: two in all
+  const h1 = cave(),
+    a1 = fakeClient(h1, 1, "fighter"),
+    b1 = fakeClient(h1, 2, "mage");
+  assert.equal(h1.S.n, 1);
+  const r1 = crowd(h1, a1, b1);
+  assert.ok(r1.total <= 2, "in all, for one: " + r1.total);
+  assert.ok(r1.total > 0, "nobody attacked");
+});
+// Four hold a turn, two against each player; then pid 2 sends dead states or
+// goes quiet for longer than COOP.AWAY and its three hunt pid 1: from the tick
+// after the switch on, no more than two turns are held against pid 1.
+for (const how of ["dead states", "silence"]) {
+  check("a switched target gives up the turn: " + how, () => {
+    const { h, a, b } = forTwo();
+    let start = -1,
+      sw = -1,
+      worst = 0;
+    const quiet = { at: () => {} },
+      bb = how === "silence" ? { at: (x, z, o) => (start >= 0 ? quiet.at() : b.at(x, z, o)) } : b;
+    crowd(h, a, bb, 12, 30, {
+      keep: true,
+      b: () => (start >= 0 && how === "dead states" ? { state: "dead", hp: 0 } : {}),
+      each: (step, per) => {
+        const n = [...per.values()].reduce((x, y) => x + y, 0),
+          mine = h.G.enemies.filter((e) => e.type === "husk").slice(0, 6)[1];
+        if (start < 0) {
+          if (step >= 120 && n === 4 && per.get(1) === 2 && per.get(2) === 2) start = step;
+        } else if (sw < 0) {
+          if (mine.tg === 1) sw = step;
+        } else worst = Math.max(worst, per.get(1) || 0);
+      },
+    });
+    assert.ok(start >= 0, "never four holders, two each");
+    assert.ok(sw >= 0, "the three never switched to pid 1");
+    assert.ok(worst <= 2, "against the living player: " + worst);
+  });
+}
+// Two hold a turn against pid 1 and a third holds one against pid 2, the
+// players side by side: a hit from pid 1 that turns the third onto pid 1
+// leaves at most two holders against pid 1 on the next tick.
+check("a turn is given up on a target change by a hit", () => {
+  const { h, a, b } = forTwo(),
+    w = h.G.world;
+  let me = null,
+    third = null,
+    after = null;
+  crowd(h, a, b, 12, 3, {
+    keep: true,
+    each: (step, per) => {
+      if (third && !after) {
+        after = { mine: per.get(1) || 0, tg: third.tg, token: third.token };
+        return;
+      }
+      if (third || step < 60 || per.get(1) !== 2) return;
+      me = h.S.px.get(1);
+      const you = h.S.px.get(2);
+      // one that the hit turns and whose new target then sticks
+      third = h.G.enemies.find(
+        (e) =>
+          e.token && !e.dead && !e.def.boss && e.tg === 2 && w.los(e.x, e.z, me.x, me.z) &&
+          Math.hypot(e.x - me.x, e.z - me.z) - Math.hypot(e.x - you.x, e.z - you.z) < 2.5,
+      ) || null;
+      // a damage-over-time tick: no flinch, so nothing else drops its turn
+      if (third) a.ev("hit", third.id, 1, 0, 2, "", me.x, me.z, third.state, third.an);
+    },
+  });
+  assert.ok(third, "never two against pid 1 and one against pid 2 that a hit could turn");
+  assert.ok(after, "no tick after the hit");
+  assert.equal(after.tg, 1, "the hit did not turn it");
+  assert.ok(after.mine <= 2, "against pid 1: " + after.mine);
+});
+// pids 1 and 2 in the boss chamber with the Warden awake. dead(on) has pid
+// 2 send dead states from the next tick.
+function atBoss(h, a, b) {
+  const w = warden(h),
+    bc = h.G.world.boss,
+    qa = spot(h, w, 6),
+    qb = spot(h, w, 8, qa.a + Math.PI);
+  assert.ok(dist(qa, bc) < bc.r && dist(qb, bc) < bc.r);
+  let dead = false;
+  const both = () => {
+    a.at(qa.x, qa.z);
+    b.at(qb.x, qb.z, dead ? { state: "dead", hp: 0 } : {});
+  };
+  run(h, 1, both);
+  assert.equal(w.aware, true, "the Warden did not wake");
+  assert.equal(h.S.px.get(2).inBoss, true);
+  return { w, both, dead: (on) => (dead = on) };
+}
+check("a death at the boss feeds it", () => {
+  const { h, a, b } = forTwo(),
+    { w, both, dead } = atBoss(h, a, b),
+    fed = (c) => named(c, "fed");
+  w.hp = w.def.hp * 0.4;
+  dead(true);
+  run(h, 1 / 60, both);
+  assert.ok(Math.abs(w.hp - w.def.hp * 0.65) < 1e-6, "health " + w.hp);
+  for (const c of [a, b]) {
+    const f = fed(c);
+    assert.equal(f.length, 1, "client " + c.pid + " got " + f.length);
+    assert.equal(f[0][1], w.id);
+    assert.equal(typeof f[0][2], "number");
+  }
+  // more dead states from the same death add nothing
+  run(h, 0.5, both);
+  assert.ok(Math.abs(w.hp - w.def.hp * 0.65) < 1e-6);
+  assert.equal(fed(a).length, 1);
+  // risen and dead again at 90%: it stops at full
+  dead(false);
+  run(h, 0.2, both);
+  w.hp = w.def.hp * 0.9;
+  dead(true);
+  run(h, 1 / 60, both);
+  assert.equal(w.hp, w.def.hp);
+  assert.equal(fed(b).length, 2);
+  // in its second phase, fed above half: still the second phase
+  dead(false);
+  run(h, 0.2, both);
+  hit(a, w, 400);
+  hit(a, w, w.hp - w.def.hp * 0.4);
+  assert.equal(w.phase, 2);
+  dead(true);
+  run(h, 1 / 60, both);
+  assert.ok(w.hp > w.def.hp / 2, "health " + w.hp);
+  assert.equal(w.phase, 2);
+  assert.equal(fed(a).length, 3);
+});
+check("no feed outside the chamber, with the boss asleep or in a cave for one", () => {
+  const fed = (c) => named(c, "fed");
+  // outside the chamber
+  {
+    const { h, a, b } = forTwo(),
+      w = warden(h),
+      qa = spot(h, w, 6),
+      s = h.G.world.spawn;
+    let d = false;
+    const both = () => {
+      a.at(qa.x, qa.z);
+      b.at(s.x, s.z, d ? { state: "dead", hp: 0 } : {});
+    };
+    run(h, 1, both);
+    assert.equal(w.aware, true);
+    assert.equal(h.S.px.get(2).inBoss, false);
+    w.hp = w.def.hp * 0.4;
+    d = true;
+    run(h, 0.5, both);
+    assert.equal(w.hp, w.def.hp * 0.4, "fed from outside");
+    assert.equal(fed(a).length + fed(b).length, 0);
+  }
+  // the boss asleep
+  {
+    const { h, a, b } = forTwo(),
+      w = warden(h),
+      qb = spot(h, w, 8),
+      s = h.G.world.spawn;
+    run(h, 0.5, () => a.at(s.x, s.z));
+    assert.equal(w.aware, false);
+    w.hp = w.def.hp * 0.4;
+    run(h, 1 / 60, () => {
+      a.at(s.x, s.z);
+      b.at(qb.x, qb.z, { state: "dead", hp: 0 });
+    });
+    assert.equal(h.S.px.get(2).inBoss, true);
+    assert.equal(w.hp, w.def.hp * 0.4, "fed asleep");
+    assert.equal(fed(a).length + fed(b).length, 0);
+  }
+  // a cave built for one
+  {
+    const h = cave(),
+      a = fakeClient(h, 1, "fighter"),
+      b = fakeClient(h, 2, "mage"),
+      { w, both, dead } = atBoss(h, a, b);
+    w.hp = w.def.hp * 0.4;
+    dead(true);
+    run(h, 0.5, both);
+    assert.equal(w.hp, w.def.hp * 0.4, "fed in a cave for one");
+    assert.equal(fed(a).length + fed(b).length, 0);
+  }
+});
+check("a wipe keeps the tuning", () => {
+  const { h, a, b } = forTwo(),
+    s = h.G.world.spawn,
+    sp = h.G.world.spawns.map((q) => ({ ...q })),
+    n = h.G.enemies.length;
+  let d = false;
+  const both = () => {
+    a.at(s.x, s.z, d ? { state: "dead", hp: 0 } : {});
+    b.at(s.x + 1, s.z, d ? { state: "dead", hp: 0 } : {});
+  };
+  run(h, 0.5, both);
+  hit(a, husk(h, 37), 100);
+  assert.equal(husk(h, 37).dead, true);
+  d = true;
+  run(h, 1 / 60, both);
+  const r = named(a, "reset");
+  assert.equal(r.length, 1);
+  assert.equal(r[0][1].enemies.length, n);
+  assert.deepEqual(h.G.world.spawns, sp);
+  assert.equal(h.G.enemies.length, n);
+  for (const e of h.G.enemies) {
+    const v = scaled(h, e.type);
+    assert.equal(e.def.hp, v.hp, e.type);
+    assert.equal(e.def.posture, v.posture, e.type);
+    assert.equal(e.hp, e.def.hp);
+    assert.equal(e.dead, false);
+  }
+  assert.equal(h.S.n, 2);
+});
+check("the hall is never tuned", () => {
+  const h = hall();
+  const a = fakeClient(h, 1, "fighter"),
+    b = fakeClient(h, 2, "mage");
+  const plain = (why) => {
+    assert.equal(h.S.n, 1, why);
+    assert.equal(h.NET.two, false, why);
+    assert.equal(h.G.edef, null, why);
+    assert.equal(h.G.enemies.length, 1, why);
+    assert.equal(h.G.enemies[0].def, h.EDEF.dummy, why);
+    assert.equal(h.G.enemies[0].hp, h.EDEF.dummy.hp, why);
+  };
+  plain("the first hall");
+  assert.equal(a.join.n, 1);
+  assert.equal(b.join.n, 1);
+  // out to a cave for two and back
+  a.ev("travel", "E", 99);
+  assert.equal(h.S.n, 2);
+  a.ev("travel", "hub");
+  plain("the hall after a cave for two");
+  assert.equal(worlds(b).at(-1).n, 1);
+});
 // ---- the Worker driver, with a stand-in for the Worker's global ----
 // sc.advance(sec) moves the clock on and fires the interval once, as a
 // Worker whose timer stalled for that long would.
@@ -1224,36 +2075,61 @@ function scope() {
   sc.live = () => sc.timers.some(Boolean);
   return sc;
 }
-// a Worker host on cave 99 with the page joined (pid 1)
-function workerHost() {
+// a Worker host with the page joined (pid 1) and there: started in the hall
+// as the page starts a room, or with start ({ seed, grade }) in that cave
+function workerHost(start = { hub: true }) {
   const h = loadHost(),
     sc = scope();
   h.worker(sc);
-  sc.msg({ start: { seed: 99, grade: "E", relay: "ws://relay.test/", code: "ABCDEF" } });
+  sc.msg({ start: { ...start, relay: "ws://relay.test/", code: "ABCDEF" } });
   sc.msg(h.wire.eventEncode(["hello", 0, h.v, "fighter", h.build]));
+  sc.msg(h.wire.eventEncode(["at", 1, h.S.epoch]));
   return { h, sc, so: sc.socks[0] };
 }
 const evs = (h, list) =>
   list.filter((b) => b instanceof ArrayBuffer && h.wire.type(b) === 3).map((b) => h.wire.eventDecode(b));
 const snaps = (h, list) => list.filter((b) => b instanceof ArrayBuffer && h.wire.type(b) === 1).length;
 
-check("the Worker driver starts the run, opens the room as its host and joins the page", () => {
+check("the Worker driver starts the room in the hall, opens the room as its host and joins the page", () => {
   const { h, sc, so } = workerHost();
-  assert.equal(h.G.enemies.length, 47);
-  assert.equal(h.G.seed, 99);
+  assert.equal(h.S.kind, "hub");
+  assert.equal(h.G.zone, "hub");
+  assert.equal(h.S.epoch, 1);
+  assert.equal(h.G.enemies.length, 1);
+  assert.equal(h.G.enemies[0].type, "dummy");
   assert.equal(sc.socks.length, 1);
   assert.equal(so.url, "ws://relay.test/room/ABCDEF");
   assert.equal(so.binaryType, "arraybuffer");
   const j = evs(h, sc.posted).find((e) => e[0] === "join");
   assert.ok(j, "the page's join was posted to it");
   assert.equal(j[1].pid, 1);
+  assert.equal(j[1].kind, "hub");
+  assert.equal(j[1].e, 1);
   assert.ok(sc.live(), "a timer runs");
   so.open();
   assert.deepEqual(sc.posted.filter((m) => !(m instanceof ArrayBuffer)), [{ relay: "open" }]);
   // a second start is ignored
   sc.msg({ start: { seed: 5, grade: "E", relay: "ws://relay.test", code: "ZZZZZZ" } });
-  assert.equal(h.G.seed, 99);
+  assert.equal(h.S.kind, "hub");
+  assert.equal(h.S.epoch, 1);
   assert.equal(sc.socks.length, 1);
+  // the page's player steps into E: the Worker takes the room to the cave
+  sc.msg(h.wire.eventEncode(["travel", 2, "E", 99]));
+  const w = evs(h, sc.posted).at(-1);
+  assert.equal(w[0], "world");
+  assert.equal(w[1].kind, "cave");
+  assert.equal(h.G.seed, 99);
+  assert.equal(h.G.enemies.length, 47);
+});
+
+check("a Worker started with a seed and a grade still starts in that cave", () => {
+  const { h, sc } = workerHost({ seed: 99, grade: "E" });
+  assert.equal(h.S.kind, "cave");
+  assert.equal(h.G.seed, 99);
+  assert.equal(h.G.enemies.length, 47);
+  const j = evs(h, sc.posted).find((e) => e[0] === "join");
+  assert.equal(j[1].kind, "cave");
+  assert.equal(j[1].seed, 99);
 });
 
 check("the Worker hands the host at most 0.25 s a call, so a stall drops time", () => {
@@ -1288,7 +2164,9 @@ check("the friend's frames come and go through the relay with its pid byte; noti
   assert.equal(evs(h, toFriend)[0][0], "join");
   // the page hears of the friend, with no address byte
   assert.deepEqual(evs(h, sc.posted).at(-1), ["peer", 2, "tanker"]);
-  // the friend's state moves its proxy
+  // the friend's state moves its proxy, once it has said it is in the cave
+  so.hear([2, ...new Uint8Array(h.wire.eventEncode(["at", 1, h.S.epoch]))]);
+  assert.equal(h.S.px.get(2).here, true);
   so.hear([2, ...new Uint8Array(h.wire.stateEncode({ x: 3, z: 4, yaw: 0, vx: 0, vz: 0, state: "free", t: 0, move: null, hp: 1, maxHp: 1, speed: 0, guardT: 0, sprint: false }))]);
   assert.equal(h.S.px.get(2).x, 3);
   // snapshots go to both
@@ -1344,7 +2222,7 @@ check("a relay socket that closes leaves the run going for the page", () => {
   assert.ok(sc2.live());
 });
 
-check("stop closes the socket, stops the timer and hears nothing more; so does the end of the run", () => {
+check("stop closes the socket, stops the timer and hears nothing more; the gate does not", () => {
   const { h, sc, so } = workerHost();
   so.open();
   sc.msg({ stop: true });
@@ -1355,14 +2233,20 @@ check("stop closes the socket, stops the timer and hears nothing more; so does t
   const n = sc.posted.length;
   sc.msg(h.wire.eventEncode(["hello", 0, h.v, "fighter", h.build]));
   assert.equal(sc.posted.length, n);
-  // the end of the run: the gate once the boss is dead
-  const b = workerHost();
+  // the gate once the boss is dead takes the party to the hall, and the
+  // Worker runs on
+  const b = workerHost({ seed: 99, grade: "E" });
   b.so.open();
   b.h.G.bossDead = true;
-  b.sc.msg(b.h.wire.eventEncode(["gate", 1]));
-  assert.deepEqual(evs(b.h, b.sc.posted).at(-1)[0], "end");
+  b.sc.msg(b.h.wire.eventEncode(["gate", 2]));
+  const last = evs(b.h, b.sc.posted).at(-1);
+  assert.equal(last[0], "world");
+  assert.equal(last[1].kind, "hub");
+  assert.equal(b.h.S.kind, "hub");
+  const s0 = b.h.S.step;
   b.sc.advance(1 / 60);
-  assert.equal(b.so.closed, 1000, "the socket closed");
-  assert.equal(b.sc.live(), false, "the timer stopped");
+  assert.equal(b.so.closed, null, "the socket closed");
+  assert.equal(b.sc.live(), true, "the timer stopped");
+  assert.equal(b.h.S.step, s0 + 1);
 });
 done();

@@ -443,6 +443,96 @@ export default [
     },
   },
   {
+    name: "a cave that differs ends co-op",
+    eval: async () => {
+      const { G } = DF,
+        co = window.__co;
+      G.manual = true;
+      co.solo({
+        hub: true,
+        seed: 99,
+        tamper: (ev) => {
+          if (ev[0] === "world") ev[1].sum = "0";
+          return ev;
+        },
+      });
+      DF.show("play");
+      const joined = !!DF.net() && G.zone === "hub";
+      // the host's page steps into E's gate
+      const q = G.world.portals.find((o) => o.grade === "E"),
+        o = DF.portalFront(q, -0.75),
+        p = G.player;
+      p.x = o.x;
+      p.z = o.z;
+      co.run(3, () => (DF.net() ? undefined : false), false);
+      await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+      const msg = document.getElementById("coopMsg"),
+        out = {
+          pass: joined && G.state === "title" && DF.net() === null && DF.CC.link === null && DF.CC.why === "cave" &&
+            !msg.hidden && msg.textContent === "This browser built a different cave from the host's. Co-op cannot run here." &&
+            G.zone === "hub" && G.trans === null && G.fade === 0,
+          joined,
+          state: G.state,
+          why: DF.CC.why,
+          msg: msg.textContent,
+          zone: G.zone,
+        };
+      // the later steps play
+      DF.coopSay("");
+      DF.show("play");
+      return out;
+    },
+  },
+  {
+    name: "after a swap the other player is not drawn where it stood in the last world",
+    eval: () => {
+      const { G } = DF,
+        co = window.__co;
+      G.manual = true;
+      const r = co.solo({ hub: true, seed: 99, ping: 50, mate: "idle" });
+      DF.show("play");
+      // the other player is heard in the hall, standing by the start
+      co.run(1, null, false);
+      const m = DF.net().mates[0],
+        hall = { x: m.x, z: m.z, away: m.away };
+      // the host's page steps into E's gate; at the first step in the new
+      // world the other player has had no snapshot of it yet
+      const q = G.world.portals.find((o) => o.grade === "E"),
+        o = DF.portalFront(q, -0.75),
+        p = G.player;
+      p.x = o.x;
+      p.z = o.z;
+      let first = null;
+      co.run(4, () => {
+        if (!first && DF.CC.epoch === 2) {
+          const P = G.player,
+            mm = DF.net().mates[0];
+          first = {
+            same: mm === m,
+            away: mm.away,
+            d: Math.hypot(mm.x - P.x, mm.z - P.z),
+            fromHall: Math.hypot(mm.x - hall.x, mm.z - hall.z),
+            snaps: mm.nb.length,
+            state: mm.state,
+          };
+        }
+        if (first && G.zone === "cave" && !G.trans && !DF.net().mates[0].away) return false;
+      }, false);
+      const mm = DF.net().mates[0],
+        px = r.host.S.px.get(2),
+        c = {
+          heard: hall.away === false,
+          built: !!first && G.zone === "cave" && G.seed === 99,
+          // the friend (pid 2) waits where it arrives: 1.2 m to this player's right
+          first: !!first && first.same && first.away === true && first.d > 0.8 && first.d < 1.6 && first.fromHall > 5 && first.state === "free",
+          // a snapshot of the new world moves it and it is there again
+          later: !mm.away && Math.hypot(mm.x - px.x, mm.z - px.z) < 0.5,
+        };
+      DF.coopEnd("test");
+      return { pass: Object.values(c).every((v) => v === true), c, first };
+    },
+  },
+  {
     name: "a join this page cannot read is refused before anything is built",
     eval: () => {
       const { G } = DF,
@@ -462,6 +552,10 @@ export default [
         dead: (j) => (j.dead = 5),
         deadId: (j) => (j.dead = ["a"]),
         peers: (j) => (j.peers = "x"),
+        epochZero: (j) => (j.e = 0),
+        epochFraction: (j) => (j.e = 1.5),
+        epochString: (j) => (j.e = "1"),
+        epochMissing: (j) => delete j.e,
         notObject: (j) => Object.keys(j).forEach((k) => delete j[k]),
       };
       const out = {};
@@ -530,6 +624,54 @@ export default [
       const again = !!DF.net() && G.enemies.length === 47;
       DF.coopEnd("test");
       return { pass: was && ended && e.aware && again && DF.net() === null, ended, aware: e.aware, again };
+    },
+  },
+  {
+    name: "puppets are built to match: a dungeon for two is scaled here, and a solo run after it is not",
+    eval: async () => {
+      const { G } = DF,
+        co = window.__co,
+        E = DF.EDEF,
+        frames = () => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+      G.manual = true;
+      let join = null;
+      const r = co.solo({
+        seed: 99,
+        two: true,
+        tamper: (ev) => {
+          if (ev[0] === "join") join = ev[1];
+          return ev;
+        },
+      });
+      DF.show("play");
+      const h = r.host,
+        hk = G.enemies.find((e) => e.type === "husk"),
+        pw = G.enemies.find((e) => e.def.boss),
+        c = {};
+      c.joined = !!DF.net() && !!join && join.n === 2 && h.S.n === 2;
+      c.count = G.enemies.length === join.enemies.length && G.enemies.length === h.G.enemies.length && G.enemies.length > 47;
+      c.husk = hk.def.hp === Math.round(E.husk.hp * 1.3) && hk.def.posture === Math.round(E.husk.posture * 1.3) && hk.hp === hk.def.hp;
+      c.warden = pw.def.hp === Math.round(E.warden.hp * 1.8) && pw.def.posture === Math.round(E.warden.posture * 1.5);
+      c.edefKept = E.husk.hp === 42 && E.warden.hp === 620;
+      // the boss bar's full width is the scaled health: the Warden at its
+      // unscaled full health fills 620 / 1116 of it
+      pw.aware = true;
+      pw.hp = E.warden.hp;
+      await frames();
+      const bar = () => parseFloat(document.getElementById("bhF").style.width),
+        part = bar();
+      c.bar = Math.abs(part - (E.warden.hp / pw.def.hp) * 100) < 0.01;
+      pw.hp = pw.def.hp;
+      await frames();
+      const full = bar();
+      c.full = full === 100;
+      pw.aware = false;
+      // out of co-op, a solo run is the plain game
+      DF.coopEnd("left");
+      DF.newRun(99);
+      const sh = G.enemies.find((e) => e.type === "husk");
+      c.solo = G.edef === null && sh.def === E.husk && sh.def.hp === E.husk.hp && sh.hp === E.husk.hp && G.enemies.length === 47;
+      return { pass: Object.values(c).every((v) => v === true), c, bar: [part, full], enemies: G.enemies.length };
     },
   },
   // ---- Task 7: fighting as a client ----
@@ -1133,6 +1275,7 @@ export default [
         DF.DEV.god = false;
         // a second player on the host, whose hit lands as this page's pin does
         h.join(2, "fighter");
+        recv(2, h.wire.eventEncode(["at", 1, h.S.epoch]));
         const p = G.player,
           he = co.husk(37),
           pe = co.pup(37);
@@ -1146,7 +1289,7 @@ export default [
           if (pid === 1 && h.wire.type(buf) === 3) {
             const ev = h.wire.eventDecode(buf);
             if (ev[0] === "pin" && ev[2] === he.id)
-              recv(2, h.wire.eventEncode(["hit", 1, he.id, 500, 0, 0, "melee", null, null, "stagger", he.an]));
+              recv(2, h.wire.eventEncode(["hit", 2, he.id, 500, 0, 0, "melee", null, null, "stagger", he.an]));
           }
           return out;
         };
@@ -1197,6 +1340,7 @@ export default [
       DF.setClass("mage");
       // a second player on the host, to see what it forwards
       h.join(2, "fighter");
+      h.recv(2, h.wire.eventEncode(["at", 1, h.S.epoch]));
       const got = [];
       h.send = (pid, buf) => {
         if (pid === 2 && h.wire.type(buf) === 3) {

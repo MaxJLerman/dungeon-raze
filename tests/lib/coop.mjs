@@ -23,12 +23,17 @@ export function loadHost() {
 // A client of a host stepped by hand. It joins at once; frames the host sends
 // it arrive through host.send, which is installed here and routes by pid.
 //   join    the join event's payload
+//   world   the latest world description (the join's, then each world event's)
 //   snap    the latest decoded snapshot, nsnap how many have arrived
 //   events  every decoded host event
 //   at(x, z, extra)   sends a STATE frame for a player standing there
 //   ev(name, ...args) sends the numbered event [name, seq, ...args]; returns seq
+//   arrive()          sends ["at", seq, world.e]: this player is in that world
+// With at true (the default) it arrives at once on its join and on every
+// world event, as a page does. Its event numbers start again at 1 after each
+// world event, as the host's ack does.
 const CLIENTS = new WeakMap();
-export function fakeClient(host, pid, cls) {
+export function fakeClient(host, pid, cls, { at = true } = {}) {
   let route = CLIENTS.get(host);
   if (!route) {
     route = new Map();
@@ -43,6 +48,7 @@ export function fakeClient(host, pid, cls) {
   const c = {
     pid,
     join: null,
+    world: null,
     snap: null,
     nsnap: 0,
     events: [],
@@ -54,8 +60,16 @@ export function fakeClient(host, pid, cls) {
       } else if (k === 3) {
         const ev = wire.eventDecode(buf);
         c.events.push(ev);
-        if (ev[0] === "join") c.join = ev[1];
+        if (ev[0] === "join" || ev[0] === "world") {
+          if (ev[0] === "join") c.join = ev[1];
+          else seq = 0;
+          c.world = ev[1];
+          if (at) c.arrive();
+        }
       }
+    },
+    arrive() {
+      return c.ev("at", c.world.e);
     },
     at(x, z, extra = {}) {
       const p = {
@@ -77,9 +91,10 @@ export function fakeClient(host, pid, cls) {
       host.recv(pid, wire.stateEncode(p));
     },
     ev(name, ...args) {
-      seq++;
-      host.recv(pid, wire.eventEncode([name, seq, ...args]));
-      return seq;
+      // (a world event this one causes restarts seq before recv returns)
+      const n = ++seq;
+      host.recv(pid, wire.eventEncode([name, n, ...args]));
+      return n;
     },
   };
   route.set(pid, c);

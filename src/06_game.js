@@ -25,6 +25,9 @@ const G = {
   routeN: 0,
   // true while the player is inside the boss chamber
   inBoss: false,
+  // the enemy definitions of this world when they are not EDEF's own (a
+  // co-op dungeon for two, coopTwoDefs), else null
+  edef: null,
   gate: null,
   flashRed: 0,
   flashWhite: 0,
@@ -1901,7 +1904,7 @@ function setClass(id) {
   });
 }
 function makeEnemy(s) {
-  const d = EDEF[s.type];
+  const d = (G.edef || EDEF)[s.type];
   return {
     type: s.type,
     node: s.node,
@@ -2041,6 +2044,7 @@ function resetRun() {
   G.fade = 0;
   G.routeN = 0;
   G.inBoss = false;
+  G.edef = null;
 }
 function snapCam() {
   cam.yaw = G.player.yaw;
@@ -2065,12 +2069,14 @@ function newRun(seed, grade = "E") {
 }
 // Puts the player in the hall. With fromGrade they step out of that grade's
 // portal, facing into the hall; otherwise they stand at the start point.
-function enterHub(fromGrade = null) {
+// coop builds the co-op hall (genHub) for a co-op world swap, which stays in
+// co-op.
+function enterHub(fromGrade = null, coop = false) {
   // leaving a co-op run for the base ends co-op before the world goes
-  if (NET && NET.client) coopEnd("left");
+  if (!coop && NET && NET.client) coopEnd("left");
   G.zone = "hub";
   setEnv(ENV_HUB);
-  G.world = genHub();
+  G.world = genHub(coop);
   SFX.setEcho(!!G.world.sewer);
   R.setWorld(G.world.pos, G.world.col, G.world.mat, G.world.pieces);
   resetRun();
@@ -2093,7 +2099,11 @@ function enterCave(gradeId, seed = (Math.random() * 1e9) | 0 || 7) {
   newRun(seed, gradeId);
   say(GRADES[gradeId].name.toUpperCase(), "big", 3);
 }
-// Begins the fade into a cave. A cut swaps at once, for reduced motion.
+// Begins the fade into a cave. A cut swaps at once, for reduced motion. A
+// transition is { t, swapped, grade } or, for one that makes its own world
+// (a co-op swap), { t, swapped, swap }: at full black swap() runs in place
+// of enterCave, and returning false says it left the world for good (the
+// fade then stops there).
 function startTrans(gradeId, cut = RM) {
   SFX.blink();
   if (cut) enterCave(gradeId);
@@ -2105,8 +2115,13 @@ function transUpdate(dt) {
   tr.t += dt;
   if (!tr.swapped && tr.t >= TRANS_HALF) {
     tr.swapped = true;
-    enterCave(tr.grade);
-    // entering the cave reset the transition; put it back to fade in
+    const went = tr.swap ? tr.swap() : enterCave(tr.grade);
+    if (went === false) {
+      G.trans = null;
+      G.fade = 0;
+      return;
+    }
+    // entering the world reset the transition; put it back to fade in
     G.trans = tr;
   }
   G.fade =
@@ -2281,11 +2296,15 @@ function explode(x, z, r, dmg, post, c) {
 }
 
 // ---- tokens ----
+// At most two regular enemies attack at once. In a co-op dungeon built for
+// two (NET.two, only ever set on the host) it is COOP_TWO.turns against each
+// player: only holders hunting the same player (tg) count.
 function takeToken(e) {
   if (e.def.boss || e.token) return true;
+  const two = !!(NET && NET.two);
   let n = 0;
-  for (const o of G.enemies) if (o.token && !o.dead) n++;
-  if (n >= 2) return false;
+  for (const o of G.enemies) if (o.token && !o.dead && (!two || o.tg === e.tg)) n++;
+  if (n >= (two ? COOP_TWO.turns : 2)) return false;
   e.token = true;
   return true;
 }
@@ -2478,7 +2497,8 @@ function bossFell(e, quiet = false) {
   G.slowT = 1.2;
   say(e.def.fell, "big", 4);
   say("A gate opens. Step through to leave.", "", 6);
-  if (next && !before && portalOpen(next))
+  // in co-op the hall keeps D sealed, so the line would not be true there
+  if (!NET && next && !before && portalOpen(next))
     say("A new gate has opened in the base.", "good", 6);
   SFX.win();
 }
@@ -3266,9 +3286,10 @@ function inspectUpdate(dt) {
     if (i.k <= 0) closePlaque(true);
     return;
   }
-  // a live plaque whose class is still locked takes its code
+  // a live plaque whose class is still locked takes its code, but not during
+  // a co-op run, where it can only be read
   const id = i.q.cls,
-    code = id && !classOpen(id) && PLAQUE_CODES[id];
+    code = !NET && id && !classOpen(id) && PLAQUE_CODES[id];
   for (const sy of readSyms()) {
     if (!code) continue;
     i.syms.push(sy);
@@ -4261,7 +4282,7 @@ function playerUpdate(dt) {
     G.gate.t > 1.2 &&
     Math.hypot(G.gate.x - p.x, G.gate.z - p.z) < 1.5
   ) {
-    // in a co-op run the host ends it, for both players
+    // in a co-op run the host takes both players back to the hall
     if (NET) NET.onGate();
     else {
       G.state = "win";
@@ -5809,14 +5830,16 @@ function update(dt) {
     G.state = "dead";
   // a local build's test switches top the player up (null in a release build)
   if (DEV) DEV.tick();
-  // open portals in the hall: stepping into the arch starts the trip. This
-  // must stay the last thing update does, because a cut swaps the world here.
+  // open portals in the hall: stepping into the arch starts the trip, or in
+  // a co-op run asks for it (NET.onPortal). This must stay the last thing
+  // update does, because a cut swaps the world here.
   if (G.zone === "hub" && p.state !== "dead")
     for (const q of w.portals) {
       if (!q.open) continue;
       const c = portalFront(q, -PORTAL_IN);
       if (Math.hypot(c.x - p.x, c.z - p.z) < PORTAL_R) {
-        startTrans(q.grade);
+        if (NET) NET.onPortal(q.grade);
+        else startTrans(q.grade);
         break;
       }
     }

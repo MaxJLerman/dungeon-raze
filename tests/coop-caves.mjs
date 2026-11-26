@@ -1,6 +1,7 @@
-// Two browsers must build the same cave from a seed. This builds seeds 1 to 40
-// of grade E in Node and in Chromium, Firefox and WebKit, and compares a
-// checksum of each cave's vertex positions (coopWorldSum).
+// Two browsers must build the same cave from a seed, and the same co-op hall.
+// This builds seeds 1 to 40 of grade E and the co-op hall (a room's first
+// world) in Node and in Chromium, Firefox and WebKit, and compares a
+// checksum of each world's vertex positions (coopWorldSum).
 // Fails only if Node throws or Chromium differs from Node. A difference in
 // Firefox or WebKit, or one that will not launch, is printed as a finding.
 // Run with: node build.mjs && node tests/coop-caves.mjs
@@ -17,7 +18,9 @@ for (const s of SEEDS) {
   host.start({ seed: s, grade: "E" });
   ref[s] = host.sum(host.G.world);
 }
-console.log("node     " + SEEDS.length + " caves built");
+host.start({ hub: true });
+const refHub = host.sum(host.G.world);
+console.log("node     " + SEEDS.length + " caves and the co-op hall built");
 
 // The same code, run inside a page. Takes the host source and the seeds.
 const inPage = ({ src, seeds }) => {
@@ -27,6 +30,8 @@ const inPage = ({ src, seeds }) => {
     h.start({ seed: s, grade: "E" });
     out[s] = h.sum(h.G.world);
   }
+  h.start({ hub: true });
+  out.hub = h.sum(h.G.world);
   return out;
 };
 
@@ -46,6 +51,14 @@ for (const name of ["chromium", "firefox", "webkit"]) {
     console.log(line);
     if (bad.length) {
       const msg = name + " differs on seeds " + bad.join(", ");
+      console.log("FINDING " + msg);
+      findings.push(msg);
+      if (name === "chromium") fail = true;
+    }
+    const hub = got.hub === refHub;
+    console.log(name.padEnd(8) + " co-op hall " + (hub ? "matches" : "differs"));
+    if (!hub) {
+      const msg = name + " differs on the co-op hall";
       console.log("FINDING " + msg);
       findings.push(msg);
       if (name === "chromium") fail = true;

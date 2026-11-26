@@ -1,6 +1,8 @@
 // ---------- input, menus, camera, loop ----------
 const canvas = $("c");
-const RM = !!(
+// reduced motion: portal trips cut instead of fading (a test sets it with
+// DF.setRM)
+let RM = !!(
   window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches
 );
 const SCREENS = [
@@ -55,8 +57,11 @@ function show(state) {
       "   Deaths " +
       G.deaths;
   }
-  // there is nowhere to return to from the hall itself
-  $("btnBase").style.display = G.zone === "hub" ? "none" : "";
+  // there is nowhere to return to from the hall itself, and in a co-op run
+  // only the host's page leads the party back
+  const lead = coopLeads();
+  $("btnBase").style.display = G.zone === "hub" || !lead ? "none" : "";
+  $("btnDeadBase").style.display = lead ? "" : "none";
   if (state !== "play" && document.pointerLockElement === canvas)
     document.exitPointerLock();
   if (state !== "play") {
@@ -93,8 +98,11 @@ function play() {
   HUD.hint();
 }
 // Leaves the cave for the hall, stepping out of the portal that was used.
+// In a co-op run the host is asked to take the party there (coopBase), and
+// the world arrives as a world event does.
 function toBase() {
-  enterHub(G.grade);
+  if (NET && NET.client) coopBase();
+  else enterHub(G.grade);
   play();
 }
 // Out to the main menu from the pause, death or win screen: a fresh hall
@@ -856,6 +864,7 @@ window.DF = {
   coopSeed: (seed) => (CR.seed = seed === null || seed === undefined ? null : seed),
   coopInvite,
   coopInviteUrl,
+  setRM: (on) => (RM = !!on),
   sim(sec, each) {
     const n = Math.round(sec * 60);
     for (let i = 0; i < n; i++) {

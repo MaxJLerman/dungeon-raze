@@ -87,6 +87,21 @@
   there once in the room, and a class changed in the room or from the
   pause menu mid-run shows on the other page. No spec was written: the
   detail is in `coop.md`. Checked by tests and screenshots only.
+- Branch `feat/coop-lobby` made the hall the co-op lobby. A room the page
+  hosts starts in the hall, both players are in it, and the host (pid 1)
+  steps into gate E to take both into the cave; they come back to the hall
+  together, in front of that gate, when the cave is left. In co-op only E is
+  open: D and C to S are sealed whatever the save says. A cave entered by
+  two is harder: 1.3 times the health and posture for every enemy, 1.8 and
+  1.5 times for the boss, one extra enemy in each room pack (two in the deep
+  one), two attack turns against each player instead of two in all, and a
+  death in the boss chamber heals the boss a quarter of its health. The
+  numbers are `COOP_TWO` in `06c`, and they are guesses until two people
+  have played it. The design is
+  `docs/superpowers/specs/2026-11-25-coop-lobby-design.md`; the detail is in
+  `coop.md`. Checked by tests (Node, the page, and two Chromium pages
+  through a local relay) and screenshots only, never by hand or between two
+  machines.
 
 ## Backlog, roughly in the order discussed
 
@@ -116,3 +131,15 @@
    three plaque classes are built. Still to come: the joke classes, quests on
    the plaques that open portals D to S to a class, and the in-game hunt that
    leads players to the hidden list of codes.
+9. A much bigger cave for two players, drawn in pieces as the sewer is, in
+   place of the usual cave with extra enemies. The extras and the 1.3 times
+   health are the stopgap. Retune `COOP_TWO` once two people have played
+   (its numbers are guesses).
+10. More health and more phases for the Warden when two players fight it,
+    beyond the 1.8 times health and the heal on a death in its chamber.
+11. Two phone test failures older than the co-op lobby: `tests/t14.mjs` on
+    every device and `tests/t29.mjs` on four short phones. See the known
+    problems in `touch.md` and `coop.md`. Causes not investigated.
+12. A flaky host check older than the co-op lobby: "nothing on the host
+    hurts or moves a proxy" in `tests/coop-host.mjs` fails about 1 run in
+    200. See the known problems in `coop.md`. Cause not investigated.

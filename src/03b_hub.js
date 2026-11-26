@@ -32,13 +32,15 @@ function portalOpen(grade) {
   const i = GRADE_IDS.indexOf(grade);
   return i > 0 && LIVE_GRADES.has(grade) && gradeCleared(GRADE_IDS[i - 1]);
 }
-function hubPortals() {
+// coop: the co-op hall, whatever the save holds: E open and every other gate
+// sealed, so the host (which has no save) and both pages build one mesh.
+function hubPortals(coop = false) {
   return GRADE_IDS.map((grade, i) => ({
     x: 11.5 - i * 4.6,
     z: 16,
     yaw: PI,
     grade,
-    open: portalOpen(grade),
+    open: coop ? grade === "E" : portalOpen(grade),
   }));
 }
 // Plaques on the hall's +X wall, the player's left at the start, one per
@@ -63,8 +65,11 @@ function portalFront(q, d) {
 }
 
 // Builds the hall. Returns the same shape genWorld does, so everything that
-// reads G.world works here unchanged; cave-only fields are empty.
-function genHub(layout = hubPortals()) {
+// reads G.world works here unchanged; cave-only fields are empty. coop true
+// builds the co-op hall (see hubPortals); a test may pass a list of portals
+// in its place.
+function genHub(coop = false) {
+  const layout = Array.isArray(coop) ? coop : hubPortals(coop);
   const HX = 15,
     HZ = 17,
     TOP = 7;
