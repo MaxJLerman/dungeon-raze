@@ -43,12 +43,14 @@
 - `resetRun()` clears everything that must not cross a world swap. Add new
   per-run state there. It clears `G.inBoss`, the flag for the player being
   inside the boss chamber, `G.chunks`, the crocodile's falling ceiling
-  (`respawn` clears it too), `G.seal`, the Warden for two's seal
-  (`coop.md`), and `G.edef`, the scaled enemy definitions of
+  (`respawn` clears it too), `G.waves`, the Warden for two's aftershocks
+  (`respawn` empties it too), `G.seal`, the Warden for two's seal
+  (`coop.md`), `G.dark`, the dark of its last phase (back to `{ v: 0, to:
+  0 }`, the lights full), and `G.edef`, the scaled enemy definitions of
   a co-op dungeon for two (`coop.md`), so every world starts with `EDEF`'s
   own; a co-op build sets it again after.
-- `respawn()` puts the player at the checkpoint, clears the rock and
-  `G.chunks` (the same cave again), and with `G.seal` standing then lays
+- `respawn()` puts the player at the checkpoint, clears the rock,
+  `G.waves` and `G.chunks` (the same cave again), and with `G.seal` standing then lays
   the seal's ring again (`sealNow()`) and puts the player at its door spot
   (`sealDoor`) in place of the checkpoint: the seal outlives one player's
   death and not a wipe (`coop.md`).

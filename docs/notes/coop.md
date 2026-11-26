@@ -285,7 +285,8 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   late: 0.6, say: "Break its grip!", front: 1.6, pull: 8, unseen: 0.5 }`). The
   definition's `seize` is `{ style: "seize", kind: "seize", unb: true, from,
   trig, wind, act, rec, reach, arc, dmg: 0 }`, chosen as its other attacks
-  are from phase 3. `EBEH.warden` (each hook returns at once without
+  are from phase 3. Its real wind-up is about 0.77 s, not `wind`'s 0.9:
+  from phase 2 on every wind-up takes the phase's tempo of 0.85. `EBEH.warden` (each hook returns at once without
   `def.duo`) is registered by the host copy only (06d), since only the host
   steps a Warden for two: a page's `EBEH` has no warden entry, and
   `tests/t23.mjs` checks that. `atkOk` leaves the seize out while
@@ -417,11 +418,15 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   player within `ring + rock + 0.5` of the centre, stands where it is
   (route dropped) and skips the state machine: it never gives up or walks
   home while sealed, so its health and phase stand until a wipe or its
-  death. **The wipe while sealed:** an away player counts as its last
-  state, so one on the death screen and the other away (a dropped
-  connection) is no wipe; without this, today's rule (away players not
-  counted) would wipe and reset the sealed fight. A player who leaves the
-  room is not counted. **On a page** the timed `seal` (`COOP_EV_T` index 2)
+  death. **The wipe while sealed:** a player who has gone quiet (away: a
+  stalled tab, or a friend who has joined but is still on the room screen)
+  counts as its last state, so one on the death screen and the other away
+  (a stalled connection) is no wipe; without this, today's rule (away
+  players not counted) would wipe and reset the sealed fight. The host
+  never drops a silent player by itself, so this lasts until that player
+  comes back or their socket closes. A closed socket is a `leave`, and a
+  player who has left is not counted, so one player dead and the other's
+  socket closed is still a wipe. **On a page** the timed `seal` (`COOP_EV_T` index 2)
   calls `sealBegin(adv)`, or `sealNow()` when quiet (late or not live), and
   nothing when a seal already stands; the boss's `kill` calls
   `sealEnd(true)`; a `reset` with `seal` false ends a standing seal with
@@ -604,7 +609,9 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   other. Both dead at once (away players not counted) is a wipe: the host
   makes the enemies again as a respawn does, once per wipe. While the
   Warden for two's seal stands an away player counts as its last state, so
-  one dead and the other away is no wipe there (the seal, above). Rest points are
+  one dead and the other away (a stalled connection) is no wipe there,
+  while one dead and the other's socket closed still is (the seal, above).
+  Rest points are
   each player's own. Kill rewards go to the player whose event killed. The
   boss's death clears E for each in their own save, with no line about a
   new gate. Either player in the exit gate takes both back to the hall in
@@ -982,9 +989,18 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
   whole ring at once while the host's may still be falling for up to 2 s.
   The host's proxy of a page brought to the door stands outside the ring
   for a state frame or so; the Warden waits while its target is outside.
-  While sealed, a player who stays away (a stalled tab that has not left the
-  room) blocks a wipe for good: the other dies and gets up at the door as
-  often as it takes, and the fight goes on.
+  While sealed, a player who stays away (a stalled tab, or a friend still on
+  the room screen, that has not left the room) blocks a wipe until they
+  come back or their socket closes: the other dies and gets up at the door
+  as often as it takes, and the fight goes on.
+- The attention rule's fallback to the nearest player (fewer than two
+  candidates, or no score) counts any live player, so with one player in
+  the chamber and one outside, it can turn on the one outside.
+- The crocodile's chunk cap (`CROC.rockCap`) and its landing loop act on
+  every entry of `G.chunks`, the seal's capsules included. No world has both
+  today.
+- With the Warden for two held at the 25% mark by `hpFloor` outside its
+  chamber, nothing tells the players why its health has stopped falling.
 - Co-op executions: the first player whose `pin` reaches the host gets the
   kill (the spec said the first to finish). A lost pin's rewards are taken
   back; if the other player's kill event is applied on the very step this

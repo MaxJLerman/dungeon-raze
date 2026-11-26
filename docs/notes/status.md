@@ -132,15 +132,19 @@
   the detail is in `coop.md` (the Warden for two), `enemies.md`, `rendering.md`
   and `dev-menu.md`. A Warden of a cave for one, and the solo one, are
   untouched. For two it has:
-  - 1,550 health (`COOP_TWO.bossHp` 2.5 times the solo 620) and 210 posture,
+  - 1,550 health (`WARDEN2.hp`, 2.5 times the solo 620) and 210 posture,
     and four phases, at 75%, 50% and 25% of its health, each with a roar
     (phase 4's lasts 2.2 s) and a line; the boss bar draws a notch at each
     mark. The heal of a quarter of its health on a death in its chamber is
-    unchanged.
+    unchanged. To tune the Warden's health for two, edit `WARDEN2.hp`;
+    `COOP_TWO.bossHp` (also 2.5) scales any other boss of a world for two
+    and does not reach the Warden.
   - Phase 1: it turns on whoever has hurt it most lately (a damage score per
     player that halves every 4 s), not on the nearest.
   - Phase 2: today's second phase, and an aftershock ring after every slam.
-  - Phase 3: a grab that only the other player can break.
+  - Phase 3: a grab that the other player breaks. The held player can
+    struggle free only when no mate can help (dead, away or outside the
+    chamber).
   - Phase 4: a ring of 24 heaps of rock closes the chamber, so nobody can
     leave it, a player who dies gets up at the door inside the ring, and the
     chamber goes dark. The seal lifts when the Warden dies or the party is
@@ -157,7 +161,8 @@
       4 s, `dps` 6, `breakAt` 80 damage from the other player, `stag` 2 s,
       `crush` 40, `toss` 6 m, `slack` 2 m, `late` 0.6 s, `front` 1.6 m,
       `pull` 8 m/s, `unseen` 0.5 s (the host lets go of a player it has
-      never seen held), and the line "Break its grip!".
+      never seen held), and the line "Break its grip!". The seize's real
+      wind-up is about 0.77 s: from phase 2 on the tempo of 0.85 applies.
     - `seal`: `n` 24 capsules, `ring` 12.5 m, `rock` 1.4 m, `warn` 1.4 s,
       `sweep` 0.6 s, `door` 2 m, `fade` 0.4 s.
     - `dark`: `floor` 0.12 (the crystals), `amb` 0.12 (the cave's ambient
@@ -198,15 +203,22 @@
       judged.
     - The crush's throw carries the held player toward the chamber's centre
       and can carry them through the Warden (`coop.md`, known problems).
-    - While the seal stands, a wipe counts an away player by its last
-      state. A player whose tab stalls without leaving cannot be part of a
-      wipe until the host drops them, so the other keeps getting up at the
-      door with the Warden healing each time.
+    - While the seal stands, a wipe counts a player who has gone quiet (a
+      stalled tab, or a friend who has joined but is still on the room
+      screen) by its last state. The host never drops a silent player by
+      itself, so this lasts until that player comes back or their socket
+      closes, and meanwhile the other keeps getting up at the door with the
+      Warden healing each time. A closed socket is a `leave`, and a player
+      who has left is not counted, so one player dead and the other's
+      socket closed is still a wipe.
     - On the iPhone SE the boss bar sits over the Warden's head and raised
       arms at fighting distance (`shots/iphone-se-t32-dark.png`). That is older
       than the dark but matters more in it.
     - When the seal lands, any enemy inside the chamber's reach but not
       inside the ring is moved in, the Warden included.
+  - The sweep of the whole test table before the whole-branch review: 39
+    scripts, 43 runs with the device variants. Only `touch-all` t14 and t29 `title` on
+    four short phones failed, both known (backlog 11).
 
 ## Backlog, roughly in the order discussed
 
@@ -255,3 +267,6 @@
     A second flaky check, "rubble never traps it" in `tests/t25.mjs`, fails
     now and then and passes on a rerun. See the known problems in
     `crocodile.md`. Cause not investigated.
+13. `ASK.exec` on the host kills any pinned enemy outright, the Warden for
+    two included. It is older than `feat/coop-warden-two`, but breaking the
+    Warden's hold now gives a stagger, and so an execution, on demand.

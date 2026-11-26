@@ -119,3 +119,6 @@
   rotate message). Seen on 239d320, before the main menu and the co-op
   lobby, and unchanged by `feat/coop-lobby`. The cause is not
   investigated; the page text may have changed and not the test.
+- `tests/t14.mjs` on ipad-pro-13 fails the step "leaving fullscreen during
+  play pauses" now and then. It fails on `main` before the Warden for two
+  too (3 runs of 4 on ddc360e). The cause is not investigated.

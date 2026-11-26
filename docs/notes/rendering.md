@@ -79,6 +79,8 @@
   against the lamp-lit floor, which is lit a few metres round it; the rubble
   wall can be made out from 3 m. The player's own body is dark teal and
   reads mostly by its rim and the lamp, so do not go much lower on `lamp`.
+  The test moves with these numbers: `lamp` 0.3 with `amb` 0.2 measured
+  62.5% of the frame before the seal and fails t32's 60% check.
   `tests/t32.mjs` reads the
   canvas in the same task as the draw (it wraps `R.end` and copies the
   canvas to a 2D one; the drawing buffer is not kept), checks the sealed
