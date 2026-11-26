@@ -1752,9 +1752,15 @@ function crocRollSpot(e, c) {
 //   roar   how long the roar lasts on entering a phase, in seconds, by the
 //          phase entered; one not listed lasts today's 1.2 s
 //   lines  what a page says as the Warden enters each phase
+//   heed   whom it hunts (the host's pick): a player's score is the health
+//          they took off it, halving every half seconds; it turns to the
+//          other player when that score is at least lead times the
+//          target's, at most once every every seconds, and never in a
+//          swing ("wind", "act") or a hold
 const WARDEN2 = {
   hp: 2.5,
   marks: [0.75, 0.5, 0.25],
   roar: { 4: 2.2 },
   lines: { 2: "The Warden burns hotter", 3: "The Warden reaches for you", 4: "The way out is gone" },
+  heed: { half: 4, lead: 1.3, every: 3 },
 };

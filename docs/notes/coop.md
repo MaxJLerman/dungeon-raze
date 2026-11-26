@@ -101,7 +101,8 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   nearest proxy that is there, alive and not away, kept unless another is
   `COOP.STICK` (3 m) nearer. For each enemy's step `as(px, fn)` points
   `G.player` and `G.inBoss` at that proxy and puts them back after. A hit
-  from a player the enemy can see turns it on them. This leaves the
+  from a player the enemy can see turns it on them (not the Warden for
+  two's: its attention, below). This leaves the
   single-player code and its tests alone, at the cost of the leaks listed in
   Known problems.
 - **Worlds and travel** (the host, `06d`). A room's world is the hall
@@ -237,7 +238,22 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   health over a mark without undoing one. Everything today's second phase
   gives (speed 1.2, tempo 0.85, the volley, the glow) holds from phase 2
   on (`e.phase >= 2`, on the host and in the page's puppet). Phases 3 and 4
-  add nothing yet. **The roar** is `["roar", eid, t, phase]`, sent to both
+  add nothing yet. **Attention** (`WARDEN2.heed`, `{ half: 4, lead: 1.3,
+  every: 3 }`; host only, nothing on a page changes): the host keeps `e.heed`
+  on a `duo` boss, a score per pid. Each hit `ASK.hit` accepts adds the
+  health it took off (its health before `hitEnemy` less after, never below
+  0, so a kill counts what was left); every tick each score is multiplied by
+  `0.5 ** (dt / half)` and one under 0.01 is dropped. `number()` makes it
+  `{}` (and `e.heedAt`, the time of its last turn, `-Infinity`) whenever the
+  enemies are made again. `pick(e)` for a `duo` boss: the candidates are the
+  live players in the chamber (`px.inBoss`). With two, and its target one of
+  them, and a score on either, the target stays; it changes to the other
+  only when the other's score is above zero and at least `lead` times the
+  target's, `every` seconds have passed since `heedAt`, and the state is not
+  `"wind"`, `"act"` or `"hold"`. Otherwise (fewer than two candidates, no
+  score on either, or a target that is not a candidate) the nearest rule
+  decides as for any enemy. `ASK.hit` no longer sets the target of a `duo`
+  boss; for every other enemy it still does. **The roar** is `["roar", eid, t, phase]`, sent to both
   by `ASK.hit` whenever a boss's phase rises (a solo-tuned Warden's too,
   phase 2); the page waits for the drawn time and says `WARDEN2.lines[phase]`
   for a `duo` definition, today's line otherwise; `COOP_TAKE` refuses a

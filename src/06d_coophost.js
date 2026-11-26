@@ -58,7 +58,7 @@ const COOP_HOST = COOP_HEADLESS_HERE
       // Who an enemy hunts: the nearest proxy that is there, alive and not
       // away, kept unless another is COOP.STICK nearer. 0 is nobody.
       const live = (px) => px && px.here && !px.away && px.state !== "dead";
-      function pick(e) {
+      function nearest(e) {
         const cur = S.px.get(e.tg);
         let best = null,
           bd = Infinity;
@@ -76,6 +76,38 @@ const COOP_HOST = COOP_HEADLESS_HERE
         }
         e.tg = best ? best.pid : 0;
         return best || ph;
+      }
+      // The Warden for two hunts whoever has hurt it most lately (e.heed,
+      // below). Both players live in its chamber and one with a score: it
+      // keeps its target and turns to the other only on a lead, not within
+      // heed.every of its last turn and not in a swing or a hold. Else
+      // today's rule.
+      function pick(e) {
+        if (!e.def.duo) return nearest(e);
+        const H = WARDEN2.heed,
+          cs = [];
+        for (const px of S.px.values()) if (live(px) && px.inBoss) cs.push(px);
+        const cur = S.px.get(e.tg);
+        if (cs.length === 2 && cs.includes(cur)) {
+          const o = cs[0] === cur ? cs[1] : cs[0],
+            so = e.heed[o.pid] || 0,
+            sc = e.heed[cur.pid] || 0;
+          if (so > 0 || sc > 0) {
+            if (
+              so > 0 &&
+              so >= H.lead * sc &&
+              now() - e.heedAt >= H.every &&
+              e.state !== "wind" &&
+              e.state !== "act" &&
+              e.state !== "hold"
+            ) {
+              e.tg = o.pid;
+              e.heedAt = now();
+            }
+            return S.px.get(e.tg);
+          }
+        }
+        return nearest(e);
       }
       // Each tick, before the enemies: who is away, and who is in the boss
       // chamber (in within its radius, out past the pad, as update does).
@@ -130,9 +162,18 @@ const COOP_HOST = COOP_HEADLESS_HERE
         for (const o of G.enemies) if (o !== e && o.token && !o.dead && o.tg === e.tg) n++;
         if (n >= COOP_TWO.turns) e.token = false;
       }
+      // Every score of a duo boss halves each heed.half seconds; one too
+      // small to matter is dropped, so an old hit never turns it.
+      function fade(e, dt) {
+        const k = 0.5 ** (dt / WARDEN2.heed.half);
+        for (const id of Object.keys(e.heed)) {
+          if ((e.heed[id] *= k) < 0.01) delete e.heed[id];
+        }
+      }
       function enemies(dt) {
         present();
         for (const e of G.enemies) {
+          if (e.def.duo) fade(e, dt);
           const s0 = e.state,
             t0 = e.tg,
             tg = pick(e);
@@ -179,6 +220,11 @@ const COOP_HOST = COOP_HEADLESS_HERE
           e.an = 0;
           e.pin = 0;
           e.tg = 0;
+          // a duo boss's scores by pid, and when it last turned
+          if (e.def.duo) {
+            e.heed = {};
+            e.heedAt = -Infinity;
+          }
           S.byId.set(i, e);
         });
       }
@@ -403,13 +449,15 @@ const COOP_HOST = COOP_HEADLESS_HERE
           if (flinch && seenState !== "act" && e.state === "act" && e.an === seenAn)
             e.state = "chase";
           // a hit from a player it can see turns it on them, and a turn
-          // held against the other may go with that
-          if (e.tg !== px.pid && G.world.los(e.x, e.z, px.x, px.z)) {
+          // held against the other may go with that; the Warden for two
+          // goes by its scores instead (pick)
+          if (!d.duo && e.tg !== px.pid && G.world.los(e.x, e.z, px.x, px.z)) {
             const t0 = e.tg;
             e.tg = px.pid;
             retarget(e, t0);
           }
           const ph0 = e.phase,
+            hp0 = e.hp,
             // an execution that need not kill (the Warden's) comes as a hit:
             // from the player who pinned it, it recoils as in single player
             ex = src === "exec" && e.pin === px.pid;
@@ -435,6 +483,7 @@ const COOP_HOST = COOP_HEADLESS_HERE
             e.t = 0;
             e.dur = 1.0;
           }
+          if (d.duo) e.heed[px.pid] = (e.heed[px.pid] || 0) + Math.max(0, hp0 - Math.max(0, e.hp));
           if (d.boss && e.phase > ph0) all(["roar", e.id, now(), e.phase]);
         },
         // as hurtPlayer's parry branch does to the enemy; one staggered or
