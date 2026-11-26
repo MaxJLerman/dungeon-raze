@@ -697,6 +697,11 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
   4 of 12; the other eight pass): "the host chooses a class in the room, and
   the code and the invite link are copied", key `startInView`. That key
   checks that the bottom of Start and Back (`#coopEnter`) is inside the
-  viewport and above the class cards, so on a viewport 308 px or less high
-  the room screen's Start is probably out of view. Seen on 239d320, before
-  the co-op lobby, and unchanged by it. The cause is not investigated.
+  viewport and above the class cards, and it fails on the short landscape
+  viewports of pixel-9, pixel-5, fold-7-cover and moto-g4 (293 to 360 px
+  high). Seen on 239d320, before the co-op lobby, and unchanged by it. The
+  cause is not investigated.
+- A dead friend taken along by the host arrives on the play screen without
+  pointer lock: the death screen released it and the swap is not a click,
+  so on desktop the camera does not turn until the first click, which also
+  swings.
