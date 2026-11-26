@@ -81,6 +81,8 @@ try {
   check("the release build has no dev screen", !rel.includes("scr-dev"));
   check("the dev build has the lag dial", dev.includes("lagDial"));
   check("the release build has no lag dial", !rel.includes("lagDial") && !rel.includes("devCoop"));
+  check("the dev build has the big cave button", dev.includes("devBigCave") && dev.includes("Big cave (co-op size)"));
+  check("the release build has no big cave button", !rel.includes("devBigCave") && !rel.includes("Big cave (co-op size)"));
   check("the release build keeps the inert seam", rel.includes("let DEV = null"));
   check("the release build carries the co-op host copy", rel.includes("const COOP_HOST_SRC = "));
   check(

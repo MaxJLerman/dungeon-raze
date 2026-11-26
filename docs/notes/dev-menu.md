@@ -23,6 +23,12 @@
 - **Enter a gate** (`[data-dev-gate]`, `devGate(grade)`) runs `enterCave`
   for any of `GRADE_IDS`, ignoring `portalOpen`; C to S get the cave. It
   clears nothing (`CLEARED` is untouched).
+- **Big cave (co-op size)** (`[data-dev-big]`, `devBigCave(seed?)`) is the last
+  button of the Enter a gate row. It runs `enterCave("E", seed, true)`, the
+  36-room cave a co-op pair gets, with no net, and sets `DEV.run` as
+  `devGate` does. Without a seed the cave is random. It is for walking and
+  looking at the big cave alone; a Return to base and gate E give the small
+  cave again, since only a co-op swap or this button passes `big`.
 - **Jump to a boss** (`[data-dev-boss]`, `devBoss(grade, seed?)`, the list
   in `DEV_BOSSES`) starts a fresh run at its last rest point, lit and made
   the checkpoint, facing `world.boss`. Seeds 1 to 12 of E and D all have a

@@ -78,6 +78,25 @@ export default [
   }
   const same = JSON.stringify(DF.CLEARED) === cleared;
   return { pass: out.every((o) => o.ok) && same, out, same };`),
+  step("the big cave button walks the 36-room cave alone", `
+  const cleared = JSON.stringify(DF.CLEARED), out = {};
+  DF.devBigCave(99);
+  out.fn = [G.zone, G.grade, !!G.world.big, G.world.nodes.length, DF.net(), G.state, DF.DEV.run === G.world];
+  DF.show("title"); DF.openMenu("dev"); await draw();
+  const btn = $('#scr-dev [data-dev-big]');
+  btn.click();
+  out.btn = [btn && btn.textContent, G.zone, G.grade, !!G.world.big, G.world.nodes.length, DF.net(), G.state, DF.DEV.run === G.world];
+  const same = JSON.stringify(DF.CLEARED) === cleared;
+  const ok = (a) => a[a.length - 7] === "cave" && a[a.length - 6] === "E" && a[a.length - 5] === true && a[a.length - 4] === 36 && a[a.length - 3] === null && a[a.length - 2] === "play" && a[a.length - 1] === true;
+  return { pass: ok(out.fn) && ok(out.btn) && out.btn[0] === "Big cave (co-op size)" && same, out, same };`),
+  step("a random big cave without a seed, and the small cave after a return to base", `
+  DF.devBigCave(); const a = G.seed, bigA = G.world.big; DF.devBigCave(); const b = G.seed;
+  DF.enterHub(G.grade); G.state = "play";
+  const p = G.player, q = G.world.portals[0];
+  p.x = q.x; p.z = q.z - 3; p.yaw = 0; DF.cam.yaw = 0; DF.keys[DF.BIND.fwd] = true;
+  DF.sim(4, () => G.zone === "hub" || !!G.trans); DF.keys[DF.BIND.fwd] = false;
+  const small = G.zone === "cave" && !G.trans && !G.world.big && G.world.nodes.length < 36;
+  return { pass: bigA === true && a !== b && small, a, b, bigA, zone: G.zone, big: G.world.big, n: G.world.nodes.length };`),
   step("boss jump lands at the last rest point", `
   const bad = []; let single = 0;
   for (const [g, type] of [["E", "warden"], ["D", "croc"]])

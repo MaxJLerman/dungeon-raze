@@ -24,6 +24,13 @@ function devGate(grade) {
   DEV.run = G.world;
   play();
 }
+// The cave a co-op pair enters, walked alone: E's 36-room cave, with no net.
+// Without a seed the cave is a random one, as through the gate.
+function devBigCave(seed) {
+  enterCave("E", seed, true);
+  DEV.run = G.world;
+  play();
+}
 // The bosses there are to jump to, by grade.
 const DEV_BOSSES = [
   ["E", "The Warden"],
@@ -101,6 +108,7 @@ function devBuild() {
       (g) =>
         '<button type="button" data-dev-gate="' + g + '">' + GRADES[g].name + "</button>",
     ).join("") +
+    '<button type="button" data-dev-big="1">Big cave (co-op size)</button>' +
     '</div><p class="sub">Jump to a boss</p><div class="row">' +
     DEV_BOSSES.map(
       ([g, name]) =>
@@ -137,6 +145,7 @@ function devBuild() {
   document.body.append(badge);
   for (const b of scr.querySelectorAll("[data-dev-gate]"))
     b.addEventListener("click", () => devGate(b.dataset.devGate));
+  scr.querySelector("[data-dev-big]").addEventListener("click", () => devBigCave());
   for (const b of scr.querySelectorAll("[data-dev-boss]"))
     b.addEventListener("click", () => devBoss(b.dataset.devBoss));
   SCREENS.push("dev");
@@ -158,7 +167,7 @@ if (devHost(location)) {
     // a boss kill now is not saved as a cleared grade
     noSave: () => DEV.god || (!!G.world && DEV.run === G.world),
   };
-  Object.assign(DF, { DEV, devUnlockAll, devGate, devBoss, devGod });
+  Object.assign(DF, { DEV, devUnlockAll, devGate, devBigCave, devBoss, devGod });
   devBuild();
 }
 DF.devHost = devHost;
