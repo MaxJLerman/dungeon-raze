@@ -1916,12 +1916,17 @@ function sealIn(w, o, r) {
   w.resolve(o, r);
   crocFree(o, (x, z) => w.fieldAt(x, z) >= r - 0.1 && footOk(o, x, z));
 }
+// An enemy the seal moves: not dead, falling, hidden, aloft or the dummy.
+const sealMoves = (o) => !(o.dead || o.def.dummy || o.hidden || o.aloft || o.state === "fall");
 // A capsule lands: its rock goes into the field and every route is asked
 // again. A body the rock reaches (its fieldAt fell below its radius as the
-// rock went in) is moved in to open floor: any enemy but one dead, falling,
-// hidden, aloft or the dummy, and on a page this player unless dead or
-// held. It hurts nobody: the seal is a rule of the fight, not an attack.
-// quiet: no sparks, shake or sound.
+// rock went in) is moved in to open floor: any enemy sealMoves allows, and
+// on a page this player unless dead or held. When the last lands, every
+// such enemy within the chamber's reach (w.boss.r and its own radius of
+// the centre) not on the open floor inside the ring is moved in too: one
+// standing in a tunnel mouth, past the rock's reach, would be shut out of
+// its own fight. It hurts nobody: the seal is a rule of the fight, not an
+// attack. quiet: no sparks, shake or sound.
 function sealLand(w, k, quiet) {
   const s = G.seal,
     p = G.player,
@@ -1933,9 +1938,17 @@ function sealLand(w, k, quiet) {
     if (o !== p) o.route = null;
     const f1 = w.fieldAt(o.x, o.z);
     if (!(f1 < o.r && f1 < f - 1e-6)) continue;
-    if (o === p ? p.state === "dead" || p.state === "held" : o.dead || o.def.dummy || o.hidden || o.aloft || o.state === "fall")
-      continue;
+    if (o === p ? p.state === "dead" || p.state === "held" : !sealMoves(o)) continue;
     sealIn(w, o, o.r);
+  }
+  if (s.ids.length === WARDEN2.seal.n) {
+    const B = w.boss,
+      S = WARDEN2.seal;
+    for (const o of G.enemies) {
+      const d = Math.hypot(o.x - B.x, o.z - B.z);
+      if (!sealMoves(o) || d > B.r + o.r) continue;
+      if (d > S.ring - S.rock - o.r || w.fieldAt(o.x, o.z) < o.r - 0.1) sealIn(w, o, o.r);
+    }
   }
   if (quiet) return;
   sparks(k.x, 0.5, k.z, 30, [0.55, 0.5, 0.45], 6, 0.8, 0.22);

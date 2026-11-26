@@ -358,7 +358,13 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   route dropped, and any body its rock reaches moved radially in to open
   floor (`sealIn`: to `ring - rock - r - 0.15`, `resolve`, then `crocFree`
   if still short of room), an enemy unless dead, falling, hidden, aloft or
-  the dummy, and on a page this player unless dead or held. It hurts
+  the dummy, and on a page this player unless dead or held. When the last
+  lands, every such enemy within the chamber's reach (`w.boss.r` plus its
+  own radius of the centre) that is not on the open floor inside the ring
+  (further than `ring - rock - r` out, or short of room) is moved in the
+  same way, so one standing in a tunnel mouth past the rock's reach (the
+  Warden's body is reached only to about 15.2 m, the chamber is 16.5) is not
+  shut out. Host and pages run the same rule. It hurts
   nobody. `down` once all have landed. `sealNow()` lays the whole ring at
   once, quietly; `sealEnd(crumble)` takes its rock out, its chunks away
   (with `crocChunkGone`'s crumble when `crumble`), drops every route, clears
@@ -383,7 +389,8 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   Warden's death (`onKill`) calls `sealEnd(true)`. `EBEH.warden.hpFloor`:
   in phases 1 to 3, outside `w.boss.r` of the chamber's centre, its health
   cannot fall under `hp * marks[2]` (387.5), so the seal always begins with
-  it in the chamber (inside it but outside the ring, the rock moves it in).
+  it within the chamber's radius, and the ring's landing moves it inside
+  the ring from anywhere within that radius and its own.
   `EBEH.warden.step`, while the seal stands and its target is not a live
   player within `ring + rock + 0.5` of the centre, stands where it is
   (route dropped) and skips the state machine: it never gives up or walks
@@ -782,7 +789,9 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
     lay the same ring and the same field at 500 points, phase 4 sends
     `seal` to both and closes the route out by 2.1 s (and a join is told),
     health held at 387.5 outside the chamber until phase 4, the Warden moved
-    in from 13 m, a sealed Warden with one player dead and the other away
+    in from 13 m and from tunnel mouths 15.6 to 16.45 m out past the rock's
+    reach (three points each on caves 7, 3, 11 and 99, found on a second
+    copy of the cave with the ring laid), a sealed Warden with one player dead and the other away
     for 13 s unmoved, unhealed and unreset (then it hunts the one who comes
     back), an unsealed one still walking home and resetting, a wipe and its
     death lifting the seal (route out, gate), and a join, a rejoin and a

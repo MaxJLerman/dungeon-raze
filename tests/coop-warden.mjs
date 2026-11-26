@@ -785,6 +785,54 @@ check("the Warden in the rock's way is moved in", () => {
   assert.ok(d <= 11, "at " + d.toFixed(2) + " m");
   assert.ok(h.G.world.fieldAt(boss.x, boss.z) >= boss.r - 0.1, "in rock: " + h.G.world.fieldAt(boss.x, boss.z));
 });
+check("a Warden in a tunnel mouth is moved in, on four caves", () => {
+  const bad = [];
+  for (const seed of [7, 3, 11, 99]) {
+    // Where the Warden's body has open floor 15.6 to 16.45 m out (the
+    // furthest on each of 720 headings) that the ring's rock does not
+    // reach: laid on a copy of the same cave, which lays the same rock.
+    const probe = loadHost();
+    probe.start({ seed, grade: "E", two: true });
+    const pw = probe.G.world,
+      PB = pw.boss,
+      R = warden(probe).r,
+      mouth = [];
+    for (let i = 0; i < 720; i++) {
+      const an = (i * Math.PI) / 360;
+      for (let r = 16.45; r >= 15.6; r -= 0.1) {
+        const x = PB.x + Math.sin(an) * r,
+          z = PB.z + Math.cos(an) * r;
+        if (pw.fieldAt(x, z) >= R) {
+          mouth.push({ x, z, r });
+          break;
+        }
+      }
+    }
+    probe.seal.now();
+    const out = mouth.filter((q) => pw.fieldAt(q.x, q.z) >= R);
+    if (!out.length) bad.push(seed + ": no tunnel mouth past the rock");
+    // three runs, from three such points
+    for (let k = 0; k < 3 && out.length; k++) {
+      const { h, a, b, boss } = duo(seed),
+        w = h.G.world,
+        B = w.boss,
+        each = stand(h, [a, b], 5),
+        q = out[Math.floor((k * out.length) / 3)];
+      run(h, 0.2, each);
+      Object.assign(boss, { x: q.x, z: q.z });
+      h.phase(4);
+      if (untilDown(h, 2.5, each) < 0) {
+        bad.push(seed + ": the ring is not down");
+        continue;
+      }
+      const d = Math.hypot(boss.x - B.x, boss.z - B.z),
+        f = w.fieldAt(boss.x, boss.z);
+      if (d > 11 || f < boss.r - 0.1)
+        bad.push(seed + "/" + k + ": from " + q.r.toFixed(2) + " m, at " + d.toFixed(2) + " m, room " + f.toFixed(2));
+    }
+  }
+  assert.deepEqual(bad, []);
+});
 check("sealed with nobody to fight it stays", () => {
   const { h, a, b, boss, qa, qb } = sealed();
   // a on the death screen, its page still sending; b silent
