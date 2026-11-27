@@ -505,6 +505,10 @@ const TOUCH = {
         const to = menuBack;
         menuGoBack();
         if (to !== "title") arm();
+      } else if (G.state === "enter") {
+        // Back at a gate's question is "Stay out"
+        enterAnswer(false);
+        arm();
       } else if (G.state === "pause" || G.state === "dead" || G.state === "win") arm();
     });
     // Android's Back leaves fullscreen first, with no popstate: that pauses too

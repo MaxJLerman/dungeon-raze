@@ -15,6 +15,25 @@ const shown = `const shown = (id) => { const e = document.getElementById(id); re
 // until the gate asks (G.ask), a trip begins or sec runs out
 const toGate = `const toGate = (q, sec = 4) => { const p = G.player; p.x = q.x; p.z = q.z - 3; p.yaw = 0; cam.yaw = 0; DF.keys[DF.BIND.fwd] = true;
   DF.sim(sec, () => !G.ask && G.zone === "hub" && !G.trans); DF.keys[DF.BIND.fwd] = false; };`;
+// an async step for the gate's screen, which the frame loop shows. asked(q)
+// walks into q and resolves in the frame that shows the screen; ready() waits
+// out the screen's guard against a press made before it appeared; lock counts
+// the times the mouse lock is asked for.
+const astep = (name, body, extra = {}) => ({
+  name,
+  eval: `(async () => { const { G, cam } = DF; G.manual = true; ${toGate}
+  const scr = document.getElementById("scr-enter"), up = () => !!scr && scr.classList.contains("show");
+  const draw = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const asked = (q = G.world.portals[0]) => { toGate(q); return new Promise((r) => { let n = 0; const f = () => (up() || ++n > 120 ? r(up()) : requestAnimationFrame(f)); requestAnimationFrame(f); }); };
+  const ready = () => sleep(420);
+  const key = (code) => dispatchEvent(new KeyboardEvent("keydown", { code, bubbles: true, cancelable: true }));
+  const cv = document.getElementById("c"), lock = { n: 0 }, was = cv.requestPointerLock;
+  cv.requestPointerLock = () => { lock.n++; return Promise.reject(new Error("test")); };
+  const circle = (q = G.world.portals[0]) => { const o = DF.portalFront(q, -0.75); return Math.hypot(o.x - G.player.x, o.z - G.player.z); };
+  try { ${body} } finally { cv.requestPointerLock = was; G.noLock = false; } })()`,
+  ...extra,
+});
 export default [
   step("hub world", `
   const w = DF.genHub(), P = w.portals, f = (o) => w.fieldAt(o.x, o.z);
@@ -223,6 +242,83 @@ export default [
   const a = G.ask === null && G.askOff === false && G.state === "play";
   toGate(G.world.portals[0]); DF.gateAnswer(false); const off = G.askOff === true; DF.enterHub();
   return { pass: asked && a && off && G.askOff === false, asked, a, off };`),
+  astep("the question is a screen", `
+  DF.enterHub(); DF.show("play"); const shown = await asked();
+  const kids = [...scr.children].map((e) => e.tagName + (e.className ? "." + e.className : "")), btn = [...scr.querySelectorAll("button")];
+  const fits = btn.every((b) => { const r = b.getBoundingClientRect(); return r.width > 0 && r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight; });
+  const c = { shown, state: G.state === "enter", text: document.getElementById("enterQ").textContent === "Enter gate E?",
+    kids: kids.join(" ") === "H1 DIV.row", btn: btn.map((b) => b.id + ":" + b.textContent).join("|") === "btnEnter:Enter|btnStay:Stay out", fits,
+    only: document.querySelectorAll(".scr.show").length === 1, hud: document.getElementById("hud").classList.contains("show"),
+    first: btn[0].hasAttribute("data-padfirst") };
+  return { pass: Object.values(c).every(Boolean), c, kids };`, { wait: 600, shot: "t8-enter" }),
+  astep("an answer in the screen's first moment is ignored", `
+  DF.gateAnswer(false); DF.enterHub(); DF.show("play"); const shown = await asked(), a = G.ask;
+  DF.enterAnswer(true); document.getElementById("btnEnter").click(); document.getElementById("btnStay").click(); if (!DF.TOUCH.on) { key("Enter"); key("Escape"); }
+  const c = { shown, early: G.ask === a && G.state === "enter" && !G.trans && G.player.state !== "dodge" && up() };
+  await ready(); document.getElementById("btnEnter").click();
+  c.late = G.ask === null && G.state === "play" && !!G.trans && !up();
+  DF.sim(4, () => G.zone === "hub" || !!G.trans); c.cave = G.zone === "cave";
+  return { pass: Object.values(c).every(Boolean), c };`),
+  astep("the Stay out button throws the player out", `
+  DF.enterHub(); DF.show("play"); const shown = await asked(); await ready(); const cy = cam.yaw;
+  document.getElementById("btnStay").click(); const p = G.player;
+  const c = { shown, closed: G.ask === null && G.state === "play" && !up(), dodge: p.state === "dodge", lock: lock.n === (DF.TOUCH.on ? 0 : 1) };
+  DF.sim(1); c.out = circle() > 2 && G.zone === "hub" && !G.trans && cam.yaw === cy;
+  return { pass: Object.values(c).every(Boolean), c, n: lock.n };`),
+  astep("Space does not answer, Enter enters", `
+  if (DF.TOUCH.on) return { pass: true, skipped: "touch" };
+  DF.enterHub(); DF.show("play"); const shown = await asked(), a = G.ask; await ready();
+  key("Space"); const c = { shown, space: G.ask === a && G.state === "enter" && up() };
+  key("Enter"); c.enter = G.ask === null && G.state === "play" && !!G.trans && !up() && lock.n === 1;
+  DF.sim(4, () => G.zone === "hub" || !!G.trans); c.cave = G.zone === "cave";
+  return { pass: Object.values(c).every(Boolean), c };`),
+  astep("Esc stays out and does not ask for the mouse", `
+  if (DF.TOUCH.on) return { pass: true, skipped: "touch" };
+  DF.enterHub(); DF.show("play"); const shown = await asked(); await ready(); G.noLock = false;
+  key("Escape"); const p = G.player;
+  const c = { shown, closed: G.ask === null && G.state === "play" && !up(), dodge: p.state === "dodge", lock: lock.n === 0 && G.noLock === false };
+  DF.sim(1); c.out = circle() > 2 && G.zone === "hub";
+  return { pass: Object.values(c).every(Boolean), c };`),
+  astep("a controller: A enters from the first focus, B stays out", `
+  const mk = (b) => ({ id: "Xbox Wireless Controller (STANDARD GAMEPAD Vendor: 045e Product: 0b13)", index: 0, connected: true, mapping: "standard", timestamp: performance.now(),
+    buttons: Array.from({ length: 18 }, (_, i) => ({ pressed: i === b, value: i === b ? 1 : 0 })), axes: [0, 0, 0, 0] });
+  const was2 = Object.getOwnPropertyDescriptor(navigator, "getGamepads"); let list = [];
+  Object.defineProperty(navigator, "getGamepads", { configurable: true, value: () => list });
+  const press = (b) => { list = [mk(b)]; DF.PAD.poll(1 / 60); list = [mk(-1)]; DF.PAD.poll(1 / 60); };
+  const c = {};
+  try {
+    DF.enterHub(); DF.show("play"); list = [mk(-1)]; DF.PAD.poll(1 / 60);
+    // B is the dodge: held as the player goes in, it answers nothing
+    c.shown = await asked(); list = [mk(1)]; DF.PAD.poll(1 / 60); await ready(); DF.PAD.poll(1 / 60);
+    c.heldB = !!G.ask && G.state === "enter"; list = [mk(-1)]; DF.PAD.poll(1 / 60);
+    c.focus = DF.PAD.focus === document.getElementById("btnEnter");
+    press(1); c.b = G.ask === null && G.state === "play" && G.player.state === "dodge" && !up();
+    DF.sim(1, () => { DF.PAD.poll(1 / 60); }); c.out = circle() > 2 && G.zone === "hub" && !G.trans;
+    c.shown2 = await asked(); await ready(); DF.PAD.poll(1 / 60);
+    press(0); c.a = G.ask === null && G.state === "play" && !!G.trans;
+    DF.sim(4, () => G.zone === "hub" || !!G.trans); c.cave = G.zone === "cave";
+  } finally {
+    list = []; DF.PAD.poll(1 / 60); DF.PAD.setActive(false);
+    if (was2) Object.defineProperty(navigator, "getGamepads", was2); else delete navigator.getGamepads;
+  }
+  return { pass: Object.values(c).every(Boolean), c };`),
+  astep("the touch Back gesture stays out", `
+  if (!DF.TOUCH.on) return { pass: true, skipped: "no touch" };
+  DF.enterHub(); DF.show("play"); const shown = await asked(); await ready();
+  dispatchEvent(new PopStateEvent("popstate")); const p = G.player;
+  const c = { shown, closed: G.ask === null && G.state === "play" && !up(), dodge: p.state === "dodge" };
+  DF.sim(1); c.out = circle() > 2 && G.zone === "hub";
+  return { pass: Object.values(c).every(Boolean), c };`),
+  astep("gate D asks by its own letter, and an answer from a test closes the screen", `
+  DF.clearGrade("E", "fighter"); DF.enterHub(); DF.show("play"); const q = G.world.portals[1], shown = await asked(q);
+  const c = { shown, d: q.grade === "D" && document.getElementById("enterQ").textContent === "Enter gate D?" };
+  DF.gateAnswer(false); await draw(); c.closed = !up() && G.state === "play";
+  return { pass: Object.values(c).every(Boolean), c };`),
+  astep("leaving for the main menu under the question closes it", `
+  DF.enterHub(); DF.show("play"); const shown = await asked(); DF.toTitle(); await draw();
+  const c = { shown, title: G.state === "title" && !up() && G.ask === null && document.querySelectorAll(".scr.show").length === 1 };
+  DF.enterHub(); DF.show("play"); await draw(); c.play = G.state === "play" && !up();
+  return { pass: Object.values(c).every(Boolean), c };`),
   step("frames are solid", `
   DF.enterHub(); const p = G.player; cam.yaw = 0; DF.keys[DF.BIND.fwd] = true; const zs = [];
   // an open D (E was cleared above) would take the player through; the sealed ones are walked into

@@ -429,7 +429,7 @@ Screenshots go to `shots/`.
 | `tests/t5.mjs`  | Forty generated caves for blocked tunnels and bad spawn points                          |
 | `tests/t6.mjs`  | Every class: chain, heavy, tool, ability, rebinding, bot run per class                  |
 | `tests/t7.mjs`  | Screenshots of the menus and each class                                                 |
-| `tests/t8.mjs`  | The hall, portals, D opening once E is cleared, transition, training dummy and return to base. Run in `hub` mode |
+| `tests/t8.mjs`  | The hall, portals, the gate's question (Enter, Stay out and the throw out of the arch), D opening once E is cleared, transition, training dummy and return to base. Run in `hub` mode |
 | `tests/t9.mjs`  | Screenshots of the hall, portal, dummy and the arrival in the cave. Run in `hub` mode   |
 | `tests/t10.mjs` | Enemy name tags, threat colours, look zone, How to play screen                          |
 | `tests/t11.mjs` | Screenshots of the name tags and the How to play screen                                 |

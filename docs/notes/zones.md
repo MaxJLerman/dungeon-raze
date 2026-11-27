@@ -110,10 +110,33 @@
 - A button style that outranks `.scr button:hover` and sets a background sets
   the text colour too, or the hover's dark text shows on it.
 - `G` is the single state object. `G.state` is one of `title`, `play`,
-  `pause`, `dead`, `win`, `class`, `controls`, `howto`, `coop`, and `show(state)`
+  `pause`, `dead`, `win`, `enter`, `class`, `controls`, `howto`, `coop`, and `show(state)`
   switches screens. `MENUS` in `09_main.js` lists the screens that open on top
   of the title or pause screen and return to it; add a new one there and to
   `SCREENS`.
+- **The gate's question** is the `enter` state (`#scr-enter`): the heading
+  `#enterQ`, "Enter gate E?" with the gate's letter and no second line, and
+  two buttons, `#btnEnter` "Enter" (with `data-padfirst`) and `#btnStay`
+  "Stay out". Core opens it (`gateAsk` sets the state, above) and the frame
+  loop shows it; the frame loop also puts the play screen back when the
+  state is `"play"` again under it (an answer from `gateAnswer` alone, as a
+  test gives, or a world that went). It is not one of `MENUS`. The HUD
+  stays up under it, and solo the game stands still, as under pause.
+  `enterAnswer(yes, lock)` is every answer from the screen: it does nothing
+  off the screen or in its first `ENTER_GUARD` (350 ms, real time from
+  `show("enter")`), so a click or press made before the screen appeared
+  answers nothing; otherwise `gateAnswer(yes)` and then `play(lock)`.
+  The buttons call it; on the keyboard Enter is Enter and Esc is Stay out,
+  and **Space answers nothing**, because Space is the dodge and a player
+  dodging into a gate would answer by accident. A controller's A presses
+  the focused button and B is Stay out (`controller.md`), and the touch
+  Back gesture is Stay out (`touch.md`). A browser will not lock the mouse
+  from an Esc press, so Esc passes `lock` false: `play(false)` leaves the
+  mouse free and the next click on the canvas locks it, where asking would
+  be refused and set `G.noLock` for good. `show` of any screen but
+  `"enter"` clears `G.ask`, so a question that something else covered
+  (a pause) is asked again when play is back and the player still stands
+  in the arch.
 - **The main menu** is the `title` state (`#scr-title`): `#btnSolo` "Play
   solo", `#btnCoop` "Play online", How to play and Controls, and no class
   picker or blurb. It is centred, title over buttons, and its `.row` is a
@@ -196,7 +219,15 @@
 
 - Run `tests/t8.mjs` after any change to zones, portals, the hall or the
   dummy, and `tests/t9.mjs` to look at the hall. Both use the `hub` mode:
-  `SCRIPT=$PWD/tests/t8.mjs node test.mjs hub`. The cave scripts use `smoke`,
+  `SCRIPT=$PWD/tests/t8.mjs node test.mjs hub`. t8 holds the gate's
+  question: that a gate asks once, Enter, the throw for every class and
+  for a player who walked in sideways, no second question until the player
+  has left, a world swap under it, and the screen itself (its text, the
+  guard, Space, Enter, Esc with no mouse lock asked for, a controller's A
+  and B, an exit under it); run it as the smallest phone too for the Back
+  gesture (`DEVICE=iphone-se`, where its "hall HUD" step fails on `main`
+  as well). Look at `shots/t8-enter.png` and `shots/iphone-se-t8-enter.png`.
+  The cave scripts use `smoke`,
   which enters a cave after playing solo. Both modes press Play solo on the
   main menu and then Enter the hall on the class screen; `title` stays on
   the main menu.
@@ -229,6 +260,13 @@
   checks the message and that both Play buttons are disabled.
 
 ## Known problems
+
+- The gate's question frees the mouse where it was when play began, which
+  after a pause is where Resume was, and that is where Enter is. A click
+  later than the guard (350 ms) would enter. Not seen by a person yet.
+- `tests/t8.mjs` as a phone fails "hall HUD" (`fadeOnTop`), on `main` too.
+  The cause is not investigated; t8 was a desktop script until the gate's
+  question.
 
 - "Return to base" and "Exit to main menu" abandon the cave without asking,
   because nothing is lost yet. Both will need a confirmation once runs carry
