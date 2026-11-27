@@ -79,7 +79,10 @@
 - Settings are `OPT.tsize` (0.8 to 1.2), `OPT.topac` (0.2 to 1) and
   `OPT.tnotch`, saved under `o` in `dungeon-raze.v2` and set in the Controls
   menu. Menu text that differs by input uses `.kbonly` and `.touchonly`, or
-  `.lk-mouse` and `.lk-touch` inline. The Execute prompt and the class kit
+  `.lk-mouse` and `.lk-touch` inline. On a phone on its side the class
+  cards are one line that a thumb drags sideways (`zones.md`); it scrolls
+  by the browser's own panning, since `TOUCH` takes pointers only in
+  play. The Execute prompt and the class kit
   show the button names (ATTACK, HEAVY, TOOL, ABILITY) under touch, and How to
   play names the pause button. Button hover styles apply only where
   `(hover: hover)`, so a tap leaves nothing highlighted.

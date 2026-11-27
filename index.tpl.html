@@ -776,10 +776,11 @@
         justify-content: center;
         align-items: flex-start;
         gap: 18px;
-        padding: max(24px, env(safe-area-inset-top))
-          max(clamp(20px, 7vw, 110px), env(safe-area-inset-right))
-          max(24px, env(safe-area-inset-bottom))
-          max(clamp(20px, 7vw, 110px), env(safe-area-inset-left));
+        /* the side padding, which the line of class cards reaches across */
+        --side-l: max(clamp(20px, 7vw, 110px), env(safe-area-inset-left));
+        --side-r: max(clamp(20px, 7vw, 110px), env(safe-area-inset-right));
+        padding: max(24px, env(safe-area-inset-top)) var(--side-r)
+          max(24px, env(safe-area-inset-bottom)) var(--side-l);
         background: linear-gradient(
           90deg,
           rgba(5, 7, 12, 0.94) 0%,
@@ -1205,15 +1206,6 @@
         box-shadow: 0 0 0 2px rgba(5, 7, 12, 0.6);
         display: none;
       }
-      .touch-note {
-        display: none;
-        color: var(--ember);
-      }
-      @media (pointer: coarse) {
-        .touch-note {
-          display: block;
-        }
-      }
       .lk-touch {
         display: none;
       }
@@ -1348,12 +1340,27 @@
         }
         .picker {
           gap: 8px;
+          width: 100%;
         }
+        /* the class cards: one line from edge to edge of the screen that
+           scrolls sideways. Five fit between the side padding, so the
+           sixth shows at the edge when there are more; a card with a long
+           name is wider and none wraps. The padding above and below keeps
+           a focus outline from being cut off. */
         .cards {
-          grid-template-columns: repeat(5, 1fr);
+          display: flex;
+          flex: none;
           gap: 6px;
+          margin: -5px calc(-1 * var(--side-r)) -5px calc(-1 * var(--side-l));
+          padding: 5px var(--side-r) 5px var(--side-l);
+          scroll-padding: 0 var(--side-r) 0 var(--side-l);
+          overflow-x: auto;
+          overscroll-behavior-x: contain;
         }
         .scr button.card {
+          flex: 1 0 auto;
+          min-width: max(104px, (100% - 24px) / 5);
+          white-space: nowrap;
           padding: 6px 8px;
           font-size: 13px;
         }
@@ -1462,10 +1469,6 @@
     <div id="scr-title" class="scr wide">
       <h1>DungeonRaze</h1>
       <p class="sub" hidden></p>
-      <p class="touch-note">
-        On a phone or tablet, turn it sideways. The controls appear when you
-        start.
-      </p>
       <p id="coopMsg" role="status" hidden></p>
       <div class="row">
         <button id="btnSolo" type="button" data-padfirst>Play solo</button
