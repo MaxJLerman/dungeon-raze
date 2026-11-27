@@ -31,7 +31,8 @@
   the hall. The frame, its collision block, floor ring, glow, light, label and
   return point are all built from the entry. Its opening sits `PORTAL_IN`
   behind the position, and stepping within `PORTAL_R` of the opening of an
-  open one calls `startTrans` (in a co-op run `NET.onPortal`, `coop.md`), which fades out, swaps the world at full black and fades
+  open one asks before the trip (**A gate asks first**, below). The trip is
+  `startTrans` (in a co-op run `NET.onPortal`, `coop.md`), which fades out, swaps the world at full black and fades
   in. The transition is advanced by `update`, which does nothing else while
   `G.trans` is set, so `DF.sim` drives it in tests. `G.trans` is `{ t,
   swapped, grade }`, or `{ t, swapped, swap }` for a transition that makes
@@ -40,7 +41,30 @@
   that returns false has left the world for good (co-op ended), so the fade
   stops there with `G.trans` null and `G.fade` 0. `RM` (reduced motion) is
   a `let`; `DF.setRM(on)` sets it for a test.
-- `resetRun()` clears everything that must not cross a world swap. Add new
+- **A gate asks first.** The portal check at the end of `update` calls
+  `gateAsk(q)` for the open gate the player stands in: `G.ask` is `{ grade,
+  yaw }` and `G.state` is `"enter"`, whose screen the frame loop shows (core
+  has no DOM, as with the win screen). The check does nothing while `G.ask`
+  is set, and asks only while the state is `"play"`: in a co-op run
+  `update` runs under a pause or a menu too, and there the question waits
+  for play to come back. `gateAnswer(yes)` is the answer, and does nothing with none
+  asked: it clears `G.ask`, puts an `"enter"` state back to `"play"`, and
+  then yes is the trip (`startTrans(grade)`, or `NET.onPortal(grade)` in a
+  co-op run) and no throws the player out of the arch, `startDodge(sin yaw,
+  cos yaw, 1, true)`: a free dodge of the class's full distance the way the
+  gate faces, whichever way they walked in, with their facing, their lock
+  and `cam` left alone. The shortest dodge (3.8 m) is longer than the
+  circle is deep, so it lands outside. No also sets `G.askOff`, which keeps
+  every gate from asking until the player is outside all of them, where
+  the check clears it. A co-op page that may not ask (`NET.asks()` false:
+  a friend's, or the host's page with a trip asked for) goes to
+  `NET.onPortal` as before, asked or not. The exit gate over a dead boss
+  (`G.gate`) asks nothing. A test that walks into a gate answers with
+  `DF.gateAnswer(true)`.
+- `resetRun()` clears everything that must not cross a world swap. It
+  clears `G.ask` and `G.askOff`, and an `"enter"` state goes back to
+  `"play"`, so a world that goes under a gate's question takes the question
+  with it. Add new
   per-run state there. It clears `G.inBoss`, the flag for the player being
   inside the boss chamber, `G.chunks`, the crocodile's falling ceiling
   (`respawn` clears it too), `G.waves`, the Warden for two's aftershocks
@@ -88,10 +112,40 @@
 - A button style that outranks `.scr button:hover` and sets a background sets
   the text colour too, or the hover's dark text shows on it.
 - `G` is the single state object. `G.state` is one of `title`, `play`,
-  `pause`, `dead`, `win`, `class`, `controls`, `howto`, `coop`, and `show(state)`
+  `pause`, `dead`, `win`, `enter`, `class`, `controls`, `howto`, `coop`, and `show(state)`
   switches screens. `MENUS` in `09_main.js` lists the screens that open on top
   of the title or pause screen and return to it; add a new one there and to
   `SCREENS`.
+- **The gate's question** is the `enter` state (`#scr-enter`): the heading
+  `#enterQ`, "Enter gate E?" with the gate's letter and no second line, and
+  two buttons, `#btnEnter` "Enter" (with `data-padfirst`) and `#btnStay`
+  "Stay out". It sits in the middle of the view (`#scr-enter` in the
+  template), not at the left as the other screens do: the browser gives
+  the mouse back where play took it, which is over Resume, Rise again or
+  Enter the hall, and no answer may lie there (t8 holds the buttons clear
+  of all three). Core opens it (`gateAsk` sets the state, above) and the frame
+  loop shows it; the frame loop also puts the play screen back when the
+  state is `"play"` again under it (an answer from `gateAnswer` alone, as a
+  test gives, or a world that went). It is not one of `MENUS`. The HUD
+  stays up under it, and solo the game stands still, as under pause.
+  `enterAnswer(yes, lock)` is every answer from the screen: it does nothing
+  off the screen or in its first `ENTER_GUARD` (350 ms, real time from
+  `show("enter")`), so a click or press made before the screen appeared
+  answers nothing, and a press inside the guard starts it again, so a run
+  of attack clicks never answers; otherwise `gateAnswer(yes)` and then `play(lock)`.
+  The buttons call it; on the keyboard Enter is Enter (or Stay out, when that
+  button has the focus: the handler takes the key, so it must answer as
+  the focused button would) and Esc is Stay out,
+  and **Space answers nothing**, because Space is the dodge and a player
+  dodging into a gate would answer by accident. A controller's A presses
+  the focused button and B is Stay out (`controller.md`), and the touch
+  Back gesture is Stay out (`touch.md`). A browser will not lock the mouse
+  from an Esc press, so Esc passes `lock` false: `play(false)` leaves the
+  mouse free and the next click on the canvas locks it, where asking would
+  be refused and set `G.noLock` for good. `show` of any screen but
+  `"enter"` clears `G.ask`, so a question that something else covered
+  (a pause) is asked again when play is back and the player still stands
+  in the arch.
 - **The main menu** is the `title` state (`#scr-title`): `#btnSolo` "Play
   solo", `#btnCoop` "Play online", How to play and Controls, and no class
   picker or blurb. It is centred, title over buttons, and its `.row` is a
@@ -174,7 +228,17 @@
 
 - Run `tests/t8.mjs` after any change to zones, portals, the hall or the
   dummy, and `tests/t9.mjs` to look at the hall. Both use the `hub` mode:
-  `SCRIPT=$PWD/tests/t8.mjs node test.mjs hub`. The cave scripts use `smoke`,
+  `SCRIPT=$PWD/tests/t8.mjs node test.mjs hub`. t8 holds the gate's
+  question: that a gate asks once, Enter, the throw for every class and
+  for a player who walked in sideways, no second question until the player
+  has left, a world swap under it, and the screen itself (its text, the
+  guard and its restart, Space, Enter, Enter with a button focused, Esc
+  with no mouse lock asked for, a controller's A and B, an exit under it,
+  the buttons clear of where the mouse is freed, no question under
+  another screen); run it as the smallest phone too for the Back
+  gesture (`DEVICE=iphone-se`, where its "hall HUD" step fails on `main`
+  as well). Look at `shots/t8-enter.png` and `shots/iphone-se-t8-enter.png`.
+  The cave scripts use `smoke`,
   which enters a cave after playing solo. Both modes press Play solo on the
   main menu and then Enter the hall on the class screen; `title` stays on
   the main menu.
@@ -207,6 +271,20 @@
   checks the message and that both Play buttons are disabled.
 
 ## Known problems
+
+- The gate's question is kept clear of where the mouse is freed only for
+  the three buttons that start play. A lock taken by a click on the canvas
+  (after Esc at the question, or a lock the browser dropped) frees the
+  mouse wherever that click was, which can be the middle. The guard is all
+  that covers that.
+- The Space rule at the gate's question is tied to the key, not the
+  action: a player who binds dodge or attack to Enter answers with it.
+- A phone turned upright under the gate's question can be put into play
+  under the rotate screen (Back, or a pad's B): `enterAnswer` does not
+  refuse where `play()` would. Harmless in the hall.
+- `tests/t8.mjs` as a phone fails "hall HUD" (`fadeOnTop`), on `main` too.
+  The cause is not investigated; t8 was a desktop script until the gate's
+  question.
 
 - "Return to base" and "Exit to main menu" abandon the cave without asking,
   because nothing is lost yet. Both will need a confirmation once runs carry

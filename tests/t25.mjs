@@ -442,7 +442,7 @@ const runSteps = [
   const until = (f, sec) => DF.sim(sec, () => { if (f()) return false; keep(); });
   try {
     p.x = q.x; p.z = q.z - 3; p.yaw = cam.yaw = 0; DF.keys[DF.BIND.fwd] = true;
-    DF.sim(4, () => G.zone === "hub" || !!G.trans); DF.keys[DF.BIND.fwd] = false;
+    DF.sim(4, () => (G.ask && DF.gateAnswer(true), G.zone === "hub" || !!G.trans)); DF.keys[DF.BIND.fwd] = false;
     p = G.player; const w = G.world, B = w.boss, e = G.enemies.find((o) => o.type === "croc");
     const into = { open: q.open, grade: G.grade === "D", sewer: !!w.sewer, croc: !!e, done: !G.trans };
     let ring = null; for (let k = 0; k < 64 && !ring; k++) { const a = (k / 64) * Math.PI * 2, x = B.x + Math.sin(a) * 14, z = B.z + Math.cos(a) * 14;

@@ -11,6 +11,29 @@ const place = (dist) => `p.x = d.x; p.z = d.z - ${dist}; p.yaw = 0; cam.yaw = 0;
 const near = (dist) => `const d = G.enemies.find((e) => e.def.dummy), p = G.player; ${place(dist)}`;
 const reach = (id) => (id === "mage" || id === "ranger" ? 9 : 2.4);
 const shown = `const shown = (id) => { const e = document.getElementById(id); return !!e && getComputedStyle(e).display !== "none"; };`;
+// toGate walks the player forward into the open gate q from 3 m in front,
+// until the gate asks (G.ask), a trip begins or sec runs out
+const toGate = `const toGate = (q, sec = 4) => { const p = G.player; p.x = q.x; p.z = q.z - 3; p.yaw = 0; cam.yaw = 0; DF.keys[DF.BIND.fwd] = true;
+  DF.sim(sec, () => !G.ask && G.zone === "hub" && !G.trans); DF.keys[DF.BIND.fwd] = false; };`;
+// an async step for the gate's screen, which the frame loop shows. asked(q)
+// walks into q and resolves in the frame that shows the screen; ready() waits
+// out the screen's guard against a press made before it appeared; lock counts
+// the times the mouse lock is asked for.
+const astep = (name, body, extra = {}) => ({
+  name,
+  eval: `(async () => { const { G, cam } = DF; G.manual = true; ${toGate}
+  const scr = document.getElementById("scr-enter"), up = () => !!scr && scr.classList.contains("show");
+  const draw = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const asked = (q = G.world.portals[0]) => { toGate(q); return new Promise((r) => { let n = 0; const f = () => (up() || ++n > 120 ? r(up()) : requestAnimationFrame(f)); requestAnimationFrame(f); }); };
+  const ready = () => sleep(420);
+  const key = (code) => dispatchEvent(new KeyboardEvent("keydown", { code, bubbles: true, cancelable: true }));
+  const cv = document.getElementById("c"), lock = { n: 0 }, was = cv.requestPointerLock;
+  cv.requestPointerLock = () => { lock.n++; return Promise.reject(new Error("test")); };
+  const circle = (q = G.world.portals[0]) => { const o = DF.portalFront(q, -0.75); return Math.hypot(o.x - G.player.x, o.z - G.player.z); };
+  try { ${body} } finally { cv.requestPointerLock = was; G.noLock = false; } })()`,
+  ...extra,
+});
 export default [
   step("hub world", `
   const w = DF.genHub(), P = w.portals, f = (o) => w.fieldAt(o.x, o.z);
@@ -42,7 +65,7 @@ export default [
   DF.enterHub(); const p = G.player, q = G.world.portals[0];
   p.x = q.x; p.z = q.z - 3; p.yaw = 0; cam.yaw = 0; DF.keys[DF.BIND.fwd] = true;
   let peak = 0, hurt = null;
-  DF.sim(4, () => { if (G.trans) { peak = Math.max(peak, G.fade); if (hurt === null) hurt = DF.hurtPlayer(50, null, { px: p.x, pz: p.z - 1 }); } return G.zone === "hub" || !!G.trans; });
+  DF.sim(4, () => { if (G.ask) DF.gateAnswer(true); if (G.trans) { peak = Math.max(peak, G.fade); if (hurt === null) hurt = DF.hurtPlayer(50, null, { px: p.x, pz: p.z - 1 }); } return G.zone === "hub" || !!G.trans; });
   DF.keys[DF.BIND.fwd] = false; const P = G.player;
   const c = { zone: G.zone === "cave", grade: G.grade === "E", done: !G.trans && G.fade === 0, peak: peak > 0.95, hurt: hurt === "none",
     cave: G.world.shrines.length > 0 && G.enemies.some((e) => e.type === "warden"), fresh: P.state === "free" && P.hp === P.maxHp,
@@ -56,7 +79,7 @@ export default [
   DF.resetCleared(); DF.enterHub(); const before = G.world.portals.map((q) => +q.open).join("");
   DF.clearGrade("E", "fighter"); DF.enterHub(); const after = G.world.portals.map((q) => +q.open).join("");
   let p = G.player; const q = G.world.portals[1]; cam.yaw = 0; p.x = q.x; p.z = q.z - 3; p.yaw = 0; DF.keys[DF.BIND.fwd] = true;
-  DF.sim(4, () => G.zone === "hub" || !!G.trans); DF.keys[DF.BIND.fwd] = false;
+  DF.sim(4, () => (G.ask && DF.gateAnswer(true), G.zone === "hub" || !!G.trans)); DF.keys[DF.BIND.fwd] = false;
   const c = { before: before === "100000", after: after === "110000", d: q.grade === "D" && q.open, zone: G.zone === "cave", grade: G.grade === "D",
     sewer: !!G.world.sewer && G.enemies.some((e) => e.type === "croc"), done: !G.trans };
   // the rest stay sealed with E cleared
@@ -79,11 +102,11 @@ export default [
   DF.enterHub(); const p = G.player, q = G.world.portals[0];
   G.projs.push({ x: 0, y: 1, z: 0, vx: 0, vz: 1, life: 9, own: "p", dmg: 1, post: 0, kind: "arrow", c: [1, 1, 1] });
   G.pending.push({ x: q.x, z: q.z, r: 3, dmg: 1, post: 0, c: [1, 1, 1], t: 0.6 });
-  p.x = q.x; p.z = q.z; DF.sim(2, () => G.zone === "hub" || !!G.trans);
+  p.x = q.x; p.z = q.z; DF.sim(2, () => (G.ask && DF.gateAnswer(true), G.zone === "hub" || !!G.trans));
   return { pass: G.zone === "cave" && G.projs.length === 0 && G.pending.length === 0 && G.rings.length === 0 };`),
   step("entering mid-dodge arrives free", `
   DF.enterHub(); const p = G.player, q = G.world.portals[0]; p.x = q.x; p.z = q.z - 2.5; p.yaw = 0; cam.yaw = 0;
-  DF.keys[DF.BIND.fwd] = true; K("dodge"); DF.sim(3, () => G.zone === "hub" || !!G.trans); DF.keys[DF.BIND.fwd] = false;
+  DF.keys[DF.BIND.fwd] = true; K("dodge"); DF.sim(3, () => (G.ask && DF.gateAnswer(true), G.zone === "hub" || !!G.trans)); DF.keys[DF.BIND.fwd] = false;
   const P = G.player; return { pass: G.zone === "cave" && P.state === "free" && P.buf === null && P.iframe <= 1 };`),
   step("reduced motion cuts", `
   DF.enterHub(); DF.startTrans("E", true); return { pass: G.zone === "cave" && !G.trans && G.fade === 0 };`),
@@ -161,10 +184,183 @@ export default [
   step("portal fires inside the arch", `
   DF.enterHub(); const p = G.player, q = G.world.portals[0];
   p.x = q.x; p.z = q.z - 3; p.yaw = 0; cam.yaw = 0; DF.keys[DF.BIND.fwd] = true;
-  let at = null; DF.sim(4, () => { if (G.trans && at === null) at = G.player.z; return G.zone === "hub" || !!G.trans; });
+  let at = null; DF.sim(4, () => { if (G.ask) DF.gateAnswer(true); if (G.trans && at === null) at = G.player.z; return G.zone === "hub" || !!G.trans; });
   DF.keys[DF.BIND.fwd] = false;
   // the frame's front face is at z = 16.5; the fade must not start out on the floor ring
   return { pass: G.zone === "cave" && at !== null && at >= 15.7, at };`),
+  step("a gate asks first", `${toGate}
+  DF.enterHub(); const q = G.world.portals[0], p = G.player, o = DF.portalFront(q, -0.75); toGate(q);
+  const a = G.ask, c = { ask: !!a && a.grade === "E", state: G.state === "enter", inside: Math.hypot(o.x - p.x, o.z - p.z) < 1, hub: G.zone === "hub", still: !G.trans };
+  // it asks once and nothing travels while it waits
+  DF.keys[DF.BIND.fwd] = true; DF.sim(1); DF.keys[DF.BIND.fwd] = false;
+  c.waits = G.ask === a && G.state === "enter" && G.zone === "hub" && !G.trans;
+  DF.gateAnswer(false); DF.sim(1);
+  return { pass: Object.values(c).every(Boolean), c };`),
+  step("Enter goes in", `${toGate}
+  DF.enterHub(); toGate(G.world.portals[0]); const asked = !!G.ask; DF.gateAnswer(true);
+  const c = { asked, closed: G.ask === null && G.state === "play", fades: !!G.trans && G.zone === "hub" };
+  DF.sim(4, () => (G.ask && DF.gateAnswer(true), G.zone === "hub" || !!G.trans));
+  c.cave = G.zone === "cave" && G.grade === "E" && !G.trans && G.ask === null;
+  // an answer with nothing asked does nothing
+  DF.enterHub(); DF.gateAnswer(true); DF.gateAnswer(false); c.idle = G.zone === "hub" && !G.trans && G.player.state === "free";
+  return { pass: Object.values(c).every(Boolean), c };`),
+  step("Stay out throws the player out of the arch", `${toGate}
+  const was = DF.OPT.cls, bad = [];
+  for (const id of Object.keys(DF.CLASSES)) {
+    DF.setClass(id); DF.enterHub(); const q = G.world.portals[0], p = G.player, o = DF.portalFront(q, -0.75);
+    toGate(q); p.stam = 40; const yaw = p.yaw, cy = cam.yaw, x0 = p.x;
+    DF.gateAnswer(false);
+    const c = { cls: p.clsId === id, closed: G.ask === null && G.state === "play", dodge: p.state === "dodge",
+      out: Math.abs(p.ddx - Math.sin(q.yaw)) < 1e-9 && Math.abs(p.ddz - Math.cos(q.yaw)) < 1e-9, free: p.stam === 40 };
+    DF.sim(1);
+    // out past the circle (1 m) with room to spare, straight along the way the gate faces, the view as it was
+    c.clear = Math.hypot(o.x - p.x, o.z - p.z) > 2 && Math.abs(p.x - x0) < 0.3 && p.z < q.z - 1;
+    c.view = cam.yaw === cy && p.yaw === yaw; c.stays = G.zone === "hub" && !G.trans && G.ask === null && p.state === "free";
+    if (!Object.values(c).every(Boolean)) bad.push([id, c, +p.x.toFixed(2), +p.z.toFixed(2)]);
+  }
+  DF.setClass(was); DF.enterHub();
+  return { pass: bad.length === 0, bad };`),
+  step("walked in sideways, thrown straight out", `
+  DF.enterHub(); const q = G.world.portals[0], p = G.player, o = DF.portalFront(q, -0.75);
+  p.x = o.x; p.z = o.z - 0.5; p.yaw = cam.yaw = Math.PI / 2; DF.sim(0.1); const asked = !!G.ask && G.state === "enter";
+  DF.gateAnswer(false); DF.sim(1);
+  const c = { asked, clear: Math.hypot(o.x - p.x, o.z - p.z) > 2 && Math.abs(p.x - o.x) < 0.3 && p.z < q.z - 1, view: cam.yaw === Math.PI / 2 && p.yaw === Math.PI / 2 };
+  return { pass: Object.values(c).every(Boolean), c, at: [p.x, p.z] };`),
+  step("no second question until the player has left", `${toGate}
+  DF.enterHub(); const q = G.world.portals[0], p = G.player, o = DF.portalFront(q, -0.75); toGate(q);
+  DF.gateAnswer(false); const c = { off: G.askOff === true };
+  // kept in the circle after the answer: not asked again
+  p.x = o.x; p.z = o.z - 0.5; p.state = "free"; DF.sim(0.5);
+  c.held = Math.hypot(o.x - p.x, o.z - p.z) < 1 && G.ask === null && G.askOff === true && G.zone === "hub" && !G.trans;
+  // once outside the circle it is ready again
+  p.x = q.x; p.z = q.z - 3; DF.sim(0.1); c.ready = G.askOff === false && G.ask === null;
+  toGate(q); c.again = !!G.ask && G.state === "enter";
+  DF.gateAnswer(false); DF.sim(1);
+  return { pass: Object.values(c).every(Boolean), c };`),
+  step("a world swap under the question closes it", `${toGate}
+  DF.enterHub(); toGate(G.world.portals[0]); const asked = !!G.ask && G.state === "enter"; DF.enterHub();
+  const a = G.ask === null && G.askOff === false && G.state === "play";
+  toGate(G.world.portals[0]); DF.gateAnswer(false); const off = G.askOff === true; DF.enterHub();
+  return { pass: asked && a && off && G.askOff === false, asked, a, off };`),
+  astep("the question is a screen", `
+  DF.enterHub(); DF.show("play"); const shown = await asked();
+  const kids = [...scr.children].map((e) => e.tagName + (e.className ? "." + e.className : "")), btn = [...scr.querySelectorAll("button")];
+  const fits = btn.every((b) => { const r = b.getBoundingClientRect(); return r.width > 0 && r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight; });
+  const c = { shown, state: G.state === "enter", text: document.getElementById("enterQ").textContent === "Enter gate E?",
+    kids: kids.join(" ") === "H1 DIV.row", btn: btn.map((b) => b.id + ":" + b.textContent).join("|") === "btnEnter:Enter|btnStay:Stay out", fits,
+    only: document.querySelectorAll(".scr.show").length === 1, hud: document.getElementById("hud").classList.contains("show"),
+    first: btn[0].hasAttribute("data-padfirst") };
+  return { pass: Object.values(c).every(Boolean), c, kids };`, { wait: 600, shot: "t8-enter" }),
+  astep("an answer in the screen's first moment is ignored", `
+  DF.gateAnswer(false); DF.enterHub(); DF.show("play"); const shown = await asked(), a = G.ask;
+  DF.enterAnswer(true); document.getElementById("btnEnter").click(); document.getElementById("btnStay").click(); if (!DF.TOUCH.on) { key("Enter"); key("Escape"); }
+  const c = { shown, early: G.ask === a && G.state === "enter" && !G.trans && G.player.state !== "dodge" && up() };
+  await ready(); document.getElementById("btnEnter").click();
+  c.late = G.ask === null && G.state === "play" && !!G.trans && !up();
+  DF.sim(4, () => G.zone === "hub" || !!G.trans); c.cave = G.zone === "cave";
+  return { pass: Object.values(c).every(Boolean), c };`),
+  astep("the Stay out button throws the player out", `
+  DF.enterHub(); DF.show("play"); const shown = await asked(); await ready(); const cy = cam.yaw;
+  document.getElementById("btnStay").click(); const p = G.player;
+  const c = { shown, closed: G.ask === null && G.state === "play" && !up(), dodge: p.state === "dodge", lock: lock.n === (DF.TOUCH.on ? 0 : 1) };
+  DF.sim(1); c.out = circle() > 2 && G.zone === "hub" && !G.trans && cam.yaw === cy;
+  return { pass: Object.values(c).every(Boolean), c, n: lock.n };`),
+  astep("Space does not answer, Enter enters", `
+  if (DF.TOUCH.on) return { pass: true, skipped: "touch" };
+  DF.enterHub(); DF.show("play"); const shown = await asked(), a = G.ask; await ready();
+  key("Space"); const c = { shown, space: G.ask === a && G.state === "enter" && up() };
+  key("Enter"); c.enter = G.ask === null && G.state === "play" && !!G.trans && !up() && lock.n === 1;
+  DF.sim(4, () => G.zone === "hub" || !!G.trans); c.cave = G.zone === "cave";
+  return { pass: Object.values(c).every(Boolean), c };`),
+  astep("Esc stays out and does not ask for the mouse", `
+  if (DF.TOUCH.on) return { pass: true, skipped: "touch" };
+  DF.enterHub(); DF.show("play"); const shown = await asked(); await ready(); G.noLock = false;
+  key("Escape"); const p = G.player;
+  const c = { shown, closed: G.ask === null && G.state === "play" && !up(), dodge: p.state === "dodge", lock: lock.n === 0 && G.noLock === false };
+  DF.sim(1); c.out = circle() > 2 && G.zone === "hub";
+  return { pass: Object.values(c).every(Boolean), c };`),
+  astep("a controller: A enters from the first focus, B stays out", `
+  const mk = (b) => ({ id: "Xbox Wireless Controller (STANDARD GAMEPAD Vendor: 045e Product: 0b13)", index: 0, connected: true, mapping: "standard", timestamp: performance.now(),
+    buttons: Array.from({ length: 18 }, (_, i) => ({ pressed: i === b, value: i === b ? 1 : 0 })), axes: [0, 0, 0, 0] });
+  const was2 = Object.getOwnPropertyDescriptor(navigator, "getGamepads"); let list = [];
+  Object.defineProperty(navigator, "getGamepads", { configurable: true, value: () => list });
+  const press = (b) => { list = [mk(b)]; DF.PAD.poll(1 / 60); list = [mk(-1)]; DF.PAD.poll(1 / 60); };
+  const c = {};
+  try {
+    DF.enterHub(); DF.show("play"); list = [mk(-1)]; DF.PAD.poll(1 / 60);
+    // B is the dodge: held as the player goes in, it answers nothing
+    c.shown = await asked(); list = [mk(1)]; DF.PAD.poll(1 / 60); await ready(); DF.PAD.poll(1 / 60);
+    c.heldB = !!G.ask && G.state === "enter"; list = [mk(-1)]; DF.PAD.poll(1 / 60);
+    c.focus = DF.PAD.focus === document.getElementById("btnEnter");
+    press(1); c.b = G.ask === null && G.state === "play" && G.player.state === "dodge" && !up();
+    DF.sim(1, () => { DF.PAD.poll(1 / 60); }); c.out = circle() > 2 && G.zone === "hub" && !G.trans;
+    c.shown2 = await asked(); await ready(); DF.PAD.poll(1 / 60);
+    press(0); c.a = G.ask === null && G.state === "play" && !!G.trans;
+    DF.sim(4, () => G.zone === "hub" || !!G.trans); c.cave = G.zone === "cave";
+  } finally {
+    list = []; DF.PAD.poll(1 / 60); DF.PAD.setActive(false);
+    if (was2) Object.defineProperty(navigator, "getGamepads", was2); else delete navigator.getGamepads;
+  }
+  return { pass: Object.values(c).every(Boolean), c };`),
+  astep("the touch Back gesture stays out", `
+  if (!DF.TOUCH.on) return { pass: true, skipped: "no touch" };
+  DF.enterHub(); DF.show("play"); const shown = await asked(); await ready();
+  dispatchEvent(new PopStateEvent("popstate")); const p = G.player;
+  const c = { shown, closed: G.ask === null && G.state === "play" && !up(), dodge: p.state === "dodge" };
+  DF.sim(1); c.out = circle() > 2 && G.zone === "hub";
+  return { pass: Object.values(c).every(Boolean), c };`),
+  astep("gate D asks by its own letter, and an answer from a test closes the screen", `
+  DF.clearGrade("E", "fighter"); DF.enterHub(); DF.show("play"); const q = G.world.portals[1], shown = await asked(q);
+  const c = { shown, d: q.grade === "D" && document.getElementById("enterQ").textContent === "Enter gate D?" };
+  DF.gateAnswer(false); await draw(); c.closed = !up() && G.state === "play";
+  return { pass: Object.values(c).every(Boolean), c };`),
+  astep("leaving for the main menu under the question closes it", `
+  DF.enterHub(); DF.show("play"); const shown = await asked(); DF.toTitle(); await draw();
+  const c = { shown, title: G.state === "title" && !up() && G.ask === null && document.querySelectorAll(".scr.show").length === 1 };
+  DF.enterHub(); DF.show("play"); await draw(); c.play = G.state === "play" && !up();
+  return { pass: Object.values(c).every(Boolean), c };`),
+  astep("Enter answers by the button that has the focus", `
+  if (DF.TOUCH.on) return { pass: true, skipped: "touch" };
+  DF.enterHub(); DF.show("play"); const shown = await asked(); await ready();
+  document.getElementById("btnStay").focus(); key("Enter"); const p = G.player;
+  const c = { shown, stay: G.ask === null && G.state === "play" && !G.trans && p.state === "dodge" };
+  DF.sim(1); c.out = circle() > 2 && G.zone === "hub" && !G.trans;
+  c.shown2 = await asked(); await ready(); document.getElementById("btnEnter").focus(); key("Enter");
+  c.enter = G.ask === null && !!G.trans; DF.sim(4, () => G.zone === "hub" || !!G.trans); c.cave = G.zone === "cave";
+  document.activeElement.blur();
+  return { pass: Object.values(c).every(Boolean), c };`),
+  astep("a press inside the guard starts the guard again", `
+  // real time: a try whose waits ran long says nothing and is made again
+  let c = null;
+  for (let i = 0; i < 6 && !c; i++) {
+    DF.gateAnswer(false); DF.enterHub(); DF.show("play"); const shown = await asked(), a = G.ask, t0 = performance.now();
+    await sleep(200); const t1 = performance.now(); document.getElementById("btnEnter").click();
+    await sleep(250); const t2 = performance.now(); document.getElementById("btnEnter").click();
+    if (t1 - t0 > 330 || t2 - t1 > 330 || t2 - t0 < 370) continue;
+    c = { shown, held: G.ask === a && G.state === "enter" && !G.trans };
+    await ready(); document.getElementById("btnEnter").click(); c.then = G.ask === null && !!G.trans;
+  }
+  DF.sim(4, () => G.zone === "hub" || !!G.trans);
+  return { pass: !!c && Object.values(c).every(Boolean), c };`),
+  astep("the answers are clear of where the mouse is freed", `
+  // the mouse comes back where play took it: over Resume, Rise again or Enter the hall
+  // no part of an answer may lie over any part of one of those
+  const at = {}, box = (id) => { const r = document.getElementById(id).getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom].map(Math.round); };
+  for (const [scrn, id] of [["pause", "btnResume"], ["dead", "btnRise"]]) { DF.enterHub(); DF.show(scrn); at[id] = box(id); }
+  DF.show("title"); document.getElementById("btnSolo").click(); at.btnPlay = box("btnPlay");
+  DF.enterHub(); DF.show("play"); const shown = await asked(), ans = [box("btnEnter"), box("btnStay")];
+  const over = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+  const under = Object.entries(at).filter(([, r]) => ans.some((b) => over(r, b))).map(([id]) => id);
+  const sized = [...Object.values(at), ...ans].every((r) => r[2] > r[0] && r[3] > r[1]);
+  DF.gateAnswer(false); DF.sim(1);
+  return { pass: shown && sized && under.length === 0, under, at, ans };`),
+  step("a gate does not ask under another screen", `
+  DF.enterHub(); const q = G.world.portals[0], p = G.player, o = DF.portalFront(q, -0.75);
+  p.x = o.x; p.z = o.z - 0.5; G.state = "pause"; DF.sim(0.5);
+  const quiet = G.ask === null && G.state === "pause" && G.zone === "hub" && !G.trans;
+  G.state = "play"; DF.sim(0.1); const asks = !!G.ask && G.state === "enter";
+  DF.gateAnswer(false); DF.sim(1);
+  return { pass: quiet && asks, quiet, asks };`),
   step("frames are solid", `
   DF.enterHub(); const p = G.player; cam.yaw = 0; DF.keys[DF.BIND.fwd] = true; const zs = [];
   // an open D (E was cleared above) would take the player through; the sealed ones are walked into
@@ -185,7 +381,7 @@ export default [
   step("round trips through the portal and the menu", `
   let ok = true; DF.enterHub();
   for (let i = 0; i < 3; i++) { const p = G.player, q = G.world.portals[0]; p.x = q.x; p.z = q.z - 2; p.yaw = 0; cam.yaw = 0;
-    DF.keys[DF.BIND.fwd] = true; DF.sim(4, () => G.zone === "hub" || !!G.trans); DF.keys[DF.BIND.fwd] = false;
+    DF.keys[DF.BIND.fwd] = true; DF.sim(4, () => (G.ask && DF.gateAnswer(true), G.zone === "hub" || !!G.trans)); DF.keys[DF.BIND.fwd] = false;
     const b = G.enemies.find((e) => e.type === "warden"); ok = ok && G.zone === "cave" && !!b && !b.dead && !G.gate;
     DF.hitEnemy(b, 1e6, 0, {}); ok = ok && G.bossDead; DF.toBase();
     ok = ok && G.zone === "hub" && G.state === "play" && !G.gate && !G.bossDead && G.enemies.length === 1 && G.player.hp === G.player.maxHp; }
@@ -193,7 +389,7 @@ export default [
   step("entering mid-attack arrives free", `
   DF.setClass("fighter"); DF.enterHub(); const p = G.player, q = G.world.portals[0]; p.x = q.x; p.z = q.z - 1.6; p.yaw = 0; cam.yaw = 0;
   DF.keys[DF.BIND.fwd] = true; K("light"); let mid = false;
-  DF.sim(4, () => { if (G.zone === "hub" && G.trans && p.state === "attack") mid = true; return G.zone === "hub" || !!G.trans; }); DF.keys[DF.BIND.fwd] = false;
+  DF.sim(4, () => { if (G.ask) DF.gateAnswer(true); if (G.zone === "hub" && G.trans && p.state === "attack") mid = true; return G.zone === "hub" || !!G.trans; }); DF.keys[DF.BIND.fwd] = false;
   const P = G.player; return { pass: G.zone === "cave" && P.state === "free" && P.buf === null, mid };`),
   step("a moved portal takes its frame with it", `
   // one open gate on the east wall, facing west into the hall

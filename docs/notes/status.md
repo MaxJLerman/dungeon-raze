@@ -219,6 +219,26 @@
   - The sweep of the whole test table before the whole-branch review: 39
     scripts, 43 runs with the device variants. Only `touch-all` t14 and t29 `title` on
     four short phones failed, both known (backlog 11).
+- Branch `feat/gate-confirm` made an open gate in the hall ask before the
+  trip, so a player who walked in by accident can back out. The design is
+  `docs/superpowers/specs/2026-11-27-gate-confirm-design.md`; the detail is
+  in `zones.md` (A gate asks first, The gate's question) and `coop.md`.
+  - "Enter gate E?" with Enter and Stay out, on a screen in the middle of
+    the view. Stay out throws the player out of the arch with a free
+    dodge, the camera left alone. The exit gate over a dead boss asks
+    nothing.
+  - In co-op only the host's page is asked. The friend is told "Only the
+    host can open a gate." as before.
+  - Not checked by hand: nobody has seen the throw, used the screen with a
+    real mouse lock, a real pad or a real phone, or tried it in Firefox or
+    Safari. Whether the mouse comes back where play took it (which the
+    screen's place in the middle answers) was reasoned from the browser's
+    rules, not seen.
+  - Left from the review, all small: a phone turned upright under the
+    question can be put into play under the rotate screen by Back or a
+    pad's B; on Android in fullscreen the first Back likely only leaves
+    fullscreen; a player who binds dodge or attack to Enter answers with
+    it; no test ends co-op or dies under the question.
 
 ## Backlog, roughly in the order discussed
 

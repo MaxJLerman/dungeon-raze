@@ -289,7 +289,7 @@ const PAD = {
       if (MENUS.includes(s)) {
         const b = $("scr-" + s).querySelector("[data-back]");
         if (b) b.click();
-      }
+      } else if (s === "enter") $("btnStay").click();
     }
     // an action that changed the screen takes what is held with it
     if (G.state !== s)

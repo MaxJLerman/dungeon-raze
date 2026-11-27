@@ -24,7 +24,8 @@ export default [
         // a gate in the hall
         portal: (grade = "E") => G.world.portals.find((q) => q.grade === grade),
         // walks this player into grade's gate in the hall from 2.5 m in
-        // front of it, letting go once in its opening, and steps until
+        // front of it, answering Enter if it asks, letting go once in its
+        // opening, and steps until
         // until() (by default: in the cave, the fade over) or sec runs out
         walkIn(grade = "E", sec = 4, until = () => G.zone === "cave" && !G.trans) {
           const q = c8.portal(grade),
@@ -40,6 +41,8 @@ export default [
           DF.cam.pz = f.z;
           DF.keys[fwd] = true;
           c8.step(sec, () => {
+            // the gate asks the page that leads, and this walk says Enter
+            if (G.ask) DF.gateAnswer(true);
             if (G.trans || G.zone !== "hub" || Math.hypot(G.player.x - o.x, G.player.z - o.z) < 0.8) DF.keys[fwd] = false;
             if (until()) return false;
           });
@@ -887,6 +890,67 @@ export default [
     },
   },
   {
+    name: "a gate asks the page that leads, the hall runs on, and Stay out asks the host nothing",
+    eval: async () => {
+      const { G } = DF,
+        c8 = window.__c8;
+      G.manual = true;
+      const r = c8.solo({ hub: true, seed: 99, ping: 50, mate: "idle" }),
+        h = r.host,
+        c = {},
+        e0 = h.S.epoch,
+        q = c8.portal("E"),
+        o = DF.portalFront(q, -0.75),
+        f = DF.portalFront(q, 2.5),
+        p = G.player,
+        fwd = DF.BIND.fwd,
+        scr = document.getElementById("scr-enter"),
+        deep = () => Math.hypot(p.x - o.x, p.z - o.z);
+      // walks in and answers nothing
+      p.x = f.x;
+      p.z = f.z;
+      p.state = "free";
+      p.yaw = DF.cam.yaw = q.yaw + Math.PI;
+      DF.keys[fwd] = true;
+      c8.step(3, () => {
+        if (G.ask) return false;
+      });
+      DF.keys[fwd] = false;
+      c.asked = !!G.ask && G.ask.grade === "E" && G.state === "enter" && deep() < 1;
+      await c8.frames();
+      c.screen = scr.classList.contains("show") && document.getElementById("enterQ").textContent === "Enter gate E?";
+      // the hall runs on under the question, and nothing is asked of the host
+      const t0 = G.t,
+        s0 = h.S.step,
+        a = G.ask;
+      c8.step(1);
+      c.runs = G.t - t0 > 0.9 && h.S.step > s0 && G.ask === a && G.state === "enter" && DF.net().live === true;
+      c.quiet = h.S.epoch === e0 && DF.CC.trip === false && !G.trans && G.zone === "hub";
+      // Stay out: thrown out of the arch, and still nothing asked
+      DF.gateAnswer(false);
+      c.dodge = p.state === "dodge" && G.state === "play";
+      c8.step(1);
+      await c8.frames();
+      c.out = deep() > 2 && G.zone === "hub" && h.S.epoch === e0 && DF.CC.trip === false && !G.trans && !scr.classList.contains("show");
+      // the gate asks again, and a pause over the question does not lose it
+      DF.keys[fwd] = true;
+      c8.step(3, () => {
+        if (G.ask) return false;
+      });
+      DF.keys[fwd] = false;
+      c.again = !!G.ask && G.state === "enter";
+      DF.show("pause");
+      c8.step(0.5);
+      c.paused = G.ask === null && G.state === "pause" && deep() < 1;
+      DF.show("play");
+      c8.step(0.2);
+      c.back = !!G.ask && G.state === "enter" && h.S.epoch === e0;
+      DF.gateAnswer(false);
+      c8.step(1);
+      return { pass: Object.values(c).every((v) => v === true), c, deep: deep() };
+    },
+  },
+  {
     name: "from the hall to the cave and back",
     eval: async () => {
       const { G } = DF,
@@ -967,7 +1031,8 @@ export default [
       });
       const line = "Only the host can open a gate.",
         o = DF.portalFront(c8.portal("E"), -0.75);
-      c.inGate = Math.hypot(G.player.x - o.x, G.player.z - o.z) < 1;
+      // the friend is not asked, and so stays where it stepped: not thrown out
+      c.inGate = Math.hypot(G.player.x - o.x, G.player.z - o.z) < 1 && G.ask === null && G.state === "play" && G.player.state !== "dodge";
       c.line = log().filter((t) => t === line).length === 1;
       // nothing asked since this world's at and cls
       c.stays = G.zone === "hub" && h.S.epoch === e0 && !G.trans && DF.CC.seq === 2;

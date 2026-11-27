@@ -52,7 +52,11 @@
   of 280 px or more.
 - `TOUCH.enterPlay` runs from the play tap: one history entry so that Back
   pauses the game, then `goLandscape` (fullscreen, then a landscape lock).
-  `popstate` under touch pauses from play and arms another entry. From the
+  `popstate` under touch pauses from play and arms another entry. On the
+  gate's question (`enter`, `zones.md`) it is Stay out (`enterAnswer(false)`)
+  and arms another (on Android in fullscreen the first Back likely only
+  leaves fullscreen, as it does in play, and the second is Stay out; not
+  tried on a phone). From the
   pause, dead and win screens it only arms another, and from a menu it goes
   to the menu's return screen as that screen's Back button does, so a second
   Back does not leave the page. `TOUCH.menuOpen`, which `openMenu` calls

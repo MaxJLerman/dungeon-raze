@@ -443,8 +443,9 @@ const COOP_HOST = COOP_HEADLESS_HERE
           onKill,
           onRespawn() {},
           onGate() {},
-          // the host has no player to step into a gate
+          // the host has no player to step into a gate, or to ask
           onPortal() {},
+          asks: () => false,
           onPShot() {},
           onBlast() {},
           taken: () => false,

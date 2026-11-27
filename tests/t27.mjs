@@ -464,7 +464,7 @@ export default [
         p = G.player;
       p.x = o.x;
       p.z = o.z;
-      co.run(3, () => (DF.net() ? undefined : false), false);
+      co.run(3, () => (G.ask && DF.gateAnswer(true), DF.net() ? undefined : false), false);
       await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
       const msg = document.getElementById("coopMsg"),
         out = {
@@ -504,6 +504,7 @@ export default [
       p.z = o.z;
       let first = null;
       co.run(4, () => {
+        if (G.ask) DF.gateAnswer(true);
         if (!first && DF.CC.epoch === 2) {
           const P = G.player,
             mm = DF.net().mates[0];
@@ -706,7 +707,7 @@ export default [
         p = G.player;
       p.x = o.x;
       p.z = o.z;
-      co.run(4, () => (DF.net() ? undefined : false), false);
+      co.run(4, () => (G.ask && DF.gateAnswer(true), DF.net() ? undefined : false), false);
       await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
       const msg = document.getElementById("coopMsg"),
         out = {

@@ -10,6 +10,7 @@ const SCREENS = [
   "pause",
   "dead",
   "win",
+  "enter",
   "class",
   "controls",
   "howto",
@@ -24,9 +25,20 @@ let menuBack = "title",
 // solo, null from the pause screen (a change mid-run). An online start has
 // no class screen: its classes are chosen on the room screen.
 let classFor = null;
+// The gate's question ("enter", a hall gate asking whether to go in) takes
+// no answer for its first ENTER_GUARD ms, counted from enterAt, so a click
+// or press made before it appeared answers nothing.
+const ENTER_GUARD = 350;
+let enterAt = 0;
 function show(state) {
   // a plaque closes at once when play stops
   if (state !== "play") closePlaque(true);
+  // the gate's question, named by its letter; any other screen ends one
+  // that was open, and the gate asks again if the player is still in it
+  if (state === "enter") {
+    $("enterQ").textContent = "Enter gate " + (G.ask ? G.ask.grade : "") + "?";
+    enterAt = performance.now();
+  } else G.ask = null;
   G.state = state;
   for (const s of SCREENS) {
     const e = $("scr-" + s);
@@ -40,6 +52,7 @@ function show(state) {
     state === "play" ||
       state === "pause" ||
       state === "dead" ||
+      state === "enter" ||
       (MENUS.includes(state) && menuBack !== "title"),
   );
   if (state === "win") {
@@ -80,7 +93,9 @@ function lockPointer() {
     G.noLock = true;
   }
 }
-function play() {
+// lock false leaves the mouse unlocked, for a start the browser would
+// refuse to lock from (an Esc press): the next click on the canvas locks it.
+function play(lock) {
   // upright on a touch device the rotate overlay covers the page, and play
   // waits for the device to be turned
   if (TOUCH.on && innerHeight > innerWidth) return;
@@ -91,11 +106,26 @@ function play() {
   // so does a pad
   if (TOUCH.on) TOUCH.enterPlay();
   else if (PAD.active) PAD.enterPlay();
-  else lockPointer();
+  else if (lock !== false) lockPointer();
   canvas.focus();
   for (const k in taps) taps[k] = false;
   mouse.dx = mouse.dy = 0;
   HUD.hint();
+}
+// The answer to the gate's question from its screen: nothing off that
+// screen or inside its guard, else gateAnswer (the trip, or the throw out of
+// the arch) and back to play. lock false is play's.
+function enterAnswer(yes, lock) {
+  if (G.state !== "enter") return;
+  // a press inside the guard starts the guard again, so a run of presses
+  // (attack clicks, with the freed mouse over a button) never answers
+  const now = performance.now();
+  if (now - enterAt < ENTER_GUARD) {
+    enterAt = now;
+    return;
+  }
+  gateAnswer(yes);
+  play(lock);
 }
 // Leaves the cave for the hall, stepping out of the portal that was used.
 // In a co-op run the host is asked to take the party there (coopBase), and
@@ -469,6 +499,11 @@ function frame(now) {
     show("dead");
   if (G.state === "win" && !$("scr-win").classList.contains("show"))
     show("win");
+  // a gate's question opens from update (gateAsk) and can be answered from
+  // there too (gateAnswer, by a test or a world that went): the screen follows
+  const asking = $("scr-enter").classList.contains("show");
+  if (G.state === "enter" && !asking) show("enter");
+  else if (G.state === "play" && asking) show("play");
 }
 function boot() {
   if (!R.init(canvas)) {
@@ -548,6 +583,19 @@ function boot() {
       if (e.code === BIND.mute && !e.repeat) SFX.toggle();
       return;
     }
+    // the gate's question: Enter enters and Esc stays out. Space is the
+    // dodge, which a player may be pressing as they go in, so it answers
+    // nothing. The browser will not lock the mouse from Esc.
+    if (G.state === "enter") {
+      if (e.code === "Enter" || e.code === "Space" || e.code === "Escape")
+        e.preventDefault();
+      if (e.repeat) return;
+      // Enter presses the button that has the focus, and enters with none
+      if (e.code === "Enter")
+        enterAnswer(document.activeElement !== $("btnStay"));
+      else if (e.code === "Escape") enterAnswer(false, false);
+      return;
+    }
     const idle =
       !document.activeElement ||
       document.activeElement === document.body ||
@@ -625,7 +673,9 @@ function boot() {
   $("btnSolo").addEventListener("click", () => openMenu("class", "solo"));
   $("btnCoop").addEventListener("click", playOnline);
   $("btnPlay").addEventListener("click", classGo);
-  $("btnResume").addEventListener("click", play);
+  $("btnResume").addEventListener("click", () => play());
+  $("btnEnter").addEventListener("click", () => enterAnswer(true));
+  $("btnStay").addEventListener("click", () => enterAnswer(false));
   $("btnRise").addEventListener("click", () => {
     respawn();
     play();
@@ -738,6 +788,8 @@ window.DF = {
   enterHub,
   enterCave,
   startTrans,
+  gateAnswer,
+  enterAnswer,
   genHub,
   genSewer,
   bigCaveGraph,

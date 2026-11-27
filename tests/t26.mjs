@@ -94,7 +94,7 @@ export default [
   DF.enterHub(G.grade); G.state = "play";
   const p = G.player, q = G.world.portals[0];
   p.x = q.x; p.z = q.z - 3; p.yaw = 0; DF.cam.yaw = 0; DF.keys[DF.BIND.fwd] = true;
-  DF.sim(4, () => G.zone === "hub" || !!G.trans); DF.keys[DF.BIND.fwd] = false;
+  DF.sim(4, () => (G.ask && DF.gateAnswer(true), G.zone === "hub" || !!G.trans)); DF.keys[DF.BIND.fwd] = false;
   const small = G.zone === "cave" && G.grade === "E" && !G.trans && !G.world.big && G.world.nodes.length < 36;
   return { pass: bigA === true && a !== b && small, a, b, bigA, zone: G.zone, big: G.world.big, n: G.world.nodes.length };`),
   step("boss jump lands at the last rest point", `

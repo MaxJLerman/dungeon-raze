@@ -57,7 +57,10 @@
 - Menus. While the state is not play, `PAD.menu` keeps a focus on the open
   screen: the D-pad or left stick moves it to the nearest control ahead,
   repeating after 0.35 s and then every 0.12 s, `P:0` presses it and `P:1`
-  clicks that screen's `[data-back]` button. `focusables` skips the keyboard
+  clicks that screen's `[data-back]` button, or on the gate's question
+  (`enter`, `zones.md`) its Stay out button, `#btnStay`; that screen opens
+  on `#btnEnter`. B is the dodge by default, and one held as the player
+  goes in is muted by the screen change like any other. `focusables` skips the keyboard
   binding column (`#binds button[data-act]`), which the rebind flow covers.
   A screen opens on its first control, or the one with `data-padfirst`
   (`#btnSolo` on the main menu; `#btnPlay` on the class screen when Play
