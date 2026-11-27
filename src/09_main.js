@@ -133,6 +133,8 @@ function openMenu(which, why) {
     classRender();
   } else if (which === "coop") renderPicker();
   show(which);
+  // only a screen that shows can be measured
+  cardsReveal();
   if (which === "coop") coopRoomOpen();
 }
 // The class screen's forward button and its line, from classFor. Opened
@@ -178,9 +180,27 @@ const both = (kb, touch, pad = kb) =>
   '</span><span class="lk-pad">' +
   pad +
   "</span>";
+// On a phone on its side the cards are one line that scrolls sideways (the
+// template's short-screen rules). This brings the chosen card into it,
+// clear of the side padding. A grid, or a hidden line, is left as it is.
+function cardsReveal() {
+  for (const line of document.querySelectorAll(".picker .cards")) {
+    const on = line.querySelector(".card.on");
+    if (!on || line.scrollWidth <= line.clientWidth) continue;
+    const cs = getComputedStyle(line),
+      a = line.getBoundingClientRect(),
+      b = on.getBoundingClientRect(),
+      lo = a.left + (parseFloat(cs.paddingLeft) || 0),
+      hi = a.right - (parseFloat(cs.paddingRight) || 0);
+    if (b.left < lo) line.scrollLeft -= lo - b.left;
+    else if (b.right > hi) line.scrollLeft += b.right - hi;
+  }
+}
 function renderPicker() {
-  // a rebuilt picker keeps the focused card, the pad's and the keyboard's
+  // a rebuilt picker keeps the focused card, the pad's and the keyboard's,
+  // and how far its line of cards was scrolled
   const hosts = [...document.querySelectorAll(".picker")],
+    at = hosts.map((h) => (h.firstElementChild ? h.firstElementChild.scrollLeft : 0)),
     keep = [PAD.focus, document.activeElement].map((f) => {
       const h = f && f.closest && f.closest(".picker");
       return h && f.dataset.cls ? [hosts.indexOf(h), f.dataset.cls] : null;
@@ -238,6 +258,8 @@ function renderPicker() {
         .join("") +
       "</div>";
   }
+  hosts.forEach((h, i) => (h.firstElementChild.scrollLeft = at[i]));
+  cardsReveal();
   const card = (k) =>
     k && hosts[k[0]].querySelector('.card[data-cls="' + k[1] + '"]');
   if (keep[0] && card(keep[0])) PAD.setFocus(card(keep[0]));

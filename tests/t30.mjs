@@ -34,6 +34,8 @@ export default [
   c.noGate = typeof DF.coopButton === "undefined";
   c.padFirst = !!id("btnSolo") && id("btnSolo").hasAttribute("data-padfirst");
   c.noBlurb = !shown($("#scr-title .sub"));
+  // nothing shows but the title and the buttons: no line about turning a phone
+  c.bare = JSON.stringify([...id("scr-title").children].filter(shown).map((el) => el.tagName + "." + el.className)) === JSON.stringify(["H1.", "DIV.row"]);
   // centred, two buttons to a row, and the dev build's fifth alone beneath
   const box = (el) => el.getBoundingClientRect(), mid = (el) => (box(el).left + box(el).right) / 2, near = (a, b) => Math.abs(a - b) <= 1;
   const [solo, online, howto, controls] = row.map(box), dev = id("btnDev");
@@ -272,6 +274,69 @@ export default [
   home();
   return { ...all(c), d };`),
 
+  // With the hidden classes open there are eight cards. On a phone on its
+  // side they are one line across the whole screen that a thumb drags
+  // sideways; a taller screen keeps the grid.
+  step("the class line scrolls sideways on a phone", `
+  const c = {}, d = {}, was = DF.OPT.cls;
+  const add = Object.keys(DF.CLASSES).filter((k) => DF.CLASSES[k].hidden && !DF.UNLOCKED.has(k));
+  const box = (el) => el.getBoundingClientRect();
+  const line = () => $("#scr-class .cards"), cards = () => [...line().children];
+  const seen = (el) => box(el).left >= -0.5 && box(el).right <= innerWidth + 0.5;
+  for (const k of add) DF.UNLOCKED.add(k);
+  try {
+    home();
+    id("btnSolo").click();
+    await frames();
+    d.size = innerWidth + "x" + innerHeight; d.cards = cards().length;
+    c.eight = d.cards === Object.keys(DF.CLASSES).length && d.cards > 5;
+    if (innerHeight > 420) {
+      // the grid: every card on the screen with nothing to scroll
+      c.grid = line().scrollWidth <= line().clientWidth + 1 && cards().every(seen);
+      return { ...all(c), d };
+    }
+    const top = box(cards()[0]).top;
+    c.oneLine = cards().every((b) => Math.abs(box(b).top - top) <= 1);
+    c.edgeToEdge = box(line()).left <= 0.5 && box(line()).right >= innerWidth - 0.5;
+    c.underTitle = Math.abs(box(cards()[0]).left - box($("#scr-class h1")).left) <= 1;
+    c.more = line().scrollWidth > line().clientWidth + 1 && !seen(cards().at(-1));
+    // a real thumb drags the line
+    if (window.__touch) {
+      const y = top + box(cards()[0]).height / 2, x0 = innerWidth * 0.75, x1 = innerWidth * 0.2;
+      await window.__touch("touchStart", [{ id: 1, x: x0, y }]);
+      for (let i = 1; i <= 8; i++) { await window.__touch("touchMove", [{ id: 1, x: x0 + (x1 - x0) * i / 8, y }]); await frames(); }
+      await window.__touch("touchEnd", [{ id: 1, x: x1, y }]);
+      await frames();
+      d.dragged = Math.round(line().scrollLeft);
+      c.drag = d.dragged > 100 && G.state === "class" && DF.OPT.cls === was;
+    }
+    // the far end: the last card whole, and picking it keeps it there
+    line().scrollLeft = line().scrollWidth;
+    await frames();
+    const last = cards().at(-1), to = last.dataset.cls;
+    c.end = seen(last) && to !== was;
+    last.click();
+    await frames();
+    const on = $("#scr-class .card.on");
+    d.after = Math.round(line().scrollLeft);
+    c.kept = !!on && on.dataset.cls === to && seen(on) && d.after > 0;
+    // and it is in sight when the screen opens again
+    home();
+    id("btnSolo").click();
+    await frames();
+    c.reopen = seen($("#scr-class .card.on")) && $("#scr-class .card.on").dataset.cls === to;
+    // back to the first card
+    cards()[0].click();
+    await frames();
+    c.first = seen($("#scr-class .card.on")) && line().scrollLeft === 0;
+  } finally {
+    for (const k of add) DF.UNLOCKED.delete(k);
+    DF.setClass(was);
+    DF.renderPicker();
+    home();
+  }
+  return { ...all(c), d };`),
+
   step("exit from the hall", `
   const c = {};
   DF.enterHub(); DF.show("play"); DF.show("pause");
@@ -368,5 +433,12 @@ export default [
   // shots to look at: shots/[device-]t30-menu.png and t30-class.png
   { name: "shot: the main menu", eval: `DF.show("title")`, wait: 400, shot: "t30-menu" },
   { name: "shot: the class screen for a solo start", eval: `document.getElementById("btnSolo").click()`, wait: 400, shot: "t30-class" },
-  { name: "back to the main menu", eval: `DF.show("title"); DF.coopLoc(null)` },
+  // every class, hidden ones too: the line of cards. Nothing is saved.
+  { name: "shot: the class screen with every class", eval: `(() => {
+    const add = Object.keys(DF.CLASSES).filter((k) => DF.CLASSES[k].hidden && !DF.UNLOCKED.has(k));
+    for (const k of add) DF.UNLOCKED.add(k);
+    DF.renderPicker();
+    window.__t30add = add;
+  })()`, wait: 400, shot: "t30-class-all" },
+  { name: "back to the main menu", eval: `for (const k of window.__t30add) DF.UNLOCKED.delete(k); DF.renderPicker(); DF.show("title"); DF.coopLoc(null)` },
 ];

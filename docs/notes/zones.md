@@ -98,7 +98,9 @@
   grid of two buttons to a row (`#scr-title .row` in the template); an odd
   last button, which is the dev build's `#btnDev`, sits alone in the middle
   beneath. Its `.sub` is empty and hidden, and only `boot()` shows it, to
-  say the browser has no WebGL 2. Play solo opens the class screen with `openMenu("class",
+  say the browser has no WebGL 2. Nothing else shows there but a co-op
+  line: it carries no note about turning a phone, which the rotate screen
+  says to a phone held upright (`touch.md`). Play solo opens the class screen with `openMenu("class",
   "solo")`; the pause screen's Change class calls `openMenu("class")` with
   no reason. `classFor` holds it (`"solo"`, or `null` from pause) and
   `classRender()` sets the screen from it: from Play solo the forward
@@ -121,6 +123,16 @@
   address with `?room=CODE` opens the room screen at boot
   (`coopInvite`, `coop.md`). Open the class screen through `openMenu`,
   never `show("class")`, or `classFor` is stale.
+- **The line of class cards.** `.cards` is a grid of five to a row. On a
+  screen 420 px high or less (a phone on its side) the template makes it
+  one line that scrolls sideways and reaches both edges of the screen,
+  through `.scr`'s side padding, which `.scr` holds as `--side-l` and
+  `--side-r`: five cards fit between the padding, so with the hidden
+  classes open the sixth shows at the edge. `renderPicker` rebuilds the
+  cards on every pick, so it keeps each line's `scrollLeft`, and
+  `cardsReveal()` brings the chosen card into the line clear of the
+  padding. `openMenu` calls it again after `show`, because a line on a
+  hidden screen cannot be measured. A taller screen keeps the grid.
 - **Return to base.** `toBase()` is `enterHub(G.grade)` then `play()`, from
   `#btnBase` (pause, hidden in the hall), `#btnDeadBase` (death) and
   `#btnAgain` (win). In a co-op run it asks the host to take the party to
@@ -182,9 +194,15 @@
   solo start, and that Play online on a page that cannot play co-op says so
   on the main menu (the test page is a `file:`, so every step stands in
   `localhost` through `DF.coopLoc`), and that a class card, selected or
-  not, stays readable under a real mouse (`__mouse(x, y)`, desktop only).
-  Look at `shots/t30-menu.png`,
-  `shots/t30-class.png` and the two `shots/iphone-se-t30-*.png`.
+  not, stays readable under a real mouse (`__mouse(x, y)`, desktop only),
+  and, with every hidden class open, that the cards are one line from
+  edge to edge on a phone, that a real touch drags it, and that a picked
+  card stays in sight (the grid, with nothing cut off, on a taller
+  screen). `node tests/touch-all.mjs tests/t30.mjs title` runs it on
+  every device.
+  Look at `shots/t30-menu.png`, `shots/t30-class.png`,
+  `shots/t30-class-all.png` (every class) and the three
+  `shots/iphone-se-t30-*.png`.
   `node tests/t30-nogl.mjs` opens the page in a browser with no WebGL 2 and
   checks the message and that both Play buttons are disabled.
 
