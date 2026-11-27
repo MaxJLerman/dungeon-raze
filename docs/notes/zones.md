@@ -45,7 +45,9 @@
   `gateAsk(q)` for the open gate the player stands in: `G.ask` is `{ grade,
   yaw }` and `G.state` is `"enter"`, whose screen the frame loop shows (core
   has no DOM, as with the win screen). The check does nothing while `G.ask`
-  is set. `gateAnswer(yes)` is the answer, and does nothing with none
+  is set, and asks only while the state is `"play"`: in a co-op run
+  `update` runs under a pause or a menu too, and there the question waits
+  for play to come back. `gateAnswer(yes)` is the answer, and does nothing with none
   asked: it clears `G.ask`, puts an `"enter"` state back to `"play"`, and
   then yes is the trip (`startTrans(grade)`, or `NET.onPortal(grade)` in a
   co-op run) and no throws the player out of the arch, `startDodge(sin yaw,
@@ -117,7 +119,11 @@
 - **The gate's question** is the `enter` state (`#scr-enter`): the heading
   `#enterQ`, "Enter gate E?" with the gate's letter and no second line, and
   two buttons, `#btnEnter` "Enter" (with `data-padfirst`) and `#btnStay`
-  "Stay out". Core opens it (`gateAsk` sets the state, above) and the frame
+  "Stay out". It sits in the middle of the view (`#scr-enter` in the
+  template), not at the left as the other screens do: the browser gives
+  the mouse back where play took it, which is over Resume, Rise again or
+  Enter the hall, and no answer may lie there (t8 holds the buttons clear
+  of all three). Core opens it (`gateAsk` sets the state, above) and the frame
   loop shows it; the frame loop also puts the play screen back when the
   state is `"play"` again under it (an answer from `gateAnswer` alone, as a
   test gives, or a world that went). It is not one of `MENUS`. The HUD
@@ -125,8 +131,11 @@
   `enterAnswer(yes, lock)` is every answer from the screen: it does nothing
   off the screen or in its first `ENTER_GUARD` (350 ms, real time from
   `show("enter")`), so a click or press made before the screen appeared
-  answers nothing; otherwise `gateAnswer(yes)` and then `play(lock)`.
-  The buttons call it; on the keyboard Enter is Enter and Esc is Stay out,
+  answers nothing, and a press inside the guard starts it again, so a run
+  of attack clicks never answers; otherwise `gateAnswer(yes)` and then `play(lock)`.
+  The buttons call it; on the keyboard Enter is Enter (or Stay out, when that
+  button has the focus: the handler takes the key, so it must answer as
+  the focused button would) and Esc is Stay out,
   and **Space answers nothing**, because Space is the dodge and a player
   dodging into a gate would answer by accident. A controller's A presses
   the focused button and B is Stay out (`controller.md`), and the touch
@@ -223,8 +232,10 @@
   question: that a gate asks once, Enter, the throw for every class and
   for a player who walked in sideways, no second question until the player
   has left, a world swap under it, and the screen itself (its text, the
-  guard, Space, Enter, Esc with no mouse lock asked for, a controller's A
-  and B, an exit under it); run it as the smallest phone too for the Back
+  guard and its restart, Space, Enter, Enter with a button focused, Esc
+  with no mouse lock asked for, a controller's A and B, an exit under it,
+  the buttons clear of where the mouse is freed, no question under
+  another screen); run it as the smallest phone too for the Back
   gesture (`DEVICE=iphone-se`, where its "hall HUD" step fails on `main`
   as well). Look at `shots/t8-enter.png` and `shots/iphone-se-t8-enter.png`.
   The cave scripts use `smoke`,
@@ -261,9 +272,16 @@
 
 ## Known problems
 
-- The gate's question frees the mouse where it was when play began, which
-  after a pause is where Resume was, and that is where Enter is. A click
-  later than the guard (350 ms) would enter. Not seen by a person yet.
+- The gate's question is kept clear of where the mouse is freed only for
+  the three buttons that start play. A lock taken by a click on the canvas
+  (after Esc at the question, or a lock the browser dropped) frees the
+  mouse wherever that click was, which can be the middle. The guard is all
+  that covers that.
+- The Space rule at the gate's question is tied to the key, not the
+  action: a player who binds dodge or attack to Enter answers with it.
+- A phone turned upright under the gate's question can be put into play
+  under the rotate screen (Back, or a pad's B): `enterAnswer` does not
+  refuse where `play()` would. Harmless in the hall.
 - `tests/t8.mjs` as a phone fails "hall HUD" (`fadeOnTop`), on `main` too.
   The cause is not investigated; t8 was a desktop script until the gate's
   question.

@@ -319,6 +319,48 @@ export default [
   const c = { shown, title: G.state === "title" && !up() && G.ask === null && document.querySelectorAll(".scr.show").length === 1 };
   DF.enterHub(); DF.show("play"); await draw(); c.play = G.state === "play" && !up();
   return { pass: Object.values(c).every(Boolean), c };`),
+  astep("Enter answers by the button that has the focus", `
+  if (DF.TOUCH.on) return { pass: true, skipped: "touch" };
+  DF.enterHub(); DF.show("play"); const shown = await asked(); await ready();
+  document.getElementById("btnStay").focus(); key("Enter"); const p = G.player;
+  const c = { shown, stay: G.ask === null && G.state === "play" && !G.trans && p.state === "dodge" };
+  DF.sim(1); c.out = circle() > 2 && G.zone === "hub" && !G.trans;
+  c.shown2 = await asked(); await ready(); document.getElementById("btnEnter").focus(); key("Enter");
+  c.enter = G.ask === null && !!G.trans; DF.sim(4, () => G.zone === "hub" || !!G.trans); c.cave = G.zone === "cave";
+  document.activeElement.blur();
+  return { pass: Object.values(c).every(Boolean), c };`),
+  astep("a press inside the guard starts the guard again", `
+  // real time: a try whose waits ran long says nothing and is made again
+  let c = null;
+  for (let i = 0; i < 6 && !c; i++) {
+    DF.gateAnswer(false); DF.enterHub(); DF.show("play"); const shown = await asked(), a = G.ask, t0 = performance.now();
+    await sleep(200); const t1 = performance.now(); document.getElementById("btnEnter").click();
+    await sleep(250); const t2 = performance.now(); document.getElementById("btnEnter").click();
+    if (t1 - t0 > 330 || t2 - t1 > 330 || t2 - t0 < 370) continue;
+    c = { shown, held: G.ask === a && G.state === "enter" && !G.trans };
+    await ready(); document.getElementById("btnEnter").click(); c.then = G.ask === null && !!G.trans;
+  }
+  DF.sim(4, () => G.zone === "hub" || !!G.trans);
+  return { pass: !!c && Object.values(c).every(Boolean), c };`),
+  astep("the answers are clear of where the mouse is freed", `
+  // the mouse comes back where play took it: over Resume, Rise again or Enter the hall
+  // no part of an answer may lie over any part of one of those
+  const at = {}, box = (id) => { const r = document.getElementById(id).getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom].map(Math.round); };
+  for (const [scrn, id] of [["pause", "btnResume"], ["dead", "btnRise"]]) { DF.enterHub(); DF.show(scrn); at[id] = box(id); }
+  DF.show("title"); document.getElementById("btnSolo").click(); at.btnPlay = box("btnPlay");
+  DF.enterHub(); DF.show("play"); const shown = await asked(), ans = [box("btnEnter"), box("btnStay")];
+  const over = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+  const under = Object.entries(at).filter(([, r]) => ans.some((b) => over(r, b))).map(([id]) => id);
+  const sized = [...Object.values(at), ...ans].every((r) => r[2] > r[0] && r[3] > r[1]);
+  DF.gateAnswer(false); DF.sim(1);
+  return { pass: shown && sized && under.length === 0, under, at, ans };`),
+  step("a gate does not ask under another screen", `
+  DF.enterHub(); const q = G.world.portals[0], p = G.player, o = DF.portalFront(q, -0.75);
+  p.x = o.x; p.z = o.z - 0.5; G.state = "pause"; DF.sim(0.5);
+  const quiet = G.ask === null && G.state === "pause" && G.zone === "hub" && !G.trans;
+  G.state = "play"; DF.sim(0.1); const asks = !!G.ask && G.state === "enter";
+  DF.gateAnswer(false); DF.sim(1);
+  return { pass: quiet && asks, quiet, asks };`),
   step("frames are solid", `
   DF.enterHub(); const p = G.player; cam.yaw = 0; DF.keys[DF.BIND.fwd] = true; const zs = [];
   // an open D (E was cleared above) would take the player through; the sealed ones are walked into

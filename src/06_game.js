@@ -5955,6 +5955,8 @@ function update(dt) {
     }
     if (!at) G.askOff = false;
     else if (NET && !NET.asks()) NET.onPortal(at.grade);
-    else if (!G.askOff) gateAsk(at);
+    // only on the play screen: in a co-op run update runs under a pause
+    // or a menu too, and the question waits for play to come back
+    else if (!G.askOff && G.state === "play") gateAsk(at);
   }
 }

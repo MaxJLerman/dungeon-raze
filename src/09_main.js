@@ -116,7 +116,14 @@ function play(lock) {
 // screen or inside its guard, else gateAnswer (the trip, or the throw out of
 // the arch) and back to play. lock false is play's.
 function enterAnswer(yes, lock) {
-  if (G.state !== "enter" || performance.now() - enterAt < ENTER_GUARD) return;
+  if (G.state !== "enter") return;
+  // a press inside the guard starts the guard again, so a run of presses
+  // (attack clicks, with the freed mouse over a button) never answers
+  const now = performance.now();
+  if (now - enterAt < ENTER_GUARD) {
+    enterAt = now;
+    return;
+  }
   gateAnswer(yes);
   play(lock);
 }
@@ -583,7 +590,9 @@ function boot() {
       if (e.code === "Enter" || e.code === "Space" || e.code === "Escape")
         e.preventDefault();
       if (e.repeat) return;
-      if (e.code === "Enter") enterAnswer(true);
+      // Enter presses the button that has the focus, and enters with none
+      if (e.code === "Enter")
+        enterAnswer(document.activeElement !== $("btnStay"));
       else if (e.code === "Escape") enterAnswer(false, false);
       return;
     }

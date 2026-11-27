@@ -46,7 +46,8 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
     pause screen or a menu shows the dead screen while `NET.live`. The
     portal check at its end asks before a trip only where `NET.asks()`
     is true (never on the host, which has no player; on a page, when it
-    leads and has no trip asked for: `coopLeads() && !CC.trip`), and
+    leads and has no trip asked for: `coopLeads() && !CC.trip`) and the
+    state is `"play"` (a paused leader in a gate is asked on Resume), and
     otherwise calls `NET.onPortal(grade)` at once, as it did before gates
     asked. `gateAnswer(true)` calls `NET.onPortal(grade)` in place of
     `startTrans` (a no-op on the host; the client's `coopPortal`).

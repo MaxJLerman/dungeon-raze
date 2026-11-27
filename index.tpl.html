@@ -935,6 +935,17 @@
       #scr-title h1 {
         margin-bottom: clamp(8px, 4vh, 36px);
       }
+      /* the gate's question sits in the middle: the mouse comes back where
+         play took it, over Resume, Rise again or Enter the hall at the left,
+         and no answer may lie under it there */
+      #scr-enter {
+        align-items: center;
+        text-align: center;
+        background: rgba(5, 7, 12, 0.62);
+      }
+      #scr-enter .row {
+        justify-content: center;
+      }
       #scr-title .row {
         display: grid;
         grid-template-columns: repeat(4, 1fr);

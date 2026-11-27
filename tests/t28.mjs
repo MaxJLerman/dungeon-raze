@@ -940,7 +940,8 @@ export default [
       DF.keys[fwd] = false;
       c.again = !!G.ask && G.state === "enter";
       DF.show("pause");
-      c.paused = G.ask === null;
+      c8.step(0.5);
+      c.paused = G.ask === null && G.state === "pause" && deep() < 1;
       DF.show("play");
       c8.step(0.2);
       c.back = !!G.ask && G.state === "enter" && h.S.epoch === e0;
