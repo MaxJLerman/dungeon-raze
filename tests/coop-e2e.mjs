@@ -219,8 +219,8 @@ const info = (p) =>
     big: DF.G.world.big === true,
   }));
 // Walks this page's player through points d metres in front of E's gate in
-// the hall, steering by the camera, and lets go once there, once the world
-// changes or once a fade begins.
+// the hall, steering by the camera, answers Enter if the gate asks, and lets
+// go once there, once the world changes or once a fade begins.
 const walkE = (p, ds) =>
   p.evaluate((ds) => {
     const { G } = DF,
@@ -230,6 +230,8 @@ const walkE = (p, ds) =>
     clearInterval(window.__steer);
     window.__steer = setInterval(() => {
       const pl = G.player;
+      // the gate asks the page that leads, and this walk says Enter
+      if (G.ask) DF.gateAnswer(true);
       while (way.length && Math.hypot(way[0].x - pl.x, way[0].z - pl.z) < 0.5) way.shift();
       if (!way.length || G.world !== w0 || G.trans) {
         DF.keys[DF.BIND.fwd] = false;

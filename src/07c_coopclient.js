@@ -453,6 +453,8 @@ function coopJoin(j) {
     onRespawn() {},
     onGate: coopGate,
     onPortal: coopPortal,
+    // a hall gate asks only the page that leads, and not with a trip asked
+    asks: () => coopLeads() && !CC.trip,
     onPShot: coopPShot,
     onBlast: coopBlast,
     taken: coopTaken,

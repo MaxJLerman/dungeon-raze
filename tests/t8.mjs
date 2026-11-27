@@ -11,6 +11,10 @@ const place = (dist) => `p.x = d.x; p.z = d.z - ${dist}; p.yaw = 0; cam.yaw = 0;
 const near = (dist) => `const d = G.enemies.find((e) => e.def.dummy), p = G.player; ${place(dist)}`;
 const reach = (id) => (id === "mage" || id === "ranger" ? 9 : 2.4);
 const shown = `const shown = (id) => { const e = document.getElementById(id); return !!e && getComputedStyle(e).display !== "none"; };`;
+// toGate walks the player forward into the open gate q from 3 m in front,
+// until the gate asks (G.ask), a trip begins or sec runs out
+const toGate = `const toGate = (q, sec = 4) => { const p = G.player; p.x = q.x; p.z = q.z - 3; p.yaw = 0; cam.yaw = 0; DF.keys[DF.BIND.fwd] = true;
+  DF.sim(sec, () => !G.ask && G.zone === "hub" && !G.trans); DF.keys[DF.BIND.fwd] = false; };`;
 export default [
   step("hub world", `
   const w = DF.genHub(), P = w.portals, f = (o) => w.fieldAt(o.x, o.z);
@@ -42,7 +46,7 @@ export default [
   DF.enterHub(); const p = G.player, q = G.world.portals[0];
   p.x = q.x; p.z = q.z - 3; p.yaw = 0; cam.yaw = 0; DF.keys[DF.BIND.fwd] = true;
   let peak = 0, hurt = null;
-  DF.sim(4, () => { if (G.trans) { peak = Math.max(peak, G.fade); if (hurt === null) hurt = DF.hurtPlayer(50, null, { px: p.x, pz: p.z - 1 }); } return G.zone === "hub" || !!G.trans; });
+  DF.sim(4, () => { if (G.ask) DF.gateAnswer(true); if (G.trans) { peak = Math.max(peak, G.fade); if (hurt === null) hurt = DF.hurtPlayer(50, null, { px: p.x, pz: p.z - 1 }); } return G.zone === "hub" || !!G.trans; });
   DF.keys[DF.BIND.fwd] = false; const P = G.player;
   const c = { zone: G.zone === "cave", grade: G.grade === "E", done: !G.trans && G.fade === 0, peak: peak > 0.95, hurt: hurt === "none",
     cave: G.world.shrines.length > 0 && G.enemies.some((e) => e.type === "warden"), fresh: P.state === "free" && P.hp === P.maxHp,
@@ -56,7 +60,7 @@ export default [
   DF.resetCleared(); DF.enterHub(); const before = G.world.portals.map((q) => +q.open).join("");
   DF.clearGrade("E", "fighter"); DF.enterHub(); const after = G.world.portals.map((q) => +q.open).join("");
   let p = G.player; const q = G.world.portals[1]; cam.yaw = 0; p.x = q.x; p.z = q.z - 3; p.yaw = 0; DF.keys[DF.BIND.fwd] = true;
-  DF.sim(4, () => G.zone === "hub" || !!G.trans); DF.keys[DF.BIND.fwd] = false;
+  DF.sim(4, () => (G.ask && DF.gateAnswer(true), G.zone === "hub" || !!G.trans)); DF.keys[DF.BIND.fwd] = false;
   const c = { before: before === "100000", after: after === "110000", d: q.grade === "D" && q.open, zone: G.zone === "cave", grade: G.grade === "D",
     sewer: !!G.world.sewer && G.enemies.some((e) => e.type === "croc"), done: !G.trans };
   // the rest stay sealed with E cleared
@@ -79,11 +83,11 @@ export default [
   DF.enterHub(); const p = G.player, q = G.world.portals[0];
   G.projs.push({ x: 0, y: 1, z: 0, vx: 0, vz: 1, life: 9, own: "p", dmg: 1, post: 0, kind: "arrow", c: [1, 1, 1] });
   G.pending.push({ x: q.x, z: q.z, r: 3, dmg: 1, post: 0, c: [1, 1, 1], t: 0.6 });
-  p.x = q.x; p.z = q.z; DF.sim(2, () => G.zone === "hub" || !!G.trans);
+  p.x = q.x; p.z = q.z; DF.sim(2, () => (G.ask && DF.gateAnswer(true), G.zone === "hub" || !!G.trans));
   return { pass: G.zone === "cave" && G.projs.length === 0 && G.pending.length === 0 && G.rings.length === 0 };`),
   step("entering mid-dodge arrives free", `
   DF.enterHub(); const p = G.player, q = G.world.portals[0]; p.x = q.x; p.z = q.z - 2.5; p.yaw = 0; cam.yaw = 0;
-  DF.keys[DF.BIND.fwd] = true; K("dodge"); DF.sim(3, () => G.zone === "hub" || !!G.trans); DF.keys[DF.BIND.fwd] = false;
+  DF.keys[DF.BIND.fwd] = true; K("dodge"); DF.sim(3, () => (G.ask && DF.gateAnswer(true), G.zone === "hub" || !!G.trans)); DF.keys[DF.BIND.fwd] = false;
   const P = G.player; return { pass: G.zone === "cave" && P.state === "free" && P.buf === null && P.iframe <= 1 };`),
   step("reduced motion cuts", `
   DF.enterHub(); DF.startTrans("E", true); return { pass: G.zone === "cave" && !G.trans && G.fade === 0 };`),
@@ -161,10 +165,64 @@ export default [
   step("portal fires inside the arch", `
   DF.enterHub(); const p = G.player, q = G.world.portals[0];
   p.x = q.x; p.z = q.z - 3; p.yaw = 0; cam.yaw = 0; DF.keys[DF.BIND.fwd] = true;
-  let at = null; DF.sim(4, () => { if (G.trans && at === null) at = G.player.z; return G.zone === "hub" || !!G.trans; });
+  let at = null; DF.sim(4, () => { if (G.ask) DF.gateAnswer(true); if (G.trans && at === null) at = G.player.z; return G.zone === "hub" || !!G.trans; });
   DF.keys[DF.BIND.fwd] = false;
   // the frame's front face is at z = 16.5; the fade must not start out on the floor ring
   return { pass: G.zone === "cave" && at !== null && at >= 15.7, at };`),
+  step("a gate asks first", `${toGate}
+  DF.enterHub(); const q = G.world.portals[0], p = G.player, o = DF.portalFront(q, -0.75); toGate(q);
+  const a = G.ask, c = { ask: !!a && a.grade === "E", state: G.state === "enter", inside: Math.hypot(o.x - p.x, o.z - p.z) < 1, hub: G.zone === "hub", still: !G.trans };
+  // it asks once and nothing travels while it waits
+  DF.keys[DF.BIND.fwd] = true; DF.sim(1); DF.keys[DF.BIND.fwd] = false;
+  c.waits = G.ask === a && G.state === "enter" && G.zone === "hub" && !G.trans;
+  DF.gateAnswer(false); DF.sim(1);
+  return { pass: Object.values(c).every(Boolean), c };`),
+  step("Enter goes in", `${toGate}
+  DF.enterHub(); toGate(G.world.portals[0]); const asked = !!G.ask; DF.gateAnswer(true);
+  const c = { asked, closed: G.ask === null && G.state === "play", fades: !!G.trans && G.zone === "hub" };
+  DF.sim(4, () => (G.ask && DF.gateAnswer(true), G.zone === "hub" || !!G.trans));
+  c.cave = G.zone === "cave" && G.grade === "E" && !G.trans && G.ask === null;
+  // an answer with nothing asked does nothing
+  DF.enterHub(); DF.gateAnswer(true); DF.gateAnswer(false); c.idle = G.zone === "hub" && !G.trans && G.player.state === "free";
+  return { pass: Object.values(c).every(Boolean), c };`),
+  step("Stay out throws the player out of the arch", `${toGate}
+  const was = DF.OPT.cls, bad = [];
+  for (const id of Object.keys(DF.CLASSES)) {
+    DF.setClass(id); DF.enterHub(); const q = G.world.portals[0], p = G.player, o = DF.portalFront(q, -0.75);
+    toGate(q); p.stam = 40; const yaw = p.yaw, cy = cam.yaw, x0 = p.x;
+    DF.gateAnswer(false);
+    const c = { cls: p.clsId === id, closed: G.ask === null && G.state === "play", dodge: p.state === "dodge",
+      out: Math.abs(p.ddx - Math.sin(q.yaw)) < 1e-9 && Math.abs(p.ddz - Math.cos(q.yaw)) < 1e-9, free: p.stam === 40 };
+    DF.sim(1);
+    // out past the circle (1 m) with room to spare, straight along the way the gate faces, the view as it was
+    c.clear = Math.hypot(o.x - p.x, o.z - p.z) > 2 && Math.abs(p.x - x0) < 0.3 && p.z < q.z - 1;
+    c.view = cam.yaw === cy && p.yaw === yaw; c.stays = G.zone === "hub" && !G.trans && G.ask === null && p.state === "free";
+    if (!Object.values(c).every(Boolean)) bad.push([id, c, +p.x.toFixed(2), +p.z.toFixed(2)]);
+  }
+  DF.setClass(was); DF.enterHub();
+  return { pass: bad.length === 0, bad };`),
+  step("walked in sideways, thrown straight out", `
+  DF.enterHub(); const q = G.world.portals[0], p = G.player, o = DF.portalFront(q, -0.75);
+  p.x = o.x; p.z = o.z - 0.5; p.yaw = cam.yaw = Math.PI / 2; DF.sim(0.1); const asked = !!G.ask && G.state === "enter";
+  DF.gateAnswer(false); DF.sim(1);
+  const c = { asked, clear: Math.hypot(o.x - p.x, o.z - p.z) > 2 && Math.abs(p.x - o.x) < 0.3 && p.z < q.z - 1, view: cam.yaw === Math.PI / 2 && p.yaw === Math.PI / 2 };
+  return { pass: Object.values(c).every(Boolean), c, at: [p.x, p.z] };`),
+  step("no second question until the player has left", `${toGate}
+  DF.enterHub(); const q = G.world.portals[0], p = G.player, o = DF.portalFront(q, -0.75); toGate(q);
+  DF.gateAnswer(false); const c = { off: G.askOff === true };
+  // kept in the circle after the answer: not asked again
+  p.x = o.x; p.z = o.z - 0.5; p.state = "free"; DF.sim(0.5);
+  c.held = Math.hypot(o.x - p.x, o.z - p.z) < 1 && G.ask === null && G.askOff === true && G.zone === "hub" && !G.trans;
+  // once outside the circle it is ready again
+  p.x = q.x; p.z = q.z - 3; DF.sim(0.1); c.ready = G.askOff === false && G.ask === null;
+  toGate(q); c.again = !!G.ask && G.state === "enter";
+  DF.gateAnswer(false); DF.sim(1);
+  return { pass: Object.values(c).every(Boolean), c };`),
+  step("a world swap under the question closes it", `${toGate}
+  DF.enterHub(); toGate(G.world.portals[0]); const asked = !!G.ask && G.state === "enter"; DF.enterHub();
+  const a = G.ask === null && G.askOff === false && G.state === "play";
+  toGate(G.world.portals[0]); DF.gateAnswer(false); const off = G.askOff === true; DF.enterHub();
+  return { pass: asked && a && off && G.askOff === false, asked, a, off };`),
   step("frames are solid", `
   DF.enterHub(); const p = G.player; cam.yaw = 0; DF.keys[DF.BIND.fwd] = true; const zs = [];
   // an open D (E was cleared above) would take the player through; the sealed ones are walked into
@@ -185,7 +243,7 @@ export default [
   step("round trips through the portal and the menu", `
   let ok = true; DF.enterHub();
   for (let i = 0; i < 3; i++) { const p = G.player, q = G.world.portals[0]; p.x = q.x; p.z = q.z - 2; p.yaw = 0; cam.yaw = 0;
-    DF.keys[DF.BIND.fwd] = true; DF.sim(4, () => G.zone === "hub" || !!G.trans); DF.keys[DF.BIND.fwd] = false;
+    DF.keys[DF.BIND.fwd] = true; DF.sim(4, () => (G.ask && DF.gateAnswer(true), G.zone === "hub" || !!G.trans)); DF.keys[DF.BIND.fwd] = false;
     const b = G.enemies.find((e) => e.type === "warden"); ok = ok && G.zone === "cave" && !!b && !b.dead && !G.gate;
     DF.hitEnemy(b, 1e6, 0, {}); ok = ok && G.bossDead; DF.toBase();
     ok = ok && G.zone === "hub" && G.state === "play" && !G.gate && !G.bossDead && G.enemies.length === 1 && G.player.hp === G.player.maxHp; }
@@ -193,7 +251,7 @@ export default [
   step("entering mid-attack arrives free", `
   DF.setClass("fighter"); DF.enterHub(); const p = G.player, q = G.world.portals[0]; p.x = q.x; p.z = q.z - 1.6; p.yaw = 0; cam.yaw = 0;
   DF.keys[DF.BIND.fwd] = true; K("light"); let mid = false;
-  DF.sim(4, () => { if (G.zone === "hub" && G.trans && p.state === "attack") mid = true; return G.zone === "hub" || !!G.trans; }); DF.keys[DF.BIND.fwd] = false;
+  DF.sim(4, () => { if (G.ask) DF.gateAnswer(true); if (G.zone === "hub" && G.trans && p.state === "attack") mid = true; return G.zone === "hub" || !!G.trans; }); DF.keys[DF.BIND.fwd] = false;
   const P = G.player; return { pass: G.zone === "cave" && P.state === "free" && P.buf === null, mid };`),
   step("a moved portal takes its frame with it", `
   // one open gate on the east wall, facing west into the hall

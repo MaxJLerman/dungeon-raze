@@ -29,6 +29,10 @@ const G = {
   // co-op dungeon for two, coopTwoDefs), else null
   edef: null,
   gate: null,
+  // the hall gate that is asking whether to enter, { grade, yaw } (gateAsk),
+  // and true from "Stay out" until the player is outside every open gate
+  ask: null,
+  askOff: false,
   flashRed: 0,
   flashWhite: 0,
   msgs: [],
@@ -2033,6 +2037,10 @@ function resetRun() {
   G.bossDead = false;
   G.bossSeen = false;
   G.gate = null;
+  // a world that goes under a gate's question takes the question with it
+  if (G.state === "enter") G.state = "play";
+  G.ask = null;
+  G.askOff = false;
   G.kills = 0;
   G.deaths = 0;
   G.runT = 0;
@@ -2125,6 +2133,33 @@ function startTrans(gradeId, cut = RM) {
   SFX.blink();
   if (cut) enterCave(gradeId);
   else G.trans = { t: 0, grade: gradeId, swapped: false };
+}
+// An open hall gate the player has stepped into asks before the trip: the
+// state is "enter" and the frame loop shows its screen (09_main.js). q is
+// the portal.
+function gateAsk(q) {
+  G.ask = { grade: q.grade, yaw: q.yaw };
+  G.state = "enter";
+}
+// The answer to a gate's question; nothing with none asked. Yes is the trip
+// that stepping in used to start (in a co-op run it is asked of the host).
+// No throws the player out of the arch: a free dodge the way the gate
+// faces, whichever way they walked in, with their facing, their lock and
+// the camera left alone. The shortest dodge is longer than the gate's
+// circle is deep, so it lands outside, and G.askOff keeps the gate quiet
+// until it has.
+function gateAnswer(yes) {
+  const a = G.ask;
+  if (!a) return;
+  G.ask = null;
+  if (G.state === "enter") G.state = "play";
+  if (yes) {
+    if (NET) NET.onPortal(a.grade);
+    else startTrans(a.grade);
+  } else {
+    G.askOff = true;
+    startDodge(Math.sin(a.yaw), Math.cos(a.yaw), 1, true);
+  }
 }
 const TRANS_HALF = 0.4;
 function transUpdate(dt) {
@@ -5904,17 +5939,22 @@ function update(dt) {
     G.state = "dead";
   // a local build's test switches top the player up (null in a release build)
   if (DEV) DEV.tick();
-  // open portals in the hall: stepping into the arch starts the trip, or in
-  // a co-op run asks for it (NET.onPortal). This must stay the last thing
-  // update does, because a cut swaps the world here.
-  if (G.zone === "hub" && p.state !== "dead")
+  // open portals in the hall: stepping into the arch asks whether to enter
+  // (gateAsk), once, and not again after "Stay out" until the player has
+  // been outside every arch. A co-op page that may not ask (a friend's, or
+  // the host's with a trip under way) goes to NET.onPortal as before.
+  if (G.zone === "hub" && p.state !== "dead" && !G.ask) {
+    let at = null;
     for (const q of w.portals) {
       if (!q.open) continue;
       const c = portalFront(q, -PORTAL_IN);
       if (Math.hypot(c.x - p.x, c.z - p.z) < PORTAL_R) {
-        if (NET) NET.onPortal(q.grade);
-        else startTrans(q.grade);
+        at = q;
         break;
       }
     }
+    if (!at) G.askOff = false;
+    else if (NET && !NET.asks()) NET.onPortal(at.grade);
+    else if (!G.askOff) gateAsk(at);
+  }
 }

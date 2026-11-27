@@ -24,7 +24,8 @@ export default [
         // a gate in the hall
         portal: (grade = "E") => G.world.portals.find((q) => q.grade === grade),
         // walks this player into grade's gate in the hall from 2.5 m in
-        // front of it, letting go once in its opening, and steps until
+        // front of it, answering Enter if it asks, letting go once in its
+        // opening, and steps until
         // until() (by default: in the cave, the fade over) or sec runs out
         walkIn(grade = "E", sec = 4, until = () => G.zone === "cave" && !G.trans) {
           const q = c8.portal(grade),
@@ -40,6 +41,8 @@ export default [
           DF.cam.pz = f.z;
           DF.keys[fwd] = true;
           c8.step(sec, () => {
+            // the gate asks the page that leads, and this walk says Enter
+            if (G.ask) DF.gateAnswer(true);
             if (G.trans || G.zone !== "hub" || Math.hypot(G.player.x - o.x, G.player.z - o.z) < 0.8) DF.keys[fwd] = false;
             if (until()) return false;
           });

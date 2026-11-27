@@ -36,7 +36,7 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   `mates`, the other player). With it `null` the game is the single-player
   game. Both sides define every hook, as a no-op or `false` where that side
   has nothing to do: `enemies`, `frame`, `onHit`, `onShoot`, `onKill`,
-  `onRespawn`, `onGate`, `onPortal`, `onPShot`, `onBlast`, `taken`. The
+  `onRespawn`, `onGate`, `onPortal`, `asks`, `onPShot`, `onBlast`, `taken`. The
   host's also has `two`, a getter (`S.n === 2`), since `NET` is set once
   and worlds change. Core
   reads it in these places and no others:
@@ -44,9 +44,12 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
     `NET.enemies(dt)` replaces the enemy loop (the host steps its enemies
     with the swap below, the client moves its puppets). A death under the
     pause screen or a menu shows the dead screen while `NET.live`. The
-    portal check at its end calls `NET.onPortal(grade)` in place of
-    `startTrans` (a no-op on the host, which has no player; the client's
-    `coopPortal`).
+    portal check at its end asks before a trip only where `NET.asks()`
+    is true (never on the host, which has no player; on a page, when it
+    leads and has no trip asked for: `coopLeads() && !CC.trip`), and
+    otherwise calls `NET.onPortal(grade)` at once, as it did before gates
+    asked. `gateAnswer(true)` calls `NET.onPortal(grade)` in place of
+    `startTrans` (a no-op on the host; the client's `coopPortal`).
   - `projUpdate` passes over a shot with `own === "m"` (the other player's,
     drawn only).
   - `hitEnemy`: `o.pre` marks a client's proposal applied on the host, its
@@ -617,10 +620,14 @@ COOP_HOST;`, and embeds the result as the string `COOP_HOST_SRC` in every
   new gate. Either player in the exit gate takes both back to the hall in
   front of E's gate: there is no win screen in co-op, each sees "OUT ALIVE"
   and the run's time, and the room stays open. **Only the host's page leads**:
-  it opens a hall gate (the next trip is a fresh cave from a new seed) and
+  it opens a hall gate (it alone is asked "Enter gate E?", with the hall
+  running on under the question as under pause; Enter asks the host to
+  travel, Stay out throws that player out of the arch and asks the host
+  nothing; `zones.md`; the next trip is a fresh cave from a new seed) and
   its pause and death screens' Return to base takes both to the hall; the
   friend's screens do not show Return to base, and the friend stepping into
-  a gate is told "Only the host can open a gate." The friend's ways out are
+  a gate is told "Only the host can open a gate.", and is neither asked nor
+  thrown out. The friend's ways out are
   Rise and Exit to main menu. Exit to main menu ends co-op for that page: the
   friend's leaves the host playing, the host's closes the room. A page that
   leaves gets its own hall back.

@@ -738,6 +738,7 @@ window.DF = {
   enterHub,
   enterCave,
   startTrans,
+  gateAnswer,
   genHub,
   genSewer,
   bigCaveGraph,

@@ -31,7 +31,8 @@
   the hall. The frame, its collision block, floor ring, glow, light, label and
   return point are all built from the entry. Its opening sits `PORTAL_IN`
   behind the position, and stepping within `PORTAL_R` of the opening of an
-  open one calls `startTrans` (in a co-op run `NET.onPortal`, `coop.md`), which fades out, swaps the world at full black and fades
+  open one asks before the trip (**A gate asks first**, below). The trip is
+  `startTrans` (in a co-op run `NET.onPortal`, `coop.md`), which fades out, swaps the world at full black and fades
   in. The transition is advanced by `update`, which does nothing else while
   `G.trans` is set, so `DF.sim` drives it in tests. `G.trans` is `{ t,
   swapped, grade }`, or `{ t, swapped, swap }` for a transition that makes
@@ -40,7 +41,28 @@
   that returns false has left the world for good (co-op ended), so the fade
   stops there with `G.trans` null and `G.fade` 0. `RM` (reduced motion) is
   a `let`; `DF.setRM(on)` sets it for a test.
-- `resetRun()` clears everything that must not cross a world swap. Add new
+- **A gate asks first.** The portal check at the end of `update` calls
+  `gateAsk(q)` for the open gate the player stands in: `G.ask` is `{ grade,
+  yaw }` and `G.state` is `"enter"`, whose screen the frame loop shows (core
+  has no DOM, as with the win screen). The check does nothing while `G.ask`
+  is set. `gateAnswer(yes)` is the answer, and does nothing with none
+  asked: it clears `G.ask`, puts an `"enter"` state back to `"play"`, and
+  then yes is the trip (`startTrans(grade)`, or `NET.onPortal(grade)` in a
+  co-op run) and no throws the player out of the arch, `startDodge(sin yaw,
+  cos yaw, 1, true)`: a free dodge of the class's full distance the way the
+  gate faces, whichever way they walked in, with their facing, their lock
+  and `cam` left alone. The shortest dodge (3.8 m) is longer than the
+  circle is deep, so it lands outside. No also sets `G.askOff`, which keeps
+  every gate from asking until the player is outside all of them, where
+  the check clears it. A co-op page that may not ask (`NET.asks()` false:
+  a friend's, or the host's page with a trip asked for) goes to
+  `NET.onPortal` as before, asked or not. The exit gate over a dead boss
+  (`G.gate`) asks nothing. A test that walks into a gate answers with
+  `DF.gateAnswer(true)`.
+- `resetRun()` clears everything that must not cross a world swap. It
+  clears `G.ask` and `G.askOff`, and an `"enter"` state goes back to
+  `"play"`, so a world that goes under a gate's question takes the question
+  with it. Add new
   per-run state there. It clears `G.inBoss`, the flag for the player being
   inside the boss chamber, `G.chunks`, the crocodile's falling ceiling
   (`respawn` clears it too), `G.waves`, the Warden for two's aftershocks
