@@ -864,9 +864,11 @@ relay: "open" | "error" | "closed" }`; a closed relay leaves the run going
     swap, puppets and the boss bar scaled for two in the big cave with the
     host's sum and a plain solo run after it, a world for two that says
     `n` 1 refused) and `tests/t28.mjs` (the other player and
-    the party rules: the gate back to the hall, from the hall to the cave
+    the party rules: the gate back to the hall, a hall gate asking the
+    page that leads (the hall running on under the question, Stay out
+    asking the host nothing, a pause over it), from the hall to the cave
     (the big cave, in pieces, with the host's sum) and back, a second trip, the friend taken along and turned away at a
-    gate, a paused player taken along, the feed's line, Return to base, an
+    gate without being asked or thrown out, a paused player taken along, the feed's line, Return to base, an
     exit mid-fade, the player's own hall after co-op, a plaque that takes no code, no new-gate line, reduced motion,
     an execution on the dummy that leaves it standing on both sides and
     keeps its rewards, a `reset` with the boss dead that opens its gate, a
